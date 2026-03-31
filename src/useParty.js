@@ -1,33 +1,63 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from './supabase'
 
 function mkCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase()
 }
 
+async function fetchParty(code) {
+  const { data } = await supabase
+    .from('parties')
+    .select()
+    .eq('code', code)
+    .single()
+  return data
+}
+
 export function useParty() {
-  const [party, setParty]   = useState(null)
-  const [myName, setMyName] = useState('')
-  const [error, setError]   = useState('')
+  const [party, setParty]     = useState(null)
+  const [myName, setMyName]   = useState('')
+  const [error, setError]     = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Subscribe to real-time changes for this party
-  useEffect(() => {
-    if (!party?.code) return
+  // Use a ref for the party code so the subscription effect never needs to
+  // re-run (avoiding the teardown/resubscribe loop)
+  const codeRef = useRef(null)
 
+  // Real-time subscription + polling fallback
+  useEffect(() => {
+    if (!codeRef.current) return
+
+    const code = codeRef.current
+
+    // Poll every 3 seconds as a reliable fallback
+    const poll = setInterval(async () => {
+      const fresh = await fetchParty(code)
+      if (fresh) setParty(fresh)
+    }, 3000)
+
+    // Real-time subscription on top of polling
     const channel = supabase
-      .channel(`party:${party.code}`)
+      .channel(`party-${code}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'parties', filter: `code=eq.${party.code}` },
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'parties',
+          filter: `code=eq.${code}`,
+        },
         payload => {
           if (payload.new) setParty(payload.new)
         }
       )
       .subscribe()
 
-    return () => supabase.removeChannel(channel)
-  }, [party?.code])
+    return () => {
+      clearInterval(poll)
+      supabase.removeChannel(channel)
+    }
+  }, [codeRef.current]) // eslint-disable-line
 
   const createParty = useCallback(async (name) => {
     setLoading(true)
@@ -48,7 +78,12 @@ export function useParty() {
       .select()
       .single()
 
-    if (err) { setError('Failed to create party. Check your Supabase setup.'); setLoading(false); return false }
+    if (err) {
+      setError('Failed to create party. Check your Supabase setup.')
+      setLoading(false)
+      return false
+    }
+    codeRef.current = data.code
     setParty(data)
     setMyName(name)
     setLoading(false)
@@ -58,15 +93,19 @@ export function useParty() {
   const joinParty = useCallback(async (code, name) => {
     setLoading(true)
     setError('')
+
     const { data, error: err } = await supabase
       .from('parties')
       .select()
       .eq('code', code)
       .single()
 
-    if (err || !data) { setError('Party not found — check the code.'); setLoading(false); return false }
+    if (err || !data) {
+      setError('Party not found — check the code.')
+      setLoading(false)
+      return false
+    }
 
-    // Add this member if not already present
     const members = { ...data.members }
     if (!members[name]) members[name] = []
 
@@ -77,7 +116,13 @@ export function useParty() {
       .select()
       .single()
 
-    if (err2) { setError('Failed to join party.'); setLoading(false); return false }
+    if (err2) {
+      setError('Failed to join party.')
+      setLoading(false)
+      return false
+    }
+
+    codeRef.current = code
     setParty(updated)
     setMyName(name)
     setLoading(false)
@@ -85,41 +130,48 @@ export function useParty() {
   }, [])
 
   const updateParty = useCallback(async (changes) => {
-    if (!party?.code) return
+    if (!codeRef.current) return
     const { data, error: err } = await supabase
       .from('parties')
       .update(changes)
-      .eq('code', party.code)
+      .eq('code', codeRef.current)
       .select()
       .single()
     if (!err && data) setParty(data)
-  }, [party?.code])
+  }, [])
 
   const selectMap = useCallback((map) => {
     updateParty({ map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null })
   }, [updateParty])
 
   const addQuest = useCallback((quest) => {
-    if (!party) return
-    const members = { ...party.members }
-    const mine = members[myName] || []
-    if (mine.find(q => q.id === quest.id)) return
-    members[myName] = [...mine, { id: quest.id, name: quest.name }]
-    updateParty({ members })
-  }, [party, myName, updateParty])
+    setParty(prev => {
+      if (!prev) return prev
+      const members = { ...prev.members }
+      const mine = members[myName] || []
+      if (mine.find(q => q.id === quest.id)) return prev
+      members[myName] = [...mine, { id: quest.id, name: quest.name }]
+      updateParty({ members })
+      return { ...prev, members }
+    })
+  }, [myName, updateParty])
 
   const removeQuest = useCallback((questId) => {
-    if (!party) return
-    const members = { ...party.members }
-    members[myName] = (members[myName] || []).filter(q => q.id !== questId)
-    updateParty({ members })
-  }, [party, myName, updateParty])
+    setParty(prev => {
+      if (!prev) return prev
+      const members = { ...prev.members }
+      members[myName] = (members[myName] || []).filter(q => q.id !== questId)
+      updateParty({ members })
+      return { ...prev, members }
+    })
+  }, [myName, updateParty])
 
   const setSpawn = useCallback((spawnId) => {
     updateParty({ spawn: spawnId })
   }, [updateParty])
 
   const leaveParty = useCallback(() => {
+    codeRef.current = null
     setParty(null)
     setMyName('')
     setError('')
