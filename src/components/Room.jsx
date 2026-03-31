@@ -1,0 +1,201 @@
+import { useState } from 'react'
+import { useMaps, useTasks } from '../useTarkov'
+import QuestSearch from './QuestSearch'
+import TodoList from './TodoList'
+import MapOverlay from './MapOverlay'
+
+export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn }) {
+  const [tab, setTab]   = useState('quests')
+  const [copied, setCopied] = useState(false)
+
+  const { maps, loading: loadingMaps } = useMaps()
+  const { tasks, loading: loadingTasks } = useTasks(party.map_norm)
+
+  const isLeader = party.leader === myName
+  const members  = Object.keys(party.members || {})
+  const mine     = party.members?.[myName] || []
+
+  function copy() {
+    navigator.clipboard?.writeText(party.code).catch(() => {})
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', padding: '14px 16px' }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 16, paddingBottom: 14, borderBottom: '1px solid var(--brd)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 4, height: 26, background: 'var(--gold)', borderRadius: 2 }} />
+          <div>
+            <h1 style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>SQUAD PLANNER</h1>
+            <div className="mono" style={{ fontSize: 11, color: 'var(--txm)' }}>
+              {party.map_name ? `// ${party.map_name.toUpperCase()}` : '// NO MAP SELECTED'}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'var(--sur2)', border: '1px solid var(--brd2)',
+            borderRadius: 4, padding: '5px 10px',
+          }}>
+            <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>PARTY</span>
+            <span className="mono" style={{ fontSize: 17, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
+            <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
+          </div>
+          <button className="btn-danger btn-sm" onClick={onLeave}>LEAVE</button>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 14 }}>
+        {/* Sidebar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="card" style={{ padding: 14 }}>
+            <div className="lbl">PARTY MEMBERS</div>
+            {members.map(m => (
+              <div key={m} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '7px 0', borderBottom: '1px solid var(--brd)',
+              }}>
+                <div>
+                  <div style={{ fontSize: 13, color: m === myName ? 'var(--goldtx)' : 'var(--tx)' }}>
+                    {m}{m === myName ? ' · you' : ''}
+                  </div>
+                  <div className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>
+                    {(party.members[m] || []).length} QUEST{(party.members[m] || []).length !== 1 ? 'S' : ''}
+                  </div>
+                </div>
+                {party.leader === m && (
+                  <span className="mono" style={{
+                    fontSize: 10, color: 'var(--gold)',
+                    border: '1px solid var(--golddim)', borderRadius: 3, padding: '1px 5px',
+                  }}>LDR</span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {party.map_id && (
+            <div className="card" style={{ padding: 14 }}>
+              <div className="lbl">ALL PARTY QUESTS</div>
+              {members.map(m => (
+                <div key={m} style={{ marginBottom: 12 }}>
+                  <div className="mono" style={{ fontSize: 10, color: m === myName ? 'var(--gold)' : 'var(--txm)', marginBottom: 4 }}>
+                    {m.toUpperCase()}
+                  </div>
+                  {!(party.members[m] || []).length
+                    ? <div style={{ fontSize: 11, color: 'var(--txd)' }}>—</div>
+                    : (party.members[m] || []).map(q => (
+                      <div key={q.id} style={{ fontSize: 12, padding: '2px 0' }}>◆ {q.name}</div>
+                    ))
+                  }
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Main content */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+          {/* Map selector */}
+          <div className="card" style={{ padding: 16 }}>
+            <div className="lbl">{isLeader ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
+            {loadingMaps ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 16, height: 16, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite' }} />
+                <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAPS...</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                {maps.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => isLeader && onSelectMap(m)}
+                    className={party.map_id === m.id ? 'btn-gold' : 'btn-ghost'}
+                    style={{ padding: '7px 12px', fontSize: 13, opacity: isLeader ? 1 : .7, cursor: isLeader ? 'pointer' : 'default' }}
+                  >
+                    {m.name.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {party.map_id && (
+            <>
+              {/* Tabs */}
+              <div style={{ display: 'flex', borderBottom: '1px solid var(--brd)' }}>
+                {[['quests', 'QUESTS'], ['todo', 'TODO LIST'], ['map', 'MAP / ROUTE']].map(([id, lbl]) => (
+                  <button key={id} onClick={() => setTab(id)} style={{
+                    background: 'none', border: 'none',
+                    borderBottom: `2px solid ${tab === id ? 'var(--gold)' : 'transparent'}`,
+                    color: tab === id ? 'var(--goldtx)' : 'var(--txm)',
+                    fontFamily: 'Rajdhani', fontWeight: 600, fontSize: 14, letterSpacing: '.08em',
+                    padding: '8px 18px', borderRadius: 0, cursor: 'pointer', transition: 'all .15s',
+                  }}>{lbl}</button>
+                ))}
+              </div>
+
+              {tab === 'quests' && (
+                <div className="card fade-in" style={{ padding: 16 }}>
+                  <div className="lbl">{myName.toUpperCase()} — YOUR ACTIVE QUESTS</div>
+                  <QuestSearch tasks={tasks} mine={mine} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} />
+
+                  {members.filter(m => m !== myName).map(m => (
+                    <div key={m} style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--brd)' }}>
+                      <div className="lbl">{m.toUpperCase()} — QUESTS</div>
+                      {!(party.members[m] || []).length
+                        ? <p className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>WAITING FOR {m.toUpperCase()} TO ADD QUESTS</p>
+                        : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {(party.members[m] || []).map(q => (
+                            <span key={q.id} style={{
+                              display: 'inline-flex', background: 'var(--sur2)',
+                              border: '1px solid var(--brd2)', borderRadius: 3,
+                              padding: '2px 7px', fontSize: 11, fontFamily: 'Share Tech Mono', color: 'var(--txm)',
+                            }}>{q.name}</span>
+                          ))}
+                        </div>
+                      }
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {tab === 'todo' && (
+                <div className="card fade-in" style={{ padding: 16 }}>
+                  <TodoList tasks={tasks} memberQuests={party.members} />
+                </div>
+              )}
+
+              {tab === 'map' && (
+                <div className="card fade-in" style={{ padding: 16 }}>
+                  <MapOverlay
+                    mapNorm={party.map_norm}
+                    mapName={party.map_name}
+                    tasks={tasks}
+                    memberQuests={party.members}
+                    spawn={party.spawn}
+                    onSetSpawn={onSetSpawn}
+                    isLeader={isLeader}
+                  />
+                </div>
+              )}
+            </>
+          )}
+
+          {!party.map_id && !loadingMaps && (
+            <div className="card" style={{ padding: 24, textAlign: 'center' }}>
+              <p className="mono" style={{ color: 'var(--txm)', fontSize: 13 }}>
+                {isLeader ? '↑ SELECT A MAP TO BEGIN PLANNING' : 'WAITING FOR LEADER TO SELECT A MAP...'}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
