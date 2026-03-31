@@ -7,6 +7,7 @@ export default function App() {
     party, myName, error, loading,
     createParty, joinParty,
     selectMap, addQuest, removeQuest, setSpawn,
+    toggleObjective, toggleStar,
     leaveParty,
   } = useParty()
 
@@ -15,15 +16,7 @@ export default function App() {
     else await joinParty(code, name)
   }
 
-  if (!party) {
-    return (
-      <Lobby
-        onEnter={handleEnter}
-        error={error}
-        loading={loading}
-      />
-    )
-  }
+  if (!party) return <Lobby onEnter={handleEnter} error={error} loading={loading} />
 
   return (
     <Room
@@ -34,6 +27,8 @@ export default function App() {
       onAddQuest={addQuest}
       onRemoveQuest={removeQuest}
       onSetSpawn={setSpawn}
+      onToggleObjective={toggleObjective}
+      onToggleStar={toggleStar}
     />
   )
 }

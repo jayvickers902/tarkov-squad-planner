@@ -25,36 +25,36 @@ export default function Lobby({ onEnter, error, loading }) {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ width: '100%', maxWidth: 430 }}>
-        <div style={{ textAlign: 'center', marginBottom: 48 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-            <div style={{ width: 5, height: 34, background: 'var(--gold)', borderRadius: 2 }} />
-            <h1 style={{ fontSize: 36, fontWeight: 700 }}>SQUAD PLANNER</h1>
+      <div style={{ width: '100%', maxWidth: 400 }}>
+
+        <div style={{ marginBottom: 48, textAlign: 'center' }}>
+          <div style={{ fontSize: 42, fontFamily: 'IM Fell English, serif', color: '#fff', letterSpacing: '-.01em', marginBottom: 4 }}>
+            Squad<span style={{ color: '#e8b84b' }}>.</span>gg
           </div>
-          <p className="mono" style={{ fontSize: 11, color: 'var(--txm)', letterSpacing: '0.1em' }}>
+          <div className="mono" style={{ fontSize: 10, color: '#333', letterSpacing: '.14em' }}>
             ESCAPE FROM TARKOV // RAID COORDINATOR
-          </p>
+          </div>
         </div>
 
         {mode === 'home' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }} className="fade-in">
-            <button className="btn-gold" style={{ padding: '14px 24px', fontSize: 16 }} onClick={() => setMode('create')}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} className="fade-in">
+            <button className="btn-gold" style={{ padding: '13px 24px', fontSize: 13 }} onClick={() => setMode('create')}>
               CREATE PARTY
             </button>
-            <button className="btn-ghost" style={{ padding: '14px 24px', fontSize: 16 }} onClick={() => setMode('join')}>
+            <button className="btn-ghost" style={{ padding: '13px 24px', fontSize: 13 }} onClick={() => setMode('join')}>
               JOIN PARTY
             </button>
           </div>
         )}
 
         {(mode === 'create' || mode === 'join') && (
-          <div className="card fade-in" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <h2 style={{ fontSize: 22, color: 'var(--goldtx)' }}>
-              {mode === 'create' ? 'CREATE PARTY' : 'JOIN PARTY'}
-            </h2>
+          <div className="card fade-in" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="serif" style={{ fontSize: 22, color: '#fff' }}>
+              {mode === 'create' ? 'Create party' : 'Join party'}
+            </div>
 
             <div>
-              <div className="lbl">YOUR CALLSIGN</div>
+              <div className="lbl">Your callsign</div>
               <input
                 placeholder="e.g. DeadEye47"
                 value={sign}
@@ -66,27 +66,22 @@ export default function Lobby({ onEnter, error, loading }) {
 
             {mode === 'join' && (
               <div>
-                <div className="lbl">PARTY CODE</div>
+                <div className="lbl">Party code</div>
                 <input
                   placeholder="6-letter code"
                   value={code}
                   onChange={e => { setCode(e.target.value.toUpperCase()); setLocal('') }}
-                  style={{ fontFamily: 'Share Tech Mono', letterSpacing: '0.2em', fontSize: 20 }}
+                  style={{ letterSpacing: '.22em', fontSize: 18 }}
                   maxLength={6}
                   onKeyDown={e => e.key === 'Enter' && join()}
                 />
               </div>
             )}
 
-            {err && (
-              <p className="mono" style={{ color: 'var(--red)', fontSize: 12 }}>⚠ {err}</p>
-            )}
+            {err && <p className="mono" style={{ color: 'var(--red)', fontSize: 11 }}>/ {err}</p>}
+            {loading && <p className="mono" style={{ color: 'var(--txm)', fontSize: 11 }}>connecting...</p>}
 
-            {loading && (
-              <p className="mono" style={{ color: 'var(--txm)', fontSize: 12 }}>CONNECTING...</p>
-            )}
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <div style={{ display: 'flex', gap: 7, marginTop: 4 }}>
               <button className="btn-ghost" onClick={() => { setMode('home'); setLocal('') }}>BACK</button>
               <button className="btn-gold" style={{ flex: 1 }} onClick={mode === 'create' ? create : join} disabled={loading}>
                 {mode === 'create' ? 'CREATE' : 'JOIN'}
@@ -95,8 +90,8 @@ export default function Lobby({ onEnter, error, loading }) {
           </div>
         )}
 
-        <p className="mono" style={{ textAlign: 'center', marginTop: 28, fontSize: 10, color: 'var(--txd)' }}>
-          QUEST DATA VIA TARKOV.DEV — COMMUNITY MAINTAINED
+        <p className="mono" style={{ textAlign: 'center', marginTop: 24, fontSize: 9, color: '#222', letterSpacing: '.08em' }}>
+          QUEST DATA VIA TARKOV.DEV
         </p>
       </div>
     </div>

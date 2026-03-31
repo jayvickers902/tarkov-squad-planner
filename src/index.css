@@ -1,21 +1,21 @@
-@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&family=Noto+Sans:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Share+Tech+Mono&family=Noto+Sans:wght@300;400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:      #0c0e0d;
-  --sur:     #131614;
-  --sur2:    #191c18;
-  --sur3:    #1f231e;
-  --brd:     #262b25;
-  --brd2:    #303830;
-  --gold:    #c9a84c;
-  --golddim: #7a6028;
-  --goldtx:  #e8c96a;
-  --tx:      #e4e0d4;
-  --txm:     #6e7a6c;
-  --txd:     #3a4238;
-  --red:     #b84040;
+  --bg:      #0f0f0f;
+  --sur:     #111111;
+  --sur2:    #161616;
+  --sur3:    #1a1a1a;
+  --brd:     #1e1e1e;
+  --brd2:    #2a2a2a;
+  --gold:    #e8b84b;
+  --golddim: #3a2e00;
+  --goldtx:  #f0cc6e;
+  --tx:      #cccccc;
+  --txm:     #555555;
+  --txd:     #2a2a2a;
+  --red:     #c04040;
   --grn:     #4a8c5a;
 }
 
@@ -28,18 +28,19 @@ body {
   min-height: 100vh;
 }
 
-h1, h2, h3 { font-family: 'Rajdhani', sans-serif; letter-spacing: .05em; }
-.mono { font-family: 'Share Tech Mono', monospace; }
+.serif  { font-family: 'IM Fell English', serif; }
+.mono   { font-family: 'Share Tech Mono', monospace; }
+.lbl    { font-family: 'Share Tech Mono', monospace; font-size: 9px; color: var(--txm); letter-spacing: .12em; text-transform: uppercase; margin-bottom: 7px; }
 
 input {
   background: var(--sur2);
   border: 1px solid var(--brd2);
   color: var(--tx);
-  border-radius: 4px;
+  border-radius: 2px;
   padding: 8px 12px;
   width: 100%;
-  font-family: 'Noto Sans', sans-serif;
-  font-size: 14px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
   outline: none;
   transition: border-color .15s;
 }
@@ -48,38 +49,29 @@ input::placeholder { color: var(--txm); }
 
 button {
   cursor: pointer;
-  font-family: 'Rajdhani', sans-serif;
-  font-weight: 600;
-  font-size: 13px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
   letter-spacing: .06em;
   border: none;
-  border-radius: 4px;
-  padding: 8px 16px;
+  border-radius: 2px;
+  padding: 7px 14px;
   transition: all .15s;
 }
-.btn-gold  { background: var(--gold); color: #0c0e0d; }
-.btn-gold:hover { background: #d4b55e; }
-.btn-ghost { background: transparent; color: var(--tx); border: 1px solid var(--brd2); }
-.btn-ghost:hover { border-color: var(--gold); color: var(--goldtx); }
+.btn-gold   { background: var(--gold); color: #0f0f0f; }
+.btn-gold:hover { background: var(--goldtx); }
+.btn-ghost  { background: transparent; color: var(--txm); border: 1px solid var(--brd2); }
+.btn-ghost:hover { border-color: var(--gold); color: var(--gold); }
 .btn-danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
 .btn-danger:hover { background: var(--red); color: #fff; }
-.btn-sm { padding: 5px 10px; font-size: 12px; }
-.btn-active { background: var(--gold) !important; color: #0c0e0d !important; border-color: var(--gold) !important; }
+.btn-sm     { padding: 4px 9px; font-size: 10px; }
+.btn-active { background: var(--golddim) !important; color: var(--gold) !important; border-color: var(--golddim) !important; }
 
-.card { background: var(--sur); border: 1px solid var(--brd); border-radius: 6px; }
+.card { background: var(--sur); border: 1px solid var(--brd); border-radius: 2px; }
 
-.lbl {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 10px;
-  color: var(--txm);
-  letter-spacing: 0.1em;
-  margin-bottom: 7px;
-}
+@keyframes spin    { to { transform: rotate(360deg); } }
+@keyframes fadeIn  { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+.fade-in { animation: fadeIn .15s ease; }
 
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
-.fade-in { animation: fadeIn .2s ease; }
-
-::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--brd2); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--brd2); border-radius: 2px; }
