@@ -11,14 +11,10 @@ export default function KeysList({ mapNorm }) {
   const { keys, loading } = useKeys(mapNorm)
   const { mapKeys } = useMapKeys(mapNorm)
 
-  // Merge DB priority data; fall back to the priority flag set by useTarkov
-  const mergedKeys = keys.map(k => {
-    const db = mapKeys[k.name]
-    return { ...k, priority: db ? db.priority : k.priority }
-  }).sort((a, b) => {
-    if (a.priority !== b.priority) return a.priority ? -1 : 1
-    return (b.avg24hPrice || b.lastLowPrice || 0) - (a.avg24hPrice || a.lastLowPrice || 0)
-  })
+  // Only show keys explicitly starred in the admin panel
+  const mergedKeys = keys
+    .filter(k => mapKeys[k.name]?.priority === true)
+    .sort((a, b) => (b.avg24hPrice || b.lastLowPrice || 0) - (a.avg24hPrice || a.lastLowPrice || 0))
 
   if (loading) {
     return (
@@ -32,7 +28,7 @@ export default function KeysList({ mapNorm }) {
   if (!mergedKeys.length) {
     return (
       <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', padding: '32px 0', textAlign: 'center' }}>
-        NO KEY DATA FOR THIS MAP
+        NO PRIORITY KEYS SET FOR THIS MAP
       </div>
     )
   }
@@ -40,7 +36,7 @@ export default function KeysList({ mapNorm }) {
   return (
     <div>
       <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginBottom: 12, letterSpacing: '.04em' }}>
-        {mergedKeys.length} KEYS — PRIORITY KEYS FIRST — CLICK NAME TO VIEW LOOT ON WIKI
+        {mergedKeys.length} PRIORITY KEYS — CLICK NAME TO VIEW LOOT ON WIKI
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {mergedKeys.map(k => {
