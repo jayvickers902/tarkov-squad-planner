@@ -23,17 +23,18 @@ function isPriority(name, mapNorm) {
 }
 
 // Name-based map assignment — tarkov.dev doesn't expose map on key items
+// Order matters: more specific maps first to avoid false matches
 const KEY_MAP_PATTERNS = [
   ['the-lab',           [/keycard/i, /terragroup\s+labs/i]],
   ['factory',           [/\bfactory\b/i]],
-  ['customs',           [/\bdorm\s+room\b/i, /\bcustoms\b/i, /\bmachinery\b/i, /\bzb-013\b/i, /usec.*stash/i]],
-  ['woods',             [/\bwoods\b/i, /\bzb-014\b/i]],
+  ['customs',           [/\bdorm\s+room\b/i, /\bcustoms\b/i, /\bmachinery\b/i, /\bzb-013\b/i, /usec.*stash/i, /tarcone/i, /dorm\s+guard/i, /gas\s+station/i, /military\s+checkpoint/i, /reshala/i]],
+  ['woods',             [/\bwoods\b/i, /\bzb-014\b/i, /shturman/i, /merin\s+car/i, /hillside\s+house/i]],
   ['shoreline',         [/\bresort\b/i, /\bshoreline\b/i, /\bcottage\b/i, /sanatorium/i, /weather\s+station/i]],
-  ['interchange',       [/\binterchange\b/i, /\boli\b/i, /\bgoshan\b/i, /\bidea\b/i, /ultra\s+mall/i]],
-  ['lighthouse',        [/\blighthouse\b/i]],
-  ['streets-of-tarkov', [/\bstreets\b/i, /\bconcordia\b/i, /climate\s+hotel/i, /pinewood\s+hotel/i, /chek\s+15/i]],
-  ['reserve',           [/\brb-[a-z]/i, /\breserve\b/i]],
-  ['ground-zero',       [/ground.?zero/i]],
+  ['interchange',       [/\binterchange\b/i, /\boli\b/i, /\bgoshan\b/i, /\bidea\b/i, /ultra\s+mall/i, /\bkiba\b/i, /ultra\s+medical/i, /necruspharm/i, /\bemercom\b/i, /convenience\s+store/i, /cold\s+storage/i, /store\s+safe/i]],
+  ['lighthouse',        [/\blighthouse\b/i, /shared\s+bedroom/i, /water\s+treatment/i, /rogue.*usec/i, /radar\s+station/i, /pumping\s+station/i, /\bhep\s+station\b/i, /missam/i, /portable\s+cabin/i]],
+  ['streets-of-tarkov', [/\bstreets\b/i, /\bconcordia\b/i, /climate\s+hotel/i, /pinewood\s+hotel/i, /chekannaya/i, /\bprimorsky\b/i, /\bzmeisky\b/i, /financial\s+institution/i, /car\s+dealership/i, /housing\s+office/i, /beluga\s+restaurant/i, /\btarbank\b/i, /terragroup\s+meeting/i, /terragroup\s+security/i, /terragroup\s+science/i, /terragroup\s+corporate/i, /mysterious\s+room/i, /unity\s+credit/i, /horse\s+restaurant/i, /mvd\s+academy/i, /real\s+estate\s+agency/i, /cardinal\s+apartment/i, /shatun.*hideout/i, /grumpy.*hideout/i, /voron.*hideout/i, /leon.*hideout/i, /cult\s+victim/i, /aspect\s+company/i, /pe\s+teacher/i, /\bnegotiation.*room/i, /stair\s+landing/i, /pier\s+door/i, /\bbackup\s+hideout\b/i]],
+  ['reserve',           [/\brb-[a-z]/i, /\breserve\b/i, /conference\s+room/i, /operating\s+room/i, /dorm\s+overseer/i]],
+  ['ground-zero',       [/ground.?zero/i, /weapon\s+safe/i, /construction\s+site\s+bunkhouse/i, /portable\s+bunkhouse/i, /underground\s+parking/i, /supply\s+department/i]],
 ]
 
 function keyToMap(name) {

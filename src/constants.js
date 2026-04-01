@@ -6,7 +6,7 @@ export const FEATURED = [
 ]
 
 // Maps where Cliff Descent extract is available (requires Red Rebel Ice Pick + Paracord)
-export const RED_REBEL_MAPS = new Set(['woods', 'shoreline', 'lighthouse', 'reserve'])
+export const RED_REBEL_MAPS = new Set(['shoreline', 'lighthouse', 'reserve'])
 
 const RAW = 'https://raw.githubusercontent.com/the-hideout/tarkov-dev/main/public/maps'
 export const MAP_IMAGES = {
