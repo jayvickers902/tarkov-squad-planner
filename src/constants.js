@@ -8,18 +8,18 @@ export const FEATURED = [
 // Maps where Cliff Descent extract is available (requires Red Rebel Ice Pick + Paracord)
 export const RED_REBEL_MAPS = new Set(['woods', 'shoreline', 'lighthouse', 'reserve'])
 
-// Map image URLs from tarkov.dev assets (works when hosted outside sandbox)
+const RAW = 'https://raw.githubusercontent.com/the-hideout/tarkov-dev/main/public/maps'
 export const MAP_IMAGES = {
-  'customs':             'https://assets.tarkov.dev/maps/customs-2d.jpg',
-  'woods':               'https://assets.tarkov.dev/maps/woods-2d.jpg',
-  'interchange':         'https://assets.tarkov.dev/maps/interchange-2d.jpg',
-  'shoreline':           'https://assets.tarkov.dev/maps/shoreline-2d.jpg',
-  'factory':             'https://assets.tarkov.dev/maps/factory-2d.jpg',
-  'lighthouse':          'https://assets.tarkov.dev/maps/lighthouse-2d.jpg',
-  'streets-of-tarkov':   'https://assets.tarkov.dev/maps/streets-of-tarkov-2d.jpg',
-  'reserve':             'https://assets.tarkov.dev/maps/reserve-2d.jpg',
-  'ground-zero':         'https://assets.tarkov.dev/maps/ground-zero-2d.jpg',
-  'the-lab':             'https://assets.tarkov.dev/maps/the-lab-2d.jpg',
+  'customs':           `${RAW}/customs-2d.jpg`,
+  'woods':             `${RAW}/woods-2d.jpg`,
+  'interchange':       `${RAW}/interchange-2d.jpg`,
+  'shoreline':         `${RAW}/shoreline-2d.jpg`,
+  'factory':           `${RAW}/factory-2d.jpg`,
+  'lighthouse':        `${RAW}/lighthouse-2d.jpg`,
+  'streets-of-tarkov': `${RAW}/streets-2d.jpg`,
+  'reserve':           `${RAW}/reserve-2d.jpg`,
+  'ground-zero':       `${RAW}/ground-zero-2d.jpg`,
+  'the-lab':           `${RAW}/labs-2d.jpg`,
 }
 
 // PMC player spawn zones — x/y as 0-1 fractions of the map image

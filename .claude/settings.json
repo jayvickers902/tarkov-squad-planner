@@ -15,7 +15,16 @@
       "Bash(npx --version)",
       "Bash(supabase --version)",
       "Bash(curl -s -X POST https://api.supabase.com/v1/projects/vggbwjboeryxddmxmcjn/database/query -H 'Authorization: Bearer sbp_86e9a47911a96ead0d9856290419d836474f6faa' -H 'Content-Type: application/json' -d '{:*)",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(curl -s 'https://vggbwjboeryxddmxmcjn.supabase.co/rest/v1/profiles?select=*&id=eq.a22a9fdd-9348-4283-9075-b9960a751e05' -H 'accept: application/vnd.pgrst.object+json' -H 'accept-profile: public' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZnZ2J3amJvZXJ5eGRkbXhtY2puIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5NzEwMDgsImV4cCI6MjA5MDU0NzAwOH0.kowOHwUxkBjn7x0a6_CmNqgcRii-2OyJdPuHVLmFA1M' -H 'authorization: Bearer eyJhbGciOiJFUzI1NiIsImtpZCI6ImZlZTdhMTU5LTljMDEtNDFjZS1hYzY0LTE3N2IzZTkxMTk2MiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3ZnZ2J3amJvZXJ5eGRkbXhtY2puLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJhMjJhOWZkZC05MzQ4LTQyODMtOTA3NS1iOTk2MGE3NTFlMDUiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzc1MDEzODQ5LCJpYXQiOjE3NzUwMTAyNDksImVtYWlsIjoic3EuamF5c2hhbGxhMi4xMEBnbWFpbC5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsIjoic3EuamF5c2hhbGxhMi4xMEBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicGhvbmVfdmVyaWZpZWQiOmZhbHNlLCJzdWIiOiJhMjJhOWZkZC05MzQ4LTQyODMtOTA3NS1iOTk2MGE3NTFlMDUifSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc3NTAwNjcxM31dLCJzZXNzaW9uX2lkIjoiM2UzNDJkZTMtNTdjZi00MDlmLTkwODMtMjA4ZjAxZjU0ODRkIiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.uCeW_4VuhL2gU9lc8fsnGAh854uWHb2SNcpQq3pYb1G9_8iWqRmPcjcpyBkD7lqO-SilqoopJNRM9rU6xi2mtQ')",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ maps { id normalizedName name svgPath } }\"}')",
+      "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\); const j=JSON.parse\\(d\\); j.data.maps.forEach\\(m=>console.log\\(m.normalizedName, m.svgPath\\)\\)\")",
+      "WebFetch(domain:tarkov.dev)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -s \"https://api.github.com/repos/Zibbp/Escape-From-Tarkov-Interactive-Online-Map/git/trees/HEAD?recursive=1\")",
+      "Bash(curl -s \"https://api.github.com/repos/the-hideout/tarkov-dev/contents/public/maps\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\jayvi\\.claude"
