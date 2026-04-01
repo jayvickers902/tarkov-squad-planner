@@ -9,7 +9,16 @@
       "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ __type\\(name: \\\\\"LootContainerPosition\\\\\"\\) { fields { name type { name kind } } } }\"}')",
       "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ __type\\(name: \\\\\"ItemPropertiesKey\\\\\"\\) { fields { name type { name kind } } } }\"}')",
       "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ __type\\(name: \\\\\"LootContainer\\\\\"\\) { fields { name type { name kind } } } }\"}')",
-      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ items\\(types: [keys], limit: 1\\) { id name tarkovDataId description } }\"}')"
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ items\\(types: [keys], limit: 1\\) { id name tarkovDataId description } }\"}')",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(npx --version)",
+      "Bash(supabase --version)",
+      "Bash(curl -s -X POST https://api.supabase.com/v1/projects/vggbwjboeryxddmxmcjn/database/query -H 'Authorization: Bearer sbp_86e9a47911a96ead0d9856290419d836474f6faa' -H 'Content-Type: application/json' -d '{:*)",
+      "Bash(node -e ':*)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\jayvi\\.claude"
     ]
   }
 }
