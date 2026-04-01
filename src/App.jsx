@@ -1,34 +1,92 @@
+import { useState } from 'react'
+import { useAuth } from './useAuth'
 import { useParty } from './useParty'
+import { useUserQuests } from './useUserQuests'
+import AuthScreen from './components/AuthScreen'
 import Lobby from './components/Lobby'
+import MyQuests from './components/MyQuests'
 import Room from './components/Room'
 
 export default function App() {
+  const { user, profile, loading: authLoading, error: authError, setError: setAuthError, register, login, logout } = useAuth()
+  const { quests: userQuests, loading: questsLoading, addQuest, removeQuest, toggleImportant, questsForMap } = useUserQuests(user?.id)
+
   const {
-    party, myName, error, loading,
+    party, myName, error: partyError, loading: partyLoading,
     createParty, joinParty,
-    selectMap, addQuest, removeQuest, setSpawn,
+    selectMap, addQuest: addPartyQuest, removeQuest: removePartyQuest, setSpawn,
     toggleObjective, toggleStar,
-    leaveParty,
+    leaveParty, setError: setPartyError,
   } = useParty()
 
-  async function handleEnter(mode, name, code) {
-    if (mode === 'create') await createParty(name)
-    else await joinParty(code, name)
+  const [screen, setScreen] = useState('lobby') // 'lobby' | 'myquests'
+
+  // Still loading auth session
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 32, height: 32, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite' }} />
+      </div>
+    )
   }
 
-  if (!party) return <Lobby onEnter={handleEnter} error={error} loading={loading} />
+  // Not logged in — show auth screen
+  if (!user || !profile) {
+    async function handleAuth(mode, callsign, password) {
+      if (mode === 'register') return await register(callsign, password)
+      return await login(callsign, password)
+    }
+    return <AuthScreen onAuth={handleAuth} error={authError} setError={setAuthError} />
+  }
+
+  // In a party — show the raid room
+  if (party) {
+    return (
+      <Room
+        party={party} myName={myName}
+        onLeave={leaveParty}
+        onSelectMap={selectMap}
+        onAddQuest={addPartyQuest} onRemoveQuest={removePartyQuest}
+        onSetSpawn={setSpawn}
+        onToggleObjective={toggleObjective}
+        onToggleStar={toggleStar}
+      />
+    )
+  }
+
+  // Managing saved quests
+  if (screen === 'myquests') {
+    return (
+      <MyQuests
+        userQuests={userQuests}
+        onAdd={addQuest}
+        onRemove={removeQuest}
+        onToggleImportant={toggleImportant}
+        onDone={() => setScreen('lobby')}
+      />
+    )
+  }
+
+  // Lobby
+  async function handleEnter(mode, code) {
+    // Get all saved quests (any map) to populate party
+    const savedQuests = userQuests
+
+    if (mode === 'create') {
+      await createParty(profile.callsign, savedQuests)
+    } else {
+      await joinParty(code, profile.callsign, savedQuests)
+    }
+  }
 
   return (
-    <Room
-      party={party}
-      myName={myName}
-      onLeave={leaveParty}
-      onSelectMap={selectMap}
-      onAddQuest={addQuest}
-      onRemoveQuest={removeQuest}
-      onSetSpawn={setSpawn}
-      onToggleObjective={toggleObjective}
-      onToggleStar={toggleStar}
+    <Lobby
+      callsign={profile.callsign}
+      onEnter={handleEnter}
+      onManageQuests={() => setScreen('myquests')}
+      onLogout={logout}
+      error={partyError}
+      loading={partyLoading}
     />
   )
 }

@@ -17,7 +17,6 @@ export function useParty() {
   const [loading, setLoading] = useState(false)
   const codeRef = useRef(null)
 
-  // Real-time subscription + polling fallback
   useEffect(() => {
     if (!codeRef.current) return
     const code = codeRef.current
@@ -36,16 +35,25 @@ export function useParty() {
     return () => { clearInterval(poll); supabase.removeChannel(channel) }
   }, [codeRef.current]) // eslint-disable-line
 
-  const createParty = useCallback(async (name) => {
+  // savedQuests = user's saved quests from useUserQuests
+  const createParty = useCallback(async (name, savedQuests = []) => {
     setLoading(true); setError('')
     const code = mkCode()
+
+    // Build initial members with saved quests pre-populated
+    const myQuests = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
+
+    // Pre-star important quests
+    const starred = {}
+    savedQuests.filter(q => q.important).forEach(q => { starred[q.quest_id] = true })
+
     const newParty = {
       code, leader: name,
       map_id: null, map_name: null, map_norm: null,
-      members: { [name]: [] },
+      members: { [name]: myQuests },
       spawn: null,
-      progress: {},    // { "taskId::objId": true }
-      starred: {},     // { "taskId": true }
+      progress: {},
+      starred,
     }
     const { data, error: err } = await supabase.from('parties').insert(newParty).select().single()
     if (err) { setError('Failed to create party. Check your Supabase setup.'); setLoading(false); return false }
@@ -54,15 +62,24 @@ export function useParty() {
     return true
   }, [])
 
-  const joinParty = useCallback(async (code, name) => {
+  const joinParty = useCallback(async (code, name, savedQuests = []) => {
     setLoading(true); setError('')
     const { data, error: err } = await supabase.from('parties').select().eq('code', code).single()
     if (err || !data) { setError('Party not found — check the code.'); setLoading(false); return false }
 
     const members = { ...data.members }
-    if (!members[name]) members[name] = []
+    // Merge saved quests in — don't overwrite quests already set in this party session
+    const existing = members[name] || []
+    const saved = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
+    const merged = [...existing]
+    saved.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
+    members[name] = merged
 
-    const { data: updated, error: err2 } = await supabase.from('parties').update({ members }).eq('code', code).select().single()
+    // Merge important flags into starred without overwriting existing stars
+    const starred = { ...(data.starred || {}) }
+    savedQuests.filter(q => q.important).forEach(q => { starred[q.quest_id] = true })
+
+    const { data: updated, error: err2 } = await supabase.from('parties').update({ members, starred }).eq('code', code).select().single()
     if (err2) { setError('Failed to join party.'); setLoading(false); return false }
 
     codeRef.current = code
@@ -106,7 +123,6 @@ export function useParty() {
     updateParty({ spawn: spawnId })
   }, [updateParty])
 
-  // Toggle a single objective done/undone — optimistic update + sync
   const toggleObjective = useCallback((key) => {
     setParty(prev => {
       if (!prev) return prev
@@ -116,7 +132,6 @@ export function useParty() {
     })
   }, [updateParty])
 
-  // Toggle a quest starred — optimistic update + sync
   const toggleStar = useCallback((taskId) => {
     setParty(prev => {
       if (!prev) return prev
@@ -136,6 +151,6 @@ export function useParty() {
     createParty, joinParty,
     selectMap, addQuest, removeQuest, setSpawn,
     toggleObjective, toggleStar,
-    leaveParty,
+    leaveParty, setError,
   }
 }
