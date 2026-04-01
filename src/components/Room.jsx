@@ -187,6 +187,8 @@ export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, 
                         starredQuests={party.starred || {}}
                         onToggleObjective={onToggleObjective}
                         onToggleStar={onToggleStar}
+                        myName={myName}
+                        isLeader={isLeader}
                       />
                   }
                 </div>

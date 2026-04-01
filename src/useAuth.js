@@ -39,19 +39,25 @@ export function useAuth() {
     if (!trimmed) { setError('Enter a callsign'); return false }
     if (password.length < 6) { setError('Password must be at least 6 characters'); return false }
 
+    // Check callsign isn't taken
     const { data: existing } = await supabase.from('profiles').select('id').eq('callsign', trimmed).maybeSingle()
     if (existing) { setError('That callsign is already taken'); return false }
 
     const fakeEmail = makeEmail(trimmed)
 
+    // Sign up — Supabase may auto-confirm or require confirmation depending on settings
     const { data, error: signUpErr } = await supabase.auth.signUp({ email: fakeEmail, password })
     if (signUpErr) { setError(signUpErr.message); return false }
     if (!data.user) { setError('Signup failed — try again'); return false }
 
+    // Use the service role isn't available client-side, so we insert the profile
+    // using the now-authenticated session. If signUp auto-confirms, session exists.
+    // If not, we need to sign in first to get a valid session for the RLS insert.
     let userId = data.user.id
     let sessionExists = !!data.session
 
     if (!sessionExists) {
+      // Email confirmation is on — sign in to get a session so RLS allows the insert
       const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({ email: fakeEmail, password })
       if (signInErr) {
         setError('Account created but could not sign in automatically. Try logging in manually.')
@@ -60,8 +66,10 @@ export function useAuth() {
       userId = signInData.user.id
     }
 
+    // Now insert profile with active session
     const { error: profErr } = await supabase.from('profiles').insert({ id: userId, callsign: trimmed })
     if (profErr) {
+      // Profile insert failed — clean up the auth user to avoid orphaned accounts
       setError(`Profile save failed: ${profErr.message}`)
       return false
     }
@@ -75,6 +83,7 @@ export function useAuth() {
     const trimmed = callsign.trim()
     if (!trimmed || !password) { setError('Enter your callsign and password'); return false }
 
+    // Look up profile to confirm callsign exists
     const { data: prof } = await supabase.from('profiles').select('id, callsign').eq('callsign', trimmed).maybeSingle()
     if (!prof) { setError('Callsign not found'); return false }
 

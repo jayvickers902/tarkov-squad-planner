@@ -8,8 +8,17 @@ import MyQuests from './components/MyQuests'
 import Room from './components/Room'
 
 export default function App() {
-  const { user, profile, loading: authLoading, error: authError, setError: setAuthError, register, login, logout } = useAuth()
-  const { quests: userQuests, loading: questsLoading, addQuest, removeQuest, toggleImportant, questsForMap } = useUserQuests(user?.id)
+  const {
+    user, profile, loading: authLoading,
+    error: authError, setError: setAuthError,
+    register, login, logout,
+  } = useAuth()
+
+  const {
+    quests: userQuests, loading: questsLoading,
+    addQuest: saveQuest, removeQuest: removeSavedQuest,
+    toggleImportant,
+  } = useUserQuests(user?.id)
 
   const {
     party, myName, error: partyError, loading: partyLoading,
@@ -19,9 +28,8 @@ export default function App() {
     leaveParty, setError: setPartyError,
   } = useParty()
 
-  const [screen, setScreen] = useState('lobby') // 'lobby' | 'myquests'
+  const [screen, setScreen] = useState('lobby')
 
-  // Still loading auth session
   if (authLoading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -30,7 +38,6 @@ export default function App() {
     )
   }
 
-  // Not logged in — show auth screen
   if (!user || !profile) {
     async function handleAuth(mode, callsign, password) {
       if (mode === 'register') return await register(callsign, password)
@@ -39,44 +46,59 @@ export default function App() {
     return <AuthScreen onAuth={handleAuth} error={authError} setError={setAuthError} />
   }
 
-  // In a party — show the raid room
   if (party) {
+    // When a quest is added in the party, also save it to the user's personal list
+    async function handleAddPartyQuest(quest) {
+      addPartyQuest(quest)
+      // Auto-save to My Quests tagged with the current map
+      await saveQuest({ id: quest.id, name: quest.name }, party.map_norm || null)
+    }
+
+    // Star can only be toggled by someone who owns the quest
+    function handleToggleStar(taskId) {
+      const myQuests = party.members?.[myName] || []
+      const iOwn = myQuests.find(q => q.id === taskId)
+      if (!iOwn) return  // silently ignore — UI should hide the button anyway
+      toggleStar(taskId)
+    }
+
+    // Objectives can only be toggled by the party leader
+    function handleToggleObjective(key) {
+      if (party.leader !== myName) return
+      toggleObjective(key)
+    }
+
     return (
       <Room
-        party={party} myName={myName}
+        party={party}
+        myName={myName}
         onLeave={leaveParty}
         onSelectMap={selectMap}
-        onAddQuest={addPartyQuest} onRemoveQuest={removePartyQuest}
+        onAddQuest={handleAddPartyQuest}
+        onRemoveQuest={removePartyQuest}
         onSetSpawn={setSpawn}
-        onToggleObjective={toggleObjective}
-        onToggleStar={toggleStar}
+        onToggleObjective={handleToggleObjective}
+        onToggleStar={handleToggleStar}
       />
     )
   }
 
-  // Managing saved quests
   if (screen === 'myquests') {
     return (
       <MyQuests
         userQuests={userQuests}
-        onAdd={addQuest}
-        onRemove={removeQuest}
+        onAdd={saveQuest}
+        onRemove={removeSavedQuest}
         onToggleImportant={toggleImportant}
         onDone={() => setScreen('lobby')}
       />
     )
   }
 
-  // Lobby
   async function handleEnter(mode, code) {
-    // Get all saved quests (any map) to populate party
     const savedQuests = userQuests
-
-    if (mode === 'create') {
-      await createParty(profile.callsign, savedQuests)
-    } else {
-      await joinParty(code, profile.callsign, savedQuests)
-    }
+    if (mode === 'create') await createParty(profile.callsign, savedQuests)
+    else await joinParty(code, profile.callsign, savedQuests)
   }
 
   return (
