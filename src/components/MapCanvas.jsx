@@ -146,25 +146,24 @@ export default function MapCanvas({ mapNorm, mapName, drawings = [], myName, mem
           : <div style={{ width: '100%', paddingBottom: '66%', background: 'var(--sur)' }} />
         }
         {/* Key location markers */}
-        {locatedKeys.length > 0 && (
-          <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 2 }}
-            viewBox="0 0 100 100" preserveAspectRatio="none">
-            {locatedKeys.map(([keyName, v]) => {
-              const px = v.loc_x * 100
-              const py = v.loc_y * 100
-              const isPri = v.priority
-              return (
-                <g key={keyName} style={{ cursor: 'default', pointerEvents: 'all' }}
-                  onMouseEnter={() => setHovKey(keyName)}
-                  onMouseLeave={() => setHovKey(null)}>
-                  <circle cx={px} cy={py} r="2.5" fill="transparent" />
-                  <circle cx={px} cy={py} r="1.8" fill="rgba(0,0,0,0.55)" />
-                  <circle cx={px} cy={py} r="1.4" fill={isPri ? '#c9a84c' : '#6a9aaa'} />
-                </g>
-              )
-            })}
-          </svg>
-        )}
+        {locatedKeys.map(([keyName, v]) => (
+          <div key={keyName}
+            onMouseEnter={() => setHovKey(keyName)}
+            onMouseLeave={() => setHovKey(null)}
+            style={{
+              position: 'absolute',
+              left: `${v.loc_x * 100}%`,
+              top: `${v.loc_y * 100}%`,
+              transform: 'translate(-50%, -50%)',
+              zIndex: 2,
+              cursor: 'default',
+              filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.8))',
+            }}>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill={v.priority ? '#c9a84c' : '#6a9aaa'}>
+              <path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>
+            </svg>
+          </div>
+        ))}
 
         {/* Hover tooltip for hovered key */}
         {hovKey && (

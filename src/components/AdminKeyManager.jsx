@@ -188,20 +188,20 @@ export default function AdminKeyManager({ onBack }) {
             }
 
             {/* Existing location markers */}
-            <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
-              viewBox="0 0 100 100" preserveAspectRatio="none">
-              {located.map(([keyName, v]) => {
-                const px = v.loc_x * 100
-                const py = v.loc_y * 100
-                const isPri = v.priority
-                return (
-                  <g key={keyName}>
-                    <circle cx={px} cy={py} r="1.5" fill="rgba(0,0,0,0.6)" />
-                    <circle cx={px} cy={py} r="1.2" fill={isPri ? '#c9a84c' : '#6a9aaa'} />
-                  </g>
-                )
-              })}
-            </svg>
+            {located.map(([keyName, v]) => (
+              <div key={keyName} style={{
+                position: 'absolute',
+                left: `${v.loc_x * 100}%`,
+                top: `${v.loc_y * 100}%`,
+                transform: 'translate(-50%, -50%)',
+                pointerEvents: 'none',
+                filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.8))',
+              }}>
+                <svg width="9" height="9" viewBox="0 0 24 24" fill={v.priority ? '#c9a84c' : '#6a9aaa'}>
+                  <path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>
+                </svg>
+              </div>
+            ))}
           </div>
 
           <div className="mono" style={{ marginTop: 8, fontSize: 10, color: 'var(--txd)' }}>
