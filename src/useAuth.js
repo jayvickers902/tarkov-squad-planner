@@ -41,7 +41,7 @@ export function useAuth() {
     if (existing) { setError('That callsign is already taken'); return false }
 
     // Supabase Auth requires an email — we use a fake internal one
-    const fakeEmail = `${trimmed.toLowerCase().replace(/[^a-z0-9]/g, '')}@squadplanner.internal`
+const fakeEmail = `sq.${trimmed.toLowerCase().replace(/[^a-z0-9]/g, '')}.${trimmed.length}@gmail.com`
 
     const { data, error: signUpErr } = await supabase.auth.signUp({ email: fakeEmail, password })
     if (signUpErr) { setError(signUpErr.message); return false }
@@ -63,7 +63,7 @@ export function useAuth() {
     const { data: prof } = await supabase.from('profiles').select('id, callsign').eq('callsign', trimmed).maybeSingle()
     if (!prof) { setError('Callsign not found'); return false }
 
-    const fakeEmail = `${trimmed.toLowerCase().replace(/[^a-z0-9]/g, '')}@squadplanner.internal`
+const fakeEmail = `sq.${trimmed.toLowerCase().replace(/[^a-z0-9]/g, '')}.${trimmed.length}@gmail.com`
     const { error: signInErr } = await supabase.auth.signInWithPassword({ email: fakeEmail, password })
     if (signInErr) { setError('Incorrect password'); return false }
 
