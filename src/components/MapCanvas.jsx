@@ -1,5 +1,8 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback, useState } from 'react'
 import { MAP_IMAGES } from '../constants'
+import { useMapKeys } from '../useMapKeys'
+
+
 
 const USER_COLORS = ['#e85d5d', '#5db8e8', '#5de87a', '#f5a623', '#c45de8', '#5de8d4', '#e8e85d', '#e85da8']
 
@@ -30,6 +33,10 @@ export default function MapCanvas({ mapNorm, mapName, drawings = [], myName, mem
   const canvasRef   = useRef(null)
   const drawingRef  = useRef(false)
   const strokeRef   = useRef([])
+  const [hovKey, setHovKey] = useState(null)
+
+  const { mapKeys } = useMapKeys(mapNorm)
+  const locatedKeys = Object.entries(mapKeys).filter(([, v]) => v.loc_x != null && v.loc_y != null)
   // Keep latest drawings/members in refs so resize handler can access them
   const drawingsRef    = useRef(drawings)
   const memberNamesRef = useRef(memberNames)
@@ -138,6 +145,40 @@ export default function MapCanvas({ mapNorm, mapName, drawings = [], myName, mem
               style={{ width: '100%', display: 'block', userSelect: 'none' }} />
           : <div style={{ width: '100%', paddingBottom: '66%', background: 'var(--sur)' }} />
         }
+        {/* Key location markers */}
+        {locatedKeys.length > 0 && (
+          <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 2 }}
+            viewBox="0 0 100 100" preserveAspectRatio="none">
+            {locatedKeys.map(([keyName, v]) => {
+              const px = v.loc_x * 100
+              const py = v.loc_y * 100
+              const isPri = v.priority
+              return (
+                <g key={keyName} style={{ cursor: 'default', pointerEvents: 'all' }}
+                  onMouseEnter={() => setHovKey(keyName)}
+                  onMouseLeave={() => setHovKey(null)}>
+                  <circle cx={px} cy={py} r="2.5" fill="transparent" />
+                  <circle cx={px} cy={py} r="1.8" fill="rgba(0,0,0,0.55)" />
+                  <circle cx={px} cy={py} r="1.4" fill={isPri ? '#c9a84c' : '#6a9aaa'} />
+                </g>
+              )
+            })}
+          </svg>
+        )}
+
+        {/* Hover tooltip for hovered key */}
+        {hovKey && (
+          <div style={{
+            position: 'absolute', bottom: 8, left: 8,
+            background: 'rgba(6,16,10,0.95)', border: '1px solid var(--brd2)',
+            borderRadius: 4, padding: '5px 10px', fontSize: 12,
+            pointerEvents: 'none', zIndex: 3,
+          }}>
+            <span className="mono" style={{ color: 'var(--gold)' }}>🔑</span>{' '}
+            <span style={{ color: 'var(--tx)' }}>{hovKey}</span>
+          </div>
+        )}
+
         <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}
@@ -156,6 +197,7 @@ export default function MapCanvas({ mapNorm, mapName, drawings = [], myName, mem
       <div className="mono" style={{ marginTop: 8, fontSize: 10, color: 'var(--txd)', textAlign: 'center' }}>
         YOUR COLOR: <span style={{ color: myColor }}>■</span>&nbsp;
         DRAW ROUTES — VISIBLE TO ALL PARTY MEMBERS IN REAL TIME
+        {locatedKeys.length > 0 && <> — <span style={{ color: 'var(--gold)' }}>●</span> KEY LOCATIONS</>}
       </div>
     </div>
   )

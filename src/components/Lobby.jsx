@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, error, loading }) {
+export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onAdmin, isAdmin, error, loading }) {
   const [mode, setMode]   = useState('home')
   const [code, setCode]   = useState('')
   const [local, setLocal] = useState('')
@@ -47,6 +47,11 @@ export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, err
             <button className="btn-ghost" style={{ padding: '14px 24px', fontSize: 16, color: 'var(--gold)', borderColor: 'var(--golddim)' }} onClick={onManageQuests}>
               ★ MY SAVED QUESTS
             </button>
+            {isAdmin && (
+              <button className="btn-ghost" style={{ padding: '14px 24px', fontSize: 16, color: 'var(--txm)' }} onClick={onAdmin}>
+                ⚙ KEY ADMIN
+              </button>
+            )}
           </div>
         )}
 

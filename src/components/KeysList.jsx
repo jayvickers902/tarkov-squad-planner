@@ -1,4 +1,5 @@
 import { useKeys } from '../useTarkov'
+import { useMapKeys } from '../useMapKeys'
 
 const FMT = new Intl.NumberFormat('en-US')
 
@@ -8,6 +9,16 @@ function Spin() {
 
 export default function KeysList({ mapNorm }) {
   const { keys, loading } = useKeys(mapNorm)
+  const { mapKeys } = useMapKeys(mapNorm)
+
+  // Merge DB priority data; fall back to the priority flag set by useTarkov
+  const mergedKeys = keys.map(k => {
+    const db = mapKeys[k.name]
+    return { ...k, priority: db ? db.priority : k.priority }
+  }).sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority ? -1 : 1
+    return (b.avg24hPrice || b.lastLowPrice || 0) - (a.avg24hPrice || a.lastLowPrice || 0)
+  })
 
   if (loading) {
     return (
@@ -18,7 +29,7 @@ export default function KeysList({ mapNorm }) {
     )
   }
 
-  if (!keys.length) {
+  if (!mergedKeys.length) {
     return (
       <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', padding: '32px 0', textAlign: 'center' }}>
         NO KEY DATA FOR THIS MAP
@@ -29,10 +40,10 @@ export default function KeysList({ mapNorm }) {
   return (
     <div>
       <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginBottom: 12, letterSpacing: '.04em' }}>
-        {keys.length} KEYS — PRIORITY KEYS FIRST — CLICK NAME TO VIEW LOOT ON WIKI
+        {mergedKeys.length} KEYS — PRIORITY KEYS FIRST — CLICK NAME TO VIEW LOOT ON WIKI
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        {keys.map(k => {
+        {mergedKeys.map(k => {
           const price = k.avg24hPrice || k.lastLowPrice || 0
 
           return (

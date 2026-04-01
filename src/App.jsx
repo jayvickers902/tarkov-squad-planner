@@ -6,6 +6,9 @@ import AuthScreen from './components/AuthScreen'
 import Lobby from './components/Lobby'
 import MyQuests from './components/MyQuests'
 import Room from './components/Room'
+import AdminKeyManager from './components/AdminKeyManager'
+
+const ADMIN_USER_ID = '8134ec3a-aff3-4610-b03e-9977bb841e57'
 
 export default function App() {
   const {
@@ -29,8 +32,10 @@ export default function App() {
     leaveParty, setError: setPartyError,
   } = useParty()
 
-  const [screen, setScreen] = useState('lobby')       // 'lobby' | 'myquests'
+  const [screen, setScreen] = useState('lobby')       // 'lobby' | 'myquests' | 'admin'
   const [partyScreen, setPartyScreen] = useState('room') // 'room' | 'myquests'
+
+  const isAdmin = user?.id === ADMIN_USER_ID
 
   if (authLoading) {
     return (
@@ -110,6 +115,10 @@ export default function App() {
     )
   }
 
+  if (screen === 'admin' && isAdmin) {
+    return <AdminKeyManager onBack={() => setScreen('lobby')} />
+  }
+
   async function handleEnter(mode, code) {
     const savedQuests = userQuests
     if (mode === 'create') await createParty(profile.callsign, savedQuests)
@@ -122,6 +131,8 @@ export default function App() {
       onEnter={handleEnter}
       onManageQuests={() => setScreen('myquests')}
       onLogout={logout}
+      onAdmin={() => setScreen('admin')}
+      isAdmin={isAdmin}
       error={partyError}
       loading={partyLoading}
     />
