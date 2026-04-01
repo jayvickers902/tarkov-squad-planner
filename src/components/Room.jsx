@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useMaps, useTasks } from '../useTarkov'
+import { RED_REBEL_MAPS } from '../constants'
 import QuestSearch from './QuestSearch'
 import TodoList from './TodoList'
 import MapOverlay from './MapOverlay'
+import KeysList from './KeysList'
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
@@ -132,16 +134,30 @@ export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, 
             {loadingMaps
               ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAPS...</span></div>
               : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                  {maps.map(m => (
-                    <button key={m.id}
-                      onClick={() => isLeader && onSelectMap(m)}
-                      className={party.map_id === m.id ? 'btn-gold' : 'btn-ghost'}
-                      style={{ padding: '7px 12px', fontSize: 13, opacity: isLeader ? 1 : .7, cursor: isLeader ? 'pointer' : 'default' }}>
-                      {m.name.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                    {maps.map(m => (
+                      <button key={m.id}
+                        onClick={() => isLeader && onSelectMap(m)}
+                        className={party.map_id === m.id ? 'btn-gold' : 'btn-ghost'}
+                        style={{ padding: '7px 12px', fontSize: 13, opacity: isLeader ? 1 : .7, cursor: isLeader ? 'pointer' : 'default' }}>
+                        {m.name.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  {party.map_norm && RED_REBEL_MAPS.has(party.map_norm) && (
+                    <div style={{
+                      marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--brd)',
+                      display: 'flex', alignItems: 'center', gap: 8,
+                    }}>
+                      <span style={{ fontSize: 16 }}>⛏</span>
+                      <span style={{ fontSize: 16 }}>🪢</span>
+                      <span className="mono" style={{ fontSize: 11, color: 'var(--goldtx)', letterSpacing: '.04em' }}>
+                        CLIFF DESCENT AVAILABLE — BRING RED REBEL ICE PICK + PARACORD
+                      </span>
+                    </div>
+                  )}
+                </>
               )
             }
           </div>
@@ -150,7 +166,7 @@ export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, 
             <>
               {/* Tabs */}
               <div style={{ display: 'flex', borderBottom: '1px solid var(--brd)' }}>
-                {[['quests', 'QUESTS'], ['todo', 'TODO LIST'], ['map', 'MAP / ROUTE']].map(([id, lbl]) => (
+                {[['quests', 'QUESTS'], ['todo', 'TODO LIST'], ['map', 'MAP / ROUTE'], ['keys', 'KEYS']].map(([id, lbl]) => (
                   <button key={id} onClick={() => setTab(id)} style={{
                     background: 'none', border: 'none',
                     borderBottom: `2px solid ${tab === id ? 'var(--gold)' : 'transparent'}`,
@@ -196,6 +212,12 @@ export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, 
                         isLeader={isLeader}
                       />
                   }
+                </div>
+              )}
+
+              {tab === 'keys' && (
+                <div className="card fade-in" style={{ padding: 16 }}>
+                  <KeysList mapNorm={party.map_norm} />
                 </div>
               )}
 

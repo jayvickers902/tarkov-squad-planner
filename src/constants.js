@@ -5,6 +5,9 @@ export const FEATURED = [
   'lighthouse','streets-of-tarkov','reserve','ground-zero','the-lab'
 ]
 
+// Maps where Cliff Descent extract is available (requires Red Rebel Ice Pick + Paracord)
+export const RED_REBEL_MAPS = new Set(['woods', 'shoreline', 'lighthouse', 'reserve'])
+
 // Map image URLs from tarkov.dev assets (works when hosted outside sandbox)
 export const MAP_IMAGES = {
   'customs':             'https://assets.tarkov.dev/maps/customs-2d.jpg',

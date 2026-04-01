@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ items\\(types: [keys], limit: 5\\) { id name avg24hPrice properties { __typename ... on ItemPropertiesKey { uses } } } }\"}')",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ maps\\(lang: en\\) { id normalizedName name } }\"}')",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ maps\\(lang: en\\) { id normalizedName name lootContainers } }\"}')",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ items\\(types: [keys]\\) { id name containerProperties { map } } }\"}')",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ items\\(types: [keys], limit: 10\\) { id name } }\"}')",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ __type\\(name: \\\\\"LootContainerPosition\\\\\"\\) { fields { name type { name kind } } } }\"}')",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ __type\\(name: \\\\\"ItemPropertiesKey\\\\\"\\) { fields { name type { name kind } } } }\"}')",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ __type\\(name: \\\\\"LootContainer\\\\\"\\) { fields { name type { name kind } } } }\"}')",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ items\\(types: [keys], limit: 1\\) { id name tarkovDataId description } }\"}')"
+    ]
+  }
+}
