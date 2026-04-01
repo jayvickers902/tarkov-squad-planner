@@ -29,7 +29,7 @@ export default function KeysList({ mapNorm }) {
   return (
     <div>
       <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginBottom: 12, letterSpacing: '.04em' }}>
-        {keys.length} KEYS — SORTED BY FLEA PRICE — CLICK NAME TO VIEW LOOT ON WIKI
+        {keys.length} KEYS — PRIORITY KEYS FIRST — CLICK NAME TO VIEW LOOT ON WIKI
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {keys.map(k => {
@@ -39,8 +39,8 @@ export default function KeysList({ mapNorm }) {
             <div key={k.id} style={{
               display: 'flex', alignItems: 'center', gap: 10,
               padding: '7px 10px',
-              background: 'var(--sur2)',
-              border: '1px solid var(--brd)',
+              background: k.priority ? 'var(--sur3, var(--sur2))' : 'var(--sur2)',
+              border: `1px solid ${k.priority ? 'var(--gold)' : 'var(--brd)'}`,
               borderRadius: 4,
             }}>
               <div style={{ flex: 1, minWidth: 0 }}>

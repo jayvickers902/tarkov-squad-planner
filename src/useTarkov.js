@@ -4,6 +4,24 @@ import { TARKOV_API, FEATURED } from './constants'
 const MAPS_QUERY = `{ maps { id name normalizedName } }`
 const KEYS_QUERY = `{ items(types: [keys]) { id name avg24hPrice lastLowPrice wikiLink } }`
 
+// Known high-value keys per map — used to sort/badge priority keys to the top
+const PRIORITY_KEYS = {
+  'customs':           ['Dorm room 314 marked', 'Dorm room 204', 'Dorm room 214', 'Dorm room 114', 'Dorm room 203', 'Dorm room 206', 'Dorm room 218', 'Dorm room 110'],
+  'woods':             ['Shturman\'s stash', 'ZB-014', 'Object #11SR'],
+  'interchange':       ['Kiba Arms outer', 'Kiba Arms inner', 'ULTRA medical storage', 'NecrusPharm', 'Object #21WS', 'Object #11SR'],
+  'shoreline':         ['Health Resort east wing room 226', 'Health Resort west wing room 203', 'Health Resort east wing room 222', 'Health Resort east wing room 310', 'Health Resort west wing room 220'],
+  'factory':           ['Abandoned factory marked', 'Factory emergency exit', 'Machinery key'],
+  'lighthouse':        ['Shared bedroom marked', 'Water treatment plant storage', 'USEC cottage first', 'USEC cottage second'],
+  'streets-of-tarkov': ['Chekannaya 15', 'Zmeisky 5', 'Concordia apartment 64', 'TerraGroup corporate apartment'],
+  'reserve':           ['RB-PSP1', 'RB-PSP2', 'RB-KPRL', 'RB-VO marked', 'RB-AO', 'RB-SMP'],
+  'ground-zero':       [],
+  'the-lab':           ['TerraGroup Labs keycard (Violet)', 'TerraGroup Labs keycard (Black)', 'TerraGroup Labs keycard (Yellow)', 'TerraGroup Labs arsenal storage'],
+}
+
+function isPriority(name, mapNorm) {
+  return (PRIORITY_KEYS[mapNorm] || []).some(p => name.toLowerCase().includes(p.toLowerCase()))
+}
+
 // Name-based map assignment — tarkov.dev doesn't expose map on key items
 const KEY_MAP_PATTERNS = [
   ['the-lab',           [/keycard/i, /terragroup\s+labs/i]],
@@ -90,7 +108,11 @@ export function useKeys(mapNorm) {
     if (!mapNorm || !allKeys.length) return []
     return allKeys
       .filter(k => keyToMap(k.name) === mapNorm)
-      .sort((a, b) => (b.avg24hPrice || b.lastLowPrice || 0) - (a.avg24hPrice || a.lastLowPrice || 0))
+      .map(k => ({ ...k, priority: isPriority(k.name, mapNorm) }))
+      .sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority ? -1 : 1
+        return (b.avg24hPrice || b.lastLowPrice || 0) - (a.avg24hPrice || a.lastLowPrice || 0)
+      })
   }, [allKeys, mapNorm])
 
   return { keys, loading }

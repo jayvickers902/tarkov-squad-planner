@@ -36,6 +36,7 @@ export default function MapCanvas({ mapNorm, mapName, drawings = [], myName, mem
   useEffect(() => { drawingsRef.current = drawings; memberNamesRef.current = memberNames }, [drawings, memberNames])
 
   // Sync canvas internal resolution to its CSS display size, redraw on resize
+  const syncRef = useRef(null)
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -43,12 +44,13 @@ export default function MapCanvas({ mapNorm, mapName, drawings = [], myName, mem
       const rect = canvas.getBoundingClientRect()
       const w = Math.round(rect.width)
       const h = Math.round(rect.height)
-      if (canvas.width !== w || canvas.height !== h) {
+      if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
         canvas.width  = w
         canvas.height = h
         drawAllStrokes(canvas, drawingsRef.current, memberNamesRef.current)
       }
     }
+    syncRef.current = sync
     sync()
     window.addEventListener('resize', sync)
     return () => window.removeEventListener('resize', sync)
@@ -132,6 +134,7 @@ export default function MapCanvas({ mapNorm, mapName, drawings = [], myName, mem
       <div style={{ position: 'relative', width: '100%', lineHeight: 0, borderRadius: 4, overflow: 'hidden' }}>
         {imgSrc
           ? <img src={imgSrc} alt={mapName} draggable={false}
+              onLoad={() => syncRef.current?.()}
               style={{ width: '100%', display: 'block', userSelect: 'none' }} />
           : <div style={{ width: '100%', paddingBottom: '66%', background: 'var(--sur)' }} />
         }
