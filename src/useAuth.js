@@ -2,12 +2,11 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 
 export function useAuth() {
-  const [user, setUser]         = useState(null)
-  const [profile, setProfile]   = useState(null)
-  const [loading, setLoading]   = useState(true)
-  const [error, setError]       = useState('')
+  const [user, setUser]       = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState('')
 
-  // On mount, restore existing session
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
@@ -30,27 +29,44 @@ export function useAuth() {
     setLoading(false)
   }
 
+  function makeEmail(callsign) {
+    return `sq.${callsign.toLowerCase().replace(/[^a-z0-9]/g, '')}.${callsign.length}@gmail.com`
+  }
+
   async function register(callsign, password) {
     setError('')
     const trimmed = callsign.trim()
     if (!trimmed) { setError('Enter a callsign'); return false }
     if (password.length < 6) { setError('Password must be at least 6 characters'); return false }
 
-    // Check callsign isn't taken
     const { data: existing } = await supabase.from('profiles').select('id').eq('callsign', trimmed).maybeSingle()
     if (existing) { setError('That callsign is already taken'); return false }
 
-    // Supabase Auth requires an email — we use a fake internal one
-const fakeEmail = `sq.${trimmed.toLowerCase().replace(/[^a-z0-9]/g, '')}.${trimmed.length}@gmail.com`
+    const fakeEmail = makeEmail(trimmed)
 
     const { data, error: signUpErr } = await supabase.auth.signUp({ email: fakeEmail, password })
     if (signUpErr) { setError(signUpErr.message); return false }
+    if (!data.user) { setError('Signup failed — try again'); return false }
 
-    // Create profile row
-    const { error: profErr } = await supabase.from('profiles').insert({ id: data.user.id, callsign: trimmed })
-    if (profErr) { setError('Account created but profile save failed — try logging in'); return false }
+    let userId = data.user.id
+    let sessionExists = !!data.session
 
-    setProfile({ id: data.user.id, callsign: trimmed })
+    if (!sessionExists) {
+      const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({ email: fakeEmail, password })
+      if (signInErr) {
+        setError('Account created but could not sign in automatically. Try logging in manually.')
+        return false
+      }
+      userId = signInData.user.id
+    }
+
+    const { error: profErr } = await supabase.from('profiles').insert({ id: userId, callsign: trimmed })
+    if (profErr) {
+      setError(`Profile save failed: ${profErr.message}`)
+      return false
+    }
+
+    setProfile({ id: userId, callsign: trimmed })
     return true
   }
 
@@ -59,11 +75,10 @@ const fakeEmail = `sq.${trimmed.toLowerCase().replace(/[^a-z0-9]/g, '')}.${trimm
     const trimmed = callsign.trim()
     if (!trimmed || !password) { setError('Enter your callsign and password'); return false }
 
-    // Look up the fake email from the callsign
     const { data: prof } = await supabase.from('profiles').select('id, callsign').eq('callsign', trimmed).maybeSingle()
     if (!prof) { setError('Callsign not found'); return false }
 
-const fakeEmail = `sq.${trimmed.toLowerCase().replace(/[^a-z0-9]/g, '')}.${trimmed.length}@gmail.com`
+    const fakeEmail = makeEmail(trimmed)
     const { error: signInErr } = await supabase.auth.signInWithPassword({ email: fakeEmail, password })
     if (signInErr) { setError('Incorrect password'); return false }
 
