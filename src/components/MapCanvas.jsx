@@ -145,6 +145,7 @@ export default function MapCanvas({ mapNorm, mapName, drawings = [], myName, mem
             position: 'absolute', inset: 0,
             width: '100%', height: '100%',
             cursor: 'crosshair',
+            zIndex: 1,
           }}
         />
       </div>

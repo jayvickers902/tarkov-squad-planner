@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { TARKOV_API, FEATURED } from './constants'
 
 const MAPS_QUERY = `{ maps { id name normalizedName } }`
-const KEYS_QUERY = `{ items(types: [key]) { id name avg24hPrice lastLowPrice wikiLink } }`
+const KEYS_QUERY = `{ items(types: [keys]) { id name avg24hPrice lastLowPrice wikiLink } }`
 
 // Name-based map assignment — tarkov.dev doesn't expose map on key items
 const KEY_MAP_PATTERNS = [
