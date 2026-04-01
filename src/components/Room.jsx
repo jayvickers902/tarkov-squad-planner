@@ -8,7 +8,7 @@ function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
 }
 
-export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar }) {
+export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onMyQuests }) {
   const [tab, setTab]     = useState('quests')
   const [copied, setCopied] = useState(false)
 
@@ -39,11 +39,16 @@ export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, 
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button className="btn-ghost btn-sm" onClick={onMyQuests}
+            style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>
+            ★ MY QUESTS
+          </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, padding: '5px 10px' }}>
             <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>PARTY</span>
             <span className="mono" style={{ fontSize: 17, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
             <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
           </div>
+          <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ MY QUESTS</button>
           <button className="btn-danger btn-sm" onClick={onLeave}>LEAVE</button>
         </div>
       </div>

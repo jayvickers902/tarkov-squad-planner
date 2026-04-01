@@ -16,6 +16,7 @@ export function useParty() {
   const [error, setError]     = useState('')
   const [loading, setLoading] = useState(false)
   const codeRef = useRef(null)
+  const savedQuestsRef = useRef([])
 
   useEffect(() => {
     if (!codeRef.current) return
@@ -38,10 +39,13 @@ export function useParty() {
   // savedQuests = user's saved quests from useUserQuests
   const createParty = useCallback(async (name, savedQuests = []) => {
     setLoading(true); setError('')
+    savedQuestsRef.current = savedQuests
     const code = mkCode()
 
-    // Build initial members with saved quests pre-populated
-    const myQuests = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
+    // Only pre-populate "any map" quests (map_norm is null); map-specific quests load on map select
+    const myQuests = savedQuests
+      .filter(q => !q.map_norm)
+      .map(q => ({ id: q.quest_id, name: q.quest_name }))
 
     // Pre-star important quests
     const starred = {}
@@ -64,13 +68,16 @@ export function useParty() {
 
   const joinParty = useCallback(async (code, name, savedQuests = []) => {
     setLoading(true); setError('')
+    savedQuestsRef.current = savedQuests
     const { data, error: err } = await supabase.from('parties').select().eq('code', code).single()
     if (err || !data) { setError('Party not found — check the code.'); setLoading(false); return false }
 
     const members = { ...data.members }
-    // Merge saved quests in — don't overwrite quests already set in this party session
+    // Pre-populate "any map" quests + quests matching the party's current map
     const existing = members[name] || []
-    const saved = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
+    const saved = savedQuests
+      .filter(q => !q.map_norm || q.map_norm === data.map_norm)
+      .map(q => ({ id: q.quest_id, name: q.quest_name }))
     const merged = [...existing]
     saved.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
     members[name] = merged
@@ -94,8 +101,32 @@ export function useParty() {
   }, [])
 
   const selectMap = useCallback((map) => {
-    updateParty({ map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {} })
-  }, [updateParty])
+    setParty(prev => {
+      if (!prev) return prev
+      const members = { ...prev.members }
+      const mine = members[myName] || []
+
+      // Drop map-specific saved quests (they belong to a different map).
+      // Keep: manually-added quests (not in savedQuests) and any-map saved quests.
+      const kept = mine.filter(q => {
+        const saved = savedQuestsRef.current.find(sq => sq.quest_id === q.id)
+        if (!saved) return true        // manually added during party — keep
+        return !saved.map_norm         // any-map saved quest — keep; map-specific — drop
+      })
+
+      // Add saved quests for the new map
+      const newMapQuests = savedQuestsRef.current
+        .filter(q => q.map_norm === map.normalizedName)
+        .map(q => ({ id: q.quest_id, name: q.quest_name }))
+      const merged = [...kept]
+      newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
+      members[myName] = merged
+
+      const changes = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, members }
+      updateParty(changes)
+      return { ...prev, ...changes }
+    })
+  }, [myName, updateParty])
 
   const addQuest = useCallback((quest) => {
     setParty(prev => {

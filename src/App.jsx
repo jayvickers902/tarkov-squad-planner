@@ -28,7 +28,8 @@ export default function App() {
     leaveParty, setError: setPartyError,
   } = useParty()
 
-  const [screen, setScreen] = useState('lobby')
+  const [screen, setScreen] = useState('lobby')       // 'lobby' | 'myquests'
+  const [partyScreen, setPartyScreen] = useState('room') // 'room' | 'myquests'
 
   if (authLoading) {
     return (
@@ -47,25 +48,35 @@ export default function App() {
   }
 
   if (party) {
-    // When a quest is added in the party, also save it to the user's personal list
     async function handleAddPartyQuest(quest) {
       addPartyQuest(quest)
-      // Auto-save to My Quests tagged with the current map
       await saveQuest({ id: quest.id, name: quest.name }, party.map_norm || null)
     }
 
-    // Star can only be toggled by someone who owns the quest
     function handleToggleStar(taskId) {
       const myQuests = party.members?.[myName] || []
       const iOwn = myQuests.find(q => q.id === taskId)
-      if (!iOwn) return  // silently ignore — UI should hide the button anyway
+      if (!iOwn) return
       toggleStar(taskId)
     }
 
-    // Objectives can only be toggled by the party leader
     function handleToggleObjective(key) {
       if (party.leader !== myName) return
       toggleObjective(key)
+    }
+
+    // My Quests while in party — back button returns to room
+    if (partyScreen === 'myquests') {
+      return (
+        <MyQuests
+          userQuests={userQuests}
+          onAdd={saveQuest}
+          onRemove={removeSavedQuest}
+          onToggleImportant={toggleImportant}
+          onDone={() => setPartyScreen('room')}
+          inParty
+        />
+      )
     }
 
     return (
@@ -79,6 +90,7 @@ export default function App() {
         onSetSpawn={setSpawn}
         onToggleObjective={handleToggleObjective}
         onToggleStar={handleToggleStar}
+        onMyQuests={() => setPartyScreen('myquests')}
       />
     )
   }

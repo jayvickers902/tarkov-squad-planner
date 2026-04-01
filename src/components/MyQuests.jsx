@@ -9,7 +9,7 @@ const MAP_NAMES = {
   'ground-zero': 'Ground Zero', 'the-lab': 'The Lab',
 }
 
-export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportant, onDone }) {
+export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportant, onDone, inParty }) {
   const [mapFilter, setMapFilter]   = useState('all')
   const [searchMap, setSearchMap]   = useState('any')
   const [searchQ, setSearchQ]       = useState('')
@@ -63,9 +63,21 @@ export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportan
           </div>
         </div>
         <button className="btn-ghost" onClick={onDone} style={{ fontSize: 13 }}>
-          ← BACK TO LOBBY
+          {inParty ? '← BACK TO PARTY' : '← BACK TO LOBBY'}
         </button>
       </div>
+
+      {/* In-party notice */}
+      {inParty && (
+        <div className="mono" style={{
+          marginBottom: 16, padding: '8px 12px',
+          background: 'var(--sur2)', border: '1px solid var(--golddim)',
+          borderLeft: '3px solid var(--gold)', borderRadius: 4,
+          fontSize: 11, color: 'var(--gold)', letterSpacing: '.04em',
+        }}>
+          ◆ YOUR PARTY IS STILL ACTIVE — CHANGES HERE WON'T AFFECT THE CURRENT RAID
+        </div>
+      )}
 
       {/* Add quest section */}
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
