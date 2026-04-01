@@ -58,6 +58,7 @@ export function useParty() {
       spawn: null,
       progress: {},
       starred,
+      drawings: [],
     }
     const { data, error: err } = await supabase.from('parties').insert(newParty).select().single()
     if (err) { setError('Failed to create party. Check your Supabase setup.'); setLoading(false); return false }
@@ -122,7 +123,7 @@ export function useParty() {
       newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
       members[myName] = merged
 
-      const changes = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, members }
+      const changes = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, drawings: [], members }
       updateParty(changes)
       return { ...prev, ...changes }
     })
@@ -172,6 +173,24 @@ export function useParty() {
     })
   }, [updateParty])
 
+  const addStroke = useCallback((stroke) => {
+    setParty(prev => {
+      if (!prev) return prev
+      const drawings = [...(prev.drawings || []), stroke]
+      updateParty({ drawings })
+      return { ...prev, drawings }
+    })
+  }, [updateParty])
+
+  const clearMyStrokes = useCallback(() => {
+    setParty(prev => {
+      if (!prev) return prev
+      const drawings = (prev.drawings || []).filter(s => s.user !== myName)
+      updateParty({ drawings })
+      return { ...prev, drawings }
+    })
+  }, [myName, updateParty])
+
   const leaveParty = useCallback(() => {
     codeRef.current = null
     setParty(null); setMyName(''); setError('')
@@ -182,6 +201,7 @@ export function useParty() {
     createParty, joinParty,
     selectMap, addQuest, removeQuest, setSpawn,
     toggleObjective, toggleStar,
+    addStroke, clearMyStrokes,
     leaveParty, setError,
   }
 }

@@ -34,8 +34,6 @@ export default function KeysList({ mapNorm }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {keys.map(k => {
           const price = k.avg24hPrice || k.lastLowPrice || 0
-          const uses = k.properties?.uses
-          const perUse = price && uses ? Math.round(price / uses) : null
 
           return (
             <div key={k.id} style={{
@@ -57,11 +55,6 @@ export default function KeysList({ mapNorm }) {
                   : <span style={{ fontSize: 13, color: 'var(--tx)' }}>{k.name}</span>
                 }
               </div>
-              {perUse && (
-                <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                  ₽{FMT.format(perUse)}/use
-                </div>
-              )}
               <div className="mono" style={{
                 fontSize: 12,
                 color: price ? 'var(--goldtx)' : 'var(--txd)',

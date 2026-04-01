@@ -3,14 +3,14 @@ import { useMaps, useTasks } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
 import QuestSearch from './QuestSearch'
 import TodoList from './TodoList'
-import MapOverlay from './MapOverlay'
+import MapCanvas from './MapCanvas'
 import KeysList from './KeysList'
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
 }
 
-export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onMyQuests }) {
+export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onAddStroke, onClearMyStrokes, onMyQuests }) {
   const [tab, setTab]     = useState('quests')
   const [copied, setCopied] = useState(false)
 
@@ -223,10 +223,15 @@ export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, 
 
               {tab === 'map' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  <MapOverlay
-                    mapNorm={party.map_norm} mapName={party.map_name}
-                    tasks={tasks} memberQuests={party.members}
-                    spawn={party.spawn} onSetSpawn={onSetSpawn} isLeader={isLeader} />
+                  <MapCanvas
+                    mapNorm={party.map_norm}
+                    mapName={party.map_name}
+                    drawings={party.drawings || []}
+                    myName={myName}
+                    memberNames={members}
+                    onAddStroke={onAddStroke}
+                    onClearMyStrokes={onClearMyStrokes}
+                  />
                 </div>
               )}
             </>

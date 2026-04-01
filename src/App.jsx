@@ -25,6 +25,7 @@ export default function App() {
     createParty, joinParty,
     selectMap, addQuest: addPartyQuest, removeQuest: removePartyQuest, setSpawn,
     toggleObjective, toggleStar,
+    addStroke, clearMyStrokes,
     leaveParty, setError: setPartyError,
   } = useParty()
 
@@ -90,6 +91,8 @@ export default function App() {
         onSetSpawn={setSpawn}
         onToggleObjective={handleToggleObjective}
         onToggleStar={handleToggleStar}
+        onAddStroke={addStroke}
+        onClearMyStrokes={clearMyStrokes}
         onMyQuests={() => setPartyScreen('myquests')}
       />
     )
