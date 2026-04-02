@@ -225,6 +225,11 @@ export function useParty() {
     setParty(null); setMyName(''); setError('')
   }, [])
 
+  // Keep savedQuestsRef in sync — quests may finish loading after joinParty/createParty runs
+  const syncSavedQuests = useCallback((quests) => {
+    savedQuestsRef.current = quests
+  }, [])
+
   return {
     party, myName, error, loading,
     createParty, joinParty,
@@ -232,5 +237,6 @@ export function useParty() {
     toggleObjective, toggleStar,
     addStroke, clearMyStrokes,
     leaveParty, setError,
+    syncSavedQuests,
   }
 }

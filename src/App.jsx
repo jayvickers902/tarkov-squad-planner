@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from './useAuth'
 import { useParty } from './useParty'
 import { useUserQuests } from './useUserQuests'
@@ -30,7 +30,13 @@ export default function App() {
     toggleObjective, toggleStar,
     addStroke, clearMyStrokes,
     leaveParty, setError: setPartyError,
+    syncSavedQuests,
   } = useParty()
+
+  // Keep the party hook's savedQuestsRef in sync — quests may load after joining
+  useEffect(() => {
+    if (party) syncSavedQuests(userQuests)
+  }, [userQuests]) // eslint-disable-line
 
   const [screen, setScreen] = useState('lobby')       // 'lobby' | 'myquests' | 'admin'
   const [partyScreen, setPartyScreen] = useState('room') // 'room' | 'myquests'
