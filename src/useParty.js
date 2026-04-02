@@ -17,6 +17,7 @@ export function useParty() {
   const [loading, setLoading] = useState(false)
   const codeRef = useRef(null)
   const savedQuestsRef = useRef([])
+  const prevMapNormRef = useRef(null)
 
   useEffect(() => {
     if (!codeRef.current) return
@@ -35,6 +36,34 @@ export function useParty() {
 
     return () => { clearInterval(poll); supabase.removeChannel(channel) }
   }, [codeRef.current]) // eslint-disable-line
+
+  // When the leader switches maps, non-leaders must refresh their own quest list
+  // for the new map (leader handles it in selectMap; others watch for map_norm changes)
+  useEffect(() => {
+    if (!party || !myName || !party.map_norm) return
+    if (party.map_norm === prevMapNormRef.current) return
+    prevMapNormRef.current = party.map_norm
+    if (party.leader === myName) return  // leader already handled this in selectMap
+
+    const members = { ...party.members }
+    const mine = members[myName] || []
+
+    const kept = mine.filter(q => {
+      const saved = savedQuestsRef.current.find(sq => sq.quest_id === q.id)
+      if (!saved) return true       // manually added — keep
+      return !saved.map_norm        // any-map saved quest — keep; map-specific — drop
+    })
+
+    const newMapQuests = savedQuestsRef.current
+      .filter(q => q.map_norm === party.map_norm)
+      .map(q => ({ id: q.quest_id, name: q.quest_name }))
+    const merged = [...kept]
+    newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
+    members[myName] = merged
+
+    updateParty({ members })
+    setParty(prev => prev ? { ...prev, members } : prev)
+  }, [party?.map_norm, myName]) // eslint-disable-line
 
   // savedQuests = user's saved quests from useUserQuests
   const createParty = useCallback(async (name, savedQuests = []) => {

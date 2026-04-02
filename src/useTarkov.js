@@ -45,7 +45,7 @@ function keyToMap(name) {
 }
 
 let keysCache = null
-const TASKS_QUERY = `{ tasks { id name minPlayerLevel wikiLink trader { name } map { id normalizedName } objectives { id description type optional } } }`
+const TASKS_QUERY = `{ tasks { id name minPlayerLevel wikiLink trader { name } map { id normalizedName } objectives { id description type optional ... on TaskObjectiveItem { item { id name } count foundInRaid } } } }`
 
 export function useMaps() {
   const [maps, setMaps]       = useState([])

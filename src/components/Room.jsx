@@ -5,6 +5,7 @@ import QuestSearch from './QuestSearch'
 import TodoList from './TodoList'
 import MapCanvas from './MapCanvas'
 import KeysList from './KeysList'
+import RequiredItems from './RequiredItems'
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
@@ -166,7 +167,7 @@ export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, 
             <>
               {/* Tabs */}
               <div style={{ display: 'flex', borderBottom: '1px solid var(--brd)' }}>
-                {[['quests', 'QUESTS'], ['todo', 'TODO LIST'], ['map', 'MAP / ROUTE'], ['keys', 'KEYS']].map(([id, lbl]) => (
+                {[['quests', 'QUESTS'], ['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['map', 'MAP / ROUTE'], ['keys', 'KEYS']].map(([id, lbl]) => (
                   <button key={id} onClick={() => setTab(id)} style={{
                     background: 'none', border: 'none',
                     borderBottom: `2px solid ${tab === id ? 'var(--gold)' : 'transparent'}`,
@@ -211,6 +212,15 @@ export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, 
                         myName={myName}
                         isLeader={isLeader}
                       />
+                  }
+                </div>
+              )}
+
+              {tab === 'items' && (
+                <div className="card fade-in" style={{ padding: 16 }}>
+                  {loadingTasks
+                    ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
+                    : <RequiredItems tasks={tasks} memberQuests={party.members} />
                   }
                 </div>
               )}
