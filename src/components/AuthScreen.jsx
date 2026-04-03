@@ -49,8 +49,27 @@ export default function AuthScreen({ onAuth, onGoogleLogin, onCreateProfile, nee
   function reset() { setCallsign(''); setPassword(''); setConfirm(''); setLocal(''); setError(''); setMode('home') }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ width: '100%', maxWidth: 430 }}>
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+      position: 'relative',
+      backgroundImage: 'url(/splash.jpg)',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    }}>
+      {/* Vignette — fades all edges to --bg color */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: `
+          radial-gradient(ellipse at center, transparent 30%, rgba(12,14,13,0.6) 70%, rgba(12,14,13,0.97) 100%),
+          linear-gradient(to bottom, rgba(12,14,13,0.8) 0%, rgba(12,14,13,0.2) 40%, rgba(12,14,13,0.2) 60%, rgba(12,14,13,0.9) 100%)
+        `,
+        pointerEvents: 'none',
+      }} />
+      <div style={{ width: '100%', maxWidth: 430, position: 'relative', zIndex: 1 }}>
 
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
