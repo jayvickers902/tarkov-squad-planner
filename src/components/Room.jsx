@@ -22,8 +22,15 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
   const members  = Object.keys(party.members || {})
   const mine     = party.members?.[myName] || []
 
+  // Completed quests are stored in progress with __done__: prefix (no extra DB column needed)
+  const completedQuests = Object.fromEntries(
+    Object.entries(party.progress || {})
+      .filter(([k, v]) => k.startsWith('__done__:') && v)
+      .map(([k]) => [k.slice(9), true])
+  )
+
   function copy() {
-    navigator.clipboard?.writeText(party.code).catch(() => {})
+    navigator.clipboard?.writeText(`https://dudgy.net/join/${party.code}`).catch(() => {})
     setCopied(true); setTimeout(() => setCopied(false), 2000)
   }
 
@@ -186,7 +193,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
               {tab === 'quests' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
                   <div className="lbl">{myName.toUpperCase()} — YOUR ACTIVE QUESTS</div>
-                  <QuestSearch tasks={tasks} mine={mine} completedQuests={party.completed || {}} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} />
+                  <QuestSearch tasks={tasks} mine={mine} completedQuests={completedQuests} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} />
                   {members.filter(m => m !== myName).map(m => (
                     <div key={m} style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--brd)' }}>
                       <div className="lbl">{m.toUpperCase()} — QUESTS</div>
@@ -213,7 +220,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                         memberQuests={party.members}
                         progress={party.progress || {}}
                         starredQuests={party.starred || {}}
-                        completedQuests={party.completed || {}}
+                        completedQuests={completedQuests}
                         onToggleObjective={onToggleObjective}
                         onToggleStar={onToggleStar}
                         onToggleComplete={onToggleComplete}

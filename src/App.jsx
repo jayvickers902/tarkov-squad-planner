@@ -41,6 +41,21 @@ export default function App() {
   const [screen, setScreen] = useState('lobby')       // 'lobby' | 'myquests' | 'admin'
   const [partyScreen, setPartyScreen] = useState('room') // 'room' | 'myquests' | 'admin'
 
+  // Deep link: dudgy.net/join/XXXXXX → auto-join after login + quests load
+  const [pendingJoinCode] = useState(() => {
+    const m = window.location.pathname.match(/^\/join\/([A-Z0-9]{6})$/i)
+    return m ? m[1].toUpperCase() : null
+  })
+  const [autoJoinFired, setAutoJoinFired] = useState(false)
+
+  useEffect(() => {
+    if (!pendingJoinCode || autoJoinFired) return
+    if (!user || !profile || authLoading || questsLoading || partyLoading || party) return
+    setAutoJoinFired(true)
+    window.history.replaceState(null, '', '/')
+    joinParty(pendingJoinCode, profile.callsign, userQuests)
+  }, [user, profile, authLoading, questsLoading, partyLoading, party, pendingJoinCode, autoJoinFired]) // eslint-disable-line
+
   const isAdmin = user?.id === ADMIN_USER_ID
 
   if (authLoading) {
@@ -155,6 +170,7 @@ export default function App() {
       isAdmin={isAdmin}
       error={partyError}
       loading={partyLoading}
+      autoJoinCode={!autoJoinFired ? pendingJoinCode : null}
     />
   )
 }

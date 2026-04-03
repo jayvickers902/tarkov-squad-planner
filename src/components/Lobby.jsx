@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onAdmin, isAdmin, error, loading }) {
+export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onAdmin, isAdmin, error, loading, autoJoinCode }) {
   const [mode, setMode]   = useState('home')
   const [code, setCode]   = useState('')
   const [local, setLocal] = useState('')
@@ -36,7 +36,20 @@ export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onA
           </div>
         </div>
 
-        {mode === 'home' && (
+        {autoJoinCode && (
+          <div className="card fade-in" style={{ padding: 20, textAlign: 'center', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+              <div style={{ width: 16, height: 16, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
+              <div>
+                <div className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>JOINING PARTY</div>
+                <div className="mono" style={{ fontSize: 20, color: 'var(--gold)', letterSpacing: '0.2em', marginTop: 2 }}>{autoJoinCode}</div>
+              </div>
+            </div>
+            {error && <p className="mono" style={{ color: 'var(--red)', fontSize: 12, marginTop: 10 }}>⚠ {error}</p>}
+          </div>
+        )}
+
+        {mode === 'home' && !autoJoinCode && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }} className="fade-in">
             <button className="btn-gold" style={{ padding: '14px 24px', fontSize: 16 }} onClick={create}>
               CREATE PARTY

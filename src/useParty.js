@@ -152,7 +152,7 @@ export function useParty() {
       newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
       members[myName] = merged
 
-      const changes = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, completed: {}, drawings: [], members }
+      const changes = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, drawings: [], members }
       updateParty(changes)
       return { ...prev, ...changes }
     })
@@ -202,12 +202,15 @@ export function useParty() {
     })
   }, [updateParty])
 
+  // Completed quests are stored inside `progress` with a __done__: prefix
+  // so no extra DB column is needed.
   const toggleComplete = useCallback((questId) => {
     setParty(prev => {
       if (!prev) return prev
-      const completed = { ...(prev.completed || {}), [questId]: !prev.completed?.[questId] }
-      updateParty({ completed })
-      return { ...prev, completed }
+      const key = `__done__:${questId}`
+      const progress = { ...(prev.progress || {}), [key]: !prev.progress?.[key] }
+      updateParty({ progress })
+      return { ...prev, progress }
     })
   }, [updateParty])
 
