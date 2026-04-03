@@ -12,7 +12,7 @@ function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
 }
 
-export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onToggleComplete, onAddStroke, onClearMyStrokes, onMyQuests, onAdmin, friends = [], onAddFriend, onRemoveFriend, onRefreshFriends }) {
+export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onToggleComplete, onAddStroke, onClearMyStrokes, onMyQuests, onAdmin, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('quests')
   const [copied, setCopied]     = useState(false)
@@ -21,10 +21,10 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
   const [addError, setAddError] = useState('')
   const [addBusy, setAddBusy]   = useState(false)
 
-  async function handleAddFriend() {
+  async function handleSendRequest() {
     if (!addInput.trim()) return
     setAddBusy(true); setAddError('')
-    const err = await onAddFriend(addInput)
+    const err = await onSendRequest(addInput)
     if (err) setAddError(err)
     else setAddInput('')
     setAddBusy(false)
@@ -68,8 +68,9 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
             {!isMobile && (
               <>
                 <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ MY QUESTS</button>
-                <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}>
+                <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
+                  {pendingIn.length > 0 && <span className="mono" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)', color: 'var(--gold)' }}>{pendingIn.length}</span>}
                 </button>
                 {isAdmin && <button className="btn-ghost btn-sm" onClick={onAdmin} style={{ color: 'var(--txm)' }}>⚙</button>}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, padding: '5px 10px' }}>
@@ -106,8 +107,24 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
 
             {/* Friend list */}
             <div style={{ flex: '1 1 240px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+
+              {/* Incoming requests */}
+              {pendingIn.length > 0 && (
+                <>
+                  <div className="lbl" style={{ color: 'var(--gold)' }}>FRIEND REQUESTS ({pendingIn.length})</div>
+                  {pendingIn.map(r => (
+                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="mono" style={{ flex: 1, fontSize: 12, color: 'var(--tx)' }}>{r.callsign}</span>
+                      <button className="btn-gold btn-sm" style={{ fontSize: 11 }} onClick={() => onAcceptRequest(r.id)}>ACCEPT</button>
+                      <button className="btn-ghost btn-sm" style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '3px 6px' }} onClick={() => onRemoveRequest(r.id)} title="Decline">×</button>
+                    </div>
+                  ))}
+                  <div style={{ borderBottom: '1px solid var(--brd)', margin: '4px 0' }} />
+                </>
+              )}
+
               <div className="lbl">FRIENDS</div>
-              {friends.length === 0 && (
+              {friends.length === 0 && pendingIn.length === 0 && pendingOut.length === 0 && (
                 <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>NO FRIENDS ADDED YET</div>
               )}
               {friends.map(f => (
@@ -119,11 +136,17 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                   <span className="mono" style={{ fontSize: 10, color: f.partyCode ? 'var(--gold)' : 'var(--txd)' }}>
                     {f.partyCode ? 'IN PARTY' : 'OFFLINE'}
                   </span>
-                  <button
-                    className="btn-ghost btn-sm"
-                    style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '3px 6px' }}
-                    onClick={() => onRemoveFriend(f.callsign)}
-                  >×</button>
+                  <button className="btn-ghost btn-sm" style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '3px 6px' }} onClick={() => onRemoveFriend(f.callsign)} title="Unfriend">×</button>
+                </div>
+              ))}
+
+              {/* Pending outgoing */}
+              {pendingOut.map(r => (
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--txd)', flexShrink: 0 }} />
+                  <span className="mono" style={{ flex: 1, fontSize: 12, color: 'var(--txd)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.callsign}</span>
+                  <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>PENDING</span>
+                  <button className="btn-ghost btn-sm" style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '3px 6px' }} onClick={() => onRemoveRequest(r.id)} title="Withdraw">×</button>
                 </div>
               ))}
             </div>
@@ -136,11 +159,11 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                   placeholder="Callsign"
                   value={addInput}
                   onChange={e => { setAddInput(e.target.value); setAddError('') }}
-                  onKeyDown={e => e.key === 'Enter' && handleAddFriend()}
+                  onKeyDown={e => e.key === 'Enter' && handleSendRequest()}
                   style={{ fontSize: 13 }}
                   disabled={addBusy}
                 />
-                <button className="btn-ghost btn-sm" onClick={handleAddFriend} disabled={addBusy} style={{ whiteSpace: 'nowrap' }}>+ ADD</button>
+                <button className="btn-ghost btn-sm" onClick={handleSendRequest} disabled={addBusy} style={{ whiteSpace: 'nowrap' }}>+ ADD</button>
               </div>
               {addError && <p className="mono" style={{ color: 'var(--red)', fontSize: 11 }}>⚠ {addError}</p>}
             </div>

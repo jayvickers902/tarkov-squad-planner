@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onAdmin, isAdmin, error, loading, autoJoinCode, friends = [], onAddFriend, onRemoveFriend, onRefreshFriends }) {
+export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onAdmin, isAdmin, error, loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const [mode, setMode]         = useState('home')
   const [code, setCode]         = useState('')
   const [local, setLocal]       = useState('')
@@ -9,10 +9,10 @@ export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onA
   const [addError, setAddError] = useState('')
   const [addBusy, setAddBusy]   = useState(false)
 
-  async function handleAddFriend() {
+  async function handleSendRequest() {
     if (!addInput.trim()) return
     setAddBusy(true); setAddError('')
-    const err = await onAddFriend(addInput)
+    const err = await onSendRequest(addInput)
     if (err) setAddError(err)
     else setAddInput('')
     setAddBusy(false)
@@ -28,6 +28,8 @@ export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onA
   }
 
   const err = local || error
+  const totalFriends = friends.length
+  const hasPending = pendingIn.length > 0
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -86,20 +88,54 @@ export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onA
                 style={{ width: '100%', padding: '10px 16px', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
                 onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}
               >
-                <span>FRIENDS {friends.length > 0 && <span style={{ color: 'var(--txm)' }}>({friends.length})</span>}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  FRIENDS
+                  {totalFriends > 0 && <span style={{ color: 'var(--txm)' }}>({totalFriends})</span>}
+                  {hasPending && (
+                    <span className="mono" style={{
+                      fontSize: 10, padding: '1px 6px', borderRadius: 3,
+                      background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)',
+                      color: 'var(--gold)',
+                    }}>{pendingIn.length} REQ</span>
+                  )}
+                </span>
                 <span style={{ color: 'var(--txd)', fontSize: 10 }}>{showFriends ? '▲' : '▼'}</span>
               </button>
 
               {showFriends && (
-                <div className="card fade-in" style={{ marginTop: 6, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {friends.length === 0 && (
+                <div className="card fade-in" style={{ marginTop: 6, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 0 }}>
+
+                  {/* Incoming requests */}
+                  {pendingIn.length > 0 && (
+                    <div style={{ marginBottom: 10 }}>
+                      <div className="lbl" style={{ color: 'var(--gold)', marginBottom: 6 }}>
+                        FRIEND REQUESTS ({pendingIn.length})
+                      </div>
+                      {pendingIn.map(r => (
+                        <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                          <span className="mono" style={{ flex: 1, fontSize: 13, color: 'var(--tx)' }}>{r.callsign}</span>
+                          <button className="btn-gold btn-sm" onClick={() => onAcceptRequest(r.id)} style={{ fontSize: 11 }}>ACCEPT</button>
+                          <button
+                            className="btn-ghost btn-sm"
+                            style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
+                            onClick={() => onRemoveRequest(r.id)}
+                            title="Decline"
+                          >×</button>
+                        </div>
+                      ))}
+                      <div style={{ borderBottom: '1px solid var(--brd)', marginBottom: 10, marginTop: 4 }} />
+                    </div>
+                  )}
+
+                  {/* Accepted friends */}
+                  {friends.length === 0 && pendingIn.length === 0 && pendingOut.length === 0 && (
                     <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', textAlign: 'center', padding: '6px 0' }}>
                       NO FRIENDS ADDED YET
                     </div>
                   )}
 
                   {friends.map(f => (
-                    <div key={f.callsign} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div key={f.callsign} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: f.partyCode ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }} />
                       <span className="mono" style={{ flex: 1, fontSize: 13, color: f.partyCode ? 'var(--tx)' : 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {f.callsign}
@@ -113,26 +149,43 @@ export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onA
                         className="btn-ghost btn-sm"
                         style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
                         onClick={() => onRemoveFriend(f.callsign)}
-                      >
-                        ×
-                      </button>
+                        title="Unfriend"
+                      >×</button>
                     </div>
                   ))}
 
-                  <div style={{ display: 'flex', gap: 6, marginTop: 4, borderTop: '1px solid var(--brd)', paddingTop: 10 }}>
+                  {/* Pending outgoing */}
+                  {pendingOut.map(r => (
+                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--txd)', flexShrink: 0 }} />
+                      <span className="mono" style={{ flex: 1, fontSize: 13, color: 'var(--txd)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {r.callsign}
+                      </span>
+                      <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>PENDING</span>
+                      <button
+                        className="btn-ghost btn-sm"
+                        style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
+                        onClick={() => onRemoveRequest(r.id)}
+                        title="Withdraw request"
+                      >×</button>
+                    </div>
+                  ))}
+
+                  {/* Add friend input */}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8, borderTop: '1px solid var(--brd)', paddingTop: 10 }}>
                     <input
                       placeholder="Add by callsign"
                       value={addInput}
                       onChange={e => { setAddInput(e.target.value); setAddError('') }}
-                      onKeyDown={e => e.key === 'Enter' && handleAddFriend()}
+                      onKeyDown={e => e.key === 'Enter' && handleSendRequest()}
                       style={{ fontSize: 13 }}
                       disabled={addBusy}
                     />
-                    <button className="btn-ghost btn-sm" onClick={handleAddFriend} disabled={addBusy} style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn-ghost btn-sm" onClick={handleSendRequest} disabled={addBusy} style={{ whiteSpace: 'nowrap' }}>
                       + ADD
                     </button>
                   </div>
-                  {addError && <p className="mono" style={{ color: 'var(--red)', fontSize: 11 }}>⚠ {addError}</p>}
+                  {addError && <p className="mono" style={{ color: 'var(--red)', fontSize: 11, marginTop: 4 }}>⚠ {addError}</p>}
                 </div>
               )}
             </div>

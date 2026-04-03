@@ -24,11 +24,7 @@ export default function App() {
     toggleImportant,
   } = useUserQuests(user?.id)
 
-  const { friends, addFriend, removeFriend, refresh: refreshFriends } = useFriends(user?.id)
-
-  async function handleAddFriend(callsign) {
-    return await addFriend(callsign, profile?.callsign || '')
-  }
+  const { friends, pendingIn, pendingOut, sendRequest, acceptRequest, removeRequest, removeFriend, refresh: refreshFriends } = useFriends(user?.id, profile?.callsign)
 
   const {
     party, myName, error: partyError, loading: partyLoading,
@@ -151,7 +147,11 @@ export default function App() {
         onMyQuests={() => setPartyScreen('myquests')}
         onAdmin={() => setPartyScreen('admin')}
         friends={friends}
-        onAddFriend={handleAddFriend}
+        pendingIn={pendingIn}
+        pendingOut={pendingOut}
+        onSendRequest={sendRequest}
+        onAcceptRequest={acceptRequest}
+        onRemoveRequest={removeRequest}
         onRemoveFriend={removeFriend}
         onRefreshFriends={refreshFriends}
       />
@@ -192,7 +192,11 @@ export default function App() {
       loading={partyLoading}
       autoJoinCode={!autoJoinFired ? pendingJoinCode : null}
       friends={friends}
-      onAddFriend={handleAddFriend}
+      pendingIn={pendingIn}
+      pendingOut={pendingOut}
+      onSendRequest={sendRequest}
+      onAcceptRequest={acceptRequest}
+      onRemoveRequest={removeRequest}
       onRemoveFriend={removeFriend}
       onRefreshFriends={refreshFriends}
     />
