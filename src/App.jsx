@@ -14,7 +14,7 @@ export default function App() {
   const {
     user, profile, loading: authLoading,
     error: authError, setError: setAuthError,
-    register, login, logout,
+    register, login, logout, loginWithGoogle, createProfile,
   } = useAuth()
 
   const {
@@ -71,7 +71,16 @@ export default function App() {
       if (mode === 'register') return await register(callsign, password)
       return await login(callsign, password)
     }
-    return <AuthScreen onAuth={handleAuth} error={authError} setError={setAuthError} />
+    return (
+      <AuthScreen
+        onAuth={handleAuth}
+        onGoogleLogin={loginWithGoogle}
+        onCreateProfile={createProfile}
+        needsCallsign={!!user && !profile}
+        error={authError}
+        setError={setAuthError}
+      />
+    )
   }
 
   if (party) {

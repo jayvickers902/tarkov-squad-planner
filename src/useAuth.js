@@ -94,9 +94,37 @@ export function useAuth() {
     return true
   }
 
+  async function loginWithGoogle() {
+    setError('')
+    const { error: err } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    })
+    if (err) setError(err.message)
+  }
+
+  // Called after Google sign-in when the user has no profile yet
+  async function createProfile(callsign) {
+    setError('')
+    const trimmed = callsign.trim()
+    if (!trimmed) { setError('Enter a callsign'); return false }
+
+    const { data: existing } = await supabase.from('profiles').select('id').eq('callsign', trimmed).maybeSingle()
+    if (existing) { setError('That callsign is already taken'); return false }
+
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.user) { setError('Not signed in'); return false }
+
+    const { error: profErr } = await supabase.from('profiles').insert({ id: session.user.id, callsign: trimmed })
+    if (profErr) { setError(profErr.message); return false }
+
+    setProfile({ id: session.user.id, callsign: trimmed })
+    return true
+  }
+
   async function logout() {
     await supabase.auth.signOut()
   }
 
-  return { user, profile, loading, error, setError, register, login, logout }
+  return { user, profile, loading, error, setError, register, login, logout, loginWithGoogle, createProfile }
 }
