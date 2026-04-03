@@ -113,27 +113,40 @@ export function useParty() {
   const joinParty = useCallback(async (code, name, savedQuests = []) => {
     setLoading(true); setError('')
     savedQuestsRef.current = savedQuests
-    const { data, error: err } = await supabase.from('parties').select().eq('code', code).single()
-    if (err || !data) { setError('Party not found — check the code.'); setLoading(false); return false }
 
-    const members = { ...data.members }
-    const existing = members[name] || []
+    // Fetch the party first so we know the current map for quest filtering
+    const { data: existing, error: fetchErr } = await supabase.from('parties').select().eq('code', code).single()
+    if (fetchErr || !existing) { setError('Party not found — check the code.'); setLoading(false); return false }
+
+    // Compute only this user's quests — server function will set just this key
+    const existingMine = existing.members?.[name] || []
     const saved = savedQuests
-      .filter(q => !q.map_norm || q.map_norm === data.map_norm)
+      .filter(q => !q.map_norm || q.map_norm === existing.map_norm)
       .map(q => ({ id: q.quest_id, name: q.quest_name }))
-    const merged = [...existing]
+    const merged = [...existingMine]
     saved.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
-    members[name] = merged
 
-    const starred = { ...(data.starred || {}) }
-    savedQuests.filter(q => q.important).forEach(q => { starred[q.quest_id] = true })
+    // Only pass this user's new starred entries
+    const myStarred = {}
+    savedQuests.filter(q => q.important).forEach(q => { myStarred[q.quest_id] = true })
 
-    const { data: updated, error: err2 } = await supabase.from('parties').update({ members, starred }).eq('code', code).select().single()
-    if (err2) { setError('Failed to join party.'); setLoading(false); return false }
+    const { data: result, error: rpcErr } = await supabase.rpc('join_party_secure', {
+      p_code:       code,
+      p_my_quests:  merged,
+      p_starred:    myStarred,
+    })
+    if (rpcErr) {
+      const msg = rpcErr.message?.includes('already in another party')
+        ? 'You are already in another party — leave it first.'
+        : rpcErr.message?.includes('party not found')
+        ? 'Party not found — check the code.'
+        : 'Failed to join party.'
+      setError(msg); setLoading(false); return false
+    }
 
     codeRef.current = code
     myNameRef.current = name
-    applyParty(updated); setMyName(name); setLoading(false)
+    applyParty(result); setMyName(name); setLoading(false)
     return true
   }, [])
 

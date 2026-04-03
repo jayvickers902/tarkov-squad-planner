@@ -8,7 +8,7 @@ import MyQuests from './components/MyQuests'
 import Room from './components/Room'
 import AdminKeyManager from './components/AdminKeyManager'
 
-const ADMIN_USER_ID = '8134ec3a-aff3-4610-b03e-9977bb841e57'
+const ADMIN_USER_ID = 'ce64151c-c10b-45c4-9baa-9fbf794a5945'
 
 export default function App() {
   const {
