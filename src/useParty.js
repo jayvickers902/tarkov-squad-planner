@@ -15,9 +15,19 @@ export function useParty() {
   const [myName, setMyName]   = useState('')
   const [error, setError]     = useState('')
   const [loading, setLoading] = useState(false)
-  const codeRef = useRef(null)
+  const codeRef       = useRef(null)
+  const partyRef      = useRef(null)   // always mirrors party state — safe to read in callbacks
   const savedQuestsRef = useRef([])
   const prevMapNormRef = useRef(null)
+  const myNameRef     = useRef('')
+
+  // Keep refs in sync
+  function applyParty(data) {
+    partyRef.current = data
+    setParty(data)
+  }
+
+  useEffect(() => { myNameRef.current = myName }, [myName])
 
   useEffect(() => {
     if (!codeRef.current) return
@@ -25,20 +35,19 @@ export function useParty() {
 
     const poll = setInterval(async () => {
       const fresh = await fetchParty(code)
-      if (fresh) setParty(fresh)
+      if (fresh) applyParty(fresh)
     }, 3000)
 
     const channel = supabase
       .channel(`party-${code}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'parties', filter: `code=eq.${code}` },
-        payload => { if (payload.new) setParty(payload.new) })
+        payload => { if (payload.new) applyParty(payload.new) })
       .subscribe()
 
     return () => { clearInterval(poll); supabase.removeChannel(channel) }
   }, [codeRef.current]) // eslint-disable-line
 
-  // When the leader switches maps, non-leaders must refresh their own quest list
-  // for the new map (leader handles it in selectMap; others watch for map_norm changes)
+  // When the leader switches maps, non-leaders refresh their own quest list for the new map
   useEffect(() => {
     if (!party || !myName || !party.map_norm) return
     if (party.map_norm === prevMapNormRef.current) return
@@ -50,8 +59,8 @@ export function useParty() {
 
     const kept = mine.filter(q => {
       const saved = savedQuestsRef.current.find(sq => sq.quest_id === q.id)
-      if (!saved) return true       // manually added — keep
-      return !saved.map_norm        // any-map saved quest — keep; map-specific — drop
+      if (!saved) return true
+      return !saved.map_norm
     })
 
     const newMapQuests = savedQuestsRef.current
@@ -61,22 +70,26 @@ export function useParty() {
     newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
     members[myName] = merged
 
-    updateParty({ members })
-    setParty(prev => prev ? { ...prev, members } : prev)
+    const updated = { ...party, members }
+    applyParty(updated)
+    updatePartyDB({ members })
   }, [party?.map_norm, myName]) // eslint-disable-line
 
-  // savedQuests = user's saved quests from useUserQuests
+  const updatePartyDB = useCallback(async (changes) => {
+    if (!codeRef.current) return
+    const { data, error: err } = await supabase.from('parties').update(changes).eq('code', codeRef.current).select().single()
+    if (!err && data) applyParty(data)
+  }, [])
+
   const createParty = useCallback(async (name, savedQuests = []) => {
     setLoading(true); setError('')
     savedQuestsRef.current = savedQuests
     const code = mkCode()
 
-    // Only pre-populate "any map" quests (map_norm is null); map-specific quests load on map select
     const myQuests = savedQuests
       .filter(q => !q.map_norm)
       .map(q => ({ id: q.quest_id, name: q.quest_name }))
 
-    // Pre-star important quests
     const starred = {}
     savedQuests.filter(q => q.important).forEach(q => { starred[q.quest_id] = true })
 
@@ -92,7 +105,8 @@ export function useParty() {
     const { data, error: err } = await supabase.from('parties').insert(newParty).select().single()
     if (err) { setError('Failed to create party. Check your Supabase setup.'); setLoading(false); return false }
     codeRef.current = data.code
-    setParty(data); setMyName(name); setLoading(false)
+    myNameRef.current = name
+    applyParty(data); setMyName(name); setLoading(false)
     return true
   }, [])
 
@@ -103,7 +117,6 @@ export function useParty() {
     if (err || !data) { setError('Party not found — check the code.'); setLoading(false); return false }
 
     const members = { ...data.members }
-    // Pre-populate "any map" quests + quests matching the party's current map
     const existing = members[name] || []
     const saved = savedQuests
       .filter(q => !q.map_norm || q.map_norm === data.map_norm)
@@ -112,7 +125,6 @@ export function useParty() {
     saved.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
     members[name] = merged
 
-    // Merge important flags into starred without overwriting existing stars
     const starred = { ...(data.starred || {}) }
     savedQuests.filter(q => q.important).forEach(q => { starred[q.quest_id] = true })
 
@@ -120,124 +132,112 @@ export function useParty() {
     if (err2) { setError('Failed to join party.'); setLoading(false); return false }
 
     codeRef.current = code
-    setParty(updated); setMyName(name); setLoading(false)
+    myNameRef.current = name
+    applyParty(updated); setMyName(name); setLoading(false)
     return true
   }, [])
 
-  const updateParty = useCallback(async (changes) => {
-    if (!codeRef.current) return
-    const { data, error: err } = await supabase.from('parties').update(changes).eq('code', codeRef.current).select().single()
-    if (!err && data) setParty(data)
-  }, [])
-
   const selectMap = useCallback((map) => {
-    setParty(prev => {
-      if (!prev) return prev
-      const members = { ...prev.members }
-      const mine = members[myName] || []
+    const prev = partyRef.current
+    if (!prev) return
+    const name = myNameRef.current
+    const members = { ...prev.members }
+    const mine = members[name] || []
 
-      // Drop map-specific saved quests (they belong to a different map).
-      // Keep: manually-added quests (not in savedQuests) and any-map saved quests.
-      const kept = mine.filter(q => {
-        const saved = savedQuestsRef.current.find(sq => sq.quest_id === q.id)
-        if (!saved) return true        // manually added during party — keep
-        return !saved.map_norm         // any-map saved quest — keep; map-specific — drop
-      })
-
-      // Add saved quests for the new map
-      const newMapQuests = savedQuestsRef.current
-        .filter(q => q.map_norm === map.normalizedName)
-        .map(q => ({ id: q.quest_id, name: q.quest_name }))
-      const merged = [...kept]
-      newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
-      members[myName] = merged
-
-      const changes = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, drawings: [], members }
-      updateParty(changes)
-      return { ...prev, ...changes }
+    const kept = mine.filter(q => {
+      const saved = savedQuestsRef.current.find(sq => sq.quest_id === q.id)
+      if (!saved) return true
+      return !saved.map_norm
     })
-  }, [myName, updateParty])
+
+    const newMapQuests = savedQuestsRef.current
+      .filter(q => q.map_norm === map.normalizedName)
+      .map(q => ({ id: q.quest_id, name: q.quest_name }))
+    const merged = [...kept]
+    newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
+    members[name] = merged
+
+    const changes = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, drawings: [], members }
+    const updated = { ...prev, ...changes }
+    applyParty(updated)
+    updatePartyDB(changes)
+  }, [updatePartyDB])
 
   const addQuest = useCallback((quest) => {
-    setParty(prev => {
-      if (!prev) return prev
-      const members = { ...prev.members }
-      const mine = members[myName] || []
-      if (mine.find(q => q.id === quest.id)) return prev
-      members[myName] = [...mine, { id: quest.id, name: quest.name }]
-      updateParty({ members })
-      return { ...prev, members }
-    })
-  }, [myName, updateParty])
+    const prev = partyRef.current
+    if (!prev) return
+    const name = myNameRef.current
+    const members = { ...prev.members }
+    const mine = members[name] || []
+    if (mine.find(q => q.id === quest.id)) return
+    members[name] = [...mine, { id: quest.id, name: quest.name }]
+    applyParty({ ...prev, members })
+    updatePartyDB({ members })
+  }, [updatePartyDB])
 
   const removeQuest = useCallback((questId) => {
-    setParty(prev => {
-      if (!prev) return prev
-      const members = { ...prev.members }
-      members[myName] = (members[myName] || []).filter(q => q.id !== questId)
-      updateParty({ members })
-      return { ...prev, members }
-    })
-  }, [myName, updateParty])
+    const prev = partyRef.current
+    if (!prev) return
+    const name = myNameRef.current
+    const members = { ...prev.members }
+    members[name] = (members[name] || []).filter(q => q.id !== questId)
+    applyParty({ ...prev, members })
+    updatePartyDB({ members })
+  }, [updatePartyDB])
 
   const setSpawn = useCallback((spawnId) => {
-    updateParty({ spawn: spawnId })
-  }, [updateParty])
+    updatePartyDB({ spawn: spawnId })
+  }, [updatePartyDB])
 
   const toggleObjective = useCallback((key) => {
-    setParty(prev => {
-      if (!prev) return prev
-      const progress = { ...(prev.progress || {}), [key]: !prev.progress?.[key] }
-      updateParty({ progress })
-      return { ...prev, progress }
-    })
-  }, [updateParty])
+    const prev = partyRef.current
+    if (!prev) return
+    const progress = { ...(prev.progress || {}), [key]: !prev.progress?.[key] }
+    applyParty({ ...prev, progress })
+    updatePartyDB({ progress })
+  }, [updatePartyDB])
 
   const toggleStar = useCallback((taskId) => {
-    setParty(prev => {
-      if (!prev) return prev
-      const starred = { ...(prev.starred || {}), [taskId]: !prev.starred?.[taskId] }
-      updateParty({ starred })
-      return { ...prev, starred }
-    })
-  }, [updateParty])
+    const prev = partyRef.current
+    if (!prev) return
+    const starred = { ...(prev.starred || {}), [taskId]: !prev.starred?.[taskId] }
+    applyParty({ ...prev, starred })
+    updatePartyDB({ starred })
+  }, [updatePartyDB])
 
-  // Completed quests are stored inside `progress` with a __done__: prefix
-  // so no extra DB column is needed.
   const toggleComplete = useCallback((questId) => {
-    setParty(prev => {
-      if (!prev) return prev
-      const key = `__done__:${questId}`
-      const progress = { ...(prev.progress || {}), [key]: !prev.progress?.[key] }
-      updateParty({ progress })
-      return { ...prev, progress }
-    })
-  }, [updateParty])
+    const prev = partyRef.current
+    if (!prev) return
+    const key = `__done__:${questId}`
+    const progress = { ...(prev.progress || {}), [key]: !prev.progress?.[key] }
+    applyParty({ ...prev, progress })
+    updatePartyDB({ progress })
+  }, [updatePartyDB])
 
   const addStroke = useCallback((stroke) => {
-    setParty(prev => {
-      if (!prev) return prev
-      const drawings = [...(prev.drawings || []), stroke]
-      updateParty({ drawings })
-      return { ...prev, drawings }
-    })
-  }, [updateParty])
+    const prev = partyRef.current
+    if (!prev) return
+    const drawings = [...(prev.drawings || []), stroke]
+    applyParty({ ...prev, drawings })
+    updatePartyDB({ drawings })
+  }, [updatePartyDB])
 
   const clearMyStrokes = useCallback(() => {
-    setParty(prev => {
-      if (!prev) return prev
-      const drawings = (prev.drawings || []).filter(s => s.user !== myName)
-      updateParty({ drawings })
-      return { ...prev, drawings }
-    })
-  }, [myName, updateParty])
+    const prev = partyRef.current
+    if (!prev) return
+    const name = myNameRef.current
+    const drawings = (prev.drawings || []).filter(s => s.user !== name)
+    applyParty({ ...prev, drawings })
+    updatePartyDB({ drawings })
+  }, [updatePartyDB])
 
   const leaveParty = useCallback(() => {
     codeRef.current = null
+    partyRef.current = null
+    myNameRef.current = ''
     setParty(null); setMyName(''); setError('')
   }, [])
 
-  // Keep savedQuestsRef in sync — quests may finish loading after joinParty/createParty runs
   const syncSavedQuests = useCallback((quests) => {
     savedQuestsRef.current = quests
   }, [])

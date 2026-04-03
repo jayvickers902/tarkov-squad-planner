@@ -4,7 +4,18 @@
       "Bash(curl -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ __type\\(name: \\\\\"ItemPropertiesKey\\\\\"\\) { fields { name type { name kind } } } }\"}')",
       "Bash(curl -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ items\\(types: [keys], limit: 3\\) { id name avg24hPrice lastLowPrice wikiLink properties { ... on ItemPropertiesKey { uses } } } }\"}')",
       "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ maps\\(lang: en\\) { id normalizedName name lootContainers { id name } } }\"}')",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Read(//c/projects/**)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(code c:/projects/owen-scarlet-hq)",
+      "Bash(npm run:*)"
+    ],
+    "additionalDirectories": [
+      "c:\\projects\\owen-scarlet-hq\\src",
+      "c:\\projects\\owen-scarlet-hq",
+      "C:\\projects\\budget-tracker\\public",
+      "C:\\projects\\budget-tracker\\routes"
     ]
   }
 }
