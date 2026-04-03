@@ -49,29 +49,26 @@ export default function AuthScreen({ onAuth, onGoogleLogin, onCreateProfile, nee
   function reset() { setCallsign(''); setPassword(''); setConfirm(''); setLocal(''); setError(''); setMode('home') }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 24,
-      position: 'relative',
-      backgroundImage: 'url(/splash.jpg)',
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-    }}>
-      {/* Vignette — fades all edges to --bg color */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        background: `
-          radial-gradient(ellipse at center, transparent 30%, rgba(12,14,13,0.6) 70%, rgba(12,14,13,0.97) 100%),
-          linear-gradient(to bottom, rgba(12,14,13,0.8) 0%, rgba(12,14,13,0.2) 40%, rgba(12,14,13,0.2) 60%, rgba(12,14,13,0.9) 100%)
-        `,
-        pointerEvents: 'none',
-      }} />
-      <div style={{ width: '100%', maxWidth: 430, position: 'relative', zIndex: 1 }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ width: '100%', maxWidth: 430 }}>
 
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
+          {/* Splash image with fading edges */}
+          <div style={{ position: 'relative', width: '100%', height: 180, marginBottom: 24, borderRadius: 6, overflow: 'hidden' }}>
+            <img
+              src="/splash.jpg"
+              alt=""
+              style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }}
+            />
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: `
+                linear-gradient(to right,  #0c0e0d 0%, transparent 40%, transparent 60%, #0c0e0d 100%),
+                linear-gradient(to bottom, #0c0e0d 0%, transparent 45%, transparent 55%, #0c0e0d 100%)
+              `,
+            }} />
+          </div>
+
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <div style={{ width: 5, height: 34, background: 'var(--gold)', borderRadius: 2 }} />
             <h1 style={{ fontSize: 36, fontWeight: 700 }}>SQUAD PLANNER</h1>
