@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from './useAuth'
 import { useParty } from './useParty'
 import { useUserQuests } from './useUserQuests'
+import { useFriends } from './useFriends'
 import AuthScreen from './components/AuthScreen'
 import Lobby from './components/Lobby'
 import MyQuests from './components/MyQuests'
@@ -22,6 +23,12 @@ export default function App() {
     addQuest: saveQuest, removeQuest: removeSavedQuest,
     toggleImportant,
   } = useUserQuests(user?.id)
+
+  const { friends, addFriend, removeFriend, refresh: refreshFriends } = useFriends(user?.id)
+
+  async function handleAddFriend(callsign) {
+    return await addFriend(callsign, profile?.callsign || '')
+  }
 
   const {
     party, myName, error: partyError, loading: partyLoading,
@@ -180,6 +187,10 @@ export default function App() {
       error={partyError}
       loading={partyLoading}
       autoJoinCode={!autoJoinFired ? pendingJoinCode : null}
+      friends={friends}
+      onAddFriend={handleAddFriend}
+      onRemoveFriend={removeFriend}
+      onRefreshFriends={refreshFriends}
     />
   )
 }

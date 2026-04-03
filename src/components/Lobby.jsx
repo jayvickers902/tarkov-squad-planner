@@ -1,9 +1,22 @@
 import { useState } from 'react'
 
-export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onAdmin, isAdmin, error, loading, autoJoinCode }) {
-  const [mode, setMode]   = useState('home')
-  const [code, setCode]   = useState('')
-  const [local, setLocal] = useState('')
+export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onAdmin, isAdmin, error, loading, autoJoinCode, friends = [], onAddFriend, onRemoveFriend, onRefreshFriends }) {
+  const [mode, setMode]         = useState('home')
+  const [code, setCode]         = useState('')
+  const [local, setLocal]       = useState('')
+  const [showFriends, setShowFriends] = useState(false)
+  const [addInput, setAddInput] = useState('')
+  const [addError, setAddError] = useState('')
+  const [addBusy, setAddBusy]   = useState(false)
+
+  async function handleAddFriend() {
+    if (!addInput.trim()) return
+    setAddBusy(true); setAddError('')
+    const err = await onAddFriend(addInput)
+    if (err) setAddError(err)
+    else setAddInput('')
+    setAddBusy(false)
+  }
 
   function create() {
     setLocal(''); onEnter('create', '')
@@ -65,6 +78,64 @@ export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onA
                 ⚙ KEY ADMIN
               </button>
             )}
+
+            {/* Friends panel */}
+            <div style={{ marginTop: 6 }}>
+              <button
+                className="btn-ghost"
+                style={{ width: '100%', padding: '10px 16px', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}
+              >
+                <span>FRIENDS {friends.length > 0 && <span style={{ color: 'var(--txm)' }}>({friends.length})</span>}</span>
+                <span style={{ color: 'var(--txd)', fontSize: 10 }}>{showFriends ? '▲' : '▼'}</span>
+              </button>
+
+              {showFriends && (
+                <div className="card fade-in" style={{ marginTop: 6, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {friends.length === 0 && (
+                    <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', textAlign: 'center', padding: '6px 0' }}>
+                      NO FRIENDS ADDED YET
+                    </div>
+                  )}
+
+                  {friends.map(f => (
+                    <div key={f.callsign} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: f.partyCode ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }} />
+                      <span className="mono" style={{ flex: 1, fontSize: 13, color: f.partyCode ? 'var(--tx)' : 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {f.callsign}
+                      </span>
+                      {f.partyCode && (
+                        <button className="btn-gold btn-sm" onClick={() => onEnter('join', f.partyCode)} disabled={loading}>
+                          JOIN
+                        </button>
+                      )}
+                      <button
+                        className="btn-ghost btn-sm"
+                        style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
+                        onClick={() => onRemoveFriend(f.callsign)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4, borderTop: '1px solid var(--brd)', paddingTop: 10 }}>
+                    <input
+                      placeholder="Add by callsign"
+                      value={addInput}
+                      onChange={e => { setAddInput(e.target.value); setAddError('') }}
+                      onKeyDown={e => e.key === 'Enter' && handleAddFriend()}
+                      style={{ fontSize: 13 }}
+                      disabled={addBusy}
+                    />
+                    <button className="btn-ghost btn-sm" onClick={handleAddFriend} disabled={addBusy} style={{ whiteSpace: 'nowrap' }}>
+                      + ADD
+                    </button>
+                  </div>
+                  {addError && <p className="mono" style={{ color: 'var(--red)', fontSize: 11 }}>⚠ {addError}</p>}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
