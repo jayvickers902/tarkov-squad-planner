@@ -22,6 +22,7 @@ create table if not exists public.parties (
 alter table public.parties add column if not exists progress jsonb not null default '{}';
 alter table public.parties add column if not exists starred  jsonb not null default '{}';
 alter table public.parties add column if not exists drawings jsonb not null default '[]';
+alter table public.parties add column if not exists markers jsonb not null default '[]';
 
 -- User quests — one row per saved quest per user
 create table if not exists public.user_quests (

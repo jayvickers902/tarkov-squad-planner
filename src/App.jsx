@@ -32,6 +32,7 @@ export default function App() {
     selectMap, addQuest: addPartyQuest, removeQuest: removePartyQuest, setSpawn,
     toggleObjective, toggleStar, toggleComplete,
     addStroke, clearMyStrokes,
+    addMarker, clearMyMarkers,
     leaveParty, setError: setPartyError,
     syncSavedQuests,
   } = useParty()
@@ -144,6 +145,8 @@ export default function App() {
         onToggleComplete={handleToggleComplete}
         onAddStroke={addStroke}
         onClearMyStrokes={clearMyStrokes}
+        onAddMarker={addMarker}
+        onClearMyMarkers={clearMyMarkers}
         onMyQuests={() => setPartyScreen('myquests')}
         onAdmin={() => setPartyScreen('admin')}
         friends={friends}

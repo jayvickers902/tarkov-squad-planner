@@ -12,7 +12,7 @@ function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
 }
 
-export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onToggleComplete, onAddStroke, onClearMyStrokes, onMyQuests, onAdmin, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
+export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onToggleComplete, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('quests')
   const [copied, setCopied]     = useState(false)
@@ -355,10 +355,15 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                     mapNorm={party.map_norm}
                     mapName={party.map_name}
                     drawings={party.drawings || []}
+                    markers={party.markers || []}
                     myName={myName}
                     memberNames={members}
+                    myQuests={mine}
+                    tasks={tasks}
                     onAddStroke={onAddStroke}
                     onClearMyStrokes={onClearMyStrokes}
+                    onAddMarker={onAddMarker}
+                    onClearMyMarkers={onClearMyMarkers}
                   />
                 </div>
               )}

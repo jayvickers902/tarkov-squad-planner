@@ -172,7 +172,7 @@ export function useParty() {
     newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
     members[name] = merged
 
-    const changes = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, drawings: [], members }
+    const changes = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, drawings: [], markers: [], members }
     const updated = { ...prev, ...changes }
     applyParty(updated)
     updatePartyDB(changes)
@@ -246,6 +246,23 @@ export function useParty() {
     updatePartyDB({ drawings })
   }, [updatePartyDB])
 
+  const addMarker = useCallback((marker) => {
+    const prev = partyRef.current
+    if (!prev) return
+    const markers = [...(prev.markers || []), marker]
+    applyParty({ ...prev, markers })
+    updatePartyDB({ markers })
+  }, [updatePartyDB])
+
+  const clearMyMarkers = useCallback(() => {
+    const prev = partyRef.current
+    if (!prev) return
+    const name = myNameRef.current
+    const markers = (prev.markers || []).filter(m => m.user !== name)
+    applyParty({ ...prev, markers })
+    updatePartyDB({ markers })
+  }, [updatePartyDB])
+
   const leaveParty = useCallback(() => {
     codeRef.current = null
     partyRef.current = null
@@ -289,6 +306,7 @@ export function useParty() {
     selectMap, addQuest, removeQuest, setSpawn,
     toggleObjective, toggleStar, toggleComplete,
     addStroke, clearMyStrokes,
+    addMarker, clearMyMarkers,
     leaveParty, setError,
     syncSavedQuests,
   }
