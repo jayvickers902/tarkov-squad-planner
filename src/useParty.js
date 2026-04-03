@@ -2,7 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from './supabase'
 
 function mkCode() {
-  return Math.random().toString(36).slice(2, 8).toUpperCase()
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no 0/O/1/I to avoid confusion
+  const bytes = crypto.getRandomValues(new Uint8Array(6))
+  return Array.from(bytes, b => chars[b % chars.length]).join('')
 }
 
 async function fetchParty(code) {

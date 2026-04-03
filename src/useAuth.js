@@ -37,6 +37,8 @@ export function useAuth() {
     setError('')
     const trimmed = callsign.trim()
     if (!trimmed) { setError('Enter a callsign'); return false }
+    if (trimmed.length > 20) { setError('Callsign must be 20 characters or fewer'); return false }
+    if (!/^[a-zA-Z0-9_\- ]+$/.test(trimmed)) { setError('Callsign can only contain letters, numbers, spaces, - and _'); return false }
     if (password.length < 6) { setError('Password must be at least 6 characters'); return false }
 
     // Check callsign isn't taken
@@ -108,6 +110,8 @@ export function useAuth() {
     setError('')
     const trimmed = callsign.trim()
     if (!trimmed) { setError('Enter a callsign'); return false }
+    if (trimmed.length > 20) { setError('Callsign must be 20 characters or fewer'); return false }
+    if (!/^[a-zA-Z0-9_\- ]+$/.test(trimmed)) { setError('Callsign can only contain letters, numbers, spaces, - and _'); return false }
 
     const { data: existing } = await supabase.from('profiles').select('id').eq('callsign', trimmed).maybeSingle()
     if (existing) { setError('That callsign is already taken'); return false }
