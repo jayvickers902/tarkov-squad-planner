@@ -2,6 +2,17 @@ import { useState, useMemo } from 'react'
 import { useTasks } from '../useTarkov'
 import { FEATURED } from '../constants'
 
+// Small Kappa badge — reused in search results and saved list
+function KappaBadge() {
+  return (
+    <span className="mono" title="Required for Kappa" style={{
+      fontSize: 9, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
+      background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)',
+      color: 'var(--gold)', letterSpacing: '.06em',
+    }}>κ</span>
+  )
+}
+
 const MAP_NAMES = {
   customs: 'Customs', woods: 'Woods', interchange: 'Interchange',
   shoreline: 'Shoreline', factory: 'Factory', lighthouse: 'Lighthouse',
@@ -17,6 +28,9 @@ export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportan
 
   // Load tasks for the currently selected search map
   const { tasks, loading: tasksLoading } = useTasks(searchMap === 'any' ? null : searchMap)
+  // Always load all tasks for kappa lookup (uses module-level cache — no extra fetch)
+  const { tasks: allTasks } = useTasks(null)
+  const kappaIds = useMemo(() => new Set(allTasks.filter(t => t.kappaRequired).map(t => t.id)), [allTasks])
 
   const searchHits = useMemo(() => {
     if (searchQ.length < 1) return []
@@ -124,14 +138,17 @@ export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportan
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--sur)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  <div>
-                    <div style={{ fontSize: 13 }}>{t.name}</div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 13 }}>{t.name}</span>
+                      {t.kappaRequired && <KappaBadge />}
+                    </div>
                     <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', marginTop: 2 }}>
                       {t.trader?.name} · Lv.{t.minPlayerLevel || 1}
                       {!t.map && <span style={{ marginLeft: 8, color: 'var(--txd)' }}>any map</span>}
                     </div>
                   </div>
-                  <span style={{ color: 'var(--gold)', fontSize: 18 }}>+</span>
+                  <span style={{ color: 'var(--gold)', fontSize: 18, flexShrink: 0, marginLeft: 8 }}>+</span>
                 </div>
               ))}
             </div>
@@ -194,8 +211,11 @@ export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportan
 
                 {/* Quest name */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {q.quest_name}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 13, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {q.quest_name}
+                    </span>
+                    {kappaIds.has(q.quest_id) && <KappaBadge />}
                   </div>
                   <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginTop: 2 }}>
                     {q.map_norm ? (MAP_NAMES[q.map_norm] || q.map_norm).toUpperCase() : 'ANY MAP'}

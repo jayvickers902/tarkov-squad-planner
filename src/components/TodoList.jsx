@@ -31,6 +31,7 @@ function MemberPill({ name, allMembers }) {
 
 export default function TodoList({ tasks, memberQuests, progress, onToggleObjective, onToggleStar, onToggleComplete, starredQuests, completedQuests, myName, isLeader }) {
   const [filter, setFilter]     = useState('all')
+  const [kappaOnly, setKappaOnly] = useState(false)
   const [expanded, setExpanded] = useState({})
   const [skipped, setSkipped]   = useState(new Set())
   const members = Object.keys(memberQuests)
@@ -66,6 +67,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
 
   function applyFilter(rows) {
     return rows.filter(row => {
+      if (kappaOnly && !row.task.kappaRequired) return false
       if (filter === 'starred') return row.starred
       if (members.includes(filter)) return row.owners.includes(filter)
       return true
@@ -124,13 +126,22 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
 
           {/* Quest name + owners */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600,
-              color: completed || allDone || dimmed ? 'var(--txm)' : 'var(--tx)',
-              textDecoration: completed || allDone ? 'line-through' : 'none',
-              letterSpacing: '.03em',
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>{task.name}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{
+                fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600,
+                color: completed || allDone || dimmed ? 'var(--txm)' : 'var(--tx)',
+                textDecoration: completed || allDone ? 'line-through' : 'none',
+                letterSpacing: '.03em',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>{task.name}</div>
+              {task.kappaRequired && (
+                <span className="mono" title="Required for Kappa" style={{
+                  fontSize: 9, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
+                  background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)',
+                  color: 'var(--gold)', letterSpacing: '.06em',
+                }}>κ</span>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
               {owners.map(o => <MemberPill key={o} name={o} allMembers={members} />)}
               {task.trader && (
@@ -293,6 +304,13 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
           className={filter === 'starred' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
           style={{ color: filter !== 'starred' ? 'var(--gold)' : undefined }}>
           ★ STARRED
+        </button>
+        <button
+          onClick={() => setKappaOnly(v => !v)}
+          className={kappaOnly ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+          style={{ color: !kappaOnly ? 'var(--gold)' : undefined }}
+          title="Show only Kappa-required quests">
+          κ KAPPA
         </button>
         {members.map(m => {
           const c = memberColor(m, members)

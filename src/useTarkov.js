@@ -44,8 +44,9 @@ function keyToMap(name) {
   return null
 }
 
-let keysCache = null
-const TASKS_QUERY = `{ tasks { id name minPlayerLevel wikiLink trader { name } map { id normalizedName } objectives { id description type optional ... on TaskObjectiveItem { item { id name } count foundInRaid } } } }`
+let keysCache  = null
+let tasksCache = null
+const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink trader { name } map { id normalizedName } objectives { id description type optional ... on TaskObjectiveItem { item { id name } count foundInRaid } } } }`
 
 export function useMaps() {
   const [maps, setMaps]       = useState([])
@@ -69,16 +70,16 @@ export function useMaps() {
 // Pass mapNorm=null to get all tasks (used in MyQuests search)
 // Pass a mapNorm string to get map-filtered tasks (used in party quest search)
 export function useTasks(mapNorm) {
-  const [tasks, setTasks]     = useState([])
-  const [loading, setLoading] = useState(false)
-  const [fetched, setFetched] = useState(false)
+  const [tasks, setTasks]     = useState(() => tasksCache || [])
+  const [loading, setLoading] = useState(!tasksCache)
+  const [fetched, setFetched] = useState(!!tasksCache)
 
   useEffect(() => {
     if (fetched) return  // only fetch once — all tasks come in one call
     setLoading(true)
     fetch(TARKOV_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: TASKS_QUERY }) })
       .then(r => r.json())
-      .then(d => { setTasks(d.data?.tasks || []); setFetched(true) })
+      .then(d => { tasksCache = d.data?.tasks || []; setTasks(tasksCache); setFetched(true) })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, []) // eslint-disable-line
