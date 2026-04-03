@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMaps, useTasks } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
+import { useIsMobile } from '../useIsMobile'
 import QuestSearch from './QuestSearch'
 import TodoList from './TodoList'
 import MapCanvas from './MapCanvas'
@@ -12,6 +13,7 @@ function Spin({ s = 20 }) {
 }
 
 export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onToggleComplete, onAddStroke, onClearMyStrokes, onMyQuests, onAdmin, friends = [], onAddFriend, onRemoveFriend, onRefreshFriends }) {
+  const isMobile = useIsMobile()
   const [tab, setTab]           = useState('quests')
   const [copied, setCopied]     = useState(false)
   const [showFriends, setShowFriends] = useState(false)
@@ -51,40 +53,50 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
     <div style={{ minHeight: '100vh', padding: '14px 16px' }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingBottom: 14, borderBottom: '1px solid var(--brd)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 4, height: 26, background: 'var(--gold)', borderRadius: 2 }} />
-          <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>SQUAD PLANNER</h1>
-            <div className="mono" style={{ fontSize: 11, color: 'var(--txm)' }}>
-              {party.map_name ? `// ${party.map_name.toUpperCase()}` : '// NO MAP SELECTED'}
+      <div style={{ marginBottom: 16, paddingBottom: 14, borderBottom: '1px solid var(--brd)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <div style={{ width: 4, height: 26, background: 'var(--gold)', borderRadius: 2, flexShrink: 0 }} />
+            <div style={{ minWidth: 0 }}>
+              <h1 style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>SQUAD PLANNER</h1>
+              <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {party.map_name ? `// ${party.map_name.toUpperCase()}` : '// NO MAP SELECTED'}
+              </div>
             </div>
           </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button className="btn-ghost btn-sm" onClick={onMyQuests}
-            style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>
-            ★ MY QUESTS
-          </button>
-          <button
-            className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'}
-            onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}
-          >
-            FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
-          </button>
-          {isAdmin && (
-            <button className="btn-ghost btn-sm" onClick={onAdmin}
-              style={{ color: 'var(--txm)', borderColor: 'var(--brd2)' }}>
-              ⚙ KEY EDITOR
-            </button>
-          )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, padding: '5px 10px' }}>
-            <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>PARTY</span>
-            <span className="mono" style={{ fontSize: 17, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
-            <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {!isMobile && (
+              <>
+                <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ MY QUESTS</button>
+                <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}>
+                  FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
+                </button>
+                {isAdmin && <button className="btn-ghost btn-sm" onClick={onAdmin} style={{ color: 'var(--txm)' }}>⚙</button>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, padding: '5px 10px' }}>
+                  <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>PARTY</span>
+                  <span className="mono" style={{ fontSize: 17, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
+                  <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
+                </div>
+              </>
+            )}
+            <button className="btn-danger btn-sm" onClick={onLeave}>LEAVE</button>
           </div>
-          <button className="btn-danger btn-sm" onClick={onLeave}>LEAVE</button>
         </div>
+
+        {/* Mobile second row */}
+        {isMobile && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+            <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ MY QUESTS</button>
+            <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}>
+              FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
+            </button>
+            {isAdmin && <button className="btn-ghost btn-sm" onClick={onAdmin} style={{ color: 'var(--txm)' }}>⚙</button>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, padding: '4px 8px' }}>
+              <span className="mono" style={{ fontSize: 15, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
+              <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Friends panel */}
@@ -136,7 +148,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '210px 1fr', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '210px 1fr', gap: 14 }}>
 
         {/* Sidebar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -246,7 +258,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
           {party.map_id && (
             <>
               {/* Tabs */}
-              <div style={{ display: 'flex', borderBottom: '1px solid var(--brd)' }}>
+              <div className="tab-bar">
                 {[['quests', 'QUESTS'], ['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['map', 'MAP / ROUTE'], ['keys', 'KEYS']].map(([id, lbl]) => (
                   <button key={id} onClick={() => setTab(id)} style={{
                     background: 'none', border: 'none',

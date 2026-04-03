@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { FEATURED, MAP_IMAGES } from '../constants'
 import { useKeys } from '../useTarkov'
 import { useMapKeys } from '../useMapKeys'
+import { useIsMobile } from '../useIsMobile'
 
 const MAP_LABELS = {
   'customs': 'Customs', 'woods': 'Woods', 'interchange': 'Interchange',
@@ -17,6 +18,7 @@ export default function AdminKeyManager({ onBack }) {
   const [feedback, setFeedback]     = useState('')
   const imgRef = useRef(null)
 
+  const isMobile = useIsMobile()
   const { keys, loading: keysLoading } = useKeys(mapNorm)
   const { mapKeys, upsertKey }         = useMapKeys(mapNorm)
 
@@ -88,7 +90,7 @@ export default function AdminKeyManager({ onBack }) {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '320px 1fr', gap: 16, alignItems: 'start' }}>
 
         {/* Key list */}
         <div className="card" style={{ padding: 14, maxHeight: '80vh', overflowY: 'auto' }}>

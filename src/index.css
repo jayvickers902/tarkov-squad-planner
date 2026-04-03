@@ -76,3 +76,7 @@ button {
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--brd2); border-radius: 3px; }
+
+/* Horizontally scrollable tab bar on mobile */
+.tab-bar { display: flex; border-bottom: 1px solid var(--brd); overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.tab-bar::-webkit-scrollbar { display: none; }
