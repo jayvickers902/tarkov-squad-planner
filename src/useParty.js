@@ -240,7 +240,33 @@ export function useParty() {
 
   const syncSavedQuests = useCallback((quests) => {
     savedQuestsRef.current = quests
-  }, [])
+
+    const prev = partyRef.current
+    const name = myNameRef.current
+    if (!prev || !name) return
+
+    const mine = prev.members?.[name] || []
+    const mapNorm = prev.map_norm
+
+    // Keep manually-added quests (not in saved quests list at all)
+    const kept = mine.filter(q => !quests.find(sq => sq.quest_id === q.id))
+
+    // Add saved quests that match the current map (or are any-map)
+    const applicable = quests
+      .filter(q => !q.map_norm || q.map_norm === mapNorm)
+      .map(q => ({ id: q.quest_id, name: q.quest_name }))
+
+    const merged = [...kept]
+    applicable.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
+
+    // Only update if something actually changed
+    const changed = merged.length !== mine.length || merged.some(q => !mine.find(m => m.id === q.id))
+    if (!changed) return
+
+    const members = { ...prev.members, [name]: merged }
+    applyParty({ ...prev, members })
+    updatePartyDB({ members })
+  }, [updatePartyDB])
 
   return {
     party, myName, error, loading,
