@@ -29,10 +29,19 @@ function MemberPill({ name, allMembers }) {
   )
 }
 
-export default function TodoList({ tasks, memberQuests, progress, onToggleObjective, onToggleStar, starredQuests, myName, isLeader }) {
+export default function TodoList({ tasks, memberQuests, progress, onToggleObjective, onToggleStar, onToggleComplete, starredQuests, completedQuests, myName, isLeader }) {
   const [filter, setFilter]     = useState('all')
   const [expanded, setExpanded] = useState({})
+  const [skipped, setSkipped]   = useState(new Set())
   const members = Object.keys(memberQuests)
+
+  function toggleSkip(questId) {
+    setSkipped(prev => {
+      const next = new Set(prev)
+      next.has(questId) ? next.delete(questId) : next.add(questId)
+      return next
+    })
+  }
 
   const questRows = useMemo(() => {
     const ids = [...new Set(Object.values(memberQuests).flat().map(q => q.id))]
@@ -44,25 +53,31 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
         const doneCount = objs.filter(o => progress?.[`${task.id}::${o.id}`]).length
         const starred   = starredQuests?.[task.id] || false
         const allDone   = objs.length > 0 && doneCount === objs.length
-        // Can this user star this quest? Only if they own it
-        const canStar   = owners.includes(myName)
-        return { task, owners, objs, doneCount, starred, allDone, canStar }
+        const completed = completedQuests?.[task.id] || false
+        const canAct    = owners.includes(myName)
+        return { task, owners, objs, doneCount, starred, allDone, completed, canAct }
       })
-      .sort((a, b) => {
-        if (a.allDone !== b.allDone) return a.allDone ? 1 : -1
-        if (a.starred !== b.starred) return a.starred ? -1 : 1
-        return 0
-      })
-  }, [tasks, memberQuests, progress, starredQuests, myName])
+  }, [tasks, memberQuests, progress, starredQuests, completedQuests, myName])
 
-  const filtered = questRows.filter(row => {
-    if (filter === 'starred') return row.starred
-    if (members.includes(filter)) return row.owners.includes(filter)
-    return true
-  })
+  // Split into active, skipped, completed
+  const activeRows    = questRows.filter(r => !r.completed && !skipped.has(r.task.id))
+  const skippedRows   = questRows.filter(r => !r.completed && skipped.has(r.task.id))
+  const completedRows = questRows.filter(r => r.completed)
 
-  const totalObjs = questRows.reduce((s, r) => s + r.objs.length, 0)
-  const doneObjs  = questRows.reduce((s, r) => s + r.doneCount, 0)
+  function applyFilter(rows) {
+    return rows.filter(row => {
+      if (filter === 'starred') return row.starred
+      if (members.includes(filter)) return row.owners.includes(filter)
+      return true
+    })
+  }
+
+  const filteredActive    = applyFilter(activeRows)
+  const filteredSkipped   = applyFilter(skippedRows)
+  const filteredCompleted = applyFilter(completedRows)
+
+  const totalObjs = activeRows.reduce((s, r) => s + r.objs.length, 0)
+  const doneObjs  = activeRows.reduce((s, r) => s + r.doneCount, 0)
   const pctDone   = totalObjs ? Math.round((doneObjs / totalObjs) * 100) : 0
 
   if (!questRows.length) return (
@@ -71,6 +86,179 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
       <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', marginTop: 8 }}>ADD QUESTS IN THE QUESTS TAB TO BUILD YOUR TODO LIST</div>
     </div>
   )
+
+  function QuestCard({ task, owners, objs, doneCount, starred, allDone, completed, canAct, dimmed }) {
+    const isOpen = expanded[task.id]
+    const pct    = objs.length ? (doneCount / objs.length) * 100 : 0
+
+    return (
+      <div style={{
+        background: 'var(--sur2)',
+        border: `1px solid ${starred && !allDone && !completed && !dimmed ? 'var(--golddim)' : 'var(--brd)'}`,
+        borderLeft: `3px solid ${completed || allDone ? 'var(--grn)' : dimmed ? 'var(--brd)' : starred ? 'var(--gold)' : 'var(--brd)'}`,
+        borderRadius: 4,
+        opacity: completed || allDone || dimmed ? .4 : 1,
+        transition: 'opacity .2s, border-color .15s',
+      }}>
+
+        {/* Quest header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', cursor: 'pointer' }}
+          onClick={() => setExpanded(e => ({ ...e, [task.id]: !e[task.id] }))}>
+
+          {/* Star */}
+          {canAct ? (
+            <button
+              onClick={e => { e.stopPropagation(); onToggleStar(task.id) }}
+              title="Star — pins to top for everyone"
+              style={{
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0,
+                fontSize: 14, lineHeight: 1,
+                color: starred ? 'var(--gold)' : 'var(--txd)',
+                transition: 'color .15s',
+              }}>★</button>
+          ) : (
+            starred
+              ? <span style={{ fontSize: 14, color: 'var(--golddim)', flexShrink: 0, lineHeight: 1 }}>★</span>
+              : <span style={{ width: 14, flexShrink: 0 }} />
+          )}
+
+          {/* Quest name + owners */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600,
+              color: completed || allDone || dimmed ? 'var(--txm)' : 'var(--tx)',
+              textDecoration: completed || allDone ? 'line-through' : 'none',
+              letterSpacing: '.03em',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>{task.name}</div>
+            <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+              {owners.map(o => <MemberPill key={o} name={o} allMembers={members} />)}
+              {task.trader && (
+                <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>{task.trader.name}</span>
+              )}
+            </div>
+          </div>
+
+          {/* Action buttons — only for quest owner, not on completed/allDone */}
+          {canAct && !completed && !allDone && (
+            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+              <button
+                onClick={() => onToggleComplete(task.id)}
+                title="Mark complete"
+                style={{
+                  background: 'none', border: '1px solid var(--brd2)', borderRadius: 3,
+                  padding: '2px 7px', cursor: 'pointer', fontSize: 10, fontFamily: 'Share Tech Mono',
+                  color: 'var(--grn)', letterSpacing: '.04em', transition: 'all .15s',
+                }}>✓ DONE</button>
+              <button
+                onClick={() => toggleSkip(task.id)}
+                title={dimmed ? 'Un-skip' : 'Skip for now'}
+                style={{
+                  background: 'none', border: '1px solid var(--brd2)', borderRadius: 3,
+                  padding: '2px 7px', cursor: 'pointer', fontSize: 10, fontFamily: 'Share Tech Mono',
+                  color: dimmed ? 'var(--gold)' : 'var(--txd)', letterSpacing: '.04em', transition: 'all .15s',
+                }}>{dimmed ? 'UNSKIP' : '⊘ SKIP'}</button>
+            </div>
+          )}
+
+          {/* Un-complete button for completed quests */}
+          {canAct && completed && (
+            <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+              <button
+                onClick={() => onToggleComplete(task.id)}
+                title="Mark incomplete"
+                style={{
+                  background: 'none', border: '1px solid var(--brd2)', borderRadius: 3,
+                  padding: '2px 7px', cursor: 'pointer', fontSize: 10, fontFamily: 'Share Tech Mono',
+                  color: 'var(--txd)', letterSpacing: '.04em',
+                }}>UNDO</button>
+            </div>
+          )}
+
+          {/* Progress */}
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div className="mono" style={{ fontSize: 12, color: completed || allDone ? 'var(--grn)' : 'var(--txm)' }}>
+              {doneCount}/{objs.length}
+            </div>
+            <div className="mono" style={{ fontSize: 9, color: 'var(--txd)' }}>
+              {completed || allDone ? 'DONE' : `${Math.round(pct)}%`}
+            </div>
+          </div>
+
+          <div className="mono" style={{ color: 'var(--txd)', fontSize: 10, flexShrink: 0 }}>
+            {isOpen ? '▲' : '▼'}
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div style={{ height: 2, background: 'var(--brd)' }}>
+          <div style={{
+            height: '100%', width: `${pct}%`,
+            background: completed || allDone ? 'var(--grn)' : 'var(--gold)',
+            transition: 'width .3s',
+          }} />
+        </div>
+
+        {/* Expanded objectives */}
+        {isOpen && (
+          <div style={{ padding: '6px 10px 10px' }} className="fade-in">
+            <div style={{ marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid var(--brd)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em' }}>OBJECTIVES</div>
+              {!isLeader && (
+                <div className="mono" style={{ fontSize: 9, color: 'var(--txd)' }}>⊘ ONLY LEADER CAN CHECK OFF</div>
+              )}
+            </div>
+            {objs.map(obj => {
+              const key    = `${task.id}::${obj.id}`
+              const isDone = progress?.[key] || false
+              return (
+                <div key={obj.id}
+                  onClick={() => isLeader && onToggleObjective(key)}
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 9,
+                    padding: '6px 0', borderBottom: '1px solid var(--brd)',
+                    cursor: isLeader ? 'pointer' : 'default',
+                  }}
+                  onMouseEnter={e => { if (isLeader) e.currentTarget.style.background = 'rgba(255,255,255,0.02)' }}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <div style={{
+                    width: 14, height: 14, flexShrink: 0, marginTop: 1,
+                    border: `1px solid ${isDone ? 'var(--grn)' : isLeader ? 'var(--brd2)' : 'var(--txd)'}`,
+                    borderRadius: 3,
+                    background: isDone ? 'var(--grn)' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'all .15s',
+                    opacity: isLeader ? 1 : .6,
+                  }}>
+                    {isDone && <div style={{ width: 6, height: 6, background: 'var(--bg)', borderRadius: 1 }} />}
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 12,
+                      color: isDone ? 'var(--txd)' : 'var(--tx)',
+                      textDecoration: isDone ? 'line-through' : 'none',
+                      lineHeight: 1.4,
+                    }}>{obj.description}</div>
+                  </div>
+
+                  <span className="mono" style={{
+                    fontSize: 9, flexShrink: 0, marginTop: 2, letterSpacing: '.06em',
+                    color: isDone ? 'var(--txd)' : 'var(--txm)',
+                    background: 'var(--sur)', border: '1px solid var(--brd)',
+                    borderRadius: 2, padding: '1px 5px',
+                  }}>
+                    {TYPE_LABEL[obj.type] || obj.type?.toUpperCase() || '?'}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -122,155 +310,48 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
           )
         })}
         <span className="mono" style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--txd)' }}>
-          {filtered.length} QUEST{filtered.length !== 1 ? 'S' : ''}
+          {filteredActive.length + filteredSkipped.length} QUEST{filteredActive.length + filteredSkipped.length !== 1 ? 'S' : ''}
         </span>
       </div>
 
-      {/* Quest rows */}
+      {/* Active quest rows */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {filtered.map(({ task, owners, objs, doneCount, starred, allDone, canStar }) => {
-          const isOpen = expanded[task.id]
-          const pct    = objs.length ? (doneCount / objs.length) * 100 : 0
-
-          return (
-            <div key={task.id} style={{
-              background: 'var(--sur2)',
-              border: `1px solid ${starred && !allDone ? 'var(--golddim)' : 'var(--brd)'}`,
-              borderLeft: `3px solid ${allDone ? 'var(--grn)' : starred ? 'var(--gold)' : 'var(--brd)'}`,
-              borderRadius: 4,
-              opacity: allDone ? .45 : 1,
-              transition: 'opacity .2s, border-color .15s',
-            }}>
-
-              {/* Quest header */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', cursor: 'pointer' }}
-                onClick={() => setExpanded(e => ({ ...e, [task.id]: !e[task.id] }))}>
-
-                {/* Star — only shown/active if user owns this quest */}
-                {canStar ? (
-                  <button
-                    onClick={e => { e.stopPropagation(); onToggleStar(task.id) }}
-                    title="Star this quest — pins it to the top for everyone"
-                    style={{
-                      background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0,
-                      fontSize: 14, lineHeight: 1,
-                      color: starred ? 'var(--gold)' : 'var(--txd)',
-                      transition: 'color .15s',
-                    }}>★</button>
-                ) : (
-                  // Show a dimmed star if starred by someone else, nothing if not starred
-                  starred
-                    ? <span style={{ fontSize: 14, color: 'var(--golddim)', flexShrink: 0, lineHeight: 1 }}>★</span>
-                    : <span style={{ width: 14, flexShrink: 0 }} />
-                )}
-
-                {/* Quest name + owners */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600,
-                    color: allDone ? 'var(--txm)' : 'var(--tx)',
-                    textDecoration: allDone ? 'line-through' : 'none',
-                    letterSpacing: '.03em',
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}>{task.name}</div>
-                  <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {owners.map(o => <MemberPill key={o} name={o} allMembers={members} />)}
-                    {task.trader && (
-                      <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>{task.trader.name}</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Progress */}
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div className="mono" style={{ fontSize: 12, color: allDone ? 'var(--grn)' : 'var(--txm)' }}>
-                    {doneCount}/{objs.length}
-                  </div>
-                  <div className="mono" style={{ fontSize: 9, color: 'var(--txd)' }}>
-                    {allDone ? 'DONE' : `${Math.round(pct)}%`}
-                  </div>
-                </div>
-
-                <div className="mono" style={{ color: 'var(--txd)', fontSize: 10, flexShrink: 0 }}>
-                  {isOpen ? '▲' : '▼'}
-                </div>
-              </div>
-
-              {/* Progress bar */}
-              <div style={{ height: 2, background: 'var(--brd)' }}>
-                <div style={{
-                  height: '100%', width: `${pct}%`,
-                  background: allDone ? 'var(--grn)' : 'var(--gold)',
-                  transition: 'width .3s',
-                }} />
-              </div>
-
-              {/* Expanded objectives */}
-              {isOpen && (
-                <div style={{ padding: '6px 10px 10px' }} className="fade-in">
-                  <div style={{ marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid var(--brd)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em' }}>OBJECTIVES</div>
-                    {!isLeader && (
-                      <div className="mono" style={{ fontSize: 9, color: 'var(--txd)' }}>⊘ ONLY LEADER CAN CHECK OFF</div>
-                    )}
-                  </div>
-                  {objs.map(obj => {
-                    const key    = `${task.id}::${obj.id}`
-                    const isDone = progress?.[key] || false
-                    return (
-                      <div key={obj.id}
-                        onClick={() => isLeader && onToggleObjective(key)}
-                        style={{
-                          display: 'flex', alignItems: 'flex-start', gap: 9,
-                          padding: '6px 0', borderBottom: '1px solid var(--brd)',
-                          cursor: isLeader ? 'pointer' : 'default',
-                        }}
-                        onMouseEnter={e => { if (isLeader) e.currentTarget.style.background = 'rgba(255,255,255,0.02)' }}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      >
-                        {/* Checkbox — visual state for all, interactive only for leader */}
-                        <div style={{
-                          width: 14, height: 14, flexShrink: 0, marginTop: 1,
-                          border: `1px solid ${isDone ? 'var(--grn)' : isLeader ? 'var(--brd2)' : 'var(--txd)'}`,
-                          borderRadius: 3,
-                          background: isDone ? 'var(--grn)' : 'transparent',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          transition: 'all .15s',
-                          opacity: isLeader ? 1 : .6,
-                        }}>
-                          {isDone && <div style={{ width: 6, height: 6, background: 'var(--bg)', borderRadius: 1 }} />}
-                        </div>
-
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{
-                            fontSize: 12,
-                            color: isDone ? 'var(--txd)' : 'var(--tx)',
-                            textDecoration: isDone ? 'line-through' : 'none',
-                            lineHeight: 1.4,
-                          }}>{obj.description}</div>
-                        </div>
-
-                        <span className="mono" style={{
-                          fontSize: 9, flexShrink: 0, marginTop: 2, letterSpacing: '.06em',
-                          color: isDone ? 'var(--txd)' : 'var(--txm)',
-                          background: 'var(--sur)', border: '1px solid var(--brd)',
-                          borderRadius: 2, padding: '1px 5px',
-                        }}>
-                          {TYPE_LABEL[obj.type] || obj.type?.toUpperCase() || '?'}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )
-        })}
+        {filteredActive.map(row => (
+          <QuestCard key={row.task.id} {...row} dimmed={false} />
+        ))}
       </div>
 
-      {filtered.length === 0 && (
+      {filteredActive.length === 0 && filteredSkipped.length === 0 && filteredCompleted.length === 0 && (
         <div style={{ textAlign: 'center', padding: '24px 0' }}>
           <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>NO QUESTS MATCH THIS FILTER</div>
+        </div>
+      )}
+
+      {/* Skipped section */}
+      {filteredSkipped.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid var(--brd)' }}>
+            ⊘ SKIPPED ({filteredSkipped.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {filteredSkipped.map(row => (
+              <QuestCard key={row.task.id} {...row} dimmed={true} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Completed section */}
+      {filteredCompleted.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div className="mono" style={{ fontSize: 10, color: 'var(--grn)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid var(--brd)' }}>
+            ✓ COMPLETED ({filteredCompleted.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {filteredCompleted.map(row => (
+              <QuestCard key={row.task.id} {...row} dimmed={false} />
+            ))}
+          </div>
         </div>
       )}
     </div>

@@ -152,7 +152,7 @@ export function useParty() {
       newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
       members[myName] = merged
 
-      const changes = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, drawings: [], members }
+      const changes = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, completed: {}, drawings: [], members }
       updateParty(changes)
       return { ...prev, ...changes }
     })
@@ -202,6 +202,15 @@ export function useParty() {
     })
   }, [updateParty])
 
+  const toggleComplete = useCallback((questId) => {
+    setParty(prev => {
+      if (!prev) return prev
+      const completed = { ...(prev.completed || {}), [questId]: !prev.completed?.[questId] }
+      updateParty({ completed })
+      return { ...prev, completed }
+    })
+  }, [updateParty])
+
   const addStroke = useCallback((stroke) => {
     setParty(prev => {
       if (!prev) return prev
@@ -234,7 +243,7 @@ export function useParty() {
     party, myName, error, loading,
     createParty, joinParty,
     selectMap, addQuest, removeQuest, setSpawn,
-    toggleObjective, toggleStar,
+    toggleObjective, toggleStar, toggleComplete,
     addStroke, clearMyStrokes,
     leaveParty, setError,
     syncSavedQuests,

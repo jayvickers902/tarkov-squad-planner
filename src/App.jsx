@@ -27,7 +27,7 @@ export default function App() {
     party, myName, error: partyError, loading: partyLoading,
     createParty, joinParty,
     selectMap, addQuest: addPartyQuest, removeQuest: removePartyQuest, setSpawn,
-    toggleObjective, toggleStar,
+    toggleObjective, toggleStar, toggleComplete,
     addStroke, clearMyStrokes,
     leaveParty, setError: setPartyError,
     syncSavedQuests,
@@ -39,7 +39,7 @@ export default function App() {
   }, [userQuests]) // eslint-disable-line
 
   const [screen, setScreen] = useState('lobby')       // 'lobby' | 'myquests' | 'admin'
-  const [partyScreen, setPartyScreen] = useState('room') // 'room' | 'myquests'
+  const [partyScreen, setPartyScreen] = useState('room') // 'room' | 'myquests' | 'admin'
 
   const isAdmin = user?.id === ADMIN_USER_ID
 
@@ -77,6 +77,13 @@ export default function App() {
       toggleObjective(key)
     }
 
+    function handleToggleComplete(questId) {
+      const myQuests = party.members?.[myName] || []
+      const iOwn = myQuests.find(q => q.id === questId)
+      if (!iOwn) return
+      toggleComplete(questId)
+    }
+
     // My Quests while in party — back button returns to room
     if (partyScreen === 'myquests') {
       return (
@@ -91,10 +98,15 @@ export default function App() {
       )
     }
 
+    if (partyScreen === 'admin' && isAdmin) {
+      return <AdminKeyManager onBack={() => setPartyScreen('room')} />
+    }
+
     return (
       <Room
         party={party}
         myName={myName}
+        isAdmin={isAdmin}
         onLeave={leaveParty}
         onSelectMap={selectMap}
         onAddQuest={handleAddPartyQuest}
@@ -102,9 +114,11 @@ export default function App() {
         onSetSpawn={setSpawn}
         onToggleObjective={handleToggleObjective}
         onToggleStar={handleToggleStar}
+        onToggleComplete={handleToggleComplete}
         onAddStroke={addStroke}
         onClearMyStrokes={clearMyStrokes}
         onMyQuests={() => setPartyScreen('myquests')}
+        onAdmin={() => setPartyScreen('admin')}
       />
     )
   }

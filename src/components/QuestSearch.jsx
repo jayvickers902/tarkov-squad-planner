@@ -1,9 +1,12 @@
 import { useState, useRef } from 'react'
 
-export default function QuestSearch({ tasks, mine, onAdd, onRemove, loading }) {
+export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, onRemove, loading }) {
   const [q, setQ]       = useState('')
   const [open, setOpen] = useState(false)
   const ref = useRef()
+
+  const activeQuests    = mine.filter(item => !completedQuests[item.id])
+  const completedActive = mine.filter(item => completedQuests[item.id])
 
   const hits = q.length >= 1
     ? tasks.filter(t => t.name.toLowerCase().includes(q.toLowerCase()) && !mine.find(x => x.id === t.id)).slice(0, 14)
@@ -60,8 +63,9 @@ export default function QuestSearch({ tasks, mine, onAdd, onRemove, loading }) {
         </div>
       )}
 
+      {/* Active quests */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-        {mine.map(item => (
+        {activeQuests.map(item => (
           <div key={item.id} style={{
             display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px',
             background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, fontSize: 12,
@@ -71,10 +75,31 @@ export default function QuestSearch({ tasks, mine, onAdd, onRemove, loading }) {
               style={{ background: 'none', border: 'none', color: 'var(--txm)', padding: '0 0 0 3px', fontSize: 16, lineHeight: 1, cursor: 'pointer' }}>×</button>
           </div>
         ))}
-        {mine.length === 0 && !loading && (
+        {activeQuests.length === 0 && !loading && (
           <p className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>TYPE TO SEARCH AND ADD YOUR ACTIVE QUESTS</p>
         )}
       </div>
+
+      {/* Completed quests */}
+      {completedActive.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div className="mono" style={{ fontSize: 9, color: 'var(--grn)', letterSpacing: '.1em', marginBottom: 6 }}>
+            ✓ COMPLETED THIS RAID
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {completedActive.map(item => (
+              <div key={item.id} style={{
+                display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px',
+                background: 'var(--sur2)', border: '1px solid var(--brd)', borderRadius: 4, fontSize: 12,
+                opacity: 0.5,
+              }}>
+                <span style={{ color: 'var(--grn)', fontSize: 10 }}>✓</span>
+                <span style={{ color: 'var(--txm)', textDecoration: 'line-through' }}>{item.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

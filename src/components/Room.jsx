@@ -11,7 +11,7 @@ function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
 }
 
-export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onAddStroke, onClearMyStrokes, onMyQuests }) {
+export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onToggleComplete, onAddStroke, onClearMyStrokes, onMyQuests, onAdmin }) {
   const [tab, setTab]     = useState('quests')
   const [copied, setCopied] = useState(false)
 
@@ -46,12 +46,17 @@ export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, 
             style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>
             ★ MY QUESTS
           </button>
+          {isAdmin && (
+            <button className="btn-ghost btn-sm" onClick={onAdmin}
+              style={{ color: 'var(--txm)', borderColor: 'var(--brd2)' }}>
+              ⚙ KEY EDITOR
+            </button>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, padding: '5px 10px' }}>
             <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>PARTY</span>
             <span className="mono" style={{ fontSize: 17, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
             <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
           </div>
-          <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ MY QUESTS</button>
           <button className="btn-danger btn-sm" onClick={onLeave}>LEAVE</button>
         </div>
       </div>
@@ -181,7 +186,7 @@ export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, 
               {tab === 'quests' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
                   <div className="lbl">{myName.toUpperCase()} — YOUR ACTIVE QUESTS</div>
-                  <QuestSearch tasks={tasks} mine={mine} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} />
+                  <QuestSearch tasks={tasks} mine={mine} completedQuests={party.completed || {}} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} />
                   {members.filter(m => m !== myName).map(m => (
                     <div key={m} style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--brd)' }}>
                       <div className="lbl">{m.toUpperCase()} — QUESTS</div>
@@ -203,12 +208,15 @@ export default function Room({ party, myName, onLeave, onSelectMap, onAddQuest, 
                   {loadingTasks
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
                     : <TodoList
+                        key={party.map_norm}
                         tasks={tasks}
                         memberQuests={party.members}
                         progress={party.progress || {}}
                         starredQuests={party.starred || {}}
+                        completedQuests={party.completed || {}}
                         onToggleObjective={onToggleObjective}
                         onToggleStar={onToggleStar}
+                        onToggleComplete={onToggleComplete}
                         myName={myName}
                         isLeader={isLeader}
                       />
