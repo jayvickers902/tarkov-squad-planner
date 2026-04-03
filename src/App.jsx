@@ -150,6 +150,10 @@ export default function App() {
         onClearMyStrokes={clearMyStrokes}
         onMyQuests={() => setPartyScreen('myquests')}
         onAdmin={() => setPartyScreen('admin')}
+        friends={friends}
+        onAddFriend={handleAddFriend}
+        onRemoveFriend={removeFriend}
+        onRefreshFriends={refreshFriends}
       />
     )
   }
