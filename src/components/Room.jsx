@@ -21,6 +21,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
   const [addError, setAddError] = useState('')
   const [addBusy, setAddBusy]   = useState(false)
   const [confirmUnfriend, setConfirmUnfriend] = useState(null)
+  const [chipTooltip, setChipTooltip] = useState(null)  // { task, anchor }
 
   async function handleSendRequest() {
     if (!addInput.trim()) return
@@ -327,15 +328,48 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                 <div className="card fade-in" style={{ padding: 16 }}>
                   <div className="lbl">{myName.toUpperCase()} — YOUR ACTIVE QUESTS</div>
                   <QuestSearch tasks={tasks} mine={mine} completedQuests={completedQuests} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} />
+                  {chipTooltip && (() => {
+                    const objs = (chipTooltip.task.objectives || []).filter(o => !o.optional)
+                    const a = chipTooltip.anchor
+                    const showAbove = (window.innerHeight - a.bottom) < 220 && a.top > 220
+                    return objs.length ? (
+                      <div style={{
+                        position: 'fixed',
+                        left: Math.min(a.left, window.innerWidth - 320),
+                        ...(showAbove ? { bottom: window.innerHeight - a.top + 4 } : { top: a.bottom + 4 }),
+                        width: 300, background: 'rgba(6,16,10,0.98)',
+                        border: '1px solid var(--brd2)', borderRadius: 5,
+                        padding: '8px 10px', zIndex: 300, pointerEvents: 'none',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.7)',
+                      }}>
+                        <div className="mono" style={{ fontSize: 10, color: 'var(--gold)', marginBottom: 6, letterSpacing: '.06em' }}>
+                          {chipTooltip.task.name.toUpperCase()}
+                        </div>
+                        {objs.map(obj => (
+                          <div key={obj.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '4px 0', borderBottom: '1px solid var(--brd)' }}>
+                            <span style={{ fontSize: 12, color: 'var(--tx)', flex: 1, lineHeight: 1.4 }}>{obj.description}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null
+                  })()}
                   {members.filter(m => m !== myName).map(m => (
                     <div key={m} style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--brd)' }}>
                       <div className="lbl">{m.toUpperCase()} — QUESTS</div>
                       {!(party.members[m] || []).length
                         ? <p className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>WAITING FOR {m.toUpperCase()} TO ADD QUESTS</p>
                         : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {(party.members[m] || []).map(q => (
-                            <span key={q.id} style={{ display: 'inline-flex', background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, padding: '2px 7px', fontSize: 11, fontFamily: 'Share Tech Mono', color: 'var(--txm)' }}>{q.name}</span>
-                          ))}
+                          {(party.members[m] || []).map(q => {
+                            const task = tasks.find(t => t.id === q.id)
+                            return (
+                              <span key={q.id}
+                                onMouseEnter={task ? e => setChipTooltip({ task, anchor: e.currentTarget.getBoundingClientRect() }) : undefined}
+                                onMouseLeave={() => setChipTooltip(null)}
+                                style={{ display: 'inline-flex', background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, padding: '2px 7px', fontSize: 11, fontFamily: 'Share Tech Mono', color: 'var(--txm)', cursor: task ? 'default' : undefined }}>
+                                {q.name}
+                              </span>
+                            )
+                          })}
                         </div>
                       }
                     </div>
