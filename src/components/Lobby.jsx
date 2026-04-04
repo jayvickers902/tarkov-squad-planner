@@ -7,6 +7,7 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
   const [lastCode, setLastCode] = useState(() => localStorage.getItem('lastPartyCode'))
   const [forceCode, setForceCode] = useState(null)  // code to offer force-join on "already in party" error
   const [friendJoinCode, setFriendJoinCode] = useState(null)  // tracks which friend party was attempted
+  const [confirmUnfriend, setConfirmUnfriend] = useState(null)
   const [showFriends, setShowFriends] = useState(false)
   const [addInput, setAddInput] = useState('')
   const [addError, setAddError] = useState('')
@@ -193,12 +194,20 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
                             JOIN
                           </button>
                         )}
-                        <button
-                          className="btn-ghost btn-sm"
-                          style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
-                          onClick={() => onRemoveFriend(f.callsign)}
-                          title="Unfriend"
-                        >×</button>
+                        {confirmUnfriend === f.callsign ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                            <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>REMOVE?</span>
+                            <button className="btn-danger btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => { onRemoveFriend(f.callsign); setConfirmUnfriend(null) }}>YES</button>
+                            <button className="btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => setConfirmUnfriend(null)}>NO</button>
+                          </div>
+                        ) : (
+                          <button
+                            className="btn-ghost btn-sm"
+                            style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
+                            onClick={() => setConfirmUnfriend(f.callsign)}
+                            title="Unfriend"
+                          >×</button>
+                        )}
                       </div>
                       {friendJoinCode === f.partyCode && error && (
                         <div style={{ marginTop: 6, marginLeft: 16 }}>

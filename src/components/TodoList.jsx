@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
@@ -34,6 +34,8 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
   const [kappaOnly, setKappaOnly] = useState(false)
   const [expanded, setExpanded] = useState({})
   const [skipped, setSkipped]   = useState(new Set())
+  const [tooltip, setTooltip]   = useState(null)  // { task, objs, rect }
+  const tooltipRef              = useRef(null)
   const members = Object.keys(memberQuests)
 
   function toggleSkip(questId) {
@@ -94,7 +96,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
     const pct    = objs.length ? (doneCount / objs.length) * 100 : 0
 
     return (
-      <div style={{
+      <div data-questcard style={{
         background: 'var(--sur2)',
         border: `1px solid ${starred && !allDone && !completed && !dimmed ? 'var(--golddim)' : 'var(--brd)'}`,
         borderLeft: `3px solid ${completed || allDone ? 'var(--grn)' : dimmed ? 'var(--brd)' : starred ? 'var(--gold)' : 'var(--brd)'}`,
@@ -105,7 +107,13 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
 
         {/* Quest header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', cursor: 'pointer' }}
-          onClick={() => setExpanded(e => ({ ...e, [task.id]: !e[task.id] }))}>
+          onClick={() => setExpanded(e => ({ ...e, [task.id]: !e[task.id] }))}
+          onMouseEnter={e => {
+            if (!objs.length) return
+            const rect = e.currentTarget.closest('[data-questcard]').getBoundingClientRect()
+            setTooltip({ task, objs, rect })
+          }}
+          onMouseLeave={() => setTooltip(null)}>
 
           {/* Star */}
           {canAct ? (
@@ -273,6 +281,61 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
 
   return (
     <div>
+      {/* Objectives hover tooltip */}
+      {tooltip && (() => {
+        const spaceBelow = window.innerHeight - tooltip.rect.bottom
+        const showAbove  = spaceBelow < 200 && tooltip.rect.top > 200
+        return (
+          <div ref={tooltipRef} style={{
+            position: 'fixed',
+            left: tooltip.rect.left,
+            ...(showAbove
+              ? { bottom: window.innerHeight - tooltip.rect.top + 4 }
+              : { top: tooltip.rect.bottom + 4 }),
+            width: Math.min(tooltip.rect.width, 480),
+            background: 'rgba(6,16,10,0.98)',
+            border: '1px solid var(--brd2)',
+            borderRadius: 5,
+            padding: '8px 10px',
+            zIndex: 100,
+            pointerEvents: 'none',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+          }}>
+            <div className="mono" style={{ fontSize: 10, color: 'var(--gold)', marginBottom: 6, letterSpacing: '.06em' }}>
+              OBJECTIVES — {tooltip.task.name.toUpperCase()}
+            </div>
+            {tooltip.objs.map(obj => {
+              const isDone = progress?.[`${tooltip.task.id}::${obj.id}`]
+              return (
+                <div key={obj.id} style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 8,
+                  padding: '4px 0',
+                  borderBottom: '1px solid var(--brd)',
+                  opacity: isDone ? .45 : 1,
+                }}>
+                  <div style={{
+                    width: 12, height: 12, flexShrink: 0, marginTop: 2,
+                    border: `1px solid ${isDone ? 'var(--grn)' : 'var(--brd2)'}`,
+                    borderRadius: 2,
+                    background: isDone ? 'var(--grn)' : 'transparent',
+                  }} />
+                  <span style={{
+                    fontSize: 12, color: isDone ? 'var(--txd)' : 'var(--tx)',
+                    textDecoration: isDone ? 'line-through' : 'none',
+                    flex: 1, lineHeight: 1.4,
+                  }}>{obj.description}</span>
+                  <span className="mono" style={{
+                    fontSize: 9, color: 'var(--txd)', flexShrink: 0, marginTop: 2,
+                    background: 'var(--sur)', border: '1px solid var(--brd)',
+                    borderRadius: 2, padding: '1px 4px', letterSpacing: '.04em',
+                  }}>{TYPE_LABEL[obj.type] || obj.type?.toUpperCase() || '?'}</span>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
+
       {/* Header + overall progress */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>

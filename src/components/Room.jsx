@@ -20,6 +20,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
   const [addInput, setAddInput] = useState('')
   const [addError, setAddError] = useState('')
   const [addBusy, setAddBusy]   = useState(false)
+  const [confirmUnfriend, setConfirmUnfriend] = useState(null)
 
   async function handleSendRequest() {
     if (!addInput.trim()) return
@@ -133,10 +134,20 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                   <span className="mono" style={{ flex: 1, fontSize: 12, color: f.partyCode ? 'var(--tx)' : 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {f.callsign}
                   </span>
-                  <span className="mono" style={{ fontSize: 10, color: f.partyCode ? 'var(--gold)' : 'var(--txd)' }}>
-                    {f.partyCode ? 'IN PARTY' : 'OFFLINE'}
-                  </span>
-                  <button className="btn-ghost btn-sm" style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '3px 6px' }} onClick={() => onRemoveFriend(f.callsign)} title="Unfriend">×</button>
+                  {confirmUnfriend === f.callsign ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>REMOVE?</span>
+                      <button className="btn-danger btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => { onRemoveFriend(f.callsign); setConfirmUnfriend(null) }}>YES</button>
+                      <button className="btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => setConfirmUnfriend(null)}>NO</button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="mono" style={{ fontSize: 10, color: f.partyCode ? 'var(--gold)' : 'var(--txd)' }}>
+                        {f.partyCode ? 'IN PARTY' : 'OFFLINE'}
+                      </span>
+                      <button className="btn-ghost btn-sm" style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '3px 6px' }} onClick={() => setConfirmUnfriend(f.callsign)} title="Unfriend">×</button>
+                    </>
+                  )}
                 </div>
               ))}
 
@@ -179,21 +190,40 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
           {/* Members */}
           <div className="card" style={{ padding: 14 }}>
             <div className="lbl">PARTY MEMBERS</div>
-            {members.map(m => (
-              <div key={m} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--brd)' }}>
-                <div>
-                  <div style={{ fontSize: 13, color: m === myName ? 'var(--goldtx)' : 'var(--tx)' }}>
-                    {m}{m === myName ? ' · you' : ''}
+            {members.map(m => {
+              const isSelf    = m === myName
+              const isFriend  = friends.some(f => f.callsign === m)
+              const isPending = [...(pendingIn || []), ...(pendingOut || [])].some(r => r.callsign === m)
+              return (
+                <div key={m} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '7px 0', borderBottom: '1px solid var(--brd)' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: isSelf ? 'var(--goldtx)' : 'var(--tx)' }}>
+                      {m}{isSelf ? ' · you' : ''}
+                    </div>
+                    <div className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>
+                      {(party.members[m] || []).length} QUEST{(party.members[m] || []).length !== 1 ? 'S' : ''}
+                    </div>
                   </div>
-                  <div className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>
-                    {(party.members[m] || []).length} QUEST{(party.members[m] || []).length !== 1 ? 'S' : ''}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+                    {party.leader === m && (
+                      <span className="mono" style={{ fontSize: 10, color: 'var(--gold)', border: '1px solid var(--golddim)', borderRadius: 3, padding: '1px 5px' }}>LDR</span>
+                    )}
+                    {!isSelf && !isFriend && !isPending && (
+                      <button className="btn-ghost btn-sm" style={{ fontSize: 10 }}
+                        onClick={() => onSendRequest(m)}>
+                        + FRIEND
+                      </button>
+                    )}
+                    {!isSelf && isPending && (
+                      <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>PENDING</span>
+                    )}
+                    {!isSelf && isFriend && (
+                      <span className="mono" style={{ fontSize: 10, color: 'var(--grn)' }}>✓</span>
+                    )}
                   </div>
                 </div>
-                {party.leader === m && (
-                  <span className="mono" style={{ fontSize: 10, color: 'var(--gold)', border: '1px solid var(--golddim)', borderRadius: 3, padding: '1px 5px' }}>LDR</span>
-                )}
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           {/* Per-member quest summary — the key usability panel */}
