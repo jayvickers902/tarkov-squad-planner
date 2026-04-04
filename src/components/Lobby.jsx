@@ -6,6 +6,7 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
   const [local, setLocal]       = useState('')
   const [lastCode, setLastCode] = useState(() => localStorage.getItem('lastPartyCode'))
   const [forceCode, setForceCode] = useState(null)  // code to offer force-join on "already in party" error
+  const [friendJoinCode, setFriendJoinCode] = useState(null)  // tracks which friend party was attempted
   const [showFriends, setShowFriends] = useState(false)
   const [addInput, setAddInput] = useState('')
   const [addError, setAddError] = useState('')
@@ -26,7 +27,7 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
   function join() {
     const c = code.trim().toUpperCase()
     if (!c) { setLocal('Enter a party code'); return }
-    setLocal(''); setForceCode(null); onEnter('join', c)
+    setLocal(''); setForceCode(null); setFriendJoinCode(null); onEnter('join', c)
   }
 
   const err = local || error
@@ -166,22 +167,42 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
                   )}
 
                   {friends.map(f => (
-                    <div key={f.callsign} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: f.partyCode ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }} />
-                      <span className="mono" style={{ flex: 1, fontSize: 13, color: f.partyCode ? 'var(--tx)' : 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {f.callsign}
-                      </span>
-                      {f.partyCode && (
-                        <button className="btn-gold btn-sm" onClick={() => onEnter('join', f.partyCode)} disabled={loading}>
-                          JOIN
-                        </button>
+                    <div key={f.callsign} style={{ marginBottom: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: f.partyCode ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }} />
+                        <span className="mono" style={{ flex: 1, fontSize: 13, color: f.partyCode ? 'var(--tx)' : 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {f.callsign}
+                        </span>
+                        {f.partyCode && (
+                          <button className="btn-gold btn-sm" disabled={loading}
+                            onClick={() => { setFriendJoinCode(f.partyCode); onEnter('join', f.partyCode) }}>
+                            JOIN
+                          </button>
+                        )}
+                        <button
+                          className="btn-ghost btn-sm"
+                          style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
+                          onClick={() => onRemoveFriend(f.callsign)}
+                          title="Unfriend"
+                        >×</button>
+                      </div>
+                      {friendJoinCode === f.partyCode && error && (
+                        <div style={{ marginTop: 6, marginLeft: 16 }}>
+                          {error.includes('already in another party') ? (
+                            <div>
+                              <p className="mono" style={{ color: 'var(--red)', fontSize: 11, marginBottom: 6 }}>
+                                ⚠ You're already in a party. Leave it and join {f.callsign}?
+                              </p>
+                              <button className="btn-danger btn-sm" disabled={loading}
+                                onClick={async () => { await onForceJoin(f.partyCode); setLastCode(f.partyCode); setFriendJoinCode(null) }}>
+                                LEAVE &amp; JOIN
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="mono" style={{ color: 'var(--red)', fontSize: 11 }}>⚠ {error}</p>
+                          )}
+                        </div>
                       )}
-                      <button
-                        className="btn-ghost btn-sm"
-                        style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
-                        onClick={() => onRemoveFriend(f.callsign)}
-                        title="Unfriend"
-                      >×</button>
                     </div>
                   ))}
 
