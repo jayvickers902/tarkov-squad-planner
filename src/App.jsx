@@ -125,7 +125,9 @@ export default function App() {
       const myQuests = party.members?.[myName] || []
       const iOwn = myQuests.find(q => q.id === questId)
       if (!iOwn) return
+      const alreadyDone = party.progress?.[`__done__:${questId}`]
       toggleComplete(questId)
+      if (!alreadyDone) removeSavedQuest(questId)
     }
 
     // My Quests while in party — back button returns to room

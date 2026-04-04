@@ -59,14 +59,21 @@ export function useParty() {
     const members = { ...party.members }
     const mine = members[myName] || []
 
+    const completedIds = new Set(
+      Object.entries(party.progress || {})
+        .filter(([k, v]) => k.startsWith('__done__:') && v)
+        .map(([k]) => k.replace('__done__:', ''))
+    )
+
     const kept = mine.filter(q => {
+      if (completedIds.has(q.id)) return false
       const saved = savedQuestsRef.current.find(sq => sq.quest_id === q.id)
       if (!saved) return true
       return !saved.map_norm
     })
 
     const newMapQuests = savedQuestsRef.current
-      .filter(q => q.map_norm === party.map_norm)
+      .filter(q => q.map_norm === party.map_norm && !completedIds.has(q.quest_id))
       .map(q => ({ id: q.quest_id, name: q.quest_name }))
     const merged = [...kept]
     newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
@@ -192,14 +199,21 @@ export function useParty() {
     const members = { ...prev.members }
     const mine = members[name] || []
 
+    const completedIds = new Set(
+      Object.entries(prev.progress || {})
+        .filter(([k, v]) => k.startsWith('__done__:') && v)
+        .map(([k]) => k.replace('__done__:', ''))
+    )
+
     const kept = mine.filter(q => {
+      if (completedIds.has(q.id)) return false
       const saved = savedQuestsRef.current.find(sq => sq.quest_id === q.id)
       if (!saved) return true
       return !saved.map_norm
     })
 
     const newMapQuests = savedQuestsRef.current
-      .filter(q => q.map_norm === map.normalizedName)
+      .filter(q => q.map_norm === map.normalizedName && !completedIds.has(q.quest_id))
       .map(q => ({ id: q.quest_id, name: q.quest_name }))
     const merged = [...kept]
     newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
@@ -314,12 +328,18 @@ export function useParty() {
     const mine = prev.members?.[name] || []
     const mapNorm = prev.map_norm
 
-    // Keep manually-added quests (not in saved quests list at all)
-    const kept = mine.filter(q => !quests.find(sq => sq.quest_id === q.id))
+    const completedIds = new Set(
+      Object.entries(prev.progress || {})
+        .filter(([k, v]) => k.startsWith('__done__:') && v)
+        .map(([k]) => k.replace('__done__:', ''))
+    )
 
-    // Add saved quests that match the current map (or are any-map)
+    // Keep manually-added quests (not in saved list and not completed)
+    const kept = mine.filter(q => !quests.find(sq => sq.quest_id === q.id) && !completedIds.has(q.id))
+
+    // Add saved quests that match the current map (or are any-map), excluding completed
     const applicable = quests
-      .filter(q => !q.map_norm || q.map_norm === mapNorm)
+      .filter(q => (!q.map_norm || q.map_norm === mapNorm) && !completedIds.has(q.quest_id))
       .map(q => ({ id: q.quest_id, name: q.quest_name }))
 
     const merged = [...kept]
