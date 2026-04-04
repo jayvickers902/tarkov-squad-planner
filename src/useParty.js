@@ -108,6 +108,7 @@ export function useParty() {
     if (err) { setError('Failed to create party. Check your Supabase setup.'); setLoading(false); return false }
     codeRef.current = data.code
     myNameRef.current = name
+    localStorage.setItem('lastPartyCode', data.code)
     applyParty(data); setMyName(name); setLoading(false)
     return true
   }, [])
@@ -148,6 +149,7 @@ export function useParty() {
 
     codeRef.current = code
     myNameRef.current = name
+    localStorage.setItem('lastPartyCode', code)
     applyParty(result); setMyName(name); setLoading(false)
     return true
   }, [])
@@ -267,6 +269,7 @@ export function useParty() {
     codeRef.current = null
     partyRef.current = null
     myNameRef.current = ''
+    localStorage.removeItem('lastPartyCode')
     setParty(null); setMyName(''); setError('')
   }, [])
 

@@ -4,6 +4,7 @@ export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onA
   const [mode, setMode]         = useState('home')
   const [code, setCode]         = useState('')
   const [local, setLocal]       = useState('')
+  const [lastCode, setLastCode] = useState(() => localStorage.getItem('lastPartyCode'))
   const [showFriends, setShowFriends] = useState(false)
   const [addInput, setAddInput] = useState('')
   const [addError, setAddError] = useState('')
@@ -61,6 +62,24 @@ export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onA
               </div>
             </div>
             {error && <p className="mono" style={{ color: 'var(--red)', fontSize: 12, marginTop: 10 }}>⚠ {error}</p>}
+          </div>
+        )}
+
+        {lastCode && !autoJoinCode && (
+          <div className="card fade-in" style={{ padding: '14px 16px', marginBottom: 12, borderColor: 'var(--golddim)' }}>
+            <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginBottom: 6 }}>LAST PARTY</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="mono" style={{ fontSize: 20, color: 'var(--gold)', letterSpacing: '0.2em', flex: 1 }}>{lastCode}</span>
+              <button className="btn-gold btn-sm" disabled={loading}
+                onClick={() => onEnter('join', lastCode)}>
+                REJOIN
+              </button>
+              <button className="btn-danger btn-sm"
+                onClick={() => { localStorage.removeItem('lastPartyCode'); setLastCode(null) }}>
+                LEAVE
+              </button>
+            </div>
+            {error && <p className="mono" style={{ color: 'var(--red)', fontSize: 11, marginTop: 6 }}>⚠ {error}</p>}
           </div>
         )}
 
