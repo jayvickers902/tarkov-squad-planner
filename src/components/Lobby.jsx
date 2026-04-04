@@ -39,6 +39,20 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
       <div style={{ width: '100%', maxWidth: 430 }}>
 
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
+          <div style={{ position: 'relative', width: '100%', height: 180, marginBottom: 24, borderRadius: 6, overflow: 'hidden' }}>
+            <img
+              src="/splash.jpg"
+              alt=""
+              style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }}
+            />
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: `
+                linear-gradient(to right,  #0c0e0d 0%, transparent 40%, transparent 60%, #0c0e0d 100%),
+                linear-gradient(to bottom, #0c0e0d 0%, transparent 45%, transparent 55%, #0c0e0d 100%)
+              `,
+            }} />
+          </div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <div style={{ width: 5, height: 34, background: 'var(--gold)', borderRadius: 2 }} />
             <h1 style={{ fontSize: 36, fontWeight: 700 }}>SQUAD PLANNER</h1>
