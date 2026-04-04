@@ -28,7 +28,7 @@ export default function App() {
 
   const {
     party, myName, error: partyError, loading: partyLoading,
-    createParty, joinParty,
+    createParty, joinParty, forceJoinParty,
     selectMap, addQuest: addPartyQuest, removeQuest: removePartyQuest, setSpawn,
     toggleObjective, toggleStar, toggleComplete,
     addStroke, clearMyStrokes,
@@ -183,10 +183,15 @@ export default function App() {
     else await joinParty(code, profile.callsign, savedQuests)
   }
 
+  async function handleForceJoin(code) {
+    await forceJoinParty(code, profile.callsign, userQuests)
+  }
+
   return (
     <Lobby
       callsign={profile.callsign}
       onEnter={handleEnter}
+      onForceJoin={handleForceJoin}
       onManageQuests={() => setScreen('myquests')}
       onLogout={logout}
       onAdmin={() => setScreen('admin')}

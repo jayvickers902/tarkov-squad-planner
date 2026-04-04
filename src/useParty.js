@@ -113,6 +113,37 @@ export function useParty() {
     return true
   }, [])
 
+  const forceJoinParty = useCallback(async (code, name, savedQuests = []) => {
+    setLoading(true); setError('')
+    savedQuestsRef.current = savedQuests
+
+    const { data: existing, error: fetchErr } = await supabase.from('parties').select().eq('code', code).single()
+    if (fetchErr || !existing) { setError('Party not found — check the code.'); setLoading(false); return false }
+
+    const existingMine = existing.members?.[name] || []
+    const saved = savedQuests
+      .filter(q => !q.map_norm || q.map_norm === existing.map_norm)
+      .map(q => ({ id: q.quest_id, name: q.quest_name }))
+    const merged = [...existingMine]
+    saved.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
+
+    const myStarred = {}
+    savedQuests.filter(q => q.important).forEach(q => { myStarred[q.quest_id] = true })
+
+    const { data: result, error: rpcErr } = await supabase.rpc('force_join_party', {
+      p_code:      code,
+      p_my_quests: merged,
+      p_starred:   myStarred,
+    })
+    if (rpcErr) { setError('Failed to join party.'); setLoading(false); return false }
+
+    codeRef.current = code
+    myNameRef.current = name
+    localStorage.setItem('lastPartyCode', code)
+    applyParty(result); setMyName(name); setLoading(false)
+    return true
+  }, [])
+
   const joinParty = useCallback(async (code, name, savedQuests = []) => {
     setLoading(true); setError('')
     savedQuestsRef.current = savedQuests
@@ -305,7 +336,7 @@ export function useParty() {
 
   return {
     party, myName, error, loading,
-    createParty, joinParty,
+    createParty, joinParty, forceJoinParty,
     selectMap, addQuest, removeQuest, setSpawn,
     toggleObjective, toggleStar, toggleComplete,
     addStroke, clearMyStrokes,

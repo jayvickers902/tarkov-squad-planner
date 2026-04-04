@@ -1,10 +1,11 @@
 import { useState } from 'react'
 
-export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onAdmin, isAdmin, error, loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
+export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, onLogout, onAdmin, isAdmin, error, loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const [mode, setMode]         = useState('home')
   const [code, setCode]         = useState('')
   const [local, setLocal]       = useState('')
   const [lastCode, setLastCode] = useState(() => localStorage.getItem('lastPartyCode'))
+  const [forceCode, setForceCode] = useState(null)  // code to offer force-join on "already in party" error
   const [showFriends, setShowFriends] = useState(false)
   const [addInput, setAddInput] = useState('')
   const [addError, setAddError] = useState('')
@@ -25,7 +26,7 @@ export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onA
   function join() {
     const c = code.trim().toUpperCase()
     if (!c) { setLocal('Enter a party code'); return }
-    setLocal(''); onEnter('join', c)
+    setLocal(''); setForceCode(null); onEnter('join', c)
   }
 
   const err = local || error
@@ -61,7 +62,18 @@ export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onA
                 <div className="mono" style={{ fontSize: 20, color: 'var(--gold)', letterSpacing: '0.2em', marginTop: 2 }}>{autoJoinCode}</div>
               </div>
             </div>
-            {error && <p className="mono" style={{ color: 'var(--red)', fontSize: 12, marginTop: 10 }}>⚠ {error}</p>}
+            {error && !error.includes('already in another party') && (
+              <p className="mono" style={{ color: 'var(--red)', fontSize: 12, marginTop: 10 }}>⚠ {error}</p>
+            )}
+            {error && error.includes('already in another party') && (
+              <div style={{ marginTop: 10 }}>
+                <p className="mono" style={{ color: 'var(--red)', fontSize: 12, marginBottom: 8 }}>⚠ You are already in another party.</p>
+                <button className="btn-danger" style={{ width: '100%' }} disabled={loading}
+                  onClick={() => onForceJoin(autoJoinCode)}>
+                  LEAVE CURRENT PARTY &amp; JOIN
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -221,10 +233,26 @@ export default function Lobby({ callsign, onEnter, onManageQuests, onLogout, onA
                 style={{ fontFamily: 'Share Tech Mono', letterSpacing: '0.2em', fontSize: 20 }}
                 maxLength={6} autoFocus onKeyDown={e => e.key === 'Enter' && join()} />
             </div>
-            {err && <p className="mono" style={{ color: 'var(--red)', fontSize: 12 }}>⚠ {err}</p>}
+            {err && !err.includes('already in another party') && (
+              <p className="mono" style={{ color: 'var(--red)', fontSize: 12 }}>⚠ {err}</p>
+            )}
+            {err && err.includes('already in another party') && (
+              <div style={{ background: 'rgba(232,93,93,0.08)', border: '1px solid rgba(232,93,93,0.3)', borderRadius: 4, padding: '10px 12px' }}>
+                <p className="mono" style={{ color: 'var(--red)', fontSize: 12, marginBottom: 8 }}>
+                  ⚠ You are already in another party.
+                </p>
+                <p className="mono" style={{ color: 'var(--txm)', fontSize: 11, marginBottom: 10 }}>
+                  Leave your current party and join this one?
+                </p>
+                <button className="btn-danger" style={{ width: '100%' }} disabled={loading}
+                  onClick={async () => { await onForceJoin(code.trim().toUpperCase()); setLastCode(code.trim().toUpperCase()) }}>
+                  LEAVE CURRENT PARTY &amp; JOIN
+                </button>
+              </div>
+            )}
             {loading && <p className="mono" style={{ color: 'var(--txm)', fontSize: 12 }}>JOINING...</p>}
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-ghost" onClick={() => { setMode('home'); setLocal('') }}>BACK</button>
+              <button className="btn-ghost" onClick={() => { setMode('home'); setLocal(''); setForceCode(null) }}>BACK</button>
               <button className="btn-gold" style={{ flex: 1 }} onClick={join} disabled={loading}>JOIN</button>
             </div>
           </div>
