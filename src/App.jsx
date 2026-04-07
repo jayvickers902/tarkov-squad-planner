@@ -109,6 +109,11 @@ export default function App() {
       await saveQuest({ id: quest.id, name: quest.name }, party.map_norm || null)
     }
 
+    function handleRemovePartyQuest(questId) {
+      removePartyQuest(questId)
+      removeSavedQuest(questId)
+    }
+
     function handleToggleStar(taskId) {
       const myQuests = party.members?.[myName] || []
       const iOwn = myQuests.find(q => q.id === taskId)
@@ -159,7 +164,7 @@ export default function App() {
         onLeave={leaveParty}
         onSelectMap={selectMap}
         onAddQuest={handleAddPartyQuest}
-        onRemoveQuest={removePartyQuest}
+        onRemoveQuest={handleRemovePartyQuest}
         onSetSpawn={setSpawn}
         onToggleObjective={handleToggleObjective}
         onToggleStar={handleToggleStar}

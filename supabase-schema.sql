@@ -93,6 +93,25 @@ drop policy if exists "map_keys admin write"  on public.map_keys;
 create policy "map_keys public read" on public.map_keys for select using (true);
 create policy "map_keys admin write" on public.map_keys for all using (auth.uid() = '8134ec3a-aff3-4610-b03e-9977bb841e57'::uuid);
 
+-- Quest scan rate-limit log (used by the scan-quests edge function)
+create table if not exists public.quest_scan_log (
+  id         uuid default gen_random_uuid() primary key,
+  user_id    uuid references auth.users(id) on delete cascade not null,
+  created_at timestamptz default now() not null
+);
+
+alter table public.quest_scan_log enable row level security;
+
+drop policy if exists "Scan log own insert" on public.quest_scan_log;
+drop policy if exists "Scan log own select" on public.quest_scan_log;
+create policy "Scan log own insert" on public.quest_scan_log for insert
+  to authenticated with check (auth.uid() = user_id);
+create policy "Scan log own select" on public.quest_scan_log for select
+  to authenticated using (auth.uid() = user_id);
+
+create index if not exists quest_scan_log_user_time_idx
+  on public.quest_scan_log (user_id, created_at desc);
+
 -- Real-time on parties
 alter publication supabase_realtime add table public.parties;
 

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useTasks } from '../useTarkov'
 import { FEATURED } from '../constants'
+import QuestScanner from './QuestScanner'
 
 // Small Kappa badge — reused in search results and saved list
 function KappaBadge() {
@@ -92,6 +93,9 @@ export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportan
           ◆ YOUR PARTY IS STILL ACTIVE — CHANGES HERE WON'T AFFECT THE CURRENT RAID
         </div>
       )}
+
+      {/* Screenshot scanner */}
+      <QuestScanner allTasks={allTasks} userQuests={userQuests} onAdd={onAdd} />
 
       {/* Add quest section */}
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
