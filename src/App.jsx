@@ -21,7 +21,7 @@ export default function App() {
   const {
     quests: userQuests, loading: questsLoading,
     addQuest: saveQuest, removeQuest: removeSavedQuest,
-    toggleImportant,
+    toggleImportant, clearAllQuests,
   } = useUserQuests(user?.id)
 
   const { friends, pendingIn, pendingOut, sendRequest, acceptRequest, removeRequest, removeFriend, refresh: refreshFriends } = useFriends(user?.id, profile?.callsign)
@@ -146,6 +146,7 @@ export default function App() {
           onAdd={saveQuest}
           onRemove={removeSavedQuest}
           onToggleImportant={toggleImportant}
+          onClearAll={clearAllQuests}
           onDone={() => setPartyScreen('room')}
           inParty
         />
@@ -194,6 +195,7 @@ export default function App() {
         onAdd={saveQuest}
         onRemove={removeSavedQuest}
         onToggleImportant={toggleImportant}
+        onClearAll={clearAllQuests}
         onDone={() => setScreen('lobby')}
       />
     )

@@ -21,11 +21,12 @@ const MAP_NAMES = {
   'ground-zero': 'Ground Zero', 'the-lab': 'The Lab',
 }
 
-export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportant, onDone, inParty }) {
-  const [mapFilter, setMapFilter]   = useState('all')
-  const [searchMap, setSearchMap]   = useState('any')
-  const [searchQ, setSearchQ]       = useState('')
-  const [searchOpen, setSearchOpen] = useState(false)
+export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportant, onClearAll, onDone, inParty }) {
+  const [mapFilter, setMapFilter]     = useState('all')
+  const [searchMap, setSearchMap]     = useState('any')
+  const [searchQ, setSearchQ]         = useState('')
+  const [searchOpen, setSearchOpen]   = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   // Load tasks for the currently selected search map
   const { tasks, loading: tasksLoading } = useTasks(searchMap === 'any' ? null : searchMap)
@@ -185,6 +186,25 @@ export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportan
               {label}
             </button>
           ))}
+          {userQuests.length > 0 && (
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {confirmClear ? (
+                <>
+                  <span className="mono" style={{ fontSize: 10, color: '#e07070' }}>CLEAR ALL {userQuests.length} QUESTS?</span>
+                  <button
+                    className="btn-sm"
+                    onClick={() => { onClearAll(); setConfirmClear(false) }}
+                    style={{ fontSize: 11, background: 'rgba(180,60,60,.2)', border: '1px solid rgba(180,60,60,.4)', color: '#e07070' }}
+                  >YES, CLEAR</button>
+                  <button className="btn-ghost btn-sm" onClick={() => setConfirmClear(false)} style={{ fontSize: 11 }}>CANCEL</button>
+                </>
+              ) : (
+                <button className="btn-ghost btn-sm" onClick={() => setConfirmClear(true)} style={{ fontSize: 11, color: 'var(--txd)' }}>
+                  CLEAR ALL
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {!filtered.length ? (

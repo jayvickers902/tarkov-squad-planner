@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
     },
     body: JSON.stringify({
       model:      CLAUDE_MODEL,
-      max_tokens: 1024,
+      max_tokens: 400,
       messages: [{
         role:    'user',
         content: [

@@ -9,7 +9,7 @@ async function compressImage(file) {
     const url = URL.createObjectURL(file)
     img.onload = () => {
       URL.revokeObjectURL(url)
-      const MAX = 1920
+      const MAX = 1280
       let w = img.naturalWidth, h = img.naturalHeight
       if (w > MAX || h > MAX) {
         if (w >= h) { h = Math.round(h * MAX / w); w = MAX }
@@ -28,7 +28,7 @@ async function compressImage(file) {
         })
         reader.onerror = reject
         reader.readAsDataURL(blob)
-      }, 'image/jpeg', 0.85)
+      }, 'image/jpeg', 0.75)
     }
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Invalid image')) }
     img.src = url

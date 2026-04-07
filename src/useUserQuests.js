@@ -44,10 +44,17 @@ export function useUserQuests(userId) {
     setQuests(prev => prev.map(q => q.quest_id === questId ? { ...q, important: newVal } : q))
   }, [userId, quests])
 
+  // Delete all quests for this user
+  const clearAllQuests = useCallback(async () => {
+    if (!userId) return
+    await supabase.from('user_quests').delete().eq('user_id', userId)
+    setQuests([])
+  }, [userId])
+
   // Get quests relevant to a map (map-specific + any-map)
   const questsForMap = useCallback((mapNorm) => {
     return quests.filter(q => !q.map_norm || q.map_norm === mapNorm)
   }, [quests])
 
-  return { quests, loading, addQuest, removeQuest, toggleImportant, questsForMap }
+  return { quests, loading, addQuest, removeQuest, toggleImportant, questsForMap, clearAllQuests }
 }
