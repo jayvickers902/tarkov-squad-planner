@@ -1,0 +1,2 @@
+[functions.scan-quests]
+verify_jwt = false
