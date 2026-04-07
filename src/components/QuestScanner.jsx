@@ -36,7 +36,10 @@ async function compressImage(file) {
 }
 
 function normalize(str) {
-  return str.toLowerCase().trim().replace(/['']/g, "'").replace(/\s+/g, ' ')
+  return str.toLowerCase().trim()
+    .replace(/['']/g, "'")
+    .replace(/[–—]/g, '-')   // em dash / en dash → hyphen
+    .replace(/\s+/g, ' ')
 }
 
 // Map display name → normalizedName used in the DB
