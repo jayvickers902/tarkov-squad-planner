@@ -263,7 +263,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
                     background: 'var(--sur2)',
                     border: `1px solid ${selected.has(t.id) ? 'var(--golddim)' : 'var(--brd)'}`,
                     borderLeft: `3px solid ${selected.has(t.id) ? 'var(--gold)' : 'var(--brd)'}`,
-                    borderRadius: 4, cursor: 'pointer',
+                    borderRadius: 4, cursor: 'pointer', overflow: 'hidden',
                   }}>
                     <input
                       type="checkbox"
@@ -271,12 +271,12 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
                       onChange={() => toggleSelect(t.id)}
                       style={{ accentColor: 'var(--gold)', cursor: 'pointer', flexShrink: 0 }}
                     />
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
                       <div style={{ fontSize: 13, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {t.name}
                       </div>
-                      <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginTop: 1 }}>
-                        {t.trader?.name} · Lv.{t.minPlayerLevel || 1}
+                      <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {t.trader?.name}{t.trader?.name && ' · '}Lv.{t.minPlayerLevel || 1}
                         {t.kappaRequired && <span style={{ marginLeft: 8, color: 'var(--gold)' }}>κ</span>}
                       </div>
                     </div>
