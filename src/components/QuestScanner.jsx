@@ -263,22 +263,20 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
                     background: 'var(--sur2)',
                     border: `1px solid ${selected.has(t.id) ? 'var(--golddim)' : 'var(--brd)'}`,
                     borderLeft: `3px solid ${selected.has(t.id) ? 'var(--gold)' : 'var(--brd)'}`,
-                    borderRadius: 4, cursor: 'pointer', overflow: 'hidden',
+                    borderRadius: 4, cursor: 'pointer', boxSizing: 'border-box', width: '100%',
                   }}>
                     <input
                       type="checkbox"
                       checked={selected.has(t.id)}
                       onChange={() => toggleSelect(t.id)}
-                      style={{ accentColor: 'var(--gold)', cursor: 'pointer', flexShrink: 0 }}
+                      style={{ accentColor: 'var(--gold)', cursor: 'pointer', flexShrink: 0, width: 14, height: 14 }}
                     />
-                    <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                      <div style={{ fontSize: 13, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {t.name}
-                      </div>
-                      <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: 13, color: '#e8e0cc' }}>{t.name}</span>
+                      <span className="mono" style={{ fontSize: 10, color: '#7a8070' }}>
                         {t.trader?.name}{t.trader?.name && ' · '}Lv.{t.minPlayerLevel || 1}
                         {t.kappaRequired && <span style={{ marginLeft: 8, color: 'var(--gold)' }}>κ</span>}
-                      </div>
+                      </span>
                     </div>
                   </label>
                 ))}
