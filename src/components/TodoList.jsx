@@ -29,7 +29,15 @@ function MemberPill({ name, allMembers }) {
   )
 }
 
-export default function TodoList({ tasks, memberQuests, progress, onToggleObjective, onToggleStar, onToggleComplete, starredQuests, completedQuests, myName, isLeader }) {
+function objsForMap(objectives, mapNorm) {
+  return (objectives || []).filter(o => {
+    if (o.optional) return false
+    if (!mapNorm || !o.maps || o.maps.length === 0) return true
+    return o.maps.some(m => m.normalizedName === mapNorm)
+  })
+}
+
+export default function TodoList({ tasks, memberQuests, progress, onToggleObjective, onToggleStar, onToggleComplete, starredQuests, completedQuests, myName, isLeader, mapNorm }) {
   const [filter, setFilter]     = useState('all')
   const [kappaOnly, setKappaOnly] = useState(false)
   const [expanded, setExpanded] = useState({})
@@ -50,7 +58,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
       .filter(t => ids.includes(t.id))
       .map(task => {
         const owners    = Object.entries(memberQuests).filter(([, qs]) => qs.find(q => q.id === task.id)).map(([n]) => n)
-        const objs      = (task.objectives || []).filter(o => !o.optional)
+        const objs      = objsForMap(task.objectives, mapNorm)
         const doneCount = objs.filter(o => progress?.[`${task.id}::${o.id}`]).length
         const starred   = starredQuests?.[task.id] || false
         const allDone   = objs.length > 0 && doneCount === objs.length
@@ -58,7 +66,13 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
         const canAct    = owners.includes(myName)
         return { task, owners, objs, doneCount, starred, allDone, completed, canAct }
       })
-  }, [tasks, memberQuests, progress, starredQuests, completedQuests, myName])
+      .filter(r => {
+        if (!mapNorm) return true
+        // Hide quests that have objectives but none on this map
+        const allObjs = (r.task.objectives || []).filter(o => !o.optional)
+        return allObjs.length === 0 || r.objs.length > 0
+      })
+  }, [tasks, memberQuests, progress, starredQuests, completedQuests, myName, mapNorm])
 
   // Split into active, skipped, completed
   const activeRows    = questRows.filter(r => !r.completed && !skipped.has(r.task.id))

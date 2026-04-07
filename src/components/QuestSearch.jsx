@@ -2,9 +2,13 @@ import { useState, useRef } from 'react'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
-function QuestTooltip({ task, anchor }) {
+function QuestTooltip({ task, anchor, mapNorm }) {
   if (!task || !anchor) return null
-  const objs = (task.objectives || []).filter(o => !o.optional)
+  const objs = (task.objectives || []).filter(o => {
+    if (o.optional) return false
+    if (!mapNorm || !o.maps || o.maps.length === 0) return true
+    return o.maps.some(m => m.normalizedName === mapNorm)
+  })
   if (!objs.length) return null
 
   const spaceBelow = window.innerHeight - anchor.bottom
@@ -44,7 +48,7 @@ function QuestTooltip({ task, anchor }) {
   )
 }
 
-export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, onRemove, loading }) {
+export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, onRemove, loading, mapNorm }) {
   const [q, setQ]           = useState('')
   const [open, setOpen]     = useState(false)
   const [tooltip, setTooltip] = useState(null)  // { task, anchor }
@@ -65,7 +69,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
 
   return (
     <div style={{ position: 'relative' }}>
-      <QuestTooltip task={tooltip?.task} anchor={tooltip?.anchor} />
+      <QuestTooltip task={tooltip?.task} anchor={tooltip?.anchor} mapNorm={mapNorm} />
 
       {loading ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>

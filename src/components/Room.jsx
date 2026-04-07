@@ -244,7 +244,12 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                     {!quests.length
                       ? <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', paddingLeft: 12 }}>—</div>
                       : quests.map(q => {
-                        const taskObjs = tasks.find(t => t.id === q.id)?.objectives?.filter(o => !o.optional) || []
+                        const rawObjs  = tasks.find(t => t.id === q.id)?.objectives || []
+                        const taskObjs = rawObjs.filter(o => {
+                          if (o.optional) return false
+                          if (!o.maps || o.maps.length === 0) return true
+                          return o.maps.some(m => m.normalizedName === party.map_norm)
+                        })
                         const doneCnt  = taskObjs.filter(o => party.progress?.[`${q.id}::${o.id}`]).length
                         const allDone  = taskObjs.length > 0 && doneCnt === taskObjs.length
                         const starred  = party.starred?.[q.id]
@@ -327,9 +332,13 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
               {tab === 'quests' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
                   <div className="lbl">{myName.toUpperCase()} — YOUR ACTIVE QUESTS</div>
-                  <QuestSearch tasks={tasks} mine={mine} completedQuests={completedQuests} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} />
+                  <QuestSearch tasks={tasks} mine={mine} completedQuests={completedQuests} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} mapNorm={party.map_norm} />
                   {chipTooltip && (() => {
-                    const objs = (chipTooltip.task.objectives || []).filter(o => !o.optional)
+                    const objs = (chipTooltip.task.objectives || []).filter(o => {
+                      if (o.optional) return false
+                      if (!o.maps || o.maps.length === 0) return true
+                      return o.maps.some(m => m.normalizedName === party.map_norm)
+                    })
                     const a = chipTooltip.anchor
                     const showAbove = (window.innerHeight - a.bottom) < 220 && a.top > 220
                     return objs.length ? (
@@ -393,6 +402,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                         onToggleComplete={onToggleComplete}
                         myName={myName}
                         isLeader={isLeader}
+                        mapNorm={party.map_norm}
                       />
                   }
                 </div>
