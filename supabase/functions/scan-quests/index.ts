@@ -11,10 +11,14 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-const PROMPT = `This is a screenshot from the PC game Escape from Tarkov showing the player's task or quest journal, or a trader's task list. Extract the names of all tasks/quests visible in the image.
+const PROMPT = `This is a screenshot from the PC game Escape from Tarkov showing a quest/task list. Each row in the list represents one quest and contains: a trader portrait on the left, the quest name in the middle, a map name, a status label (like "active!"), and a progress percentage on the right.
 
-Return ONLY a valid JSON array of strings — the exact task names as they appear in the game. Example: ["Debut", "The Punisher - Part 1", "Checking"].
-If no quest or task names are visible, return [].
+Your job is to extract ONLY the quest/task names — the text in the middle column of each row. Ignore trader names, map names, status labels, and percentages.
+
+Examples of quest names: "Health Care Privacy - Part 3", "Shootout Picnic", "The Survivalist Path - Tough Guy", "Steady Signal", "Debut", "The Punisher - Part 1".
+
+Return ONLY a valid JSON array of the quest name strings, one per quest row visible. Example: ["Health Care Privacy - Part 3", "Shootout Picnic", "Steady Signal"].
+If no quest names are visible, return [].
 Do not include any explanation, markdown, or text outside the JSON array.`
 
 Deno.serve(async (req) => {

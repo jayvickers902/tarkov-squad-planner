@@ -313,7 +313,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
       )}
 
       {/* Rate limit hint */}
-      {remaining !== null && !scanning && (
+      {remaining !== null && remaining >= 0 && !scanning && (
         <div className="mono" style={{ marginTop: 10, fontSize: 10, color: 'var(--txd)', textAlign: 'right' }}>
           {remaining} SCAN{remaining !== 1 ? 'S' : ''} REMAINING THIS HOUR
         </div>
