@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const RATE_LIMIT   = 10   // max scans per user per hour
+const RATE_LIMIT        = 10   // max scans per user per hour
+const ADMIN_USER_ID     = 'ce64151c-c10b-45c4-9baa-9fbf794a5945'
 const CLAUDE_API   = 'https://api.anthropic.com/v1/messages'
 const CLAUDE_MODEL = 'claude-haiku-4-5-20251001'
 
@@ -51,7 +52,7 @@ Deno.serve(async (req) => {
     return json({ error: 'Failed to check rate limit' }, 500)
   }
 
-  if ((count ?? 0) >= RATE_LIMIT) {
+  if (user.id !== ADMIN_USER_ID && (count ?? 0) >= RATE_LIMIT) {
     return json({ error: `Rate limit reached — max ${RATE_LIMIT} scans per hour.` }, 429)
   }
 
