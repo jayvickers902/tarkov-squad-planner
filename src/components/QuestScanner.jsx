@@ -74,14 +74,15 @@ function matchTasks(detectedEntries, allTasks) {
 }
 
 export default function QuestScanner({ allTasks, userQuests, onAdd }) {
-  const [open,      setOpen]      = useState(false)
-  const [scanning,  setScanning]  = useState(false)
-  const [error,     setError]     = useState(null)
-  const [results,   setResults]   = useState(null)   // matched task objects
-  const [selected,  setSelected]  = useState(new Set())
-  const [preview,   setPreview]   = useState(null)
-  const [remaining, setRemaining] = useState(null)   // scans left this hour
-  const [unmatched, setUnmatched] = useState([])     // detected but not in tarkov.dev data
+  const [open,       setOpen]      = useState(false)
+  const [scanning,   setScanning]  = useState(false)
+  const [error,      setError]     = useState(null)
+  const [results,    setResults]   = useState(null)   // accumulated matched task objects
+  const [selected,   setSelected]  = useState(new Set())
+  const [preview,    setPreview]   = useState(null)
+  const [remaining,  setRemaining] = useState(null)   // scans left this hour
+  const [unmatched,  setUnmatched] = useState([])     // detected but not in tarkov.dev data
+  const [showUpload, setShowUpload] = useState(true)  // controls upload zone visibility
   const fileRef = useRef()
   const zoneRef = useRef()
 
@@ -106,9 +107,8 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
       return
     }
     setError(null)
-    setResults(null)
-    setSelected(new Set())
     setPreview(null)
+    setShowUpload(false)
     setScanning(true)
     try {
       const { base64, mediaType, previewUrl } = await compressImage(file)
@@ -139,9 +139,15 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
       const unmatched = (data.quests || [])
         .map(e => (typeof e === 'string' ? e : e?.name))
         .filter(n => n && !matchedNames.has(normalize(n)))
-      setResults(fresh)
+      // Merge into existing results, deduplicating by task ID
+      setResults(prev => {
+        if (!prev) return fresh
+        const existingIds = new Set(prev.map(t => t.id))
+        return [...prev, ...fresh.filter(t => !existingIds.has(t.id))]
+      })
       setUnmatched(unmatched)
-      setSelected(new Set(fresh.map(t => t.id)))
+      // Auto-select newly found quests, keep existing selections
+      setSelected(prev => new Set([...prev, ...fresh.map(t => t.id)]))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -179,6 +185,14 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
     setError(null)
     setScanning(false)
     setUnmatched([])
+    setShowUpload(true)
+  }
+
+  function scanAnother() {
+    setPreview(null)
+    setError(null)
+    setUnmatched([])
+    setShowUpload(true)
   }
 
   function close() {
@@ -216,7 +230,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
       </div>
 
       {/* Drop / paste zone */}
-      {!scanning && !results && (
+      {!scanning && showUpload && (
         <div
           ref={zoneRef}
           onClick={() => fileRef.current?.click()}
@@ -316,7 +330,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
                 >
                   ADD {selectedCount > 0 ? selectedCount : ''} QUEST{selectedCount !== 1 ? 'S' : ''}
                 </button>
-                <button className="btn-ghost btn-sm" onClick={reset} style={{ fontSize: 12 }}>
+                <button className="btn-ghost btn-sm" onClick={scanAnother} style={{ fontSize: 12 }}>
                   SCAN ANOTHER
                 </button>
               </div>
