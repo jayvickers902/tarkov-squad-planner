@@ -101,10 +101,12 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
       if (!session) throw new Error('Not logged in')
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
       const res = await fetch(`${supabaseUrl}/functions/v1/scan-quests`, {
         method:  'POST',
         headers: {
           Authorization:  `Bearer ${session.access_token}`,
+          apikey:         anonKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ image: base64, mediaType }),
