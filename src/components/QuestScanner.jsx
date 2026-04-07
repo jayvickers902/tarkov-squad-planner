@@ -39,20 +39,35 @@ function normalize(str) {
   return str.toLowerCase().trim().replace(/['']/g, "'").replace(/\s+/g, ' ')
 }
 
-// Match Claude's returned names against the full task list
-function matchTasks(detectedNames, allTasks) {
+// Map display name → normalizedName used in the DB
+const MAP_NORM = {
+  'woods': 'woods', 'customs': 'customs', 'interchange': 'interchange',
+  'shoreline': 'shoreline', 'factory': 'factory', 'lighthouse': 'lighthouse',
+  'streets of tarkov': 'streets-of-tarkov', 'streets': 'streets-of-tarkov',
+  'reserve': 'reserve', 'ground zero': 'ground-zero', 'the lab': 'the-lab', 'labs': 'the-lab',
+}
+
+function normalizeMap(mapStr) {
+  if (!mapStr) return null
+  return MAP_NORM[mapStr.toLowerCase().trim()] ?? null
+}
+
+// Match Claude's returned entries ({name, map}) against the full task list
+function matchTasks(detectedEntries, allTasks) {
   const results = []
   const seen = new Set()
-  for (const name of detectedNames) {
+  for (const entry of detectedEntries) {
+    const name = typeof entry === 'string' ? entry : entry?.name
+    const mapNorm = typeof entry === 'string' ? null : normalizeMap(entry?.map)
     if (!name || typeof name !== 'string') continue
     const nd = normalize(name)
-    let match =
+    const match =
       allTasks.find(t => normalize(t.name) === nd) ||
       allTasks.find(t => normalize(t.name).includes(nd) && nd.length > 4) ||
       allTasks.find(t => nd.includes(normalize(t.name)) && normalize(t.name).length > 4)
     if (match && !seen.has(match.id)) {
       seen.add(match.id)
-      results.push(match)
+      results.push({ ...match, detectedMap: mapNorm })
     }
   }
   return results
@@ -66,6 +81,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
   const [selected,  setSelected]  = useState(new Set())
   const [preview,   setPreview]   = useState(null)
   const [remaining, setRemaining] = useState(null)   // scans left this hour
+  const [unmatched, setUnmatched] = useState([])     // detected but not in tarkov.dev data
   const fileRef = useRef()
   const zoneRef = useRef()
 
@@ -117,9 +133,14 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
 
       if (typeof data.remaining === 'number') setRemaining(data.remaining)
 
-      const matched = matchTasks(data.quests || [], allTasks)
-      const fresh   = matched.filter(t => !userQuests.find(q => q.quest_id === t.id))
+      const matched   = matchTasks(data.quests || [], allTasks)
+      const fresh     = matched.filter(t => !userQuests.find(q => q.quest_id === t.id))
+      const matchedNames = new Set(matched.map(t => normalize(t.name)))
+      const unmatched = (data.quests || [])
+        .map(e => (typeof e === 'string' ? e : e?.name))
+        .filter(n => n && !matchedNames.has(normalize(n)))
       setResults(fresh)
+      setUnmatched(unmatched)
       setSelected(new Set(fresh.map(t => t.id)))
     } catch (err) {
       setError(err.message)
@@ -145,7 +166,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
   function handleAddSelected() {
     for (const task of results) {
       if (selected.has(task.id)) {
-        onAdd({ id: task.id, name: task.name }, null)
+        onAdd({ id: task.id, name: task.name }, task.detectedMap ?? null)
       }
     }
     reset()
@@ -157,6 +178,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
     setPreview(null)
     setError(null)
     setScanning(false)
+    setUnmatched([])
   }
 
   function close() {
@@ -249,7 +271,10 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
 
           {results.length === 0 ? (
             <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', textAlign: 'center', padding: '12px 0' }}>
-              NO UNTRACKED QUESTS DETECTED — TRY A CLEARER SCREENSHOT
+              {unmatched.length > 0 ? 'QUESTS DETECTED BUT NOT FOUND IN TARKOV.DEV:' : 'NO UNTRACKED QUESTS DETECTED — TRY A CLEARER SCREENSHOT'}
+              {unmatched.map((n, i) => (
+                <div key={i} style={{ marginTop: 4, color: 'var(--txd)' }}>— {n}</div>
+              ))}
             </div>
           ) : (
             <>
@@ -275,6 +300,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
                       <span style={{ fontSize: 13, color: '#e8e0cc' }}>{t.name}</span>
                       <span className="mono" style={{ fontSize: 10, color: '#7a8070' }}>
                         {t.trader?.name}{t.trader?.name && ' · '}Lv.{t.minPlayerLevel || 1}
+                        {' · '}{t.detectedMap ? t.detectedMap.replace(/-/g, ' ').toUpperCase() : 'ANY MAP'}
                         {t.kappaRequired && <span style={{ marginLeft: 8, color: 'var(--gold)' }}>κ</span>}
                       </span>
                     </div>
@@ -294,6 +320,14 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
                   SCAN ANOTHER
                 </button>
               </div>
+              {unmatched.length > 0 && (
+                <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 4, background: 'rgba(255,255,255,.04)', border: '1px solid var(--brd)' }}>
+                  <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginBottom: 4 }}>DETECTED BUT NOT FOUND IN TARKOV.DEV DATA:</div>
+                  {unmatched.map((n, i) => (
+                    <div key={i} className="mono" style={{ fontSize: 11, color: 'var(--txm)', padding: '2px 0' }}>— {n}</div>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </>

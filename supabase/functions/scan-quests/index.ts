@@ -11,15 +11,17 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-const PROMPT = `This is a screenshot from the PC game Escape from Tarkov showing a quest/task list. Each row in the list represents one quest and contains: a trader portrait on the left, the quest name in the middle, a map name, a status label (like "active!"), and a progress percentage on the right.
+const PROMPT = `This is a screenshot from the PC game Escape from Tarkov showing a quest/task list. Each row contains: a trader portrait on the left, the quest name in the middle, a map name (like "Woods", "Customs", "Shoreline", etc.), a status label (like "active!"), and a progress percentage on the right.
 
-Your job is to extract ONLY the quest/task names — the text in the middle column of each row. Ignore trader names, map names, status labels, and percentages.
+Extract each quest's name and its map. Return a JSON array of objects with "name" and "map" fields.
 
-Examples of quest names: "Health Care Privacy - Part 3", "Shootout Picnic", "The Survivalist Path - Tough Guy", "Steady Signal", "Debut", "The Punisher - Part 1".
+Map rules:
+- Use the exact map name shown (e.g. "Woods", "Customs", "Interchange", "Shoreline", "Factory", "Lighthouse", "Streets of Tarkov", "Reserve", "Ground Zero", "The Lab")
+- If the map shown is "Any location", "Any map", or blank, use null for the map field.
 
-Return ONLY a valid JSON array of the quest name strings, one per quest row visible. Example: ["Health Care Privacy - Part 3", "Shootout Picnic", "Steady Signal"].
-If no quest names are visible, return [].
-Do not include any explanation, markdown, or text outside the JSON array.`
+Example output: [{"name":"Health Care Privacy - Part 3","map":"Woods"},{"name":"Shootout Picnic","map":"Woods"},{"name":"Debut","map":null}]
+
+Return ONLY the JSON array. No explanation, no markdown.`
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -113,12 +115,12 @@ Deno.serve(async (req) => {
   const claudeData = await claudeRes.json()
   const rawText    = claudeData.content?.[0]?.text?.trim() ?? '[]'
 
-  let quests: string[] = []
+  type QuestEntry = { name: string; map: string | null }
+  let quests: QuestEntry[] = []
   try {
-    quests = JSON.parse(rawText)
-    if (!Array.isArray(quests)) quests = []
+    const parsed = JSON.parse(rawText)
+    if (Array.isArray(parsed)) quests = parsed
   } catch {
-    // Claude sometimes wraps in markdown — try extracting the array
     const match = rawText.match(/\[[\s\S]*\]/)
     if (match) {
       try { quests = JSON.parse(match[0]) } catch { quests = [] }
