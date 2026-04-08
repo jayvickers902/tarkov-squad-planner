@@ -35,19 +35,23 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm }) {
         const task = tasks.find(t => t.id === q.id)
         if (!task) return
         task.objectives?.forEach(obj => {
-          if (obj.optional || !obj.item) return
-          if (obj.type !== 'plantItem') return
+          if (obj.optional) return
+          const isPlant = obj.type === 'plantItem' && obj.item
+          const isMark  = obj.type === 'mark' && obj.markerItem
+          if (!isPlant && !isMark) return
           if (!objIsOnMap(obj, mapNorm, task.map?.normalizedName)) return
-          const key = `${obj.item.id}::${obj.foundInRaid ? 'fir' : 'nonfir'}`
+          const item = isPlant ? obj.item : obj.markerItem
+          const count = isPlant ? (obj.count || 1) : 1
+          const key = `${item.id}::bring`
           if (itemMap[key]) {
-            itemMap[key].count += obj.count || 1
+            itemMap[key].count += count
             if (!itemMap[key].quests.includes(q.name)) itemMap[key].quests.push(q.name)
           } else {
             itemMap[key] = {
-              itemId: obj.item.id,
-              name: obj.item.name,
-              count: obj.count || 1,
-              foundInRaid: obj.foundInRaid || false,
+              itemId: item.id,
+              name: item.name,
+              count,
+              foundInRaid: false,
               quests: [q.name],
             }
           }
