@@ -141,6 +141,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
       obj, task: r.task, owners: r.owners, canAct: r.canAct,
       isDone: progress?.[`${r.task.id}::${obj.id}`] || false,
     })))
+    .filter(row => row.obj.type !== 'giveItem' && row.obj.type !== 'giveQuestItem')
 
   const totalObjs = activeRows.reduce((s, r) => s + r.objs.length, 0)
   const doneObjs  = activeRows.reduce((s, r) => s + r.doneCount, 0)
