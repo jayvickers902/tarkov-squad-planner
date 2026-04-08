@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const RATE_LIMIT        = 10   // max scans per user per hour
+const RATE_LIMIT        = 100  // max scans per user per hour
 const ADMIN_USER_ID     = 'ce64151c-c10b-45c4-9baa-9fbf794a5945'
 const CLAUDE_API   = 'https://api.anthropic.com/v1/messages'
 const CLAUDE_MODEL = 'claude-haiku-4-5-20251001'
