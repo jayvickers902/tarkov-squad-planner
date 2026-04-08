@@ -39,7 +39,7 @@ export function useParty() {
     const poll = setInterval(async () => {
       const fresh = await fetchParty(code)
       if (fresh) applyParty(fresh)
-    }, 20000)
+    }, 5000)
 
     const channel = supabase
       .channel(`party-${code}`)

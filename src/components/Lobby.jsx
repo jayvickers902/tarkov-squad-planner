@@ -99,7 +99,7 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="mono" style={{ fontSize: 20, color: 'var(--gold)', letterSpacing: '0.2em', flex: 1 }}>{lastCode}</span>
               <button className="btn-gold btn-sm" disabled={loading}
-                onClick={() => onEnter('join', lastCode)}>
+                onClick={() => onForceJoin(lastCode)}>
                 REJOIN
               </button>
               <button className="btn-danger btn-sm"
