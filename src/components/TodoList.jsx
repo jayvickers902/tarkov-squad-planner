@@ -48,6 +48,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
   const [skipped, setSkipped]   = useState(() => initialSkipped ? new Set(initialSkipped) : new Set())
   const [dragId, setDragId]     = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
+  const [viewMode, setViewMode] = useState('quests') // 'quests' | 'objectives'
   const members = Object.keys(memberQuests)
 
   function toggleSkip(questId) {
@@ -132,6 +133,14 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
   const filteredActive    = applyFilter(activeRows)
   const filteredSkipped   = applyFilter(skippedRows)
   const filteredCompleted = applyFilter(completedRows)
+
+  // Flat list of map-specific objectives for the objectives view
+  const objectiveRows = filteredActive
+    .filter(r => r.isMapSpecific)
+    .flatMap(r => r.objs.map(obj => ({
+      obj, task: r.task, owners: r.owners, canAct: r.canAct,
+      isDone: progress?.[`${r.task.id}::${obj.id}`] || false,
+    })))
 
   const totalObjs = activeRows.reduce((s, r) => s + r.objs.length, 0)
   const doneObjs  = activeRows.reduce((s, r) => s + r.doneCount, 0)
@@ -370,6 +379,22 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
         </div>
       </div>
 
+      {/* View mode toggle */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 12, borderRadius: 4, overflow: 'hidden', border: '1px solid var(--brd2)', width: 'fit-content' }}>
+        <button
+          onClick={() => setViewMode('quests')}
+          className={viewMode === 'quests' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+          style={{ borderRadius: 0, borderRight: '1px solid var(--brd2)' }}>
+          QUESTS
+        </button>
+        <button
+          onClick={() => setViewMode('objectives')}
+          className={viewMode === 'objectives' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+          style={{ borderRadius: 0 }}>
+          OBJECTIVES
+        </button>
+      </div>
+
       {/* Filter bar */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => setFilter('all')} className={filter === 'all' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}>ALL</button>
@@ -401,12 +426,97 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
           )
         })}
         <span className="mono" style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--txd)' }}>
-          {filteredActive.length + filteredSkipped.length} QUEST{filteredActive.length + filteredSkipped.length !== 1 ? 'S' : ''}
+          {viewMode === 'objectives'
+            ? `${objectiveRows.length} OBJ${objectiveRows.length !== 1 ? 'S' : ''}`
+            : `${filteredActive.length + filteredSkipped.length} QUEST${filteredActive.length + filteredSkipped.length !== 1 ? 'S' : ''}`}
         </span>
       </div>
 
+      {/* Objectives view */}
+      {viewMode === 'objectives' && (
+        !mapNorm ? (
+          <div style={{ textAlign: 'center', padding: '40px 24px' }}>
+            <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', letterSpacing: '.1em' }}>SELECT A MAP</div>
+            <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', marginTop: 8 }}>MAP-SPECIFIC OBJECTIVES WILL APPEAR HERE</div>
+          </div>
+        ) : objectiveRows.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 24px' }}>
+            <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', letterSpacing: '.1em' }}>NO MAP-SPECIFIC OBJECTIVES</div>
+            <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', marginTop: 8 }}>NO FILTERED QUESTS HAVE OBJECTIVES TIED TO THIS MAP</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {objectiveRows.map(row => {
+              const key = `${row.task.id}::${row.obj.id}`
+              return (
+                <div
+                  key={key}
+                  onClick={() => isLeader && onToggleObjective(key)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 9,
+                    padding: '7px 10px',
+                    background: 'var(--sur2)',
+                    border: `1px solid var(--brd)`,
+                    borderLeft: `3px solid ${row.isDone ? 'var(--grn)' : 'var(--brd)'}`,
+                    borderRadius: 4,
+                    cursor: isLeader ? 'pointer' : 'default',
+                    opacity: row.isDone ? 0.4 : 1,
+                    transition: 'opacity .2s',
+                  }}
+                  onMouseEnter={e => { if (isLeader && !row.isDone) e.currentTarget.style.background = 'rgba(255,255,255,0.02)' }}
+                  onMouseLeave={e => e.currentTarget.style.background = 'var(--sur2)'}
+                >
+                  {/* Checkbox */}
+                  <div style={{
+                    width: 14, height: 14, flexShrink: 0,
+                    border: `1px solid ${row.isDone ? 'var(--grn)' : 'var(--brd2)'}`,
+                    borderRadius: 3,
+                    background: row.isDone ? 'var(--grn)' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'all .15s',
+                    opacity: isLeader ? 1 : 0.6,
+                  }}>
+                    {row.isDone && <div style={{ width: 6, height: 6, background: 'var(--bg)', borderRadius: 1 }} />}
+                  </div>
+
+                  {/* Description + quest name */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 12, color: row.isDone ? 'var(--txd)' : 'var(--tx)',
+                      textDecoration: row.isDone ? 'line-through' : 'none',
+                      lineHeight: 1.4,
+                    }}>{row.obj.description}</div>
+                    <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {row.task.name}
+                    </div>
+                  </div>
+
+                  {/* Type badge */}
+                  <span className="mono" style={{
+                    fontSize: 9, flexShrink: 0, letterSpacing: '.06em',
+                    color: row.isDone ? 'var(--txd)' : 'var(--txm)',
+                    background: 'var(--sur)', border: '1px solid var(--brd)',
+                    borderRadius: 2, padding: '1px 5px',
+                  }}>
+                    {TYPE_LABEL[row.obj.type] || row.obj.type?.toUpperCase() || '?'}
+                  </span>
+
+                  {/* Owner pills */}
+                  <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                    {row.owners.map(o => <MemberPill key={o} name={o} allMembers={members} />)}
+                  </div>
+                </div>
+              )
+            })}
+            {!isLeader && (
+              <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', textAlign: 'center', marginTop: 8 }}>⊘ ONLY LEADER CAN CHECK OFF OBJECTIVES</div>
+            )}
+          </div>
+        )
+      )}
+
       {/* Map-specific quest rows */}
-      {(() => {
+      {viewMode === 'quests' && (() => {
         const mapActive   = filteredActive.filter(r => r.isMapSpecific)
         const anyActive   = filteredActive.filter(r => !r.isMapSpecific)
         const mapSkipped  = filteredSkipped.filter(r => r.isMapSpecific)
@@ -467,7 +577,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
       })()}
 
       {/* Completed section */}
-      {filteredCompleted.length > 0 && (
+      {viewMode === 'quests' && filteredCompleted.length > 0 && (
         <div style={{ marginTop: 16 }}>
           <div className="mono" style={{ fontSize: 10, color: 'var(--grn)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid var(--brd)' }}>
             ✓ COMPLETED ({filteredCompleted.length})
