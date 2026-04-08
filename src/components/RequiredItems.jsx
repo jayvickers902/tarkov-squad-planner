@@ -14,7 +14,14 @@ function memberColor(name, allMembers) {
   return MEMBER_COLORS[Math.max(0, idx)]
 }
 
-export default function RequiredItems({ tasks, memberQuests }) {
+function objIsOnMap(obj, mapNorm, taskMapNorm) {
+  if (!mapNorm) return true
+  if (obj.maps && obj.maps.length > 0) return obj.maps.some(m => m.normalizedName === mapNorm)
+  if (taskMapNorm) return taskMapNorm === mapNorm
+  return true
+}
+
+export default function RequiredItems({ tasks, memberQuests, mapNorm }) {
   const members = Object.keys(memberQuests)
   const [activeMember, setActiveMember] = useState('all')
 
@@ -29,6 +36,7 @@ export default function RequiredItems({ tasks, memberQuests }) {
         if (!task) return
         task.objectives?.forEach(obj => {
           if (obj.optional || !obj.item) return
+          if (!objIsOnMap(obj, mapNorm, task.map?.normalizedName)) return
           const key = `${obj.item.id}::${obj.foundInRaid ? 'fir' : 'nonfir'}`
           if (itemMap[key]) {
             itemMap[key].count += obj.count || 1
