@@ -31,6 +31,7 @@ export default function App() {
     createParty, joinParty, forceJoinParty,
     selectMap, addQuest: addPartyQuest, removeQuest: removePartyQuest, setSpawn,
     toggleObjective, toggleStar, toggleComplete,
+    reorderQuests,
     addStroke, clearMyStrokes,
     addMarker, clearMyMarkers,
     leaveParty, setError: setPartyError,
@@ -170,6 +171,7 @@ export default function App() {
         onToggleObjective={handleToggleObjective}
         onToggleStar={handleToggleStar}
         onToggleComplete={handleToggleComplete}
+        onReorderQuests={reorderQuests}
         onAddStroke={addStroke}
         onClearMyStrokes={clearMyStrokes}
         onAddMarker={addMarker}

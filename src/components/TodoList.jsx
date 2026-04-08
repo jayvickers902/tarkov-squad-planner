@@ -37,11 +37,13 @@ function objsForMap(objectives, mapNorm) {
   })
 }
 
-export default function TodoList({ tasks, memberQuests, progress, onToggleObjective, onToggleStar, onToggleComplete, starredQuests, completedQuests, myName, isLeader, mapNorm }) {
+export default function TodoList({ tasks, memberQuests, progress, onToggleObjective, onToggleStar, onToggleComplete, onReorderQuests, questOrder, starredQuests, completedQuests, myName, isLeader, mapNorm }) {
   const [filter, setFilter]     = useState('all')
   const [kappaOnly, setKappaOnly] = useState(false)
   const [expanded, setExpanded] = useState({})
   const [skipped, setSkipped]   = useState(new Set())
+  const [dragId, setDragId]     = useState(null)
+  const [dragOverId, setDragOverId] = useState(null)
   const members = Object.keys(memberQuests)
 
   function toggleSkip(questId) {
@@ -63,8 +65,12 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
         const starred   = starredQuests?.[task.id] || false
         const allDone   = objs.length > 0 && doneCount === objs.length
         const completed = completedQuests?.[task.id] || false
-        const canAct    = owners.includes(myName)
-        return { task, owners, objs, doneCount, starred, allDone, completed, canAct }
+        const canAct         = owners.includes(myName)
+        // True if any non-optional objective is tied to a specific map — false for any-map quests (Gunsmith etc.)
+        const isMapSpecific  = mapNorm
+          ? (task.objectives || []).some(o => !o.optional && o.maps && o.maps.length > 0)
+          : false
+        return { task, owners, objs, doneCount, starred, allDone, completed, canAct, isMapSpecific }
       })
       .filter(r => {
         if (!mapNorm) return true
@@ -347,32 +353,66 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
         </span>
       </div>
 
-      {/* Active quest rows */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {filteredActive.map(row => (
-          <QuestCard key={row.task.id} {...row} dimmed={false} />
-        ))}
-      </div>
+      {/* Map-specific quest rows */}
+      {(() => {
+        const mapActive   = filteredActive.filter(r => r.isMapSpecific)
+        const anyActive   = filteredActive.filter(r => !r.isMapSpecific)
+        const mapSkipped  = filteredSkipped.filter(r => r.isMapSpecific)
+        const anySkipped  = filteredSkipped.filter(r => !r.isMapSpecific)
 
-      {filteredActive.length === 0 && filteredSkipped.length === 0 && filteredCompleted.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '24px 0' }}>
-          <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>NO QUESTS MATCH THIS FILTER</div>
-        </div>
-      )}
+        return (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {mapActive.map(row => <QuestCard key={row.task.id} {...row} dimmed={false} />)}
+            </div>
 
-      {/* Skipped section */}
-      {filteredSkipped.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid var(--brd)' }}>
-            ⊘ SKIPPED ({filteredSkipped.length})
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {filteredSkipped.map(row => (
-              <QuestCard key={row.task.id} {...row} dimmed={true} />
-            ))}
-          </div>
-        </div>
-      )}
+            {filteredActive.length === 0 && filteredSkipped.length === 0 && filteredCompleted.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>NO QUESTS MATCH THIS FILTER</div>
+              </div>
+            )}
+
+            {/* Skipped — map-specific */}
+            {mapSkipped.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid var(--brd)' }}>
+                  ⊘ SKIPPED ({mapSkipped.length})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {mapSkipped.map(row => <QuestCard key={row.task.id} {...row} dimmed={true} />)}
+                </div>
+              </div>
+            )}
+
+            {/* Any-map section */}
+            {(anyActive.length > 0 || anySkipped.length > 0) && (
+              <div style={{ marginTop: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--brd)' }}>
+                  <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', letterSpacing: '.1em' }}>
+                    ◆ NON-MAP SPECIFIC ({anyActive.length + anySkipped.length})
+                  </div>
+                  <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.06em' }}>
+                    — CAN BE DONE ON ANY MAP
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {anyActive.map(row => <QuestCard key={row.task.id} {...row} dimmed={false} />)}
+                </div>
+                {anySkipped.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid var(--brd)' }}>
+                      ⊘ SKIPPED ({anySkipped.length})
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {anySkipped.map(row => <QuestCard key={row.task.id} {...row} dimmed={true} />)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )
+      })()}
 
       {/* Completed section */}
       {filteredCompleted.length > 0 && (

@@ -267,6 +267,13 @@ export function useParty() {
     updatePartyDB({ starred })
   }, [updatePartyDB])
 
+  const reorderQuests = useCallback((orderedIds) => {
+    const prev = partyRef.current
+    if (!prev) return
+    applyParty({ ...prev, quest_order: orderedIds })
+    updatePartyDB({ quest_order: orderedIds })
+  }, [updatePartyDB])
+
   const toggleComplete = useCallback((questId) => {
     const prev = partyRef.current
     if (!prev) return
@@ -359,6 +366,7 @@ export function useParty() {
     createParty, joinParty, forceJoinParty,
     selectMap, addQuest, removeQuest, setSpawn,
     toggleObjective, toggleStar, toggleComplete,
+    reorderQuests,
     addStroke, clearMyStrokes,
     addMarker, clearMyMarkers,
     leaveParty, setError,
