@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useMaps, useTasks } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
 import { useIsMobile } from '../useIsMobile'
