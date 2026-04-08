@@ -17,11 +17,12 @@ export function useParty() {
   const [myName, setMyName]   = useState('')
   const [error, setError]     = useState('')
   const [loading, setLoading] = useState(false)
-  const codeRef       = useRef(null)
-  const partyRef      = useRef(null)   // always mirrors party state — safe to read in callbacks
-  const savedQuestsRef = useRef([])
-  const prevMapNormRef = useRef(null)
-  const myNameRef     = useRef('')
+  const codeRef         = useRef(null)
+  const partyRef        = useRef(null)   // always mirrors party state — safe to read in callbacks
+  const savedQuestsRef  = useRef([])
+  const prevMapNormRef  = useRef(null)
+  const myNameRef       = useRef('')
+  const pendingFieldsRef = useRef(new Set())  // fields currently being written to DB
 
   // Keep refs in sync
   function applyParty(data) {
@@ -43,7 +44,22 @@ export function useParty() {
     const channel = supabase
       .channel(`party-${code}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'parties', filter: `code=eq.${code}` },
-        payload => { if (payload.new) applyParty(payload.new) })
+        payload => {
+          if (!payload.new) return
+          const pending = pendingFieldsRef.current
+          if (pending.size === 0) {
+            // No in-flight writes — safe to apply the full row
+            applyParty(payload.new)
+            return
+          }
+          // Selectively skip fields currently being written locally so a concurrent
+          // progress update doesn't overwrite an in-flight members update (and vice-versa)
+          const merged = { ...(partyRef.current || {}) }
+          Object.keys(payload.new).forEach(k => {
+            if (!pending.has(k)) merged[k] = payload.new[k]
+          })
+          applyParty(merged)
+        })
       .subscribe()
 
     return () => { clearInterval(poll); supabase.removeChannel(channel) }
@@ -86,13 +102,16 @@ export function useParty() {
 
   const updatePartyDB = useCallback(async (changes) => {
     if (!codeRef.current) return
+    const keys = Object.keys(changes)
+    keys.forEach(k => pendingFieldsRef.current.add(k))
     const { data, error: err } = await supabase.from('parties').update(changes).eq('code', codeRef.current).select().single()
+    keys.forEach(k => pendingFieldsRef.current.delete(k))
     if (!err && data) {
       // Only merge back the fields we actually updated — applying the full row would
       // let a stale-members response from a progress update overwrite a concurrent
       // members update that was committed in between (and vice-versa).
       const merged = { ...partyRef.current }
-      Object.keys(changes).forEach(k => { merged[k] = data[k] })
+      keys.forEach(k => { merged[k] = data[k] })
       applyParty(merged)
     }
   }, [])

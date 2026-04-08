@@ -87,7 +87,9 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
   }, [userQuests])
 
   function handleAdd(task) {
-    onAdd({ id: task.id, name: task.name }, searchMap === 'any' ? null : searchMap)
+    // Use the map from the quest data itself, not the search filter
+    const autoMap = task.map?.normalizedName || null
+    onAdd({ id: task.id, name: task.name }, autoMap)
     setSearchQ('')
   }
 
@@ -161,7 +163,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
         <div className="lbl">ADD QUEST TO YOUR LIST</div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', flexShrink: 0 }}>SAVE FOR:</div>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', flexShrink: 0 }}>FILTER BY MAP:</div>
           <button
             onClick={() => setSearchMap('any')}
             className={searchMap === 'any' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}>

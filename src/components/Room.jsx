@@ -39,6 +39,10 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
   const members  = Object.keys(party.members || {})
   const mine     = party.members?.[myName] || []
 
+  // Track if we ever had quests — used to show "syncing" instead of "no quests" on brief dips
+  const mineWasNonEmpty = useRef(mine.length > 0)
+  if (mine.length > 0) mineWasNonEmpty.current = true
+
   // Completed quests are stored in progress with __done__: prefix (no extra DB column needed)
   const completedQuests = Object.fromEntries(
     Object.entries(party.progress || {})
@@ -413,13 +417,20 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
               {tab === 'todo' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
                   {!mine.length ? (
-                    <div style={{ textAlign: 'center', padding: '40px 24px' }}>
-                      <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>NO QUESTS ADDED</div>
-                      <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', lineHeight: 1.7 }}>
-                        ADD QUESTS ON THE FLY FROM THE <button onClick={() => setTab('quests')} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11 }}>QUESTS</button> TAB,<br />
-                        OR MANAGE THEM CENTRALLY UNDER <button onClick={onMyQuests} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11, color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ MY QUESTS</button>
+                    mineWasNonEmpty.current ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '32px 24px', justifyContent: 'center' }}>
+                        <Spin />
+                        <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>SYNCING...</span>
                       </div>
-                    </div>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: '40px 24px' }}>
+                        <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>NO QUESTS ADDED</div>
+                        <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', lineHeight: 1.7 }}>
+                          ADD QUESTS ON THE FLY FROM THE <button onClick={() => setTab('quests')} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11 }}>QUESTS</button> TAB,<br />
+                          OR MANAGE THEM CENTRALLY UNDER <button onClick={onMyQuests} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11, color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ MY QUESTS</button>
+                        </div>
+                      </div>
+                    )
                   ) : loadingTasks
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
                     : <TodoList
