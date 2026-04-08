@@ -41,11 +41,11 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
-export default function TodoList({ tasks, memberQuests, progress, onToggleObjective, onToggleStar, onToggleComplete, onReorderQuests, questOrder, starredQuests, completedQuests, myName, isLeader, mapNorm }) {
+export default function TodoList({ tasks, memberQuests, progress, onToggleObjective, onToggleStar, onToggleComplete, onReorderQuests, questOrder, initialSkipped, starredQuests, completedQuests, myName, isLeader, mapNorm }) {
   const [filter, setFilter]     = useState('all')
   const [kappaOnly, setKappaOnly] = useState(false)
   const [expanded, setExpanded] = useState({})
-  const [skipped, setSkipped]   = useState(new Set())
+  const [skipped, setSkipped]   = useState(() => initialSkipped ? new Set(initialSkipped) : new Set())
   const [dragId, setDragId]     = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
   const members = Object.keys(memberQuests)

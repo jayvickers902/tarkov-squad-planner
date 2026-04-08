@@ -22,6 +22,7 @@ export function useUserQuests(userId) {
       quest_name: quest.name,
       map_norm:   mapNorm || null,
       important:  false,
+      skipped:    false,
     }
     const { data, error } = await supabase.from('user_quests').upsert(row, { onConflict: 'user_id,quest_id' }).select().single()
     if (!error && data) setQuests(prev => prev.find(q => q.quest_id === quest.id) ? prev : [...prev, data])
@@ -33,6 +34,16 @@ export function useUserQuests(userId) {
     await supabase.from('user_quests').delete().eq('user_id', userId).eq('quest_id', questId)
     setQuests(prev => prev.filter(q => q.quest_id !== questId))
   }, [userId])
+
+  // Toggle skipped flag
+  const toggleSkipped = useCallback(async (questId) => {
+    if (!userId) return
+    const existing = quests.find(q => q.quest_id === questId)
+    if (!existing) return
+    const newVal = !existing.skipped
+    await supabase.from('user_quests').update({ skipped: newVal }).eq('user_id', userId).eq('quest_id', questId)
+    setQuests(prev => prev.map(q => q.quest_id === questId ? { ...q, skipped: newVal } : q))
+  }, [userId, quests])
 
   // Toggle important flag
   const toggleImportant = useCallback(async (questId) => {
@@ -56,5 +67,5 @@ export function useUserQuests(userId) {
     return quests.filter(q => !q.map_norm || q.map_norm === mapNorm)
   }, [quests])
 
-  return { quests, loading, addQuest, removeQuest, toggleImportant, questsForMap, clearAllQuests }
+  return { quests, loading, addQuest, removeQuest, toggleImportant, toggleSkipped, questsForMap, clearAllQuests }
 }

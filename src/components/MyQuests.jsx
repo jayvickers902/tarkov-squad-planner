@@ -21,7 +21,7 @@ const MAP_NAMES = {
   'ground-zero': 'Ground Zero', 'the-lab': 'The Lab',
 }
 
-export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportant, onClearAll, onDone, inParty }) {
+export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onDone, inParty }) {
   const [mapFilter, setMapFilter]     = useState('all')
   const [searchMap, setSearchMap]     = useState('any')
   const [searchQ, setSearchQ]         = useState('')
@@ -219,9 +219,11 @@ export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportan
               <div key={q.quest_id} style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px',
                 background: 'var(--sur2)',
-                border: `1px solid ${q.important ? 'var(--golddim)' : 'var(--brd)'}`,
-                borderLeft: `3px solid ${q.important ? 'var(--gold)' : 'var(--brd)'}`,
+                border: `1px solid ${q.important && !q.skipped ? 'var(--golddim)' : 'var(--brd)'}`,
+                borderLeft: `3px solid ${q.skipped ? 'var(--brd)' : q.important ? 'var(--gold)' : 'var(--brd)'}`,
                 borderRadius: 4,
+                opacity: q.skipped ? 0.5 : 1,
+                transition: 'opacity .2s',
               }}>
                 {/* Important star */}
                 <button
@@ -243,7 +245,28 @@ export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportan
                   </div>
                   <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginTop: 2 }}>
                     {q.map_norm ? (MAP_NAMES[q.map_norm] || q.map_norm).toUpperCase() : 'ANY MAP'}
+                    {q.skipped && <span style={{ marginLeft: 8, color: 'var(--txd)' }}>⊘ SKIPPED</span>}
                   </div>
+                </div>
+
+                {/* Done + Skip actions */}
+                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                  <button
+                    onClick={() => onRemove(q.quest_id)}
+                    title="Mark as done — removes from your list"
+                    style={{
+                      background: 'none', border: '1px solid var(--brd2)', borderRadius: 3,
+                      padding: '2px 7px', cursor: 'pointer', fontSize: 10, fontFamily: 'Share Tech Mono',
+                      color: 'var(--grn)', letterSpacing: '.04em',
+                    }}>✓ DONE</button>
+                  <button
+                    onClick={() => onToggleSkipped(q.quest_id)}
+                    title={q.skipped ? 'Un-skip' : 'Skip — will be pre-skipped in party UI'}
+                    style={{
+                      background: 'none', border: '1px solid var(--brd2)', borderRadius: 3,
+                      padding: '2px 7px', cursor: 'pointer', fontSize: 10, fontFamily: 'Share Tech Mono',
+                      color: q.skipped ? 'var(--gold)' : 'var(--txd)', letterSpacing: '.04em',
+                    }}>{q.skipped ? 'UNSKIP' : '⊘ SKIP'}</button>
                 </div>
 
                 {/* Remove */}
