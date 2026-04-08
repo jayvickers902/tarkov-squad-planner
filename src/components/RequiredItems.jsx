@@ -36,6 +36,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm }) {
         if (!task) return
         task.objectives?.forEach(obj => {
           if (obj.optional || !obj.item) return
+          if (obj.type !== 'plantItem') return
           if (!objIsOnMap(obj, mapNorm, task.map?.normalizedName)) return
           const key = `${obj.item.id}::${obj.foundInRaid ? 'fir' : 'nonfir'}`
           if (itemMap[key]) {
@@ -63,7 +64,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm }) {
     return (
       <div style={{ textAlign: 'center', padding: '48px 24px' }}>
         <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', letterSpacing: '.1em' }}>NO ITEM REQUIREMENTS</div>
-        <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', marginTop: 8 }}>QUESTS ON THIS MAP DON'T REQUIRE ITEMS TO COLLECT</div>
+        <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', marginTop: 8 }}>NO ITEMS NEED TO BE BROUGHT IN FOR ACTIVE QUESTS ON THIS MAP</div>
       </div>
     )
   }
@@ -76,7 +77,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
         <h3 style={{ fontSize: 18, color: 'var(--goldtx)' }}>REQUIRED ITEMS</h3>
-        <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>ITEMS NEEDED FOR ACTIVE QUESTS</span>
+        <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>ITEMS TO BRING IN FOR ACTIVE QUESTS</span>
       </div>
 
       {/* Member filter */}
