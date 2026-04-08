@@ -21,12 +21,34 @@ const MAP_NAMES = {
   'ground-zero': 'Ground Zero', 'the-lab': 'The Lab',
 }
 
-export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onDone, inParty }) {
+export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onRestore, onDone, inParty }) {
   const [mapFilter, setMapFilter]     = useState('all')
   const [searchMap, setSearchMap]     = useState('any')
   const [searchQ, setSearchQ]         = useState('')
   const [searchOpen, setSearchOpen]   = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
+
+  const snapKey = userId ? `tarkov_quests_${userId}` : null
+  const [snapshot, setSnapshot] = useState(() => {
+    if (!snapKey) return null
+    try { return JSON.parse(localStorage.getItem(snapKey)) } catch { return null }
+  })
+  const [confirmRestore, setConfirmRestore] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+
+  function handleSaveSnapshot() {
+    if (!snapKey) return
+    const snap = { savedAt: new Date().toISOString(), quests: userQuests }
+    localStorage.setItem(snapKey, JSON.stringify(snap))
+    setSnapshot(snap)
+  }
+
+  async function handleRestore() {
+    setRestoring(true)
+    await onRestore(snapshot.quests)
+    setConfirmRestore(false)
+    setRestoring(false)
+  }
 
   // Load tasks for the currently selected search map
   const { tasks, loading: tasksLoading } = useTasks(searchMap === 'any' ? null : searchMap)
@@ -92,6 +114,43 @@ export default function MyQuests({ userQuests, onAdd, onRemove, onToggleImportan
           fontSize: 11, color: 'var(--gold)', letterSpacing: '.04em',
         }}>
           ◆ YOUR PARTY IS STILL ACTIVE — CHANGES HERE WON'T AFFECT THE CURRENT RAID
+        </div>
+      )}
+
+      {/* Snapshot save / restore */}
+      {snapKey && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          <button
+            className="btn-ghost btn-sm"
+            onClick={handleSaveSnapshot}
+            disabled={userQuests.length === 0}
+            style={{ fontSize: 11 }}
+          >
+            ↓ SAVE SNAPSHOT ({userQuests.length})
+          </button>
+          {snapshot && !confirmRestore && (
+            <button
+              className="btn-ghost btn-sm"
+              onClick={() => setConfirmRestore(true)}
+              style={{ fontSize: 11, color: 'var(--gold)' }}
+            >
+              ↑ RESTORE SNAPSHOT · {snapshot.quests.length} QUESTS · {new Date(snapshot.savedAt).toLocaleDateString()}
+            </button>
+          )}
+          {snapshot && confirmRestore && (
+            <>
+              <span className="mono" style={{ fontSize: 10, color: '#e07070' }}>
+                REPLACE {userQuests.length} CURRENT QUESTS WITH {snapshot.quests.length} FROM SNAPSHOT?
+              </span>
+              <button
+                className="btn-sm"
+                onClick={handleRestore}
+                disabled={restoring}
+                style={{ fontSize: 11, background: 'rgba(180,60,60,.2)', border: '1px solid rgba(180,60,60,.4)', color: '#e07070' }}
+              >{restoring ? 'RESTORING...' : 'YES, RESTORE'}</button>
+              <button className="btn-ghost btn-sm" onClick={() => setConfirmRestore(false)} style={{ fontSize: 11 }}>CANCEL</button>
+            </>
+          )}
         </div>
       )}
 

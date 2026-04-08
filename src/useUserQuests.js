@@ -61,10 +61,26 @@ export function useUserQuests(userId) {
     setQuests([])
   }, [userId])
 
+  // Restore quests from a snapshot — clears existing and re-inserts all
+  const restoreSnapshot = useCallback(async (snapshotQuests) => {
+    if (!userId || !snapshotQuests?.length) return
+    await supabase.from('user_quests').delete().eq('user_id', userId)
+    const rows = snapshotQuests.map(q => ({
+      user_id:    userId,
+      quest_id:   q.quest_id,
+      quest_name: q.quest_name,
+      map_norm:   q.map_norm || null,
+      important:  q.important || false,
+      skipped:    q.skipped || false,
+    }))
+    const { data } = await supabase.from('user_quests').insert(rows).select().order('created_at')
+    setQuests(data || [])
+  }, [userId])
+
   // Get quests relevant to a map (map-specific + any-map)
   const questsForMap = useCallback((mapNorm) => {
     return quests.filter(q => !q.map_norm || q.map_norm === mapNorm)
   }, [quests])
 
-  return { quests, loading, addQuest, removeQuest, toggleImportant, toggleSkipped, questsForMap, clearAllQuests }
+  return { quests, loading, addQuest, removeQuest, toggleImportant, toggleSkipped, questsForMap, clearAllQuests, restoreSnapshot }
 }

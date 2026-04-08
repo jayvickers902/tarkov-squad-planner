@@ -21,7 +21,7 @@ export default function App() {
   const {
     quests: userQuests, loading: questsLoading,
     addQuest: saveQuest, removeQuest: removeSavedQuest,
-    toggleImportant, toggleSkipped, clearAllQuests,
+    toggleImportant, toggleSkipped, clearAllQuests, restoreSnapshot,
   } = useUserQuests(user?.id)
 
   const { friends, pendingIn, pendingOut, sendRequest, acceptRequest, removeRequest, removeFriend, refresh: refreshFriends } = useFriends(user?.id, profile?.callsign)
@@ -142,12 +142,14 @@ export default function App() {
     if (partyScreen === 'myquests') {
       return (
         <MyQuests
+          userId={user?.id}
           userQuests={userQuests}
           onAdd={saveQuest}
           onRemove={removeSavedQuest}
           onToggleImportant={toggleImportant}
           onToggleSkipped={toggleSkipped}
           onClearAll={clearAllQuests}
+          onRestore={restoreSnapshot}
           onDone={() => setPartyScreen('room')}
           inParty
         />
@@ -193,12 +195,14 @@ export default function App() {
   if (screen === 'myquests') {
     return (
       <MyQuests
+        userId={user?.id}
         userQuests={userQuests}
         onAdd={saveQuest}
         onRemove={removeSavedQuest}
         onToggleImportant={toggleImportant}
         onToggleSkipped={toggleSkipped}
         onClearAll={clearAllQuests}
+        onRestore={restoreSnapshot}
         onDone={() => setScreen('lobby')}
       />
     )
