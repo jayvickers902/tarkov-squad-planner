@@ -22,7 +22,6 @@ export function useUserQuests(userId) {
       quest_name: quest.name,
       map_norm:   mapNorm || null,
       important:  false,
-      skipped:    false,
     }
     const { data, error } = await supabase.from('user_quests').upsert(row, { onConflict: 'user_id,quest_id' }).select().single()
     if (!error && data) setQuests(prev => prev.find(q => q.quest_id === quest.id) ? prev : [...prev, data])
