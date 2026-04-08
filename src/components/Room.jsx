@@ -355,7 +355,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
 
               {tab === 'quests' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  <div className="lbl">{myName.toUpperCase()} — YOUR ACTIVE QUESTS</div>
+                  <div className="lbl">{myName.toUpperCase()} — YOUR ACTIVE QUESTS ON {party.map_name?.toUpperCase()}</div>
                   <QuestSearch tasks={tasks} mine={mine} completedQuests={completedQuests} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} mapNorm={party.map_norm} />
                   {chipTooltip && (() => {
                     const objs = (chipTooltip.task.objectives || []).filter(o => {

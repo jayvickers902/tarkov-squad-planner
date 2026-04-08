@@ -120,7 +120,7 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
               JOIN PARTY
             </button>
             <button className="btn-ghost" style={{ padding: '14px 24px', fontSize: 16, color: 'var(--gold)', borderColor: 'var(--golddim)' }} onClick={onManageQuests}>
-              ★ MY SAVED QUESTS
+              ★ MY QUESTS
             </button>
             {isAdmin && (
               <button className="btn-ghost" style={{ padding: '14px 24px', fontSize: 16, color: 'var(--txm)' }} onClick={onAdmin}>

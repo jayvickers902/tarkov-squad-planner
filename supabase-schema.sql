@@ -32,6 +32,7 @@ create table if not exists public.user_quests (
   quest_name text not null,
   map_norm   text,           -- null means "any map"
   important  boolean not null default false,
+  skipped    boolean not null default false,
   created_at timestamptz default now(),
   unique (user_id, quest_id)
 );
