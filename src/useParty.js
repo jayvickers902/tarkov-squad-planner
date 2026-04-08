@@ -218,12 +218,11 @@ export function useParty() {
     return true
   }, [])
 
-  const selectMap = useCallback((map) => {
+  const selectMap = useCallback(async (map) => {
     const prev = partyRef.current
     if (!prev) return
     const name = myNameRef.current
-    const members = { ...prev.members }
-    const mine = members[name] || []
+    const mine = (prev.members || {})[name] || []
 
     const completedIds = new Set(
       Object.entries(prev.progress || {})
@@ -243,13 +242,23 @@ export function useParty() {
       .map(q => ({ id: q.quest_id, name: q.quest_name }))
     const merged = [...kept]
     newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
-    members[name] = merged
 
-    const changes = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, drawings: [], markers: [], members }
-    const updated = { ...prev, ...changes }
-    applyParty(updated)
-    updatePartyDB(changes)
-  }, [updatePartyDB])
+    // Optimistic update — only patch leader's own entry, preserve other members
+    const optimisticMembers = { ...prev.members, [name]: merged }
+    const optimisticChanges = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, drawings: [], markers: [] }
+    applyParty({ ...prev, ...optimisticChanges, members: optimisticMembers })
+
+    // RPC updates only the leader's members entry via jsonb_set — other members' entries untouched
+    const { data, error: err } = await supabase.rpc('select_map_party', {
+      p_code:          codeRef.current,
+      p_leader:        name,
+      p_leader_quests: merged,
+      p_map_id:        map.id,
+      p_map_name:      map.name,
+      p_map_norm:      map.normalizedName,
+    })
+    if (!err && data?.[0]) applyParty(data[0])
+  }, [])
 
   const addQuest = useCallback((quest) => {
     const prev = partyRef.current
