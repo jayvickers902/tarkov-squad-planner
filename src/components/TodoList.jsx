@@ -2,6 +2,11 @@ import { useState, useMemo } from 'react'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
+function toAntifandom(url) {
+  if (!url) return null
+  return url.replace('escapefromtarkov.fandom.com', 'escapefromtarkov.antifandom.com')
+}
+
 const MEMBER_COLORS = [
   { bg: '#1a2e3a', border: '#1e5a7a', text: '#5aace8' },
   { bg: '#2a1a2e', border: '#5a1e7a', text: '#b85ae8' },
@@ -496,9 +501,27 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
                       fontSize: 12, color: row.isDone ? 'var(--txd)' : 'var(--tx)',
                       textDecoration: row.isDone ? 'line-through' : 'none',
                       lineHeight: 1.4,
-                    }}>{row.obj.description}</div>
+                    }}>
+                      {toAntifandom(row.task.wikiLink) ? (
+                        <a
+                          href={toAntifandom(row.task.wikiLink) + '#Objectives'}
+                          target="_blank" rel="noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          style={{ color: 'inherit', textDecoration: 'inherit' }}
+                        >{row.obj.description}</a>
+                      ) : row.obj.description}
+                    </div>
                     <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {row.task.name}
+                      {toAntifandom(row.task.wikiLink) ? (
+                        <a
+                          href={toAntifandom(row.task.wikiLink)}
+                          target="_blank" rel="noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          style={{ color: 'var(--txd)', textDecoration: 'none' }}
+                          onMouseEnter={e => e.currentTarget.style.color = 'var(--gold)'}
+                          onMouseLeave={e => e.currentTarget.style.color = 'var(--txd)'}
+                        >{row.task.name}</a>
+                      ) : row.task.name}
                     </div>
                   </div>
 
