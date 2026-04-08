@@ -361,6 +361,7 @@ export function useParty() {
   }, [])
 
   const syncSavedQuests = useCallback((quests) => {
+    const prevSaved = savedQuestsRef.current   // capture before overwriting
     savedQuestsRef.current = quests
 
     const prev = partyRef.current
@@ -376,8 +377,14 @@ export function useParty() {
         .map(([k]) => k.replace('__done__:', ''))
     )
 
-    // Keep manually-added quests (not in saved list and not completed)
-    const kept = mine.filter(q => !quests.find(sq => sq.quest_id === q.id) && !completedIds.has(q.id))
+    // Keep only truly manually-added quests: not in the new saved list AND not in the
+    // previous saved list. Quests that were saved but have since been removed should not
+    // be kept — they should fall out because they're absent from `applicable` below.
+    const kept = mine.filter(q =>
+      !quests.find(sq => sq.quest_id === q.id) &&
+      !prevSaved.find(sq => sq.quest_id === q.id) &&
+      !completedIds.has(q.id)
+    )
 
     // Add saved quests that match the current map (or are any-map), excluding completed
     const applicable = quests

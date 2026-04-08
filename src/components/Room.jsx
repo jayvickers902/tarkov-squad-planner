@@ -199,6 +199,14 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
               const isSelf    = m === myName
               const isFriend  = friends.some(f => f.callsign === m)
               const isPending = [...(pendingIn || []), ...(pendingOut || [])].some(r => r.callsign === m)
+              const mQuests   = party.members[m] || []
+              const totalCount = mQuests.length
+              const mapCount  = party.map_norm
+                ? mQuests.filter(q => {
+                    const task = tasks.find(t => t.id === q.id)
+                    return task?.map?.normalizedName === party.map_norm
+                  }).length
+                : null
               return (
                 <div key={m} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '7px 0', borderBottom: '1px solid var(--brd)' }}>
                   <div style={{ minWidth: 0 }}>
@@ -206,7 +214,10 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                       {m}{isSelf ? ' · you' : ''}
                     </div>
                     <div className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>
-                      {(party.members[m] || []).length} QUEST{(party.members[m] || []).length !== 1 ? 'S' : ''}
+                      {totalCount} QUEST{totalCount !== 1 ? 'S' : ''}
+                      {mapCount !== null && (
+                        <span style={{ color: 'var(--txd)' }}> · {mapCount} ON MAP</span>
+                      )}
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
