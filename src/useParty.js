@@ -17,6 +17,7 @@ export function useParty() {
   const [myName, setMyName]   = useState('')
   const [error, setError]     = useState('')
   const [loading, setLoading] = useState(false)
+  const [partyCode, setPartyCode] = useState(null)
   const codeRef         = useRef(null)
   const partyRef        = useRef(null)   // always mirrors party state — safe to read in callbacks
   const savedQuestsRef  = useRef([])
@@ -33,8 +34,8 @@ export function useParty() {
   useEffect(() => { myNameRef.current = myName }, [myName])
 
   useEffect(() => {
-    if (!codeRef.current) return
-    const code = codeRef.current
+    if (!partyCode) return
+    const code = partyCode
 
     const poll = setInterval(async () => {
       const fresh = await fetchParty(code)
@@ -63,7 +64,7 @@ export function useParty() {
       .subscribe()
 
     return () => { clearInterval(poll); supabase.removeChannel(channel) }
-  }, [codeRef.current]) // eslint-disable-line
+  }, [partyCode]) // eslint-disable-line
 
   // When the leader switches maps, non-leaders refresh their own quest list for the new map
   useEffect(() => {
@@ -143,6 +144,7 @@ export function useParty() {
     const { data, error: err } = await supabase.from('parties').insert(newParty).select().single()
     if (err) { setError('Failed to create party. Check your Supabase setup.'); setLoading(false); return false }
     codeRef.current = data.code
+    setPartyCode(data.code)
     myNameRef.current = name
     localStorage.setItem('lastPartyCode', data.code)
     applyParty(data); setMyName(name); setLoading(false)
@@ -176,6 +178,7 @@ export function useParty() {
     const allQuests = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
     const updatedMQA = { ...(result.member_quests_all || {}), [name]: allQuests }
     codeRef.current = code
+    setPartyCode(code)
     myNameRef.current = name
     localStorage.setItem('lastPartyCode', code)
     applyParty({ ...result, member_quests_all: updatedMQA }); setMyName(name); setLoading(false)
@@ -220,6 +223,7 @@ export function useParty() {
     const allQuests = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
     const updatedMQA = { ...(result.member_quests_all || {}), [name]: allQuests }
     codeRef.current = code
+    setPartyCode(code)
     myNameRef.current = name
     localStorage.setItem('lastPartyCode', code)
     applyParty({ ...result, member_quests_all: updatedMQA }); setMyName(name); setLoading(false)
@@ -381,6 +385,7 @@ export function useParty() {
 
   const leaveParty = useCallback(() => {
     codeRef.current = null
+    setPartyCode(null)
     partyRef.current = null
     myNameRef.current = ''
     localStorage.removeItem('lastPartyCode')

@@ -39,6 +39,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
   const [showFriends, setShowFriends] = useState(false)
+  const [showMapRec, setShowMapRec] = useState(false)
   const [addInput, setAddInput] = useState('')
   const [addError, setAddError] = useState('')
   const [addBusy, setAddBusy]   = useState(false)
@@ -400,64 +401,82 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                   )}
 
                   {/* Map recommendation */}
-                  {mapStats.length > 0 && (() => {
-                    const maxTotal = mapStats[0].total
-                    return (
-                      <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--brd)' }}>
-                        <div className="lbl" style={{ marginBottom: 8 }}>SQUAD INTEL — MAP RECOMMENDATION</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                          {mapStats.map((stat, i) => {
-                            const pct = maxTotal ? Math.round((stat.total / maxTotal) * 100) : 0
-                            const isTop = i === 0
-                            return (
-                              <div key={stat.map.id} style={{
-                                display: 'flex', alignItems: 'center', gap: 8,
-                                padding: isTop ? '7px 10px' : '5px 10px',
-                                background: isTop ? 'rgba(201,168,76,0.06)' : 'var(--sur2)',
-                                border: `1px solid ${isTop ? 'var(--golddim)' : 'var(--brd)'}`,
-                                borderRadius: 4,
-                              }}>
-                                <span className="mono" style={{ fontSize: 10, color: isTop ? 'var(--gold)' : 'var(--txd)', width: 20, flexShrink: 0 }}>
-                                  #{i + 1}
-                                </span>
-                                <span style={{ fontSize: isTop ? 13 : 12, fontWeight: isTop ? 600 : 400, color: isTop ? 'var(--tx)' : 'var(--txm)', width: 130, flexShrink: 0 }}>
-                                  {stat.map.name.toUpperCase()}
-                                </span>
-                                {/* Bar */}
-                                <div style={{ flex: 1, height: 4, background: 'var(--brd)', borderRadius: 2, minWidth: 40 }}>
-                                  <div style={{ height: '100%', width: `${pct}%`, background: isTop ? 'var(--gold)' : 'var(--brd2)', borderRadius: 2, transition: 'width .3s' }} />
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                                  <span className="mono" style={{ fontSize: 10, color: isTop ? 'var(--goldtx)' : 'var(--txm)' }}>
-                                    {stat.total} QUEST{stat.total !== 1 ? 'S' : ''}
+                  {mapStats.length > 0 && (
+                    <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--brd)' }}>
+                      <button
+                        onClick={() => setShowMapRec(v => !v)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                          background: showMapRec ? 'rgba(201,168,76,0.06)' : 'transparent',
+                          border: `1px solid ${showMapRec ? 'var(--golddim)' : 'var(--brd2)'}`,
+                          borderRadius: 4, padding: '7px 10px', cursor: 'pointer',
+                          transition: 'background .15s, border-color .15s',
+                        }}
+                      >
+                        <span style={{ fontSize: 13, color: 'var(--gold)', flexShrink: 0 }}>◆</span>
+                        <span className="mono" style={{ fontSize: 11, color: 'var(--goldtx)', letterSpacing: '.08em', flex: 1, textAlign: 'left' }}>
+                          SQUAD INTEL — MAP RECOMMENDATION
+                        </span>
+                        <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>
+                          {showMapRec ? '▲ HIDE' : `▼ ${mapStats[0].map.name.toUpperCase()} #1`}
+                        </span>
+                      </button>
+
+                      {showMapRec && (() => {
+                        const maxTotal = mapStats[0].total
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 6 }} className="fade-in">
+                            {mapStats.map((stat, i) => {
+                              const pct = maxTotal ? Math.round((stat.total / maxTotal) * 100) : 0
+                              const isTop = i === 0
+                              return (
+                                <div key={stat.map.id} style={{
+                                  display: 'flex', alignItems: 'center', gap: 8,
+                                  padding: isTop ? '7px 10px' : '5px 10px',
+                                  background: isTop ? 'rgba(201,168,76,0.06)' : 'var(--sur2)',
+                                  border: `1px solid ${isTop ? 'var(--golddim)' : 'var(--brd)'}`,
+                                  borderRadius: 4,
+                                }}>
+                                  <span className="mono" style={{ fontSize: 10, color: isTop ? 'var(--gold)' : 'var(--txd)', width: 20, flexShrink: 0 }}>
+                                    #{i + 1}
                                   </span>
-                                  {stat.crossover > 0 && (
-                                    <span className="mono" style={{ fontSize: 10, color: 'var(--grn)', background: 'rgba(90,232,90,0.08)', border: '1px solid rgba(90,232,90,0.2)', borderRadius: 3, padding: '1px 5px' }}>
-                                      {stat.crossover} SHARED
+                                  <span style={{ fontSize: isTop ? 13 : 12, fontWeight: isTop ? 600 : 400, color: isTop ? 'var(--tx)' : 'var(--txm)', width: 130, flexShrink: 0 }}>
+                                    {stat.map.name.toUpperCase()}
+                                  </span>
+                                  <div style={{ flex: 1, height: 4, background: 'var(--brd)', borderRadius: 2, minWidth: 40 }}>
+                                    <div style={{ height: '100%', width: `${pct}%`, background: isTop ? 'var(--gold)' : 'var(--brd2)', borderRadius: 2, transition: 'width .3s' }} />
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                                    <span className="mono" style={{ fontSize: 10, color: isTop ? 'var(--goldtx)' : 'var(--txm)' }}>
+                                      {stat.total} QUEST{stat.total !== 1 ? 'S' : ''}
                                     </span>
-                                  )}
-                                </div>
-                                {/* Per-member breakdown */}
-                                <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-                                  {Object.entries(stat.perMember).filter(([, v]) => v > 0).map(([name, count]) => {
-                                    const c = memberColor(name, members)
-                                    return (
-                                      <span key={name} className="mono" style={{
-                                        fontSize: 10, padding: '1px 5px', borderRadius: 3,
-                                        background: c.bg, border: `1px solid ${c.border}`, color: c.text,
-                                      }}>
-                                        {name.slice(0, 6).toUpperCase()}: {count}
+                                    {stat.crossover > 0 && (
+                                      <span className="mono" style={{ fontSize: 10, color: 'var(--grn)', background: 'rgba(90,232,90,0.08)', border: '1px solid rgba(90,232,90,0.2)', borderRadius: 3, padding: '1px 5px' }}>
+                                        {stat.crossover} SHARED
                                       </span>
-                                    )
-                                  })}
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                                    {Object.entries(stat.perMember).filter(([, v]) => v > 0).map(([name, count]) => {
+                                      const c = memberColor(name, members)
+                                      return (
+                                        <span key={name} className="mono" style={{
+                                          fontSize: 10, padding: '1px 5px', borderRadius: 3,
+                                          background: c.bg, border: `1px solid ${c.border}`, color: c.text,
+                                        }}>
+                                          {name.slice(0, 6).toUpperCase()}: {count}
+                                        </span>
+                                      )
+                                    })}
+                                  </div>
                                 </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })()}
+                              )
+                            })}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  )}
                 </>
               )
             }
