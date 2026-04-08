@@ -41,14 +41,15 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
-export default function TodoList({ tasks, memberQuests, progress, onToggleObjective, onToggleStar, onToggleComplete, onReorderQuests, questOrder, initialSkipped, starredQuests, completedQuests, myName, isLeader, mapNorm }) {
+export default function TodoList({ tasks, memberQuests, progress, onToggleObjective, onToggleStar, onToggleComplete, questOrder, initialSkipped, starredQuests, completedQuests, myName, isLeader, mapNorm }) {
   const [filter, setFilter]     = useState('all')
   const [kappaOnly, setKappaOnly] = useState(false)
   const [expanded, setExpanded] = useState({})
   const [skipped, setSkipped]   = useState(() => initialSkipped ? new Set(initialSkipped) : new Set())
-  const [dragId, setDragId]     = useState(null)
-  const [dragOverId, setDragOverId] = useState(null)
   const [viewMode, setViewMode] = useState('objectives') // 'quests' | 'objectives'
+  const [objOrder, setObjOrder]         = useState([])
+  const [dragObjKey, setDragObjKey]     = useState(null)
+  const [dragOverObjKey, setDragOverObjKey] = useState(null)
   const members = Object.keys(memberQuests)
 
   function toggleSkip(questId) {
@@ -100,25 +101,25 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
   const skippedRows   = sortedRows.filter(r => !r.completed && skipped.has(r.task.id))
   const completedRows = sortedRows.filter(r => r.completed)
 
-  function handleDragOver(e, id) {
+  function handleObjDragOver(e, key) {
     e.preventDefault()
-    if (id !== dragId) setDragOverId(id)
+    if (key !== dragObjKey) setDragOverObjKey(key)
   }
 
-  function handleDrop(e, targetId) {
+  function handleObjDrop(e, targetKey) {
     e.preventDefault()
-    if (!dragId || dragId === targetId) { setDragId(null); setDragOverId(null); return }
-    const ids = sortedRows.map(r => r.task.id)
-    const fromIdx = ids.indexOf(dragId)
-    const toIdx   = ids.indexOf(targetId)
-    ids.splice(fromIdx, 1)
-    ids.splice(toIdx, 0, dragId)
-    onReorderQuests(ids)
-    setDragId(null); setDragOverId(null)
+    if (!dragObjKey || dragObjKey === targetKey) { setDragObjKey(null); setDragOverObjKey(null); return }
+    const keys = sortedObjRows.map(r => `${r.task.id}::${r.obj.id}`)
+    const fromIdx = keys.indexOf(dragObjKey)
+    const toIdx   = keys.indexOf(targetKey)
+    keys.splice(fromIdx, 1)
+    keys.splice(toIdx, 0, dragObjKey)
+    setObjOrder(keys)
+    setDragObjKey(null); setDragOverObjKey(null)
   }
 
-  function handleDragEnd() {
-    setDragId(null); setDragOverId(null)
+  function handleObjDragEnd() {
+    setDragObjKey(null); setDragOverObjKey(null)
   }
 
   function applyFilter(rows) {
@@ -143,6 +144,18 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
     })))
     .filter(row => row.obj.type !== 'giveItem' && row.obj.type !== 'giveQuestItem')
 
+  const sortedObjRows = (() => {
+    if (!objOrder.length) return objectiveRows
+    const orderMap = new Map(objOrder.map((k, i) => [k, i]))
+    return [...objectiveRows].sort((a, b) => {
+      const ak = `${a.task.id}::${a.obj.id}`
+      const bk = `${b.task.id}::${b.obj.id}`
+      const ai = orderMap.has(ak) ? orderMap.get(ak) : Infinity
+      const bi = orderMap.has(bk) ? orderMap.get(bk) : Infinity
+      return ai - bi
+    })
+  })()
+
   const totalObjs = activeRows.reduce((s, r) => s + r.objs.length, 0)
   const doneObjs  = activeRows.reduce((s, r) => s + r.doneCount, 0)
   const pctDone   = totalObjs ? Math.round((doneObjs / totalObjs) * 100) : 0
@@ -158,37 +171,20 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
     const isOpen = expanded[task.id]
     const pct    = objs.length ? (doneCount / objs.length) * 100 : 0
 
-    const isDragging = dragId === task.id
-    const isDragOver = dragOverId === task.id
-
     return (
-      <div
-        draggable={!!onReorderQuests}
-        onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragId(task.id) }}
-        onDragOver={e => handleDragOver(e, task.id)}
-        onDrop={e => handleDrop(e, task.id)}
-        onDragEnd={handleDragEnd}
-        style={{
-          background: 'var(--sur2)',
-          border: `1px solid ${isDragOver ? 'var(--gold)' : starred && !allDone && !completed && !dimmed ? 'var(--golddim)' : 'var(--brd)'}`,
-          borderLeft: `3px solid ${completed || allDone ? 'var(--grn)' : dimmed ? 'var(--brd)' : starred ? 'var(--gold)' : 'var(--brd)'}`,
-          borderRadius: 4,
-          opacity: isDragging ? 0.3 : completed || allDone || dimmed ? .4 : 1,
-          transition: 'opacity .2s, border-color .15s',
-        }}>
+      <div style={{
+        background: 'var(--sur2)',
+        border: `1px solid ${starred && !allDone && !completed && !dimmed ? 'var(--golddim)' : 'var(--brd)'}`,
+        borderLeft: `3px solid ${completed || allDone ? 'var(--grn)' : dimmed ? 'var(--brd)' : starred ? 'var(--gold)' : 'var(--brd)'}`,
+        borderRadius: 4,
+        opacity: completed || allDone || dimmed ? .4 : 1,
+        transition: 'opacity .2s, border-color .15s',
+      }}>
 
         {/* Quest header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', cursor: 'pointer' }}
           onClick={() => setExpanded(e => ({ ...e, [task.id]: !e[task.id] }))}>
 
-          {/* Drag grip */}
-          {onReorderQuests && (
-            <span
-              style={{ cursor: 'grab', color: 'var(--txd)', fontSize: 14, flexShrink: 0, userSelect: 'none', lineHeight: 1 }}
-              title="Drag to reorder"
-              onClick={e => e.stopPropagation()}
-            >⠿</span>
-          )}
 
           {/* Star */}
           {canAct ? (
@@ -447,26 +443,40 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {objectiveRows.map(row => {
+            {sortedObjRows.map(row => {
               const key = `${row.task.id}::${row.obj.id}`
+              const isDraggingThis = dragObjKey === key
+              const isDragOverThis = dragOverObjKey === key
               return (
                 <div
                   key={key}
+                  draggable
+                  onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragObjKey(key) }}
+                  onDragOver={e => handleObjDragOver(e, key)}
+                  onDrop={e => handleObjDrop(e, key)}
+                  onDragEnd={handleObjDragEnd}
                   onClick={() => isLeader && onToggleObjective(key)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 9,
                     padding: '7px 10px',
                     background: 'var(--sur2)',
-                    border: `1px solid var(--brd)`,
+                    border: `1px solid ${isDragOverThis ? 'var(--gold)' : 'var(--brd)'}`,
                     borderLeft: `3px solid ${row.isDone ? 'var(--grn)' : 'var(--brd)'}`,
                     borderRadius: 4,
                     cursor: isLeader ? 'pointer' : 'default',
-                    opacity: row.isDone ? 0.4 : 1,
-                    transition: 'opacity .2s',
+                    opacity: isDraggingThis ? 0.3 : row.isDone ? 0.4 : 1,
+                    transition: 'opacity .2s, border-color .15s',
                   }}
                   onMouseEnter={e => { if (isLeader && !row.isDone) e.currentTarget.style.background = 'rgba(255,255,255,0.02)' }}
                   onMouseLeave={e => e.currentTarget.style.background = 'var(--sur2)'}
                 >
+                  {/* Drag grip */}
+                  <span
+                    style={{ cursor: 'grab', color: 'var(--txd)', fontSize: 14, flexShrink: 0, userSelect: 'none', lineHeight: 1 }}
+                    title="Drag to reorder"
+                    onClick={e => e.stopPropagation()}
+                  >⠿</span>
+
                   {/* Checkbox */}
                   <div style={{
                     width: 14, height: 14, flexShrink: 0,

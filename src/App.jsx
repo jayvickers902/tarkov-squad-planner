@@ -31,7 +31,6 @@ export default function App() {
     createParty, joinParty, forceJoinParty,
     selectMap, addQuest: addPartyQuest, removeQuest: removePartyQuest, setSpawn,
     toggleObjective, toggleStar, toggleComplete,
-    reorderQuests,
     addStroke, clearMyStrokes,
     addMarker, clearMyMarkers,
     leaveParty, setError: setPartyError,
@@ -172,7 +171,6 @@ export default function App() {
         onToggleObjective={handleToggleObjective}
         onToggleStar={handleToggleStar}
         onToggleComplete={handleToggleComplete}
-        onReorderQuests={reorderQuests}
         skippedQuestIds={new Set(userQuests.filter(q => q.skipped).map(q => q.quest_id))}
         onAddStroke={addStroke}
         onClearMyStrokes={clearMyStrokes}
