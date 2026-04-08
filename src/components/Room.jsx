@@ -57,8 +57,6 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
   const { maps, loading: loadingMaps } = useMaps()
   const { tasks, loading: loadingTasks } = useTasks(party.map_norm)
   const { tasks: allTasks } = useTasks(null)
-  const [questView, setQuestView] = useState('mine') // 'mine' | 'everyone'
-
   const isLeader = party.leader === myName
   const members  = Object.keys(party.members || {})
   const mine     = party.members?.[myName] || []
@@ -101,17 +99,6 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
     .sort((a, b) => b.total - a.total || b.crossover - a.crossover)
   }, [allTasks, maps, party.member_quests_all]) // eslint-disable-line
 
-  // Everyone view: all members' quests on the current map combined
-  const everyoneQuests = useMemo(() => {
-    const questMap = new Map()
-    members.forEach(m => {
-      ;(party.members[m] || []).forEach(q => {
-        if (!questMap.has(q.id)) questMap.set(q.id, { id: q.id, name: q.name, owners: [] })
-        questMap.get(q.id).owners.push(m)
-      })
-    })
-    return [...questMap.values()].sort((a, b) => b.owners.length - a.owners.length || a.name.localeCompare(b.name))
-  }, [party.members, members]) // eslint-disable-line
 
   function copy() {
     navigator.clipboard?.writeText(`https://dudgy.net/join/${party.code}`).catch(() => {})
@@ -493,85 +480,31 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
 
               {tab === 'quests' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  {/* View toggle */}
-                  <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderRadius: 4, overflow: 'hidden', border: '1px solid var(--brd2)', width: 'fit-content' }}>
-                    <button onClick={() => setQuestView('mine')} className={questView === 'mine' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'} style={{ borderRadius: 0, borderRight: '1px solid var(--brd2)' }}>
-                      MY QUESTS
-                    </button>
-                    <button onClick={() => setQuestView('everyone')} className={questView === 'everyone' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'} style={{ borderRadius: 0 }}>
-                      EVERYONE ({everyoneQuests.length})
-                    </button>
-                  </div>
-
-                  {questView === 'mine' && (
-                    <>
-                      <div className="lbl">{myName.toUpperCase()} — YOUR ACTIVE QUESTS ON {party.map_name?.toUpperCase()}</div>
-                      <QuestSearch tasks={tasks} mine={mine} completedQuests={completedQuests} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} mapNorm={party.map_norm} />
-                      {members.filter(m => m !== myName).map(m => (
-                        <div key={m} style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--brd)' }}>
-                          <div className="lbl">{m.toUpperCase()} — QUESTS</div>
-                          {!(party.members[m] || []).length
-                            ? <p className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>WAITING FOR {m.toUpperCase()} TO ADD QUESTS</p>
-                            : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                              {(party.members[m] || []).map(q => {
-                                const task = tasks.find(t => t.id === q.id)
-                                return (
-                                  <span key={q.id}
-                                    onMouseEnter={task ? e => setChipTooltip({ task, anchor: e.currentTarget.getBoundingClientRect() }) : undefined}
-                                    onMouseLeave={() => setChipTooltip(null)}
-                                    style={{ display: 'inline-flex', background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, padding: '2px 7px', fontSize: 11, fontFamily: 'Share Tech Mono', color: 'var(--txm)', cursor: task ? 'default' : undefined }}>
-                                    {q.name}
-                                  </span>
-                                )
-                              })}
-                            </div>
-                          }
-                        </div>
-                      ))}
-                    </>
-                  )}
-
-                  {questView === 'everyone' && (
-                    <>
-                      <div className="lbl" style={{ marginBottom: 10 }}>ALL QUESTS — {party.map_name?.toUpperCase()}</div>
-                      {everyoneQuests.length === 0 ? (
-                        <p className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>NO QUESTS ADDED BY ANY PARTY MEMBER</p>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          {everyoneQuests.map(q => {
-                            const task = tasks.find(t => t.id === q.id)
-                            const isShared = q.owners.length > 1
-                            return (
-                              <div key={q.id} style={{
-                                display: 'flex', alignItems: 'center', gap: 8,
-                                padding: '6px 10px',
-                                background: 'var(--sur2)',
-                                border: `1px solid ${isShared ? 'rgba(90,232,90,0.2)' : 'var(--brd)'}`,
-                                borderLeft: `3px solid ${isShared ? 'var(--grn)' : 'var(--brd)'}`,
-                                borderRadius: 4,
-                                opacity: completedQuests[q.id] ? 0.35 : 1,
-                              }}>
-                                {isShared && (
-                                  <span className="mono" style={{ fontSize: 9, color: 'var(--grn)', letterSpacing: '.04em', flexShrink: 0 }}>SHARED</span>
-                                )}
-                                <div
-                                  style={{ flex: 1, fontSize: 12, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: task ? 'default' : undefined }}
+                  <>
+                    <div className="lbl">{myName.toUpperCase()} — YOUR ACTIVE QUESTS ON {party.map_name?.toUpperCase()}</div>
+                    <QuestSearch tasks={tasks} mine={mine} completedQuests={completedQuests} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} mapNorm={party.map_norm} />
+                    {members.filter(m => m !== myName).map(m => (
+                      <div key={m} style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--brd)' }}>
+                        <div className="lbl">{m.toUpperCase()} — QUESTS</div>
+                        {!(party.members[m] || []).length
+                          ? <p className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>WAITING FOR {m.toUpperCase()} TO ADD QUESTS</p>
+                          : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {(party.members[m] || []).map(q => {
+                              const task = tasks.find(t => t.id === q.id)
+                              return (
+                                <span key={q.id}
                                   onMouseEnter={task ? e => setChipTooltip({ task, anchor: e.currentTarget.getBoundingClientRect() }) : undefined}
                                   onMouseLeave={() => setChipTooltip(null)}
-                                >
+                                  style={{ display: 'inline-flex', background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, padding: '2px 7px', fontSize: 11, fontFamily: 'Share Tech Mono', color: 'var(--txm)', cursor: task ? 'default' : undefined }}>
                                   {q.name}
-                                  {task?.trader && <span className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginLeft: 6 }}>{task.trader.name}</span>}
-                                </div>
-                                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                                  {q.owners.map(o => <MemberPill key={o} name={o} allMembers={members} />)}
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </>
-                  )}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        }
+                      </div>
+                    ))}
+                  </>
 
                   {/* Hover tooltip (shared between both views) */}
                   {chipTooltip && (() => {

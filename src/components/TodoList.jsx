@@ -140,6 +140,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
     return rows.filter(row => {
       if (kappaOnly && !row.task.kappaRequired) return false
       if (filter === 'starred') return row.starred
+      if (filter === 'everyone') return row.owners.length > 1
       if (members.includes(filter)) return row.owners.includes(filter)
       return true
     })
@@ -421,6 +422,14 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
           title="Show only Kappa-required quests">
           κ KAPPA
         </button>
+        {members.length > 1 && (
+          <button
+            onClick={() => setFilter(f => f === 'everyone' ? 'all' : 'everyone')}
+            className={filter === 'everyone' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+            title="Show only quests shared by multiple party members">
+            EVERYONE
+          </button>
+        )}
         {members.map(m => {
           const c = memberColor(m, members)
           const active = filter === m
