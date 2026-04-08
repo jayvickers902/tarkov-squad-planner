@@ -87,7 +87,14 @@ export function useParty() {
   const updatePartyDB = useCallback(async (changes) => {
     if (!codeRef.current) return
     const { data, error: err } = await supabase.from('parties').update(changes).eq('code', codeRef.current).select().single()
-    if (!err && data) applyParty(data)
+    if (!err && data) {
+      // Only merge back the fields we actually updated — applying the full row would
+      // let a stale-members response from a progress update overwrite a concurrent
+      // members update that was committed in between (and vice-versa).
+      const merged = { ...partyRef.current }
+      Object.keys(changes).forEach(k => { merged[k] = data[k] })
+      applyParty(merged)
+    }
   }, [])
 
   const createParty = useCallback(async (name, savedQuests = []) => {
