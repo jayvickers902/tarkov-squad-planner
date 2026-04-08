@@ -342,7 +342,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
             <>
               {/* Tabs */}
               <div className="tab-bar">
-                {[['quests', 'QUESTS'], ['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['map', 'MAP / ROUTE'], ['keys', 'KEYS']].map(([id, lbl]) => (
+                {[['todo', 'TODO LIST'], ['quests', 'QUESTS'], ['items', 'REQUIRED ITEMS'], ['map', 'MAP / ROUTE'], ['keys', 'KEYS']].map(([id, lbl]) => (
                   <button key={id} onClick={() => setTab(id)} style={{
                     background: 'none', border: 'none',
                     borderBottom: `2px solid ${tab === id ? 'var(--gold)' : 'transparent'}`,

@@ -48,7 +48,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
   const [skipped, setSkipped]   = useState(() => initialSkipped ? new Set(initialSkipped) : new Set())
   const [dragId, setDragId]     = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
-  const [viewMode, setViewMode] = useState('quests') // 'quests' | 'objectives'
+  const [viewMode, setViewMode] = useState('objectives') // 'quests' | 'objectives'
   const members = Object.keys(memberQuests)
 
   function toggleSkip(questId) {
@@ -383,16 +383,16 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
       {/* View mode toggle */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 12, borderRadius: 4, overflow: 'hidden', border: '1px solid var(--brd2)', width: 'fit-content' }}>
         <button
-          onClick={() => setViewMode('quests')}
-          className={viewMode === 'quests' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-          style={{ borderRadius: 0, borderRight: '1px solid var(--brd2)' }}>
-          QUESTS
-        </button>
-        <button
           onClick={() => setViewMode('objectives')}
           className={viewMode === 'objectives' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-          style={{ borderRadius: 0 }}>
+          style={{ borderRadius: 0, borderRight: '1px solid var(--brd2)' }}>
           OBJECTIVES
+        </button>
+        <button
+          onClick={() => setViewMode('quests')}
+          className={viewMode === 'quests' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+          style={{ borderRadius: 0 }}>
+          QUESTS
         </button>
       </div>
 
