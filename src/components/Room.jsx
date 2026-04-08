@@ -14,7 +14,7 @@ function Spin({ s = 20 }) {
 
 export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onToggleComplete, onReorderQuests, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const isMobile = useIsMobile()
-  const [tab, setTab]           = useState('quests')
+  const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
   const [showFriends, setShowFriends] = useState(false)
   const [addInput, setAddInput] = useState('')
@@ -412,7 +412,15 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
 
               {tab === 'todo' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  {loadingTasks
+                  {!mine.length ? (
+                    <div style={{ textAlign: 'center', padding: '40px 24px' }}>
+                      <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>NO QUESTS ADDED</div>
+                      <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', lineHeight: 1.7 }}>
+                        ADD QUESTS ON THE FLY FROM THE <button onClick={() => setTab('quests')} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11 }}>QUESTS</button> TAB,<br />
+                        OR MANAGE THEM CENTRALLY UNDER <button onClick={onMyQuests} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11, color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ MY QUESTS</button>
+                      </div>
+                    </div>
+                  ) : loadingTasks
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
                     : <TodoList
                         key={party.map_norm}
