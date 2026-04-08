@@ -227,48 +227,72 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
             })}
           </div>
 
-          {/* Per-member quest summary — the key usability panel */}
+          {/* Per-member raid objectives for this map */}
           {party.map_id && (
             <div className="card" style={{ padding: 14 }}>
-              <div className="lbl">ALL PARTY QUESTS</div>
+              <div className="lbl">RAID OBJECTIVES</div>
               {members.map(m => {
                 const quests = party.members[m] || []
+                const objRows = quests.flatMap(q => {
+                  const task = tasks.find(t => t.id === q.id)
+                  if (!task) return []
+                  // Only map-specific tasks (same rule as objectives tab)
+                  const isMapSpecific = (task.objectives || []).some(o => !o.optional && o.maps && o.maps.length > 0)
+                  if (!isMapSpecific) return []
+                  const mapObjs = (task.objectives || []).filter(o => {
+                    if (o.optional) return false
+                    if (o.type === 'giveItem' || o.type === 'giveQuestItem') return false
+                    if (o.maps && o.maps.length > 0) return o.maps.some(om => om.normalizedName === party.map_norm)
+                    if (task.map?.normalizedName) return task.map.normalizedName === party.map_norm
+                    return false
+                  })
+                  return mapObjs.map(obj => ({
+                    obj, questName: q.name,
+                    isDone: party.progress?.[`${q.id}::${obj.id}`] || false,
+                  }))
+                })
+                const doneCount = objRows.filter(r => r.isDone).length
                 return (
                   <div key={m} style={{ marginBottom: 14 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', flexShrink: 0 }} />
-                      <div className="mono" style={{ fontSize: 10, color: m === myName ? 'var(--goldtx)' : 'var(--txm)', letterSpacing: '.06em' }}>
+                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: m === myName ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }} />
+                      <div className="mono" style={{ fontSize: 10, color: m === myName ? 'var(--goldtx)' : 'var(--txm)', letterSpacing: '.06em', flex: 1 }}>
                         {m.toUpperCase()}
                       </div>
+                      {objRows.length > 0 && (
+                        <span className="mono" style={{ fontSize: 9, color: doneCount === objRows.length ? 'var(--grn)' : 'var(--txd)' }}>
+                          {doneCount}/{objRows.length}
+                        </span>
+                      )}
                     </div>
-                    {!quests.length
-                      ? <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', paddingLeft: 12 }}>—</div>
-                      : quests.map(q => {
-                        const rawObjs  = tasks.find(t => t.id === q.id)?.objectives || []
-                        const taskObjs = rawObjs.filter(o => {
-                          if (o.optional) return false
-                          if (!o.maps || o.maps.length === 0) return true
-                          return o.maps.some(m => m.normalizedName === party.map_norm)
-                        })
-                        const doneCnt  = taskObjs.filter(o => party.progress?.[`${q.id}::${o.id}`]).length
-                        const allDone  = taskObjs.length > 0 && doneCnt === taskObjs.length
-                        const starred  = party.starred?.[q.id]
-                        return (
-                          <div key={q.id} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 0 3px 12px', opacity: allDone ? .4 : 1 }}>
-                            <span style={{ fontSize: 11, color: starred ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }}>
-                              {starred ? '★' : '◆'}
-                            </span>
-                            <span style={{ fontSize: 11, color: allDone ? 'var(--txd)' : 'var(--txm)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: allDone ? 'line-through' : 'none' }}>
-                              {q.name}
-                            </span>
-                            {taskObjs.length > 0 && (
-                              <span className="mono" style={{ fontSize: 9, color: allDone ? 'var(--grn)' : 'var(--txd)', flexShrink: 0 }}>
-                                {doneCnt}/{taskObjs.length}
-                              </span>
-                            )}
+                    {!objRows.length
+                      ? <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', paddingLeft: 12 }}>— NO MAP OBJECTIVES</div>
+                      : objRows.map((row, i) => (
+                        <div key={`${row.obj.id}-${i}`} style={{
+                          display: 'flex', alignItems: 'flex-start', gap: 6,
+                          padding: '4px 0 4px 12px',
+                          opacity: row.isDone ? 0.35 : 1,
+                        }}>
+                          <div style={{
+                            width: 8, height: 8, borderRadius: 2, flexShrink: 0, marginTop: 3,
+                            border: `1px solid ${row.isDone ? 'var(--grn)' : 'var(--brd2)'}`,
+                            background: row.isDone ? 'var(--grn)' : 'transparent',
+                          }} />
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{
+                              fontSize: 11, color: row.isDone ? 'var(--txd)' : 'var(--txm)',
+                              textDecoration: row.isDone ? 'line-through' : 'none',
+                              lineHeight: 1.3,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>
+                              {row.obj.description}
+                            </div>
+                            <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {row.questName}
+                            </div>
                           </div>
-                        )
-                      })
+                        </div>
+                      ))
                     }
                   </div>
                 )
