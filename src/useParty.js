@@ -125,6 +125,8 @@ export function useParty() {
       .filter(q => !q.map_norm)
       .map(q => ({ id: q.quest_id, name: q.quest_name }))
 
+    const allQuests = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
+
     const starred = {}
     savedQuests.filter(q => q.important).forEach(q => { starred[q.quest_id] = true })
 
@@ -132,6 +134,7 @@ export function useParty() {
       code, leader: name,
       map_id: null, map_name: null, map_norm: null,
       members: { [name]: myQuests },
+      member_quests_all: { [name]: allQuests },
       spawn: null,
       progress: {},
       starred,
@@ -170,12 +173,15 @@ export function useParty() {
     })
     if (rpcErr) { setError('Failed to join party.'); setLoading(false); return false }
 
+    const allQuests = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
+    const updatedMQA = { ...(result.member_quests_all || {}), [name]: allQuests }
     codeRef.current = code
     myNameRef.current = name
     localStorage.setItem('lastPartyCode', code)
-    applyParty(result); setMyName(name); setLoading(false)
+    applyParty({ ...result, member_quests_all: updatedMQA }); setMyName(name); setLoading(false)
+    updatePartyDB({ member_quests_all: updatedMQA })
     return true
-  }, [])
+  }, [updatePartyDB])
 
   const joinParty = useCallback(async (code, name, savedQuests = []) => {
     setLoading(true); setError('')
@@ -211,12 +217,15 @@ export function useParty() {
       setError(msg); setLoading(false); return false
     }
 
+    const allQuests = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
+    const updatedMQA = { ...(result.member_quests_all || {}), [name]: allQuests }
     codeRef.current = code
     myNameRef.current = name
     localStorage.setItem('lastPartyCode', code)
-    applyParty(result); setMyName(name); setLoading(false)
+    applyParty({ ...result, member_quests_all: updatedMQA }); setMyName(name); setLoading(false)
+    updatePartyDB({ member_quests_all: updatedMQA })
     return true
-  }, [])
+  }, [updatePartyDB])
 
   const selectMap = useCallback(async (map) => {
     const prev = partyRef.current
@@ -277,8 +286,13 @@ export function useParty() {
     const mine = members[name] || []
     if (mine.find(q => q.id === quest.id)) return
     members[name] = [...mine, { id: quest.id, name: quest.name }]
-    applyParty({ ...prev, members })
-    updatePartyDB({ members })
+    const mqaEntry = prev.member_quests_all?.[name] || []
+    const member_quests_all = {
+      ...(prev.member_quests_all || {}),
+      [name]: mqaEntry.find(q => q.id === quest.id) ? mqaEntry : [...mqaEntry, { id: quest.id, name: quest.name }],
+    }
+    applyParty({ ...prev, members, member_quests_all })
+    updatePartyDB({ members, member_quests_all })
   }, [updatePartyDB])
 
   const removeQuest = useCallback((questId) => {
@@ -287,8 +301,12 @@ export function useParty() {
     const name = myNameRef.current
     const members = { ...prev.members }
     members[name] = (members[name] || []).filter(q => q.id !== questId)
-    applyParty({ ...prev, members })
-    updatePartyDB({ members })
+    const member_quests_all = {
+      ...(prev.member_quests_all || {}),
+      [name]: (prev.member_quests_all?.[name] || []).filter(q => q.id !== questId),
+    }
+    applyParty({ ...prev, members, member_quests_all })
+    updatePartyDB({ members, member_quests_all })
   }, [updatePartyDB])
 
   const setSpawn = useCallback((spawnId) => {
@@ -405,11 +423,20 @@ export function useParty() {
 
     // Only update if something actually changed
     const changed = merged.length !== mine.length || merged.some(q => !mine.find(m => m.id === q.id))
-    if (!changed) return
+
+    // Full unfiltered quest list for recommendation: all saved quests + manually-added ones
+    const savedIds = new Set(quests.map(q => q.quest_id))
+    const allSaved = quests.map(q => ({ id: q.quest_id, name: q.quest_name }))
+    kept.forEach(q => { if (!savedIds.has(q.id)) allSaved.push(q) })
+    const prevMQA = prev.member_quests_all?.[name] || []
+    const mqaChanged = allSaved.length !== prevMQA.length || allSaved.some(q => !prevMQA.find(m => m.id === q.id))
+
+    if (!changed && !mqaChanged) return
 
     const members = { ...prev.members, [name]: merged }
-    applyParty({ ...prev, members })
-    updatePartyDB({ members })
+    const member_quests_all = { ...(prev.member_quests_all || {}), [name]: allSaved }
+    applyParty({ ...prev, members, member_quests_all })
+    updatePartyDB({ members, member_quests_all })
   }, [updatePartyDB])
 
   return {

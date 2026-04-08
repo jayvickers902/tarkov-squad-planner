@@ -123,6 +123,15 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
     setDragObjKey(null); setDragOverObjKey(null)
   }
 
+  function sendObjToTop(key) {
+    const keys = sortedObjRows.map(r => `${r.task.id}::${r.obj.id}`)
+    const idx = keys.indexOf(key)
+    if (idx <= 0) return
+    keys.splice(idx, 1)
+    keys.unshift(key)
+    setObjOrder(keys)
+  }
+
   function handleObjDragEnd() {
     setDragObjKey(null); setDragOverObjKey(null)
   }
@@ -475,6 +484,20 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleObject
                   onMouseEnter={e => { if (isLeader && !row.isDone) e.currentTarget.style.background = 'rgba(255,255,255,0.02)' }}
                   onMouseLeave={e => e.currentTarget.style.background = 'var(--sur2)'}
                 >
+                  {/* Send to top */}
+                  <button
+                    onClick={e => { e.stopPropagation(); sendObjToTop(key) }}
+                    title="Send to top"
+                    style={{
+                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                      color: 'var(--txd)', fontSize: 13, flexShrink: 0, lineHeight: 1,
+                      opacity: sortedObjRows[0] && `${sortedObjRows[0].task.id}::${sortedObjRows[0].obj.id}` === key ? 0.2 : 0.6,
+                      transition: 'color .15s, opacity .15s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--gold)'; e.currentTarget.style.opacity = '1' }}
+                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--txd)'; e.currentTarget.style.opacity = sortedObjRows[0] && `${sortedObjRows[0].task.id}::${sortedObjRows[0].obj.id}` === key ? '0.2' : '0.6' }}
+                  >↑</button>
+
                   {/* Drag grip */}
                   <span
                     style={{ cursor: 'grab', color: 'var(--txd)', fontSize: 14, flexShrink: 0, userSelect: 'none', lineHeight: 1 }}

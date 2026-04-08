@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useMaps, useTasks } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
 import { useIsMobile } from '../useIsMobile'
@@ -10,6 +10,28 @@ import RequiredItems from './RequiredItems'
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
+}
+
+const MEMBER_COLORS = [
+  { bg: '#1a2e3a', border: '#1e5a7a', text: '#5aace8' },
+  { bg: '#2a1a2e', border: '#5a1e7a', text: '#b85ae8' },
+  { bg: '#2e1a1a', border: '#7a1e1e', text: '#e85a5a' },
+  { bg: '#1a2e1a', border: '#1e7a1e', text: '#5ae85a' },
+  { bg: '#2e2a1a', border: '#7a6a1e', text: '#e8c85a' },
+  { bg: '#1a2a2e', border: '#1e6a7a', text: '#5ad8e8' },
+]
+function memberColor(name, allMembers) {
+  return MEMBER_COLORS[Math.max(0, allMembers.indexOf(name)) % MEMBER_COLORS.length]
+}
+function MemberPill({ name, allMembers }) {
+  const c = memberColor(name, allMembers)
+  return (
+    <span className="mono" style={{
+      fontSize: 10, padding: '1px 5px', borderRadius: 3,
+      background: c.bg, border: `1px solid ${c.border}`, color: c.text,
+      flexShrink: 0, letterSpacing: '.04em',
+    }}>{name.slice(0, 8).toUpperCase()}</span>
+  )
 }
 
 export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onToggleComplete, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
@@ -34,6 +56,8 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
 
   const { maps, loading: loadingMaps } = useMaps()
   const { tasks, loading: loadingTasks } = useTasks(party.map_norm)
+  const { tasks: allTasks } = useTasks(null)
+  const [questView, setQuestView] = useState('mine') // 'mine' | 'everyone'
 
   const isLeader = party.leader === myName
   const members  = Object.keys(party.members || {})
@@ -49,6 +73,45 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
       .filter(([k, v]) => k.startsWith('__done__:') && v)
       .map(([k]) => [k.slice(9), true])
   )
+
+  // Map recommendation: uses member_quests_all (full quest list per member, not map-filtered)
+  const mapStats = useMemo(() => {
+    const mqAll = party.member_quests_all || {}
+    const activeMembers = Object.keys(mqAll).filter(n => (mqAll[n] || []).length > 0)
+    if (!allTasks.length || !maps.length || !activeMembers.length) return []
+    return maps.map(m => {
+      const perMember = {}
+      const questIdSets = {}
+      activeMembers.forEach(name => {
+        const ids = (mqAll[name] || [])
+          .filter(q => allTasks.find(t => t.id === q.id)?.map?.normalizedName === m.normalizedName)
+          .map(q => q.id)
+        perMember[name] = ids.length
+        if (ids.length) questIdSets[name] = new Set(ids)
+      })
+      const allIds = new Set(Object.values(questIdSets).flatMap(s => [...s]))
+      let crossover = 0
+      allIds.forEach(id => {
+        if (Object.values(questIdSets).filter(s => s.has(id)).length >= 2) crossover++
+      })
+      const total = Object.values(perMember).reduce((s, v) => s + v, 0)
+      return { map: m, total, crossover, perMember }
+    })
+    .filter(s => s.total > 0)
+    .sort((a, b) => b.total - a.total || b.crossover - a.crossover)
+  }, [allTasks, maps, party.member_quests_all]) // eslint-disable-line
+
+  // Everyone view: all members' quests on the current map combined
+  const everyoneQuests = useMemo(() => {
+    const questMap = new Map()
+    members.forEach(m => {
+      ;(party.members[m] || []).forEach(q => {
+        if (!questMap.has(q.id)) questMap.set(q.id, { id: q.id, name: q.name, owners: [] })
+        questMap.get(q.id).owners.push(m)
+      })
+    })
+    return [...questMap.values()].sort((a, b) => b.owners.length - a.owners.length || a.name.localeCompare(b.name))
+  }, [party.members, members]) // eslint-disable-line
 
   function copy() {
     navigator.clipboard?.writeText(`https://dudgy.net/join/${party.code}`).catch(() => {})
@@ -348,6 +411,66 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                       </span>
                     </div>
                   )}
+
+                  {/* Map recommendation */}
+                  {mapStats.length > 0 && (() => {
+                    const maxTotal = mapStats[0].total
+                    return (
+                      <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--brd)' }}>
+                        <div className="lbl" style={{ marginBottom: 8 }}>SQUAD INTEL — MAP RECOMMENDATION</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          {mapStats.map((stat, i) => {
+                            const pct = maxTotal ? Math.round((stat.total / maxTotal) * 100) : 0
+                            const isTop = i === 0
+                            return (
+                              <div key={stat.map.id} style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: isTop ? '7px 10px' : '5px 10px',
+                                background: isTop ? 'rgba(201,168,76,0.06)' : 'var(--sur2)',
+                                border: `1px solid ${isTop ? 'var(--golddim)' : 'var(--brd)'}`,
+                                borderRadius: 4,
+                              }}>
+                                <span className="mono" style={{ fontSize: 10, color: isTop ? 'var(--gold)' : 'var(--txd)', width: 20, flexShrink: 0 }}>
+                                  #{i + 1}
+                                </span>
+                                <span style={{ fontSize: isTop ? 13 : 12, fontWeight: isTop ? 600 : 400, color: isTop ? 'var(--tx)' : 'var(--txm)', width: 130, flexShrink: 0 }}>
+                                  {stat.map.name.toUpperCase()}
+                                </span>
+                                {/* Bar */}
+                                <div style={{ flex: 1, height: 4, background: 'var(--brd)', borderRadius: 2, minWidth: 40 }}>
+                                  <div style={{ height: '100%', width: `${pct}%`, background: isTop ? 'var(--gold)' : 'var(--brd2)', borderRadius: 2, transition: 'width .3s' }} />
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                                  <span className="mono" style={{ fontSize: 10, color: isTop ? 'var(--goldtx)' : 'var(--txm)' }}>
+                                    {stat.total} QUEST{stat.total !== 1 ? 'S' : ''}
+                                  </span>
+                                  {stat.crossover > 0 && (
+                                    <span className="mono" style={{ fontSize: 10, color: 'var(--grn)', background: 'rgba(90,232,90,0.08)', border: '1px solid rgba(90,232,90,0.2)', borderRadius: 3, padding: '1px 5px' }}>
+                                      {stat.crossover} SHARED
+                                    </span>
+                                  )}
+                                </div>
+                                {/* Per-member breakdown */}
+                                <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                                  {Object.entries(stat.perMember).filter(([, v]) => v > 0).map(([name, count]) => {
+                                    const c = memberColor(name, members)
+                                    return (
+                                      <span key={name} className="mono" style={{
+                                        fontSize: 10, padding: '1px 5px', borderRadius: 3,
+                                        background: c.bg, border: `1px solid ${c.border}`, color: c.text,
+                                      }}>
+                                        {name.slice(0, 6).toUpperCase()}: {count}
+                                      </span>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </>
               )
             }
@@ -370,8 +493,87 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
 
               {tab === 'quests' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  <div className="lbl">{myName.toUpperCase()} — YOUR ACTIVE QUESTS ON {party.map_name?.toUpperCase()}</div>
-                  <QuestSearch tasks={tasks} mine={mine} completedQuests={completedQuests} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} mapNorm={party.map_norm} />
+                  {/* View toggle */}
+                  <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderRadius: 4, overflow: 'hidden', border: '1px solid var(--brd2)', width: 'fit-content' }}>
+                    <button onClick={() => setQuestView('mine')} className={questView === 'mine' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'} style={{ borderRadius: 0, borderRight: '1px solid var(--brd2)' }}>
+                      MY QUESTS
+                    </button>
+                    <button onClick={() => setQuestView('everyone')} className={questView === 'everyone' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'} style={{ borderRadius: 0 }}>
+                      EVERYONE ({everyoneQuests.length})
+                    </button>
+                  </div>
+
+                  {questView === 'mine' && (
+                    <>
+                      <div className="lbl">{myName.toUpperCase()} — YOUR ACTIVE QUESTS ON {party.map_name?.toUpperCase()}</div>
+                      <QuestSearch tasks={tasks} mine={mine} completedQuests={completedQuests} onAdd={onAddQuest} onRemove={onRemoveQuest} loading={loadingTasks} mapNorm={party.map_norm} />
+                      {members.filter(m => m !== myName).map(m => (
+                        <div key={m} style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--brd)' }}>
+                          <div className="lbl">{m.toUpperCase()} — QUESTS</div>
+                          {!(party.members[m] || []).length
+                            ? <p className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>WAITING FOR {m.toUpperCase()} TO ADD QUESTS</p>
+                            : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              {(party.members[m] || []).map(q => {
+                                const task = tasks.find(t => t.id === q.id)
+                                return (
+                                  <span key={q.id}
+                                    onMouseEnter={task ? e => setChipTooltip({ task, anchor: e.currentTarget.getBoundingClientRect() }) : undefined}
+                                    onMouseLeave={() => setChipTooltip(null)}
+                                    style={{ display: 'inline-flex', background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, padding: '2px 7px', fontSize: 11, fontFamily: 'Share Tech Mono', color: 'var(--txm)', cursor: task ? 'default' : undefined }}>
+                                    {q.name}
+                                  </span>
+                                )
+                              })}
+                            </div>
+                          }
+                        </div>
+                      ))}
+                    </>
+                  )}
+
+                  {questView === 'everyone' && (
+                    <>
+                      <div className="lbl" style={{ marginBottom: 10 }}>ALL QUESTS — {party.map_name?.toUpperCase()}</div>
+                      {everyoneQuests.length === 0 ? (
+                        <p className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>NO QUESTS ADDED BY ANY PARTY MEMBER</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {everyoneQuests.map(q => {
+                            const task = tasks.find(t => t.id === q.id)
+                            const isShared = q.owners.length > 1
+                            return (
+                              <div key={q.id} style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '6px 10px',
+                                background: 'var(--sur2)',
+                                border: `1px solid ${isShared ? 'rgba(90,232,90,0.2)' : 'var(--brd)'}`,
+                                borderLeft: `3px solid ${isShared ? 'var(--grn)' : 'var(--brd)'}`,
+                                borderRadius: 4,
+                                opacity: completedQuests[q.id] ? 0.35 : 1,
+                              }}>
+                                {isShared && (
+                                  <span className="mono" style={{ fontSize: 9, color: 'var(--grn)', letterSpacing: '.04em', flexShrink: 0 }}>SHARED</span>
+                                )}
+                                <div
+                                  style={{ flex: 1, fontSize: 12, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: task ? 'default' : undefined }}
+                                  onMouseEnter={task ? e => setChipTooltip({ task, anchor: e.currentTarget.getBoundingClientRect() }) : undefined}
+                                  onMouseLeave={() => setChipTooltip(null)}
+                                >
+                                  {q.name}
+                                  {task?.trader && <span className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginLeft: 6 }}>{task.trader.name}</span>}
+                                </div>
+                                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                  {q.owners.map(o => <MemberPill key={o} name={o} allMembers={members} />)}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Hover tooltip (shared between both views) */}
                   {chipTooltip && (() => {
                     const objs = (chipTooltip.task.objectives || []).filter(o => {
                       if (o.optional) return false
@@ -401,27 +603,6 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                       </div>
                     ) : null
                   })()}
-                  {members.filter(m => m !== myName).map(m => (
-                    <div key={m} style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--brd)' }}>
-                      <div className="lbl">{m.toUpperCase()} — QUESTS</div>
-                      {!(party.members[m] || []).length
-                        ? <p className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>WAITING FOR {m.toUpperCase()} TO ADD QUESTS</p>
-                        : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {(party.members[m] || []).map(q => {
-                            const task = tasks.find(t => t.id === q.id)
-                            return (
-                              <span key={q.id}
-                                onMouseEnter={task ? e => setChipTooltip({ task, anchor: e.currentTarget.getBoundingClientRect() }) : undefined}
-                                onMouseLeave={() => setChipTooltip(null)}
-                                style={{ display: 'inline-flex', background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, padding: '2px 7px', fontSize: 11, fontFamily: 'Share Tech Mono', color: 'var(--txm)', cursor: task ? 'default' : undefined }}>
-                                {q.name}
-                              </span>
-                            )
-                          })}
-                        </div>
-                      }
-                    </div>
-                  ))}
                 </div>
               )}
 
