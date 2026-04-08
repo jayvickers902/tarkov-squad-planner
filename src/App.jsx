@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from './useAuth'
 import { useParty } from './useParty'
 import { useUserQuests } from './useUserQuests'
@@ -21,7 +21,7 @@ export default function App() {
   const {
     quests: userQuests, loading: questsLoading,
     addQuest: saveQuest, removeQuest: removeSavedQuest,
-    toggleImportant, toggleSkipped, clearAllQuests, restoreSnapshot,
+    toggleImportant, toggleSkipped, clearAllQuests, restoreSnapshot, markCompleted: markQuestCompleted,
   } = useUserQuests(user?.id)
 
   const { friends, pendingIn, pendingOut, sendRequest, acceptRequest, removeRequest, removeFriend, refresh: refreshFriends } = useFriends(user?.id, profile?.callsign)
@@ -41,6 +41,28 @@ export default function App() {
   useEffect(() => {
     if (party) syncSavedQuests(userQuests)
   }, [userQuests]) // eslint-disable-line
+
+  const prevProgressRef = useRef(null)
+
+  // When any quest is marked __done__ in party progress:
+  // — for the completer: handleToggleComplete already called markQuestCompleted + removePartyQuest
+  // — for other members who share that quest: do it here
+  useEffect(() => {
+    if (!party) { prevProgressRef.current = null; return }
+    const progress = party.progress || {}
+    const prev = prevProgressRef.current ?? {}
+    prevProgressRef.current = progress
+
+    Object.entries(progress).forEach(([k, v]) => {
+      if (!k.startsWith('__done__:') || !v || prev[k]) return
+      const questId = k.slice(9)
+      // If the quest is still in my party member list, I haven't handled it yet (I'm not the completer)
+      const myMemberQuests = party.members?.[myName] || []
+      if (!myMemberQuests.find(q => q.id === questId)) return
+      markQuestCompleted(questId)
+      removePartyQuest(questId)
+    })
+  }, [party?.progress]) // eslint-disable-line
 
   const [screen, setScreen] = useState('lobby')       // 'lobby' | 'myquests' | 'admin'
   const [partyScreen, setPartyScreen] = useState('room') // 'room' | 'myquests' | 'admin'
@@ -133,7 +155,7 @@ export default function App() {
       const alreadyDone = party.progress?.[`__done__:${questId}`]
       toggleComplete(questId)
       if (!alreadyDone) {
-        removeSavedQuest(questId)
+        markQuestCompleted(questId)
         removePartyQuest(questId)
       }
     }
