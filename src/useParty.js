@@ -257,7 +257,16 @@ export function useParty() {
       p_map_name:      map.name,
       p_map_norm:      map.normalizedName,
     })
-    if (!err && data?.[0]) applyParty(data[0])
+    if (!err && data?.[0]) {
+      // data[0] reflects DB state when the RPC ran — other members may have joined or
+      // updated their quests since then. Preserve their current in-memory entries and
+      // only take the leader's own entry from the authoritative RPC result.
+      const current = partyRef.current || {}
+      applyParty({
+        ...data[0],
+        members: { ...(current.members || {}), [name]: (data[0].members || {})[name] || [] },
+      })
+    }
   }, [])
 
   const addQuest = useCallback((quest) => {
