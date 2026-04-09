@@ -212,9 +212,23 @@ export function useParty() {
       p_starred:    myStarred,
     })
     if (rpcErr) {
-      const msg = rpcErr.message?.includes('already in another party')
-        ? 'You are already in another party — leave it first.'
-        : rpcErr.message?.includes('party not found')
+      if (rpcErr.message?.includes('already in another party')) {
+        // Auto-leave current party and force-join without prompting
+        const prevCode = codeRef.current
+        const prevName = myNameRef.current
+        codeRef.current = null
+        setPartyCode(null)
+        partyRef.current = null
+        myNameRef.current = ''
+        localStorage.removeItem('lastPartyCode')
+        setParty(null); setMyName(''); setError('')
+        if (prevCode && prevName) {
+          supabase.rpc('leave_party', { p_code: prevCode, p_name: prevName })
+        }
+        setLoading(false)
+        return forceJoinParty(code, name, savedQuests)
+      }
+      const msg = rpcErr.message?.includes('party not found')
         ? 'Party not found — check the code.'
         : 'Failed to join party.'
       setError(msg); setLoading(false); return false
@@ -229,7 +243,7 @@ export function useParty() {
     applyParty({ ...result, member_quests_all: updatedMQA }); setMyName(name); setLoading(false)
     updatePartyDB({ member_quests_all: updatedMQA })
     return true
-  }, [updatePartyDB])
+  }, [updatePartyDB, forceJoinParty])
 
   const selectMap = useCallback(async (map) => {
     const prev = partyRef.current
