@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback, memo } from 'react'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
@@ -46,6 +46,162 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
+const QuestCard = memo(function QuestCard({
+  task, owners, objs, doneCount, starred, allDone, completed, canAct, dimmed,
+  isOpen, onToggleExpand, onToggleStar, onSkip, members, progress,
+}) {
+  const pct = objs.length ? (doneCount / objs.length) * 100 : 0
+
+  return (
+    <div style={{
+      background: 'var(--sur2)',
+      border: `1px solid ${starred && !allDone && !completed && !dimmed ? 'var(--golddim)' : 'var(--brd)'}`,
+      borderLeft: `3px solid ${completed || allDone ? 'var(--grn)' : dimmed ? 'var(--brd)' : starred ? 'var(--gold)' : 'var(--brd)'}`,
+      borderRadius: 4,
+      opacity: completed || allDone || dimmed ? .4 : 1,
+      transition: 'opacity .2s, border-color .15s',
+    }}>
+
+      {/* Quest header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', cursor: 'pointer' }}
+        onClick={() => onToggleExpand(task.id)}>
+
+        {/* Star */}
+        {canAct ? (
+          <button
+            onClick={e => { e.stopPropagation(); onToggleStar(task.id) }}
+            title="Star — pins to top for everyone"
+            style={{
+              background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0,
+              fontSize: 14, lineHeight: 1,
+              color: starred ? 'var(--gold)' : 'var(--txd)',
+              transition: 'color .15s',
+            }}>★</button>
+        ) : (
+          starred
+            ? <span style={{ fontSize: 14, color: 'var(--golddim)', flexShrink: 0, lineHeight: 1 }}>★</span>
+            : <span style={{ width: 14, flexShrink: 0 }} />
+        )}
+
+        {/* Quest name + owners */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{
+              fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600,
+              color: completed || allDone || dimmed ? 'var(--txm)' : 'var(--tx)',
+              textDecoration: completed || allDone ? 'line-through' : 'none',
+              letterSpacing: '.03em',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>{task.name}</div>
+            {task.kappaRequired && (
+              <span className="mono" title="Required for Kappa" style={{
+                fontSize: 9, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
+                background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)',
+                color: 'var(--gold)', letterSpacing: '.06em',
+              }}>κ</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+            {owners.map(o => <MemberPill key={o} name={o} allMembers={members} />)}
+            {task.trader && (
+              <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>{task.trader.name}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Skip button — only for quest owner, not on completed/allDone */}
+        {canAct && !completed && !allDone && (
+          <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => onSkip(task.id)}
+              title={dimmed ? 'Un-skip' : 'Skip for now'}
+              style={{
+                background: 'none', border: '1px solid var(--brd2)', borderRadius: 3,
+                padding: '2px 7px', cursor: 'pointer', fontSize: 10, fontFamily: 'Share Tech Mono',
+                color: dimmed ? 'var(--gold)' : 'var(--txd)', letterSpacing: '.04em', transition: 'all .15s',
+              }}>{dimmed ? 'UNSKIP' : '⊘ SKIP'}</button>
+          </div>
+        )}
+
+        {/* Progress */}
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <div className="mono" style={{ fontSize: 12, color: completed || allDone ? 'var(--grn)' : 'var(--txm)' }}>
+            {doneCount}/{objs.length}
+          </div>
+          <div className="mono" style={{ fontSize: 9, color: 'var(--txd)' }}>
+            {completed || allDone ? 'DONE' : `${Math.round(pct)}%`}
+          </div>
+        </div>
+
+        <div className="mono" style={{ color: 'var(--txd)', fontSize: 10, flexShrink: 0 }}>
+          {isOpen ? '▲' : '▼'}
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height: 2, background: 'var(--brd)' }}>
+        <div style={{
+          height: '100%', width: `${pct}%`,
+          background: completed || allDone ? 'var(--grn)' : 'var(--gold)',
+          transition: 'width .3s',
+        }} />
+      </div>
+
+      {/* Expanded objectives */}
+      {isOpen && (
+        <div style={{ padding: '6px 10px 10px' }} className="fade-in">
+          <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid var(--brd)' }}>OBJECTIVES</div>
+          {objs.map(obj => {
+            const doneBy = owners.filter(m => progress?.[`${task.id}::${obj.id}::${m}`])
+            const allDoneObj = doneBy.length === owners.length && owners.length > 0
+            return (
+              <div key={obj.id} style={{
+                display: 'flex', alignItems: 'flex-start', gap: 9,
+                padding: '6px 0', borderBottom: '1px solid var(--brd)',
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 12,
+                    color: allDoneObj ? 'var(--txd)' : 'var(--tx)',
+                    textDecoration: allDoneObj ? 'line-through' : 'none',
+                    lineHeight: 1.4,
+                  }}>{obj.description}</div>
+                  {owners.length > 1 && (
+                    <div style={{ display: 'flex', gap: 3, marginTop: 3, flexWrap: 'wrap' }}>
+                      {owners.map(m => {
+                        const done = doneBy.includes(m)
+                        const c = memberColor(m, members)
+                        return (
+                          <span key={m} className="mono" style={{
+                            fontSize: 9, padding: '1px 5px', borderRadius: 3,
+                            background: done ? 'rgba(90,200,90,0.15)' : c.bg,
+                            border: `1px solid ${done ? 'rgba(90,200,90,0.4)' : c.border}`,
+                            color: done ? 'var(--grn)' : c.text,
+                            letterSpacing: '.04em', flexShrink: 0,
+                            textDecoration: done ? 'line-through' : 'none',
+                          }}>{m.slice(0, 8).toUpperCase()}</span>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+                <span className="mono" style={{
+                  fontSize: 9, flexShrink: 0, marginTop: 2, letterSpacing: '.06em',
+                  color: allDoneObj ? 'var(--txd)' : 'var(--txm)',
+                  background: 'var(--sur)', border: '1px solid var(--brd)',
+                  borderRadius: 2, padding: '1px 5px',
+                }}>
+                  {TYPE_LABEL[obj.type] || obj.type?.toUpperCase() || '?'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+})
+
 export default function TodoList({ tasks, memberQuests, progress, onToggleStar, questOrder, initialSkipped, starredQuests, myName, mapNorm }) {
   const [filter, setFilter]     = useState('all')
   const [kappaOnly, setKappaOnly] = useState(false)
@@ -57,13 +213,17 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
   const [dragOverObjKey, setDragOverObjKey] = useState(null)
   const members = Object.keys(memberQuests)
 
-  function toggleSkip(questId) {
+  const handleToggleExpand = useCallback((taskId) => {
+    setExpanded(e => ({ ...e, [taskId]: !e[taskId] }))
+  }, [])
+
+  const handleSkip = useCallback((questId) => {
     setSkipped(prev => {
       const next = new Set(prev)
       next.has(questId) ? next.delete(questId) : next.add(questId)
       return next
     })
-  }
+  }, [])
 
   const questRows = useMemo(() => {
     const ids = [...new Set(Object.values(memberQuests).flat().map(q => q.id))]
@@ -184,159 +344,12 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
     </div>
   )
 
-  function QuestCard({ task, owners, objs, doneCount, starred, allDone, completed, canAct, dimmed }) {
-    const isOpen = expanded[task.id]
-    const pct    = objs.length ? (doneCount / objs.length) * 100 : 0
-
-    return (
-      <div style={{
-        background: 'var(--sur2)',
-        border: `1px solid ${starred && !allDone && !completed && !dimmed ? 'var(--golddim)' : 'var(--brd)'}`,
-        borderLeft: `3px solid ${completed || allDone ? 'var(--grn)' : dimmed ? 'var(--brd)' : starred ? 'var(--gold)' : 'var(--brd)'}`,
-        borderRadius: 4,
-        opacity: completed || allDone || dimmed ? .4 : 1,
-        transition: 'opacity .2s, border-color .15s',
-      }}>
-
-        {/* Quest header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', cursor: 'pointer' }}
-          onClick={() => setExpanded(e => ({ ...e, [task.id]: !e[task.id] }))}>
-
-
-          {/* Star */}
-          {canAct ? (
-            <button
-              onClick={e => { e.stopPropagation(); onToggleStar(task.id) }}
-              title="Star — pins to top for everyone"
-              style={{
-                background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0,
-                fontSize: 14, lineHeight: 1,
-                color: starred ? 'var(--gold)' : 'var(--txd)',
-                transition: 'color .15s',
-              }}>★</button>
-          ) : (
-            starred
-              ? <span style={{ fontSize: 14, color: 'var(--golddim)', flexShrink: 0, lineHeight: 1 }}>★</span>
-              : <span style={{ width: 14, flexShrink: 0 }} />
-          )}
-
-          {/* Quest name + owners */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{
-                fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600,
-                color: completed || allDone || dimmed ? 'var(--txm)' : 'var(--tx)',
-                textDecoration: completed || allDone ? 'line-through' : 'none',
-                letterSpacing: '.03em',
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>{task.name}</div>
-              {task.kappaRequired && (
-                <span className="mono" title="Required for Kappa" style={{
-                  fontSize: 9, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
-                  background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)',
-                  color: 'var(--gold)', letterSpacing: '.06em',
-                }}>κ</span>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
-              {owners.map(o => <MemberPill key={o} name={o} allMembers={members} />)}
-              {task.trader && (
-                <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>{task.trader.name}</span>
-              )}
-            </div>
-          </div>
-
-          {/* Skip button — only for quest owner, not on completed/allDone */}
-          {canAct && !completed && !allDone && (
-            <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-              <button
-                onClick={() => toggleSkip(task.id)}
-                title={dimmed ? 'Un-skip' : 'Skip for now'}
-                style={{
-                  background: 'none', border: '1px solid var(--brd2)', borderRadius: 3,
-                  padding: '2px 7px', cursor: 'pointer', fontSize: 10, fontFamily: 'Share Tech Mono',
-                  color: dimmed ? 'var(--gold)' : 'var(--txd)', letterSpacing: '.04em', transition: 'all .15s',
-                }}>{dimmed ? 'UNSKIP' : '⊘ SKIP'}</button>
-            </div>
-          )}
-
-          {/* Progress */}
-          <div style={{ textAlign: 'right', flexShrink: 0 }}>
-            <div className="mono" style={{ fontSize: 12, color: completed || allDone ? 'var(--grn)' : 'var(--txm)' }}>
-              {doneCount}/{objs.length}
-            </div>
-            <div className="mono" style={{ fontSize: 9, color: 'var(--txd)' }}>
-              {completed || allDone ? 'DONE' : `${Math.round(pct)}%`}
-            </div>
-          </div>
-
-          <div className="mono" style={{ color: 'var(--txd)', fontSize: 10, flexShrink: 0 }}>
-            {isOpen ? '▲' : '▼'}
-          </div>
-        </div>
-
-        {/* Progress bar */}
-        <div style={{ height: 2, background: 'var(--brd)' }}>
-          <div style={{
-            height: '100%', width: `${pct}%`,
-            background: completed || allDone ? 'var(--grn)' : 'var(--gold)',
-            transition: 'width .3s',
-          }} />
-        </div>
-
-        {/* Expanded objectives */}
-        {isOpen && (
-          <div style={{ padding: '6px 10px 10px' }} className="fade-in">
-            <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid var(--brd)' }}>OBJECTIVES</div>
-            {objs.map(obj => {
-              const doneBy = owners.filter(m => progress?.[`${task.id}::${obj.id}::${m}`])
-              const allDoneObj = doneBy.length === owners.length && owners.length > 0
-              return (
-                <div key={obj.id} style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 9,
-                  padding: '6px 0', borderBottom: '1px solid var(--brd)',
-                }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: 12,
-                      color: allDoneObj ? 'var(--txd)' : 'var(--tx)',
-                      textDecoration: allDoneObj ? 'line-through' : 'none',
-                      lineHeight: 1.4,
-                    }}>{obj.description}</div>
-                    {owners.length > 1 && (
-                      <div style={{ display: 'flex', gap: 3, marginTop: 3, flexWrap: 'wrap' }}>
-                        {owners.map(m => {
-                          const done = doneBy.includes(m)
-                          const c = memberColor(m, members)
-                          return (
-                            <span key={m} className="mono" style={{
-                              fontSize: 9, padding: '1px 5px', borderRadius: 3,
-                              background: done ? 'rgba(90,200,90,0.15)' : c.bg,
-                              border: `1px solid ${done ? 'rgba(90,200,90,0.4)' : c.border}`,
-                              color: done ? 'var(--grn)' : c.text,
-                              letterSpacing: '.04em', flexShrink: 0,
-                              textDecoration: done ? 'line-through' : 'none',
-                            }}>{m.slice(0, 8).toUpperCase()}</span>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                  <span className="mono" style={{
-                    fontSize: 9, flexShrink: 0, marginTop: 2, letterSpacing: '.06em',
-                    color: allDoneObj ? 'var(--txd)' : 'var(--txm)',
-                    background: 'var(--sur)', border: '1px solid var(--brd)',
-                    borderRadius: 2, padding: '1px 5px',
-                  }}>
-                    {TYPE_LABEL[obj.type] || obj.type?.toUpperCase() || '?'}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    )
+  const sharedCardProps = {
+    onToggleExpand: handleToggleExpand,
+    onToggleStar,
+    onSkip: handleSkip,
+    members,
+    progress,
   }
 
   return (
@@ -555,7 +568,9 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
         return (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {mapActive.map(row => <QuestCard key={row.task.id} {...row} dimmed={false} />)}
+              {mapActive.map(row => (
+                <QuestCard key={row.task.id} {...row} dimmed={false} isOpen={expanded[row.task.id] || false} {...sharedCardProps} />
+              ))}
             </div>
 
             {filteredActive.length === 0 && filteredSkipped.length === 0 && filteredCompleted.length === 0 && (
@@ -571,7 +586,9 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
                   ⊘ SKIPPED ({mapSkipped.length})
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {mapSkipped.map(row => <QuestCard key={row.task.id} {...row} dimmed={true} />)}
+                  {mapSkipped.map(row => (
+                    <QuestCard key={row.task.id} {...row} dimmed={true} isOpen={expanded[row.task.id] || false} {...sharedCardProps} />
+                  ))}
                 </div>
               </div>
             )}
@@ -588,7 +605,9 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {anyActive.map(row => <QuestCard key={row.task.id} {...row} dimmed={false} />)}
+                  {anyActive.map(row => (
+                    <QuestCard key={row.task.id} {...row} dimmed={false} isOpen={expanded[row.task.id] || false} {...sharedCardProps} />
+                  ))}
                 </div>
                 {anySkipped.length > 0 && (
                   <div style={{ marginTop: 12 }}>
@@ -596,7 +615,9 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
                       ⊘ SKIPPED ({anySkipped.length})
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {anySkipped.map(row => <QuestCard key={row.task.id} {...row} dimmed={true} />)}
+                      {anySkipped.map(row => (
+                        <QuestCard key={row.task.id} {...row} dimmed={true} isOpen={expanded[row.task.id] || false} {...sharedCardProps} />
+                      ))}
                     </div>
                   </div>
                 )}
@@ -614,7 +635,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {filteredCompleted.map(row => (
-              <QuestCard key={row.task.id} {...row} dimmed={false} />
+              <QuestCard key={row.task.id} {...row} dimmed={false} isOpen={expanded[row.task.id] || false} {...sharedCardProps} />
             ))}
           </div>
         </div>

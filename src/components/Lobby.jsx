@@ -12,13 +12,19 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
   const [addInput, setAddInput] = useState('')
   const [addError, setAddError] = useState('')
   const [addBusy, setAddBusy]   = useState(false)
+  const [addSuccess, setAddSuccess] = useState(false)
 
   async function handleSendRequest() {
     if (!addInput.trim()) return
-    setAddBusy(true); setAddError('')
+    setAddBusy(true); setAddError(''); setAddSuccess(false)
     const err = await onSendRequest(addInput)
-    if (err) setAddError(err)
-    else setAddInput('')
+    if (err) {
+      setAddError(err)
+    } else {
+      setAddInput('')
+      setAddSuccess(true)
+      setTimeout(() => setAddSuccess(false), 2500)
+    }
     setAddBusy(false)
   }
 
@@ -261,6 +267,7 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
                     </button>
                   </div>
                   {addError && <p className="mono" style={{ color: 'var(--red)', fontSize: 11, marginTop: 4 }}>⚠ {addError}</p>}
+                  {addSuccess && <p className="mono" style={{ color: 'var(--grn)', fontSize: 11, marginTop: 4 }}>✓ REQUEST SENT</p>}
                 </div>
               )}
             </div>

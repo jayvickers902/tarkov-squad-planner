@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
@@ -53,6 +53,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
   const [open, setOpen]     = useState(false)
   const [tooltip, setTooltip] = useState(null)  // { task, anchor }
   const ref = useRef()
+  const tooltipTimer = useRef(null)
 
   const activeQuests    = mine.filter(item => !completedQuests[item.id])
   const completedActive = mine.filter(item => completedQuests[item.id])
@@ -61,11 +62,20 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
     ? tasks.filter(t => t.name.toLowerCase().includes(q.toLowerCase()) && !mine.find(x => x.id === t.id)).slice(0, 14)
     : []
 
-  function showTooltip(e, itemId) {
-    const task = tasks.find(t => t.id === itemId)
-    if (!task) return
-    setTooltip({ task, anchor: e.currentTarget.getBoundingClientRect() })
-  }
+  const showTooltip = useCallback((e, itemId) => {
+    const anchor = e.currentTarget.getBoundingClientRect()
+    clearTimeout(tooltipTimer.current)
+    tooltipTimer.current = setTimeout(() => {
+      const task = tasks.find(t => t.id === itemId)
+      if (!task) return
+      setTooltip({ task, anchor })
+    }, 300)
+  }, [tasks])
+
+  const hideTooltip = useCallback(() => {
+    clearTimeout(tooltipTimer.current)
+    setTooltip(null)
+  }, [])
 
   return (
     <div style={{ position: 'relative' }}>
@@ -125,7 +135,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
         {activeQuests.map(item => (
           <div key={item.id}
             onMouseEnter={e => showTooltip(e, item.id)}
-            onMouseLeave={() => setTooltip(null)}
+            onMouseLeave={hideTooltip}
             style={{
               display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px',
               background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, fontSize: 12,
@@ -151,7 +161,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
             {completedActive.map(item => (
               <div key={item.id}
                 onMouseEnter={e => showTooltip(e, item.id)}
-                onMouseLeave={() => setTooltip(null)}
+                onMouseLeave={hideTooltip}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px',
                   background: 'var(--sur2)', border: '1px solid var(--brd)', borderRadius: 4, fontSize: 12,
