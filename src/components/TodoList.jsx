@@ -254,7 +254,9 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
   }, [tasks, memberQuests, progress, starredQuests, myName, mapNorm])
 
   const sortedRows = useMemo(() => {
-    if (!questOrder || !questOrder.length) return questRows
+    if (!questOrder || !questOrder.length) {
+      return [...questRows].sort((a, b) => b.owners.length - a.owners.length)
+    }
     const orderMap = new Map(questOrder.map((id, i) => [id, i]))
     return [...questRows].sort((a, b) => {
       const ai = orderMap.has(a.task.id) ? orderMap.get(a.task.id) : Infinity
@@ -323,7 +325,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
 
   const sortedObjRows = (() => {
     const isDone = r => r.doneByMembers.length === r.owners.length && r.owners.length > 0
-    if (!objOrder.length) return [...objectiveRows].sort((a, b) => isDone(a) - isDone(b))
+    if (!objOrder.length) return [...objectiveRows].sort((a, b) => isDone(a) - isDone(b) || b.owners.length - a.owners.length)
     const orderMap = new Map(objOrder.map((k, i) => [k, i]))
     return [...objectiveRows].sort((a, b) => {
       const aDone = isDone(a)
