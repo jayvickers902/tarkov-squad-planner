@@ -322,9 +322,13 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
     .filter(row => row.obj.type !== 'giveItem' && row.obj.type !== 'giveQuestItem')
 
   const sortedObjRows = (() => {
-    if (!objOrder.length) return objectiveRows
+    const isDone = r => r.doneByMembers.length === r.owners.length && r.owners.length > 0
+    if (!objOrder.length) return [...objectiveRows].sort((a, b) => isDone(a) - isDone(b))
     const orderMap = new Map(objOrder.map((k, i) => [k, i]))
     return [...objectiveRows].sort((a, b) => {
+      const aDone = isDone(a)
+      const bDone = isDone(b)
+      if (aDone !== bDone) return aDone - bDone
       const ak = `${a.task.id}::${a.obj.id}`
       const bk = `${b.task.id}::${b.obj.id}`
       const ai = orderMap.has(ak) ? orderMap.get(ak) : Infinity

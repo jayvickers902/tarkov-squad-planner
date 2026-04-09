@@ -486,7 +486,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                 <div className="card fade-in" style={{ padding: 16 }}>
                   {loadingTasks
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
-                    : <RequiredItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} />
+                    : <RequiredItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} />
                   }
                 </div>
               )}

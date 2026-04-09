@@ -21,7 +21,7 @@ function objIsOnMap(obj, mapNorm, taskMapNorm) {
   return true
 }
 
-export default function RequiredItems({ tasks, memberQuests, mapNorm }) {
+export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }) {
   const members = Object.keys(memberQuests)
   const [activeMember, setActiveMember] = useState('all')
 
@@ -36,6 +36,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm }) {
         if (!task) return
         task.objectives?.forEach(obj => {
           if (obj.optional) return
+          if (progress?.[`${task.id}::${obj.id}::${member}`]) return
           const isPlant = obj.type === 'plantItem' && obj.item
           const isMark  = obj.type === 'mark' && obj.markerItem
           if (!isPlant && !isMark) return
@@ -60,7 +61,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm }) {
 
       return { member, items: Object.values(itemMap) }
     })
-  }, [tasks, memberQuests]) // eslint-disable-line
+  }, [tasks, memberQuests, progress, mapNorm]) // eslint-disable-line
 
   const hasAnyItems = memberItems.some(m => m.items.length > 0)
 
