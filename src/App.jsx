@@ -30,7 +30,7 @@ export default function App() {
     party, myName, error: partyError, loading: partyLoading,
     createParty, joinParty, forceJoinParty,
     selectMap, addQuest: addPartyQuest, removeQuest: removePartyQuest, setSpawn,
-    toggleObjective, toggleStar, toggleComplete,
+    toggleStar, submitMyProgress,
     addStroke, clearMyStrokes,
     addMarker, clearMyMarkers,
     leaveParty, setError: setPartyError,
@@ -55,8 +55,12 @@ export default function App() {
 
     Object.entries(progress).forEach(([k, v]) => {
       if (!k.startsWith('__done__:') || !v || prev[k]) return
-      const questId = k.slice(9)
-      // If the quest is still in my party member list, I haven't handled it yet (I'm not the completer)
+      const rest = k.slice(9) // questId::memberName
+      const sep = rest.lastIndexOf('::')
+      if (sep === -1) return
+      const questId = rest.slice(0, sep)
+      const member = rest.slice(sep + 2)
+      if (member !== myName) return
       const myMemberQuests = party.members?.[myName] || []
       if (!myMemberQuests.find(q => q.id === questId)) return
       markQuestCompleted(questId)
@@ -143,21 +147,8 @@ export default function App() {
       toggleStar(taskId)
     }
 
-    function handleToggleObjective(key) {
-      if (party.leader !== myName) return
-      toggleObjective(key)
-    }
-
-    function handleToggleComplete(questId) {
-      const myQuests = party.members?.[myName] || []
-      const iOwn = myQuests.find(q => q.id === questId)
-      if (!iOwn) return
-      const alreadyDone = party.progress?.[`__done__:${questId}`]
-      toggleComplete(questId)
-      if (!alreadyDone) {
-        markQuestCompleted(questId)
-        removePartyQuest(questId)
-      }
+    function handleSubmitProgress(changes) {
+      submitMyProgress(changes)
     }
 
     // My Quests while in party — back button returns to room
@@ -192,9 +183,8 @@ export default function App() {
         onAddQuest={handleAddPartyQuest}
         onRemoveQuest={handleRemovePartyQuest}
         onSetSpawn={setSpawn}
-        onToggleObjective={handleToggleObjective}
         onToggleStar={handleToggleStar}
-        onToggleComplete={handleToggleComplete}
+        onSubmitProgress={handleSubmitProgress}
         skippedQuestIds={new Set(userQuests.filter(q => q.skipped).map(q => q.quest_id))}
         onAddStroke={addStroke}
         onClearMyStrokes={clearMyStrokes}

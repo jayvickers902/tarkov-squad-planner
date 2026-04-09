@@ -78,8 +78,8 @@ export function useParty() {
 
     const completedIds = new Set(
       Object.entries(party.progress || {})
-        .filter(([k, v]) => k.startsWith('__done__:') && v)
-        .map(([k]) => k.replace('__done__:', ''))
+        .filter(([k, v]) => k.startsWith('__done__:') && k.endsWith(`::${myName}`) && v)
+        .map(([k]) => k.slice(9, k.lastIndexOf('::')))
     )
 
     const kept = mine.filter(q => {
@@ -349,6 +349,15 @@ export function useParty() {
     updatePartyDB({ progress })
   }, [updatePartyDB])
 
+  // Batch-submit a member's own progress changes (per-member keyed: taskId::objId::name, __done__:questId::name)
+  const submitMyProgress = useCallback((changes) => {
+    const prev = partyRef.current
+    if (!prev) return
+    const progress = { ...(prev.progress || {}), ...changes }
+    applyParty({ ...prev, progress })
+    updatePartyDB({ progress })
+  }, [updatePartyDB])
+
   const addStroke = useCallback((stroke) => {
     const prev = partyRef.current
     if (!prev) return
@@ -448,7 +457,7 @@ export function useParty() {
     party, myName, error, loading,
     createParty, joinParty, forceJoinParty,
     selectMap, addQuest, removeQuest, setSpawn,
-    toggleObjective, toggleStar, toggleComplete,
+    toggleObjective, toggleStar, toggleComplete, submitMyProgress,
     reorderQuests,
     addStroke, clearMyStrokes,
     addMarker, clearMyMarkers,

@@ -4,6 +4,7 @@ import { RED_REBEL_MAPS } from '../constants'
 import { useIsMobile } from '../useIsMobile'
 import QuestSearch from './QuestSearch'
 import TodoList from './TodoList'
+import MyQuestPanel from './MyQuestPanel'
 import MapCanvas from './MapCanvas'
 import KeysList from './KeysList'
 import RequiredItems from './RequiredItems'
@@ -34,7 +35,7 @@ function MemberPill({ name, allMembers }) {
   )
 }
 
-export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleObjective, onToggleStar, onToggleComplete, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
+export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, onSubmitProgress, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
@@ -66,11 +67,11 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
   const mineWasNonEmpty = useRef(mine.length > 0)
   if (mine.length > 0) mineWasNonEmpty.current = true
 
-  // Completed quests are stored in progress with __done__: prefix (no extra DB column needed)
+  // Completed quests — only my own entries (key format: __done__:questId::memberName)
   const completedQuests = Object.fromEntries(
     Object.entries(party.progress || {})
-      .filter(([k, v]) => k.startsWith('__done__:') && v)
-      .map(([k]) => [k.slice(9), true])
+      .filter(([k, v]) => k.startsWith('__done__:') && k.endsWith(`::${myName}`) && v)
+      .map(([k]) => [k.slice(9, k.lastIndexOf('::')), true])
   )
 
   // Map recommendation: uses member_quests_all (full quest list per member, not map-filtered)
@@ -577,22 +578,33 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                     )
                   ) : loadingTasks
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
-                    : <TodoList
-                        key={party.map_norm}
-                        tasks={tasks}
-                        memberQuests={party.members}
-                        progress={party.progress || {}}
-                        starredQuests={party.starred || {}}
-                        completedQuests={completedQuests}
-                        onToggleObjective={onToggleObjective}
-                        onToggleStar={onToggleStar}
-                        onToggleComplete={onToggleComplete}
-                        questOrder={party.quest_order}
-                        initialSkipped={skippedQuestIds}
-                        myName={myName}
-                        isLeader={isLeader}
-                        mapNorm={party.map_norm}
-                      />
+                    : (
+                      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                        <div style={{ flex: 3, minWidth: 0 }}>
+                          <TodoList
+                            key={party.map_norm}
+                            tasks={tasks}
+                            memberQuests={party.members}
+                            progress={party.progress || {}}
+                            starredQuests={party.starred || {}}
+                            onToggleStar={onToggleStar}
+                            questOrder={party.quest_order}
+                            initialSkipped={skippedQuestIds}
+                            myName={myName}
+                            mapNorm={party.map_norm}
+                          />
+                        </div>
+                        <div style={{ flex: 2, minWidth: 0, position: 'sticky', top: 16 }}>
+                          <MyQuestPanel
+                            myQuests={mine}
+                            tasks={tasks}
+                            progress={party.progress || {}}
+                            myName={myName}
+                            onSubmit={onSubmitProgress}
+                          />
+                        </div>
+                      </div>
+                    )
                   }
                 </div>
               )}
