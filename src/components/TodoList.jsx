@@ -367,7 +367,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
           onClick={() => setViewMode('objectives')}
           className={viewMode === 'objectives' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
           style={{ borderRadius: 0, borderRight: '1px solid var(--brd2)' }}>
-          OBJECTIVES
+          MAP OBJECTIVES
         </button>
         <button
           onClick={() => setViewMode('quests')}
