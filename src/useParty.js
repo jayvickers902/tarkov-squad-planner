@@ -239,8 +239,8 @@ export function useParty() {
 
     const completedIds = new Set(
       Object.entries(prev.progress || {})
-        .filter(([k, v]) => k.startsWith('__done__:') && v)
-        .map(([k]) => k.replace('__done__:', ''))
+        .filter(([k, v]) => k.startsWith('__done__:') && k.endsWith(`::${name}`) && v)
+        .map(([k]) => k.slice(9, k.lastIndexOf('::')))
     )
 
     const kept = mine.filter(q => {
@@ -420,8 +420,8 @@ export function useParty() {
 
     const completedIds = new Set(
       Object.entries(prev.progress || {})
-        .filter(([k, v]) => k.startsWith('__done__:') && v)
-        .map(([k]) => k.replace('__done__:', ''))
+        .filter(([k, v]) => k.startsWith('__done__:') && k.endsWith(`::${name}`) && v)
+        .map(([k]) => k.slice(9, k.lastIndexOf('::')))
     )
 
     // Keep only truly manually-added quests: not in the new saved list AND not in the
