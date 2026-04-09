@@ -44,6 +44,7 @@ export default function App() {
   }, [userQuests]) // eslint-disable-line
 
   const prevProgressRef = useRef(null)
+  const pendingCompletedIds = useRef(new Set())
 
   // When any quest is marked __done__ in party progress:
   // — for the completer: handleToggleComplete already called markQuestCompleted + removePartyQuest
@@ -97,7 +98,7 @@ export default function App() {
     if (!user || !profile || authLoading || questsLoading || partyLoading || party) return
     setAutoJoinFired(true)
     window.history.replaceState(null, '', '/')
-    joinParty(pendingJoinCode, profile.callsign, userQuests)
+    joinParty(pendingJoinCode, profile.callsign, userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id)))
   }, [user, profile, authLoading, questsLoading, partyLoading, party, pendingJoinCode, autoJoinFired]) // eslint-disable-line
 
   const isAdmin = user?.id === ADMIN_USER_ID
@@ -182,7 +183,8 @@ export default function App() {
     }
 
     function handleQuestComplete(questId) {
-      markQuestCompleted(questId)
+      pendingCompletedIds.current.add(questId)
+      markQuestCompleted(questId).then(() => pendingCompletedIds.current.delete(questId))
       removePartyQuest(questId)
     }
 
@@ -263,13 +265,13 @@ export default function App() {
   }
 
   async function handleEnter(mode, code) {
-    const savedQuests = userQuests
+    const savedQuests = userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id))
     if (mode === 'create') await createParty(profile.callsign, savedQuests)
     else await joinParty(code, profile.callsign, savedQuests)
   }
 
   async function handleForceJoin(code) {
-    await forceJoinParty(code, profile.callsign, userQuests)
+    await forceJoinParty(code, profile.callsign, userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id)))
   }
 
   return (
