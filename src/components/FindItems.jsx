@@ -37,7 +37,7 @@ export default function FindItems({ tasks, memberQuests, mapNorm, progress, myNa
         task.objectives?.forEach(obj => {
           if (obj.optional) return
           if (progress?.[`${task.id}::${obj.id}::${member}`]) return
-          if (obj.type !== 'item' || !obj.item) return
+          if (!['findItem', 'giveItem'].includes(obj.type) || !obj.item) return
           if (!objIsOnMap(obj, mapNorm, task.map?.normalizedName)) return
 
           const key = `${obj.item.id}::${obj.foundInRaid ? 'fir' : 'nonfir'}`
