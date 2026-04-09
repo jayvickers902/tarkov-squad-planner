@@ -4,7 +4,7 @@ import { useIsMobile } from '../useIsMobile'
 import QuestSearch from './QuestSearch'
 import TodoList from './TodoList'
 import MyQuestPanel from './MyQuestPanel'
-import MapCanvas from './MapCanvas'
+import MapLeaflet from './MapLeaflet'
 import RequiredItems from './RequiredItems'
 import FindItems from './FindItems'
 
@@ -508,7 +508,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
 
               {tab === 'map' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  <MapCanvas
+                  <MapLeaflet
                     mapNorm={party.map_norm}
                     mapName={party.map_name}
                     drawings={party.drawings || []}
