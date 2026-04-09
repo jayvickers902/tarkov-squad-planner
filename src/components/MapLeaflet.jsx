@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { TARKOV_MAP_CONFIGS } from '../data/tarkovMapConfigs'
@@ -90,11 +90,27 @@ function makeQuestIcon(color, initial) {
   })
 }
 
+// Auto-pin for API-sourced objective locations — diamond shape to distinguish from manual pins
+function makeObjIcon(color, initial) {
+  return L.divIcon({
+    className: '',
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+    html: `<svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="10,1 19,10 10,19 1,10"
+        fill="${color}" stroke="rgba(0,0,0,0.8)" stroke-width="1.5"/>
+      <text x="10" y="13.5" text-anchor="middle" fill="rgba(0,0,0,0.85)"
+        font-size="7" font-weight="bold" font-family="Share Tech Mono">${initial}</text>
+    </svg>`,
+  })
+}
+
 export default function MapLeaflet({
   mapNorm, mapName,
   drawings = [], markers = [],
   myName, memberNames = [],
-  myQuests = [], tasks = [],
+  myQuests = [], memberQuests = {}, tasks = [],
+  progress = {},
   onAddStroke, onClearMyStrokes,
   onAddMarker, onClearMyMarkers,
 }) {
@@ -103,7 +119,8 @@ export default function MapLeaflet({
   const svgLayerRef = useRef(null)
   const tileLayerRef = useRef(null)
   const drawingLayersRef = useRef([])   // L.polyline instances
-  const markerLayersRef = useRef({})    // id -> L.marker
+  const markerLayersRef = useRef({})    // id -> L.marker (manual pins)
+  const objMarkersRef = useRef([])      // L.marker[] (auto objective pins)
   const keyMarkersRef = useRef({})      // keyName -> L.marker
   const boundsRef = useRef(null)
   const currentStyleRef = useRef('svg') // 'svg' | 'tile'
@@ -123,6 +140,51 @@ export default function MapLeaflet({
 
   const cfg = TARKOV_MAP_CONFIGS[mapNorm]
 
+  // ─── Compute auto-pins from API objective zone data ──────────────────────────
+  // For each member, find their quests that have objectives with zone positions
+  // on the current map, and are not yet completed.
+  const autoObjPins = useMemo(() => {
+    if (!tasks.length || !mapNorm) return []
+    const pins = []
+    for (const [memberName, questIds] of Object.entries(memberQuests)) {
+      if (!Array.isArray(questIds)) continue
+      const color = getUserColor(memberName, memberNames)
+      const initial = memberName[0].toUpperCase()
+      for (const questId of questIds) {
+        // Skip completed quests
+        const doneKey = `__done__:${questId}::${memberName}`
+        if (progress[doneKey]) continue
+        const task = tasks.find(t => t.id === questId)
+        if (!task) continue
+        // Skip tasks explicitly assigned to a different map
+        if (task.map && task.map.normalizedName !== mapNorm) continue
+        for (const obj of (task.objectives || [])) {
+          if (obj.optional) continue
+          const zones = obj.zones || []
+          for (const zone of zones) {
+            if (!zone.position) continue
+            // Filter to zones on current map (some zones list multiple map variants)
+            if (zone.map && zone.map.normalizedName !== mapNorm
+                && !zone.map.normalizedName.startsWith(mapNorm)) continue
+            pins.push({
+              id: `${memberName}::${task.id}::${obj.id}::${zone.id}`,
+              memberName,
+              color,
+              initial,
+              questName: task.name,
+              objDescription: obj.description,
+              objType: obj.type,
+              // game coords: lat = z, lng = x (matches tarkov-dev pos() function)
+              lat: zone.position.z,
+              lng: zone.position.x,
+            })
+          }
+        }
+      }
+    }
+    return pins
+  }, [memberQuests, tasks, mapNorm, memberNames, progress])
+
   // ─── Init / teardown Leaflet map when mapNorm changes ───────────────────────
   useEffect(() => {
     if (!mapContainerRef.current || !cfg) return
@@ -135,6 +197,7 @@ export default function MapLeaflet({
       tileLayerRef.current = null
       drawingLayersRef.current = []
       markerLayersRef.current = {}
+      objMarkersRef.current = []
       keyMarkersRef.current = {}
     }
 
@@ -334,6 +397,33 @@ export default function MapLeaflet({
       keyMarkersRef.current[keyName] = km
     }
   }, [mapKeys, mapNorm])
+
+  // ─── Sync auto objective pins ────────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    // Remove all previous auto-pins
+    for (const m of objMarkersRef.current) map.removeLayer(m)
+    objMarkersRef.current = []
+
+    for (const pin of autoObjPins) {
+      const latlng = L.latLng(pin.lat, pin.lng)
+      const icon = makeObjIcon(pin.color, pin.initial)
+      const typeLabel = pin.objType === 'visit' ? 'LOCATE' : pin.objType?.toUpperCase() ?? ''
+      const tooltipHtml = `
+        <div style="font-family:'Share Tech Mono',monospace;font-size:11px;min-width:150px;max-width:220px">
+          <div style="color:${pin.color};margin-bottom:3px">${pin.memberName.toUpperCase()}</div>
+          <div style="color:#c9a84c;margin-bottom:4px">${pin.questName}</div>
+          ${typeLabel ? `<div style="color:#888;font-size:9px;margin-bottom:2px">${typeLabel}</div>` : ''}
+          <div style="color:#ddd">${pin.objDescription}</div>
+        </div>`
+      const lm = L.marker(latlng, { icon, interactive: true, zIndexOffset: 200 })
+      lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -12], opacity: 1 })
+      lm.addTo(map)
+      objMarkersRef.current.push(lm)
+    }
+  }, [autoObjPins, mapNorm])
 
   // ─── Drawing mouse handlers ────────────────────────────────────────────────
   useEffect(() => {
@@ -547,6 +637,9 @@ export default function MapLeaflet({
           ? <>YOUR COLOR: <span style={{ color: myColor }}>■</span>&nbsp; DRAW ROUTES — VISIBLE TO ALL PARTY MEMBERS IN REAL TIME</>
           : <>◎ QUEST MARKER MODE — PINS ARE VISIBLE TO ALL PARTY MEMBERS</>
         }
+        {autoObjPins.length > 0 && (
+          <> &mdash; <span style={{ color: 'var(--gold)' }}>◆ {autoObjPins.length}</span> OBJECTIVE{autoObjPins.length !== 1 ? 'S' : ''} ON THIS MAP</>
+        )}
       </div>
     </div>
   )
