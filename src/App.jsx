@@ -215,6 +215,7 @@ export default function App() {
         party={party}
         myName={myName}
         isAdmin={isAdmin}
+        questsLoading={questsLoading}
         onLeave={leaveParty}
         onSelectMap={selectMap}
         onAddQuest={handleAddPartyQuest}

@@ -12,7 +12,7 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
-export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm }) {
+export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, loading }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
 
   function getEffective(key) {
@@ -85,6 +85,14 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
 
   if (!rows.length) {
     const hasAnyQuests = myQuests.length > 0
+    if (!hasAnyQuests && loading) {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '32px 24px', justifyContent: 'center' }}>
+          <div style={{ width: 20, height: 20, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
+          <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>SYNCING...</span>
+        </div>
+      )
+    }
     return (
       <div style={{ textAlign: 'center', padding: '40px 24px' }}>
         <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>

@@ -34,7 +34,7 @@ function MemberPill({ name, allMembers }) {
   )
 }
 
-export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh }) {
+export default function Room({ party, myName, isAdmin, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
@@ -440,7 +440,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                   {/* Squad Objectives — party-wide card */}
                   <div className="card fade-in" style={{ padding: 16, flex: 1, minWidth: 0 }}>
                     {!mine.length ? (
-                      mineWasNonEmpty.current ? (
+                      (mineWasNonEmpty.current || questsLoading) ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '32px 24px', justifyContent: 'center' }}>
                           <Spin />
                           <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>SYNCING...</span>
@@ -483,6 +483,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                       onQuestComplete={onQuestComplete}
                       onOpenQuestManager={onMyQuests}
                       mapNorm={party.map_norm}
+                      loading={questsLoading}
                     />
                   </div>
                 </div>
