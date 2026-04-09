@@ -51,12 +51,25 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
         const isMapSpecific = mapNorm
           ? (task.objectives || []).some(o => !o.optional && o.maps && o.maps.length > 0)
           : false
-        return { task, objs, isMapSpecific }
+        const doneKey = `__done__:${task.id}::${myName}`
+        const isDone = pending[doneKey] !== undefined ? pending[doneKey] : (progress?.[doneKey] || false)
+        const doneObjCount = objs.filter(o => {
+          const k = `${task.id}::${o.id}::${myName}`
+          return pending[k] !== undefined ? pending[k] : (progress?.[k] || false)
+        }).length
+        const allObjsDone = objs.length > 0 && doneObjCount === objs.length
+        const isComplete = isDone || allObjsDone
+        return { task, objs, isMapSpecific, isComplete }
       })
       .filter(Boolean)
-    // Map-specific quests first, any-map quests at the bottom
-    return [...mapped.filter(r => r.isMapSpecific), ...mapped.filter(r => !r.isMapSpecific)]
-  }, [myQuests, tasks, mapNorm])
+    // Sort: map-specific incomplete → any-map incomplete → map-specific complete → any-map complete
+    return [
+      ...mapped.filter(r => r.isMapSpecific && !r.isComplete),
+      ...mapped.filter(r => !r.isMapSpecific && !r.isComplete),
+      ...mapped.filter(r => r.isMapSpecific && r.isComplete),
+      ...mapped.filter(r => !r.isMapSpecific && r.isComplete),
+    ]
+  }, [myQuests, tasks, mapNorm, pending, progress, myName])
 
   if (!rows.length) {
     const hasAnyQuests = myQuests.length > 0
@@ -99,9 +112,10 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
 
       {/* Quest list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {rows.map(({ task, objs, isMapSpecific }, idx) => {
-          const prevMapSpecific = idx > 0 ? rows[idx - 1].isMapSpecific : true
-          const showDivider = mapNorm && !isMapSpecific && prevMapSpecific && rows.some(r => r.isMapSpecific)
+        {rows.map(({ task, objs, isMapSpecific, isComplete }, idx) => {
+          const prev = idx > 0 ? rows[idx - 1] : null
+          const showAnyMapDivider = mapNorm && !isMapSpecific && !isComplete && (!prev || prev.isMapSpecific || prev.isComplete) && rows.some(r => r.isMapSpecific)
+          const showCompletedDivider = isComplete && (!prev || !prev.isComplete)
           const doneKey = `__done__:${task.id}::${myName}`
           const isDone = getEffective(doneKey)
           const isPendingDone = pending[doneKey] !== undefined
@@ -110,9 +124,14 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
 
           return (
             <div key={task.id}>
-            {showDivider && (
+            {showAnyMapDivider && (
               <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em', paddingBottom: 5, marginBottom: 2, borderBottom: '1px solid var(--brd)' }}>
                 ◆ ANY MAP
+              </div>
+            )}
+            {showCompletedDivider && (
+              <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em', paddingBottom: 5, marginBottom: 2, borderBottom: '1px solid var(--brd)' }}>
+                ✓ COMPLETED
               </div>
             )}
             <div style={{
