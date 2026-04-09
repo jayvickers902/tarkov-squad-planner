@@ -27,6 +27,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
   const [searchQ, setSearchQ]         = useState('')
   const [searchOpen, setSearchOpen]   = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [recentlyAdded, setRecentlyAdded] = useState(new Set())
 
   const snapKey = userId ? `tarkov_quests_${userId}` : null
   const [snapshot, setSnapshot] = useState(() => {
@@ -87,10 +88,13 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
   }, [userQuests])
 
   function handleAdd(task) {
-    // Use the map from the quest data itself, not the search filter
     const autoMap = task.map?.normalizedName || null
     onAdd({ id: task.id, name: task.name }, autoMap)
     setSearchQ('')
+    setRecentlyAdded(prev => new Set([...prev, task.id]))
+    setTimeout(() => {
+      setRecentlyAdded(prev => { const n = new Set(prev); n.delete(task.id); return n })
+    }, 2800)
   }
 
   return (
@@ -232,6 +236,15 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
         </div>
       </div>
 
+      <style>{`
+        @keyframes goldFlash {
+          0%   { box-shadow: 0 0 0 2px var(--gold); }
+          60%  { box-shadow: 0 0 0 2px rgba(201,168,76,0.5); }
+          100% { box-shadow: none; }
+        }
+        .quest-new-flash { animation: goldFlash 2.4s ease forwards; }
+      `}</style>
+
       {/* Saved quests */}
       <div className="card" style={{ padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -276,8 +289,11 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {filtered.map(q => (
-              <div key={q.quest_id} style={{
+            {[...filtered].sort((a, b) => {
+              const an = recentlyAdded.has(a.quest_id), bn = recentlyAdded.has(b.quest_id)
+              if (an && !bn) return -1; if (!an && bn) return 1; return 0
+            }).map(q => (
+              <div key={q.quest_id} className={recentlyAdded.has(q.quest_id) ? 'quest-new-flash' : ''} style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px',
                 background: 'var(--sur2)',
                 border: `1px solid ${q.important && !q.skipped ? 'var(--golddim)' : 'var(--brd)'}`,
