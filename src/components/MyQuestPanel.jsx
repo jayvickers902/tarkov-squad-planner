@@ -59,13 +59,17 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
   }, [myQuests, tasks, mapNorm])
 
   if (!rows.length) {
+    const hasAnyQuests = myQuests.length > 0
     return (
       <div style={{ textAlign: 'center', padding: '40px 12px' }}>
         <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', letterSpacing: '.1em' }}>
-          NO QUESTS FOR THIS MAP
+          {hasAnyQuests ? 'NO QUESTS FOR THIS MAP' : 'NO QUESTS ADDED'}
         </div>
-        <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 6 }}>
-          ADD QUESTS IN THE QUESTS TAB
+        <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 6, lineHeight: 1.7 }}>
+          {hasAnyQuests
+            ? 'SELECT A DIFFERENT MAP OR ADD MORE QUESTS'
+            : <>CLICK <span style={{ color: 'var(--gold)' }}>★ QUEST MANAGER</span> AT THE TOP TO IMPORT YOUR QUESTS</>
+          }
         </div>
       </div>
     )
