@@ -2,7 +2,17 @@ import { useState, useMemo } from 'react'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
-export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubmit }) {
+function objsForMap(objectives, mapNorm, taskMapNorm) {
+  return (objectives || []).filter(o => {
+    if (o.optional || o.type === 'giveItem' || o.type === 'giveQuestItem') return false
+    if (!mapNorm) return true
+    if (o.maps && o.maps.length > 0) return o.maps.some(m => m.normalizedName === mapNorm)
+    if (taskMapNorm) return taskMapNorm === mapNorm
+    return true
+  })
+}
+
+export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubmit, mapNorm }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
 
   function getEffective(key) {
@@ -32,13 +42,16 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
       .map(q => {
         const task = tasks.find(t => t.id === q.id)
         if (!task) return null
-        const objs = (task.objectives || []).filter(
-          o => !o.optional && o.type !== 'giveItem' && o.type !== 'giveQuestItem'
-        )
+        const objs = objsForMap(task.objectives, mapNorm, task.map?.normalizedName)
+        // If a map is selected, hide quests with non-optional objectives but none on this map
+        if (mapNorm) {
+          const allObjs = (task.objectives || []).filter(o => !o.optional)
+          if (allObjs.length > 0 && objs.length === 0) return null
+        }
         return { task, objs }
       })
       .filter(Boolean)
-  }, [myQuests, tasks])
+  }, [myQuests, tasks, mapNorm])
 
   if (!rows.length) {
     return (

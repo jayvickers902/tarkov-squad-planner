@@ -601,6 +601,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                             progress={party.progress || {}}
                             myName={myName}
                             onSubmit={onSubmitProgress}
+                            mapNorm={party.map_norm}
                           />
                         </div>
                       </div>
