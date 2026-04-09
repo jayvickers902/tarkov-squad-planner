@@ -28,7 +28,9 @@ export default function FindItems({ tasks, memberQuests, mapNorm, progress, myNa
   // Build per-member find-item lists from their active quests' objectives
   const memberItems = useMemo(() => {
     return members.map(member => {
-      const quests = memberQuests[member] || []
+      // Deduplicate quest IDs — party.members can accumulate duplicates
+      const seen = new Set()
+      const quests = (memberQuests[member] || []).filter(q => seen.has(q.id) ? false : (seen.add(q.id), true))
       const itemMap = {}
 
       quests.forEach(q => {
@@ -37,7 +39,7 @@ export default function FindItems({ tasks, memberQuests, mapNorm, progress, myNa
         task.objectives?.forEach(obj => {
           if (obj.optional) return
           if (progress?.[`${task.id}::${obj.id}::${member}`]) return
-          if (!['findItem', 'giveItem'].includes(obj.type) || !obj.item) return
+          if (obj.type !== 'findItem' || !obj.item) return
           if (!objIsOnMap(obj, mapNorm, task.map?.normalizedName)) return
 
           const key = `${obj.item.id}::${obj.foundInRaid ? 'fir' : 'nonfir'}`

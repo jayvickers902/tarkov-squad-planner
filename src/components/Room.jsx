@@ -517,7 +517,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                     memberNames={members}
                     myQuests={mine}
                     memberQuests={party.members || {}}
-                    tasks={tasks}
+                    tasks={allTasks}
                     progress={party.progress || {}}
                     onAddStroke={onAddStroke}
                     onClearMyStrokes={onClearMyStrokes}

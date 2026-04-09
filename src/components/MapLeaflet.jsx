@@ -150,7 +150,9 @@ export default function MapLeaflet({
       if (!Array.isArray(questIds)) continue
       const color = getUserColor(memberName, memberNames)
       const initial = memberName[0].toUpperCase()
-      for (const questId of questIds) {
+      for (const questEntry of questIds) {
+        // questEntry may be a quest object {id, name} or a plain string ID
+        const questId = questEntry?.id ?? questEntry
         // Skip completed quests
         const doneKey = `__done__:${questId}::${memberName}`
         if (progress[doneKey]) continue
