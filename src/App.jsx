@@ -34,7 +34,7 @@ export default function App() {
     addStroke, clearMyStrokes,
     addMarker, clearMyMarkers,
     leaveParty, setError: setPartyError,
-    syncSavedQuests,
+    syncSavedQuests, refreshParty,
   } = useParty()
 
   // Keep the party hook's savedQuestsRef in sync — quests may load after joining
@@ -200,6 +200,7 @@ export default function App() {
         onRemoveRequest={removeRequest}
         onRemoveFriend={removeFriend}
         onRefreshFriends={refreshFriends}
+        onRefresh={refreshParty}
       />
     )
   }

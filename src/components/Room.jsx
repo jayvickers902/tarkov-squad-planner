@@ -35,7 +35,7 @@ function MemberPill({ name, allMembers }) {
   )
 }
 
-export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, onSubmitProgress, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
+export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, onSubmitProgress, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
@@ -246,7 +246,10 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
 
           {/* Members */}
           <div className="card" style={{ padding: 14 }}>
-            <div className="lbl">PARTY MEMBERS</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <div className="lbl" style={{ marginBottom: 0 }}>PARTY MEMBERS</div>
+              <button className="btn-ghost btn-sm" onClick={onRefresh} title="Refresh members" style={{ fontSize: 14, padding: '2px 7px', color: 'var(--txd)' }}>↻</button>
+            </div>
             {members.map(m => {
               const isSelf    = m === myName
               const isFriend  = friends.some(f => f.callsign === m)

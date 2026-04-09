@@ -392,6 +392,12 @@ export function useParty() {
     updatePartyDB({ markers })
   }, [updatePartyDB])
 
+  const refreshParty = useCallback(async () => {
+    if (!codeRef.current) return
+    const fresh = await fetchParty(codeRef.current)
+    if (fresh) applyParty(fresh)
+  }, [])
+
   const leaveParty = useCallback(() => {
     codeRef.current = null
     setPartyCode(null)
@@ -462,6 +468,6 @@ export function useParty() {
     addStroke, clearMyStrokes,
     addMarker, clearMyMarkers,
     leaveParty, setError,
-    syncSavedQuests,
+    syncSavedQuests, refreshParty,
   }
 }
