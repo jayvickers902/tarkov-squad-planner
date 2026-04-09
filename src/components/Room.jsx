@@ -40,7 +40,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
   const [showFriends, setShowFriends] = useState(false)
-  const [showMapRec, setShowMapRec] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [addInput, setAddInput] = useState('')
   const [addError, setAddError] = useState('')
   const [addBusy, setAddBusy]   = useState(false)
@@ -239,16 +239,33 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '210px 1fr', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (sidebarOpen ? '210px 1fr' : '28px 1fr'), gap: 14, transition: 'grid-template-columns .2s' }}>
 
         {/* Sidebar */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+
+          {/* Collapse toggle when closed */}
+          {!sidebarOpen && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              title="Expand sidebar"
+              style={{
+                background: 'var(--sur2)', border: '1px solid var(--brd)', borderRadius: 4,
+                color: 'var(--txd)', cursor: 'pointer', padding: '6px 0',
+                fontSize: 12, writingMode: 'vertical-rl', width: '100%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >▶</button>
+          )}
 
           {/* Members */}
-          <div className="card" style={{ padding: 14 }}>
+          {sidebarOpen && <div className="card" style={{ padding: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div className="lbl" style={{ marginBottom: 0 }}>PARTY MEMBERS</div>
-              <button className="btn-ghost btn-sm" onClick={onRefresh} title="Refresh members" style={{ fontSize: 14, padding: '2px 7px', color: 'var(--txd)' }}>↻</button>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button className="btn-ghost btn-sm" onClick={onRefresh} title="Refresh members" style={{ fontSize: 14, padding: '2px 7px', color: 'var(--txd)' }}>↻</button>
+                <button className="btn-ghost btn-sm" onClick={() => setSidebarOpen(false)} title="Collapse sidebar" style={{ fontSize: 11, padding: '2px 7px', color: 'var(--txd)' }}>◀</button>
+              </div>
             </div>
             {members.map(m => {
               const isSelf    = m === myName
@@ -299,27 +316,14 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
           {/* Map Recommendations */}
           {mapStats.length > 0 && (
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--brd)' }}>
-              <button
-                onClick={() => setShowMapRec(v => !v)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, width: '100%',
-                  background: 'transparent', border: 'none', padding: '3px 0',
-                  cursor: 'pointer',
-                }}
-              >
-                <span style={{ fontSize: 11, color: 'var(--gold)', flexShrink: 0 }}>◆</span>
-                <span className="mono" style={{ fontSize: 10, color: 'var(--goldtx)', letterSpacing: '.06em', flex: 1, textAlign: 'left' }}>
-                  MAP RECOMMENDATIONS
-                </span>
-                <span className="mono" style={{ fontSize: 9, color: 'var(--txd)' }}>
-                  {showMapRec ? '▲' : `▼ ${mapStats[0].map.name.slice(0, 8).toUpperCase()}`}
-                </span>
-              </button>
-
-              {showMapRec && (() => {
+              <div className="mono" style={{ fontSize: 10, color: 'var(--goldtx)', letterSpacing: '.06em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, color: 'var(--gold)' }}>◆</span>
+                MAP RECOMMENDATIONS
+              </div>
+              {(() => {
                 const maxTotal = mapStats[0].total
                 return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }} className="fade-in">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {mapStats.map((stat, i) => {
                       const pct = maxTotal ? Math.round((stat.total / maxTotal) * 100) : 0
                       const isTop = i === 0
@@ -370,7 +374,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
               })()}
             </div>
           )}
-          </div>
+          </div>}
         </div>
 
         {/* Main */}
