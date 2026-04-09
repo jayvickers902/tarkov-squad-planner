@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAuth } from './useAuth'
 import { useParty } from './useParty'
 import { useUserQuests } from './useUserQuests'
@@ -22,6 +22,7 @@ export default function App() {
     quests: userQuests, loading: questsLoading,
     addQuest: saveQuest, removeQuest: removeSavedQuest,
     toggleImportant, toggleSkipped, clearAllQuests, restoreSnapshot, markCompleted: markQuestCompleted,
+    saveObjectiveProgress,
   } = useUserQuests(user?.id)
 
   const { friends, pendingIn, pendingOut, sendRequest, acceptRequest, removeRequest, removeFriend, refresh: refreshFriends } = useFriends(user?.id, profile?.callsign)
@@ -67,6 +68,19 @@ export default function App() {
       removePartyQuest(questId)
     })
   }, [party?.progress]) // eslint-disable-line
+
+  // Persisted objective progress in party-key format — used as fallback in MyQuestPanel across parties
+  const userObjProgress = useMemo(() => {
+    if (!myName) return {}
+    const out = {}
+    for (const q of userQuests) {
+      if (!q.obj_progress) continue
+      for (const [objId, val] of Object.entries(q.obj_progress)) {
+        out[`${q.quest_id}::${objId}::${myName}`] = val
+      }
+    }
+    return out
+  }, [userQuests, myName]) // eslint-disable-line
 
   const [screen, setScreen] = useState('lobby')       // 'lobby' | 'myquests' | 'admin'
   const [partyScreen, setPartyScreen] = useState('room') // 'room' | 'myquests' | 'admin'
@@ -149,6 +163,22 @@ export default function App() {
 
     function handleSubmitProgress(changes) {
       submitMyProgress(changes)
+      // Persist objective states per quest so they survive across parties
+      const questUpdates = {}
+      for (const [key, val] of Object.entries(changes)) {
+        if (key.startsWith('__done__:')) continue
+        const parts = key.split('::')
+        if (parts.length !== 3 || parts[2] !== myName) continue
+        const [questId, objId] = parts
+        if (!questUpdates[questId]) questUpdates[questId] = {}
+        questUpdates[questId][objId] = val
+      }
+      for (const [questId, changes] of Object.entries(questUpdates)) {
+        const existing = userQuests.find(q => q.quest_id === questId)
+        if (!existing) continue
+        const merged = { ...(existing.obj_progress || {}), ...changes }
+        saveObjectiveProgress(questId, merged)
+      }
     }
 
     function handleQuestComplete(questId) {
@@ -191,6 +221,7 @@ export default function App() {
         onToggleStar={handleToggleStar}
         onSubmitProgress={handleSubmitProgress}
         onQuestComplete={handleQuestComplete}
+        userObjProgress={userObjProgress}
         skippedQuestIds={new Set(userQuests.filter(q => q.skipped).map(q => q.quest_id))}
         onAddStroke={addStroke}
         onClearMyStrokes={clearMyStrokes}

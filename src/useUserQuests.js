@@ -54,6 +54,13 @@ export function useUserQuests(userId) {
     setQuests(prev => prev.map(q => q.quest_id === questId ? { ...q, important: newVal } : q))
   }, [userId, quests])
 
+  // Save objective completion states for a quest (persists across parties)
+  const saveObjectiveProgress = useCallback(async (questId, objProgress) => {
+    if (!userId) return
+    await supabase.from('user_quests').update({ obj_progress: objProgress }).eq('user_id', userId).eq('quest_id', questId)
+    setQuests(prev => prev.map(q => q.quest_id === questId ? { ...q, obj_progress: objProgress } : q))
+  }, [userId])
+
   // Mark a quest as completed — removes it from the active list so it won't be re-imported
   const markCompleted = useCallback(async (questId) => {
     if (!userId) return
@@ -89,5 +96,5 @@ export function useUserQuests(userId) {
     return quests.filter(q => !q.map_norm || q.map_norm === mapNorm)
   }, [quests])
 
-  return { quests, loading, addQuest, removeQuest, toggleImportant, toggleSkipped, questsForMap, clearAllQuests, restoreSnapshot, markCompleted }
+  return { quests, loading, addQuest, removeQuest, toggleImportant, toggleSkipped, questsForMap, clearAllQuests, restoreSnapshot, markCompleted, saveObjectiveProgress }
 }

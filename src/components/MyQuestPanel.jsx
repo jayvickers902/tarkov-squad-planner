@@ -12,11 +12,13 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
-export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm }) {
+export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
 
   function getEffective(key) {
-    return pending[key] !== undefined ? pending[key] : (progress?.[key] || false)
+    if (pending[key] !== undefined) return pending[key]
+    if (progress?.[key] !== undefined) return progress[key]
+    return userObjProgress?.[key] || false
   }
 
   function toggleObj(taskId, objId) {
