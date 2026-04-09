@@ -38,7 +38,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
   }
 
   const rows = useMemo(() => {
-    return myQuests
+    const mapped = myQuests
       .map(q => {
         const task = tasks.find(t => t.id === q.id)
         if (!task) return null
@@ -48,9 +48,14 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
           const allObjs = (task.objectives || []).filter(o => !o.optional)
           if (allObjs.length > 0 && objs.length === 0) return null
         }
-        return { task, objs }
+        const isMapSpecific = mapNorm
+          ? (task.objectives || []).some(o => !o.optional && o.maps && o.maps.length > 0)
+          : false
+        return { task, objs, isMapSpecific }
       })
       .filter(Boolean)
+    // Map-specific quests first, any-map quests at the bottom
+    return [...mapped.filter(r => r.isMapSpecific), ...mapped.filter(r => !r.isMapSpecific)]
   }, [myQuests, tasks, mapNorm])
 
   if (!rows.length) {
@@ -74,8 +79,8 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
           <div className="mono" style={{ fontSize: 12, color: 'var(--goldtx)', fontWeight: 700, letterSpacing: '.08em' }}>
             MY QUESTS
           </div>
-          <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 1 }}>
-            {myName.toUpperCase()}
+          <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', marginTop: 2, letterSpacing: '.1em' }}>
+            {myName.toUpperCase()} · PERSONAL VIEW
           </div>
         </div>
         <button
@@ -90,7 +95,9 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
 
       {/* Quest list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {rows.map(({ task, objs }) => {
+        {rows.map(({ task, objs, isMapSpecific }, idx) => {
+          const prevMapSpecific = idx > 0 ? rows[idx - 1].isMapSpecific : true
+          const showDivider = mapNorm && !isMapSpecific && prevMapSpecific && rows.some(r => r.isMapSpecific)
           const doneKey = `__done__:${task.id}::${myName}`
           const isDone = getEffective(doneKey)
           const isPendingDone = pending[doneKey] !== undefined
@@ -98,7 +105,13 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
           const allObjsDone = objs.length > 0 && doneObjCount === objs.length
 
           return (
-            <div key={task.id} style={{
+            <div key={task.id}>
+            {showDivider && (
+              <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em', paddingBottom: 5, marginBottom: 2, borderBottom: '1px solid var(--brd)' }}>
+                ◆ ANY MAP
+              </div>
+            )}
+            <div style={{
               background: 'var(--sur2)',
               border: `1px solid ${isDone || allObjsDone ? 'rgba(90,200,90,0.25)' : isPendingDone ? 'var(--golddim)' : 'var(--brd)'}`,
               borderLeft: `3px solid ${isDone || allObjsDone ? 'var(--grn)' : isPendingDone ? 'var(--gold)' : 'var(--brd)'}`,
@@ -199,6 +212,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
                   </div>
                 )
               })}
+            </div>
             </div>
           )
         })}

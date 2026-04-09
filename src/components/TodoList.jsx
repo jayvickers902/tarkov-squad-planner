@@ -344,7 +344,10 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
       {/* Header + overall progress */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-          <h3 style={{ fontSize: 18, color: 'var(--goldtx)' }}>RAID OBJECTIVES</h3>
+          <div>
+            <h3 style={{ fontSize: 18, color: 'var(--goldtx)', lineHeight: 1 }}>SQUAD OBJECTIVES</h3>
+            <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em', marginTop: 3 }}>PARTY-WIDE VIEW</div>
+          </div>
           <span className="mono" style={{ fontSize: 11, color: 'var(--txm)' }}>
             {doneObjs}/{totalObjs} DONE · {pctDone}%
           </span>
