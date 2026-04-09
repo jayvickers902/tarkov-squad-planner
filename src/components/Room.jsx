@@ -125,7 +125,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             {!isMobile && (
               <>
-                <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ MY QUESTS</button>
+                <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>
                 <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
                   {pendingIn.length > 0 && <span className="mono" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)', color: 'var(--gold)' }}>{pendingIn.length}</span>}
@@ -145,7 +145,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
         {/* Mobile second row */}
         {isMobile && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-            <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ MY QUESTS</button>
+            <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>
             <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}>
               FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
             </button>
@@ -295,80 +295,82 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                 </div>
               )
             })}
-          </div>
 
-          {/* Per-member raid objectives for this map */}
-          {party.map_id && (
-            <div className="card" style={{ padding: 14 }}>
-              <div className="lbl">RAID OBJECTIVES</div>
-              {members.map(m => {
-                const quests = party.members[m] || []
-                const objRows = quests.flatMap(q => {
-                  const task = tasks.find(t => t.id === q.id)
-                  if (!task) return []
-                  // Only map-specific tasks (same rule as objectives tab)
-                  const isMapSpecific = (task.objectives || []).some(o => !o.optional && o.maps && o.maps.length > 0)
-                  if (!isMapSpecific) return []
-                  const mapObjs = (task.objectives || []).filter(o => {
-                    if (o.optional) return false
-                    if (o.type === 'giveItem' || o.type === 'giveQuestItem') return false
-                    if (o.maps && o.maps.length > 0) return o.maps.some(om => om.normalizedName === party.map_norm)
-                    if (task.map?.normalizedName) return task.map.normalizedName === party.map_norm
-                    return false
-                  })
-                  return mapObjs.map(obj => ({
-                    obj, questName: q.name,
-                    isDone: party.progress?.[`${q.id}::${obj.id}`] || false,
-                  }))
-                })
-                const doneCount = objRows.filter(r => r.isDone).length
+          {/* Map Recommendations */}
+          {mapStats.length > 0 && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--brd)' }}>
+              <button
+                onClick={() => setShowMapRec(v => !v)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+                  background: 'transparent', border: 'none', padding: '3px 0',
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ fontSize: 11, color: 'var(--gold)', flexShrink: 0 }}>◆</span>
+                <span className="mono" style={{ fontSize: 10, color: 'var(--goldtx)', letterSpacing: '.06em', flex: 1, textAlign: 'left' }}>
+                  MAP RECOMMENDATIONS
+                </span>
+                <span className="mono" style={{ fontSize: 9, color: 'var(--txd)' }}>
+                  {showMapRec ? '▲' : `▼ ${mapStats[0].map.name.slice(0, 8).toUpperCase()}`}
+                </span>
+              </button>
+
+              {showMapRec && (() => {
+                const maxTotal = mapStats[0].total
                 return (
-                  <div key={m} style={{ marginBottom: 14 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: m === myName ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }} />
-                      <div className="mono" style={{ fontSize: 10, color: m === myName ? 'var(--goldtx)' : 'var(--txm)', letterSpacing: '.06em', flex: 1 }}>
-                        {m.toUpperCase()}
-                      </div>
-                      {objRows.length > 0 && (
-                        <span className="mono" style={{ fontSize: 9, color: doneCount === objRows.length ? 'var(--grn)' : 'var(--txd)' }}>
-                          {doneCount}/{objRows.length}
-                        </span>
-                      )}
-                    </div>
-                    {!objRows.length
-                      ? <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', paddingLeft: 12 }}>— NO MAP OBJECTIVES</div>
-                      : objRows.map((row, i) => (
-                        <div key={`${row.obj.id}-${i}`} style={{
-                          display: 'flex', alignItems: 'flex-start', gap: 6,
-                          padding: '4px 0 4px 12px',
-                          opacity: row.isDone ? 0.35 : 1,
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }} className="fade-in">
+                    {mapStats.map((stat, i) => {
+                      const pct = maxTotal ? Math.round((stat.total / maxTotal) * 100) : 0
+                      const isTop = i === 0
+                      return (
+                        <div key={stat.map.id} style={{
+                          padding: isTop ? '6px 8px' : '4px 8px',
+                          background: isTop ? 'rgba(201,168,76,0.06)' : 'var(--sur2)',
+                          border: `1px solid ${isTop ? 'var(--golddim)' : 'var(--brd)'}`,
+                          borderRadius: 4,
                         }}>
-                          <div style={{
-                            width: 8, height: 8, borderRadius: 2, flexShrink: 0, marginTop: 3,
-                            border: `1px solid ${row.isDone ? 'var(--grn)' : 'var(--brd2)'}`,
-                            background: row.isDone ? 'var(--grn)' : 'transparent',
-                          }} />
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div style={{
-                              fontSize: 11, color: row.isDone ? 'var(--txd)' : 'var(--txm)',
-                              textDecoration: row.isDone ? 'line-through' : 'none',
-                              lineHeight: 1.3,
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            }}>
-                              {row.obj.description}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                            <span className="mono" style={{ fontSize: 9, color: isTop ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }}>#{i + 1}</span>
+                            <span style={{ fontSize: isTop ? 11 : 10, fontWeight: isTop ? 600 : 400, color: isTop ? 'var(--tx)' : 'var(--txm)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {stat.map.name.toUpperCase()}
+                            </span>
+                            <span className="mono" style={{ fontSize: 9, color: isTop ? 'var(--goldtx)' : 'var(--txm)', flexShrink: 0 }}>
+                              {stat.total}Q
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <div style={{ flex: 1, height: 3, background: 'var(--brd)', borderRadius: 2 }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: isTop ? 'var(--gold)' : 'var(--brd2)', borderRadius: 2 }} />
                             </div>
-                            <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {row.questName}
+                            {stat.crossover > 0 && (
+                              <span className="mono" style={{ fontSize: 9, color: 'var(--grn)', flexShrink: 0 }}>{stat.crossover}S</span>
+                            )}
+                            <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                              {Object.entries(stat.perMember).filter(([, v]) => v > 0).map(([name]) => {
+                                const c = memberColor(name, members)
+                                return (
+                                  <span key={name} className="mono" title={`${name}: ${stat.perMember[name]} quest${stat.perMember[name] !== 1 ? 's' : ''}`} style={{
+                                    fontSize: 9, width: 14, height: 14, borderRadius: 2,
+                                    background: c.bg, border: `1px solid ${c.border}`, color: c.text,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0, cursor: 'default',
+                                  }}>
+                                    {name[0].toUpperCase()}
+                                  </span>
+                                )
+                              })}
                             </div>
                           </div>
                         </div>
-                      ))
-                    }
+                      )
+                    })}
                   </div>
                 )
-              })}
+              })()}
             </div>
           )}
+          </div>
         </div>
 
         {/* Main */}
@@ -404,83 +406,6 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                     </div>
                   )}
 
-                  {/* Map recommendation */}
-                  {mapStats.length > 0 && (
-                    <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--brd)' }}>
-                      <button
-                        onClick={() => setShowMapRec(v => !v)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                          background: showMapRec ? 'rgba(201,168,76,0.06)' : 'transparent',
-                          border: `1px solid ${showMapRec ? 'var(--golddim)' : 'var(--brd2)'}`,
-                          borderRadius: 4, padding: '7px 10px', cursor: 'pointer',
-                          transition: 'background .15s, border-color .15s',
-                        }}
-                      >
-                        <span style={{ fontSize: 13, color: 'var(--gold)', flexShrink: 0 }}>◆</span>
-                        <span className="mono" style={{ fontSize: 11, color: 'var(--goldtx)', letterSpacing: '.08em', flex: 1, textAlign: 'left' }}>
-                          SQUAD INTEL — MAP RECOMMENDATION
-                        </span>
-                        <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>
-                          {showMapRec ? '▲ HIDE' : `▼ ${mapStats[0].map.name.toUpperCase()} #1`}
-                        </span>
-                      </button>
-
-                      {showMapRec && (() => {
-                        const maxTotal = mapStats[0].total
-                        return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 6 }} className="fade-in">
-                            {mapStats.map((stat, i) => {
-                              const pct = maxTotal ? Math.round((stat.total / maxTotal) * 100) : 0
-                              const isTop = i === 0
-                              return (
-                                <div key={stat.map.id} style={{
-                                  display: 'flex', alignItems: 'center', gap: 8,
-                                  padding: isTop ? '7px 10px' : '5px 10px',
-                                  background: isTop ? 'rgba(201,168,76,0.06)' : 'var(--sur2)',
-                                  border: `1px solid ${isTop ? 'var(--golddim)' : 'var(--brd)'}`,
-                                  borderRadius: 4,
-                                }}>
-                                  <span className="mono" style={{ fontSize: 10, color: isTop ? 'var(--gold)' : 'var(--txd)', width: 20, flexShrink: 0 }}>
-                                    #{i + 1}
-                                  </span>
-                                  <span style={{ fontSize: isTop ? 13 : 12, fontWeight: isTop ? 600 : 400, color: isTop ? 'var(--tx)' : 'var(--txm)', width: 130, flexShrink: 0 }}>
-                                    {stat.map.name.toUpperCase()}
-                                  </span>
-                                  <div style={{ flex: 1, height: 4, background: 'var(--brd)', borderRadius: 2, minWidth: 40 }}>
-                                    <div style={{ height: '100%', width: `${pct}%`, background: isTop ? 'var(--gold)' : 'var(--brd2)', borderRadius: 2, transition: 'width .3s' }} />
-                                  </div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                                    <span className="mono" style={{ fontSize: 10, color: isTop ? 'var(--goldtx)' : 'var(--txm)' }}>
-                                      {stat.total} QUEST{stat.total !== 1 ? 'S' : ''}
-                                    </span>
-                                    {stat.crossover > 0 && (
-                                      <span className="mono" style={{ fontSize: 10, color: 'var(--grn)', background: 'rgba(90,232,90,0.08)', border: '1px solid rgba(90,232,90,0.2)', borderRadius: 3, padding: '1px 5px' }}>
-                                        {stat.crossover} SHARED
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-                                    {Object.entries(stat.perMember).filter(([, v]) => v > 0).map(([name, count]) => {
-                                      const c = memberColor(name, members)
-                                      return (
-                                        <span key={name} className="mono" style={{
-                                          fontSize: 10, padding: '1px 5px', borderRadius: 3,
-                                          background: c.bg, border: `1px solid ${c.border}`, color: c.text,
-                                        }}>
-                                          {name.slice(0, 6).toUpperCase()}: {count}
-                                        </span>
-                                      )
-                                    })}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )
-                      })()}
-                    </div>
-                  )}
                 </>
               )
             }
@@ -563,53 +488,53 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
               )}
 
               {tab === 'todo' && (
-                <div className="card fade-in" style={{ padding: 16 }}>
-                  {!mine.length ? (
-                    mineWasNonEmpty.current ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '32px 24px', justifyContent: 'center' }}>
-                        <Spin />
-                        <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>SYNCING...</span>
-                      </div>
-                    ) : (
-                      <div style={{ textAlign: 'center', padding: '40px 24px' }}>
-                        <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>NO QUESTS ADDED</div>
-                        <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', lineHeight: 1.7 }}>
-                          ADD QUESTS ON THE FLY FROM THE <button onClick={() => setTab('quests')} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11 }}>QUESTS</button> TAB,<br />
-                          OR MANAGE THEM CENTRALLY UNDER <button onClick={onMyQuests} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11, color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ MY QUESTS</button>
+                <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                  {/* Squad Objectives — party-wide card */}
+                  <div className="card fade-in" style={{ padding: 16, flex: 1, minWidth: 0 }}>
+                    {!mine.length ? (
+                      mineWasNonEmpty.current ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '32px 24px', justifyContent: 'center' }}>
+                          <Spin />
+                          <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>SYNCING...</span>
                         </div>
-                      </div>
-                    )
-                  ) : loadingTasks
-                    ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
-                    : (
-                      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-                        <div style={{ flex: 3, minWidth: 0 }}>
-                          <TodoList
-                            key={party.map_norm}
-                            tasks={tasks}
-                            memberQuests={party.members}
-                            progress={party.progress || {}}
-                            starredQuests={party.starred || {}}
-                            onToggleStar={onToggleStar}
-                            questOrder={party.quest_order}
-                            initialSkipped={skippedQuestIds}
-                            myName={myName}
-                            mapNorm={party.map_norm}
-                          />
+                      ) : (
+                        <div style={{ textAlign: 'center', padding: '40px 24px' }}>
+                          <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>NO QUESTS ADDED</div>
+                          <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', lineHeight: 1.7 }}>
+                            ADD QUESTS ON THE FLY FROM THE <button onClick={() => setTab('quests')} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11 }}>QUESTS</button> TAB,<br />
+                            OR MANAGE THEM CENTRALLY UNDER <button onClick={onMyQuests} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11, color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>
+                          </div>
                         </div>
-                        <div style={{ flex: 2, minWidth: 0, position: 'sticky', top: 16 }}>
-                          <MyQuestPanel
-                            myQuests={mine}
-                            tasks={tasks}
-                            progress={party.progress || {}}
-                            myName={myName}
-                            onSubmit={onSubmitProgress}
-                            mapNorm={party.map_norm}
-                          />
-                        </div>
-                      </div>
-                    )
-                  }
+                      )
+                    ) : loadingTasks
+                      ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
+                      : (
+                        <TodoList
+                          key={party.map_norm}
+                          tasks={tasks}
+                          memberQuests={party.members}
+                          progress={party.progress || {}}
+                          starredQuests={party.starred || {}}
+                          onToggleStar={onToggleStar}
+                          questOrder={party.quest_order}
+                          initialSkipped={skippedQuestIds}
+                          myName={myName}
+                          mapNorm={party.map_norm}
+                        />
+                      )
+                    }
+                  </div>
+                  {/* My Quests — personal card */}
+                  <div className="card fade-in" style={{ padding: 16, flex: 1, minWidth: 0, position: 'sticky', top: 16 }}>
+                    <MyQuestPanel
+                      myQuests={mine}
+                      tasks={tasks}
+                      progress={party.progress || {}}
+                      myName={myName}
+                      onSubmit={onSubmitProgress}
+                      mapNorm={party.map_norm}
+                    />
+                  </div>
                 </div>
               )}
 
