@@ -12,7 +12,7 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
-export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubmit, onOpenQuestManager, mapNorm }) {
+export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
 
   function getEffective(key) {
@@ -34,6 +34,16 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
 
   function handleSubmit() {
     onSubmit({ ...pending })
+    // Find quests that are now complete (done button OR all objectives checked)
+    rows.forEach(({ task, objs }) => {
+      const doneKey = `__done__:${task.id}::${myName}`
+      const effectiveDone = pending[doneKey] !== undefined ? pending[doneKey] : (progress?.[doneKey] || false)
+      const allObjsDone = objs.length > 0 && objs.every(o => {
+        const k = `${task.id}::${o.id}::${myName}`
+        return pending[k] !== undefined ? pending[k] : (progress?.[k] || false)
+      })
+      if (effectiveDone || allObjsDone) onQuestComplete?.(task.id)
+    })
     setPending({})
   }
 

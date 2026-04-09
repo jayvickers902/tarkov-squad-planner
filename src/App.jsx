@@ -151,6 +151,11 @@ export default function App() {
       submitMyProgress(changes)
     }
 
+    function handleQuestComplete(questId) {
+      markQuestCompleted(questId)
+      removePartyQuest(questId)
+    }
+
     // My Quests while in party — back button returns to room
     if (partyScreen === 'myquests') {
       return (
@@ -185,6 +190,7 @@ export default function App() {
         onSetSpawn={setSpawn}
         onToggleStar={handleToggleStar}
         onSubmitProgress={handleSubmitProgress}
+        onQuestComplete={handleQuestComplete}
         skippedQuestIds={new Set(userQuests.filter(q => q.skipped).map(q => q.quest_id))}
         onAddStroke={addStroke}
         onClearMyStrokes={clearMyStrokes}

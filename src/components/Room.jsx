@@ -6,6 +6,7 @@ import TodoList from './TodoList'
 import MyQuestPanel from './MyQuestPanel'
 import MapCanvas from './MapCanvas'
 import RequiredItems from './RequiredItems'
+import FindItems from './FindItems'
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
@@ -33,7 +34,7 @@ function MemberPill({ name, allMembers }) {
   )
 }
 
-export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, onSubmitProgress, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh }) {
+export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
@@ -405,7 +406,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
             <>
               {/* Tabs */}
               <div className="tab-bar">
-                {[['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['map', 'MAP / ROUTE']].map(([id, lbl]) => (
+                {[['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['find', 'WHAT TO LOOK FOR'], ['map', 'MAP / ROUTE']].map(([id, lbl]) => (
                   <button key={id} onClick={() => setTab(id)} style={{
                     background: 'none', border: 'none',
                     borderBottom: `2px solid ${tab === id ? 'var(--gold)' : 'transparent'}`,
@@ -461,6 +462,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                       progress={party.progress || {}}
                       myName={myName}
                       onSubmit={onSubmitProgress}
+                      onQuestComplete={onQuestComplete}
                       onOpenQuestManager={onMyQuests}
                       mapNorm={party.map_norm}
                     />
@@ -473,6 +475,15 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                   {loadingTasks
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
                     : <RequiredItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} />
+                  }
+                </div>
+              )}
+
+              {tab === 'find' && (
+                <div className="card fade-in" style={{ padding: 16 }}>
+                  {loadingTasks
+                    ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
+                    : <FindItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} myName={myName} />
                   }
                 </div>
               )}
