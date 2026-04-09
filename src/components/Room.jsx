@@ -475,6 +475,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                       progress={party.progress || {}}
                       myName={myName}
                       onSubmit={onSubmitProgress}
+                      onOpenQuestManager={onMyQuests}
                       mapNorm={party.map_norm}
                     />
                   </div>

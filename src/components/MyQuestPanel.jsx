@@ -12,7 +12,7 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
-export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubmit, mapNorm }) {
+export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubmit, onOpenQuestManager, mapNorm }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
 
   function getEffective(key) {
@@ -61,14 +61,14 @@ export default function MyQuestPanel({ myQuests, tasks, progress, myName, onSubm
   if (!rows.length) {
     const hasAnyQuests = myQuests.length > 0
     return (
-      <div style={{ textAlign: 'center', padding: '40px 12px' }}>
-        <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', letterSpacing: '.1em' }}>
+      <div style={{ textAlign: 'center', padding: '40px 24px' }}>
+        <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>
           {hasAnyQuests ? 'NO QUESTS FOR THIS MAP' : 'NO QUESTS ADDED'}
         </div>
-        <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 6, lineHeight: 1.7 }}>
+        <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', lineHeight: 1.7 }}>
           {hasAnyQuests
             ? 'SELECT A DIFFERENT MAP OR ADD MORE QUESTS'
-            : <>CLICK <span style={{ color: 'var(--gold)' }}>★ QUEST MANAGER</span> AT THE TOP TO IMPORT YOUR QUESTS</>
+            : <>CLICK <button onClick={onOpenQuestManager} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11, color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button> AT THE TOP TO IMPORT YOUR QUESTS</>
           }
         </div>
       </div>
