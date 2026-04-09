@@ -343,8 +343,25 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                             </span>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <div style={{ flex: 1, height: 3, background: 'var(--brd)', borderRadius: 2 }}>
-                              <div style={{ height: '100%', width: `${pct}%`, background: isTop ? 'var(--gold)' : 'var(--brd2)', borderRadius: 2 }} />
+                            {/* Segmented bar: each member's width = their share of total quests on this map */}
+                            <div style={{ flex: 1, height: 4, background: 'var(--brd)', borderRadius: 2, overflow: 'hidden', display: 'flex' }}>
+                              {(() => {
+                                const activeEntries = Object.entries(stat.perMember).filter(([, v]) => v > 0)
+                                const barTotal = activeEntries.reduce((s, [, v]) => s + v, 0)
+                                return activeEntries.map(([name, count], idx) => {
+                                  const c = memberColor(name, members)
+                                  const segPct = barTotal ? (count / barTotal) * pct : 0
+                                  return (
+                                    <div key={name} title={`${name}: ${count} quest${count !== 1 ? 's' : ''}`} style={{
+                                      height: '100%',
+                                      width: `${segPct}%`,
+                                      background: c.text,
+                                      opacity: isTop ? 1 : 0.6,
+                                      borderRadius: idx === 0 ? '2px 0 0 2px' : idx === activeEntries.length - 1 ? '0 2px 2px 0' : 0,
+                                    }} />
+                                  )
+                                })
+                              })()}
                             </div>
                             {stat.crossover > 0 && (
                               <span className="mono" style={{ fontSize: 9, color: 'var(--grn)', flexShrink: 0 }}>{stat.crossover}S</span>
