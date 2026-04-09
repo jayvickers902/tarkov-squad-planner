@@ -309,6 +309,9 @@ export function useParty() {
       ...(prev.member_quests_all || {}),
       [name]: (prev.member_quests_all?.[name] || []).filter(q => q.id !== questId),
     }
+    // Immediately remove from savedQuestsRef so selectMap and non-leader map-sync
+    // don't re-import the quest before the async markCompleted write updates userQuests.
+    savedQuestsRef.current = savedQuestsRef.current.filter(q => q.quest_id !== questId)
     applyParty({ ...prev, members, member_quests_all })
     updatePartyDB({ members, member_quests_all })
   }, [updatePartyDB])
