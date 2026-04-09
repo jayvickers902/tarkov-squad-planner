@@ -129,3 +129,13 @@ end $$;
 
 -- Auto-cleanup parties older than 48 hours (run manually or via pg_cron)
 -- delete from public.parties where created_at < now() - interval '48 hours';
+
+-- Remove a member from a party (used when clicking Leave)
+create or replace function public.leave_party(p_code text, p_name text)
+returns void language plpgsql security definer as $$
+begin
+  update public.parties
+  set members = members - p_name
+  where code = p_code;
+end;
+$$;

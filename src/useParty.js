@@ -401,13 +401,18 @@ export function useParty() {
     if (fresh) applyParty(fresh)
   }, [])
 
-  const leaveParty = useCallback(() => {
+  const leaveParty = useCallback(async () => {
+    const code = codeRef.current
+    const name = myNameRef.current
     codeRef.current = null
     setPartyCode(null)
     partyRef.current = null
     myNameRef.current = ''
     localStorage.removeItem('lastPartyCode')
     setParty(null); setMyName(''); setError('')
+    if (code && name) {
+      await supabase.rpc('leave_party', { p_code: code, p_name: name })
+    }
   }, [])
 
   const syncSavedQuests = useCallback((quests) => {
