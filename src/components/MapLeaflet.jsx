@@ -226,6 +226,9 @@ export default function MapLeaflet({
     map.fitBounds(bounds)
     mapRef.current = map
 
+    // Custom pane for drawings — above overlayPane (400) so they render over the SVG/tile layer
+    map.createPane('drawingsPane').style.zIndex = 450
+
     // ── Tile layer ──────────────────────────────────────────────────────────
     if (cfg.tilePath) {
       const tl = L.tileLayer(cfg.tilePath, {
@@ -330,6 +333,7 @@ export default function MapLeaflet({
         lineCap: 'round',
         lineJoin: 'round',
         interactive: false,
+        pane: 'drawingsPane',
       })
       pl.addTo(map)
       drawingLayersRef.current.push(pl)
@@ -446,6 +450,7 @@ export default function MapLeaflet({
         lineCap: 'round',
         lineJoin: 'round',
         interactive: false,
+        pane: 'drawingsPane',
       }).addTo(map)
       map.dragging.disable()
     }
