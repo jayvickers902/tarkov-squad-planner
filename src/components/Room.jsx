@@ -354,10 +354,9 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                                   return (
                                     <div key={name} title={`${name}: ${count} quest${count !== 1 ? 's' : ''}`} style={{
                                       height: '100%',
-                                      width: `${segPct}%`,
+                                      flex: `0 0 ${segPct}%`,
                                       background: c.text,
                                       opacity: isTop ? 1 : 0.6,
-                                      borderRadius: idx === 0 ? '2px 0 0 2px' : idx === activeEntries.length - 1 ? '0 2px 2px 0' : 0,
                                     }} />
                                   )
                                 })
