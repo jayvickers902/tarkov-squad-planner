@@ -1,12 +1,10 @@
 import { useState, useRef, useMemo } from 'react'
 import { useMaps, useTasks } from '../useTarkov'
-import { RED_REBEL_MAPS } from '../constants'
 import { useIsMobile } from '../useIsMobile'
 import QuestSearch from './QuestSearch'
 import TodoList from './TodoList'
 import MyQuestPanel from './MyQuestPanel'
 import MapCanvas from './MapCanvas'
-import KeysList from './KeysList'
 import RequiredItems from './RequiredItems'
 
 function Spin({ s = 20 }) {
@@ -397,20 +395,8 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                       </button>
                     ))}
                   </div>
-                  {party.map_norm && RED_REBEL_MAPS.has(party.map_norm) && (
-                    <div style={{
-                      marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--brd)',
-                      display: 'flex', alignItems: 'center', gap: 8,
-                    }}>
-                      <span style={{ fontSize: 16 }}>⛏</span>
-                      <span style={{ fontSize: 16 }}>🪢</span>
-                      <span className="mono" style={{ fontSize: 11, color: 'var(--goldtx)', letterSpacing: '.04em' }}>
-                        CLIFF DESCENT AVAILABLE — BRING RED REBEL ICE PICK + PARACORD
-                      </span>
-                    </div>
-                  )}
 
-                </>
+</>
               )
             }
           </div>
@@ -419,7 +405,7 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
             <>
               {/* Tabs */}
               <div className="tab-bar">
-                {[['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['map', 'MAP / ROUTE'], ['keys', 'KEYS']].map(([id, lbl]) => (
+                {[['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['map', 'MAP / ROUTE']].map(([id, lbl]) => (
                   <button key={id} onClick={() => setTab(id)} style={{
                     background: 'none', border: 'none',
                     borderBottom: `2px solid ${tab === id ? 'var(--gold)' : 'transparent'}`,
@@ -488,12 +474,6 @@ export default function Room({ party, myName, isAdmin, onLeave, onSelectMap, onA
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
                     : <RequiredItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} />
                   }
-                </div>
-              )}
-
-              {tab === 'keys' && (
-                <div className="card fade-in" style={{ padding: 16 }}>
-                  <KeysList mapNorm={party.map_norm} />
                 </div>
               )}
 
