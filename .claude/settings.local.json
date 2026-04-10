@@ -9,7 +9,14 @@
       "Bash(npm create:*)",
       "Bash(npm install:*)",
       "Bash(code c:/projects/owen-scarlet-hq)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "WebFetch(domain:api.tarkov.dev)",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ bosses { name normalizedName spawnChance location { map { name } } } }\\\\\"}\")",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ bosses { name normalizedName } }\\\\\"}\")",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ __type\\(name: \\\\\\\\\\\\\"MobInfo\\\\\\\\\\\\\"\\) { fields { name type { name kind ofType { name } } } } }\\\\\"}\")",
+      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ maps { name bosses { name spawnChance spawnLocations { name chance } } } }\\\\\"}\")",
+      "Bash(python -c ':*)"
     ],
     "additionalDirectories": [
       "c:\\projects\\owen-scarlet-hq\\src",

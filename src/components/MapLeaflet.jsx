@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { TARKOV_MAP_CONFIGS } from '../data/tarkovMapConfigs'
+import { SPAWNS } from '../constants'
 import { useMapKeys } from '../useMapKeys'
 
 const USER_COLORS = ['#e85d5d', '#5db8e8', '#5de87a', '#f5a623', '#c45de8', '#5de8d4', '#e8e85d', '#e85da8']
@@ -90,6 +91,20 @@ function makeQuestIcon(color, initial) {
   })
 }
 
+function makeSpawnIcon() {
+  return L.divIcon({
+    className: '',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+    html: `<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="8" cy="8" r="6.5" fill="none" stroke="#e8a030" stroke-width="1.5" opacity="0.9"/>
+      <line x1="8" y1="1" x2="8" y2="15" stroke="#e8a030" stroke-width="1" opacity="0.85"/>
+      <line x1="1" y1="8" x2="15" y2="8" stroke="#e8a030" stroke-width="1" opacity="0.85"/>
+      <circle cx="8" cy="8" r="1.8" fill="#e8a030" opacity="0.95"/>
+    </svg>`,
+  })
+}
+
 // Auto-pin for API-sourced objective locations — diamond shape to distinguish from manual pins
 function makeObjIcon(color, initial) {
   return L.divIcon({
@@ -121,11 +136,14 @@ export default function MapLeaflet({
   const drawingLayersRef = useRef([])   // L.polyline instances
   const markerLayersRef = useRef({})    // id -> L.marker (manual pins)
   const objMarkersRef = useRef([])      // L.marker[] (auto objective pins)
+  const spawnMarkersRef = useRef([])    // L.marker[] (PMC spawn markers)
   const keyMarkersRef = useRef({})      // keyName -> L.marker
   const boundsRef = useRef(null)
   const currentStyleRef = useRef('svg') // 'svg' | 'tile'
 
   const [mapStyle, setMapStyle] = useState('svg') // 'svg' | 'tile'
+  const [showSpawns, setShowSpawns] = useState(true)
+  const [showQuestPins, setShowQuestPins] = useState(true)
   const [mode, setMode] = useState('draw')
   const [selectedQuestId, setSelectedQuestId] = useState('')
   const [myColor, setMyColor] = useState(() => getUserColor(myName, memberNames))
@@ -200,6 +218,7 @@ export default function MapLeaflet({
       drawingLayersRef.current = []
       markerLayersRef.current = {}
       objMarkersRef.current = []
+      spawnMarkersRef.current = []
       keyMarkersRef.current = {}
     }
 
@@ -346,6 +365,15 @@ export default function MapLeaflet({
     const bounds = boundsRef.current
     if (!map || !bounds) return
 
+    // If layer hidden, remove all and bail
+    if (!showQuestPins) {
+      for (const [id, marker] of Object.entries(markerLayersRef.current)) {
+        map.removeLayer(marker)
+        delete markerLayersRef.current[id]
+      }
+      return
+    }
+
     const currentIds = new Set(markers.map(m => m.id))
 
     // Remove stale
@@ -377,7 +405,7 @@ export default function MapLeaflet({
       lm.addTo(map)
       markerLayersRef.current[m.id] = lm
     }
-  }, [markers, memberNames, tasks, mapNorm])
+  }, [markers, memberNames, tasks, mapNorm, showQuestPins])
 
   // ─── Sync key markers ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -407,6 +435,30 @@ export default function MapLeaflet({
     }
   }, [mapKeys, mapNorm])
 
+  // ─── Sync PMC spawn markers ───────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current
+    const bounds = boundsRef.current
+    if (!map || !bounds) return
+
+    for (const m of spawnMarkersRef.current) map.removeLayer(m)
+    spawnMarkersRef.current = []
+    if (!showSpawns) return
+
+    const spawns = SPAWNS[mapNorm] || []
+    for (const s of spawns) {
+      const latlng = normToLatlng([s.x, s.y], bounds)
+      const icon = makeSpawnIcon()
+      const sm = L.marker(latlng, { icon, interactive: true, zIndexOffset: 50 })
+      sm.bindTooltip(
+        `<div><div style="color:#e8a030;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;margin-bottom:2px">PMC SPAWN</div><div style="color:#e4e0d4;font-size:11px">${s.label}</div></div>`,
+        { direction: 'top', offset: [0, -10], opacity: 1, className: 'tac-tooltip' }
+      )
+      sm.addTo(map)
+      spawnMarkersRef.current.push(sm)
+    }
+  }, [showSpawns, mapNorm])
+
   // ─── Sync auto objective pins ────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current
@@ -415,6 +467,7 @@ export default function MapLeaflet({
     // Remove all previous auto-pins
     for (const m of objMarkersRef.current) map.removeLayer(m)
     objMarkersRef.current = []
+    if (!showQuestPins) return
 
     for (const pin of autoObjPins) {
       const latlng = L.latLng(pin.lat, pin.lng)
@@ -434,7 +487,7 @@ export default function MapLeaflet({
       lm.addTo(map)
       objMarkersRef.current.push(lm)
     }
-  }, [autoObjPins, mapNorm])
+  }, [autoObjPins, mapNorm, showQuestPins])
 
   // ─── Drawing mouse handlers ────────────────────────────────────────────────
   useEffect(() => {
@@ -504,10 +557,12 @@ export default function MapLeaflet({
     }
   }, [mode, myColor, myName, selectedQuestId, myQuests, onAddStroke, onAddMarker, mapNorm])
 
-  // Reset mode when map changes
+  // Reset mode and layer toggles when map changes
   useEffect(() => {
     setMode('draw')
     setSelectedQuestId('')
+    setShowSpawns(true)
+    setShowQuestPins(true)
   }, [mapNorm])
 
   // Update cursor style on map container
@@ -559,6 +614,22 @@ export default function MapLeaflet({
             ))}
           </select>
         )}
+
+        {/* Layer toggles */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            className={showSpawns ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+            onClick={() => setShowSpawns(s => !s)}
+            style={{ fontSize: 10 }}>
+            ⊕ PMC SPAWNS
+          </button>
+          <button
+            className={showQuestPins ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+            onClick={() => setShowQuestPins(q => !q)}
+            style={{ fontSize: 10 }}>
+            ◆ QUEST PINS
+          </button>
+        </div>
 
         {/* Style toggle */}
         {canToggle && svgReady && (

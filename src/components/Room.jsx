@@ -7,6 +7,7 @@ import MyQuestPanel from './MyQuestPanel'
 import MapLeaflet from './MapLeaflet'
 import RequiredItems from './RequiredItems'
 import FindItems from './FindItems'
+import BossPanel from './BossPanel'
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
@@ -397,25 +398,33 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
 
           {/* Map selector */}
           <div className="card" style={{ padding: 16 }}>
-            <div className="lbl">{isLeader ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
-            {loadingMaps
-              ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAPS...</span></div>
-              : (
-                <>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                    {maps.map(m => (
-                      <button key={m.id}
-                        onClick={() => isLeader && onSelectMap(m)}
-                        className={party.map_id === m.id ? 'btn-gold' : 'btn-ghost'}
-                        style={{ padding: '7px 12px', fontSize: 13, opacity: isLeader ? 1 : .7, cursor: isLeader ? 'pointer' : 'default' }}>
-                        {m.name.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-
-</>
-              )
-            }
+            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+              {/* Left: map buttons */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="lbl">{isLeader ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
+                {loadingMaps
+                  ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAPS...</span></div>
+                  : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                      {maps.map(m => (
+                        <button key={m.id}
+                          onClick={() => isLeader && onSelectMap(m)}
+                          className={party.map_id === m.id ? 'btn-gold' : 'btn-ghost'}
+                          style={{ padding: '7px 12px', fontSize: 13, opacity: isLeader ? 1 : .7, cursor: isLeader ? 'pointer' : 'default' }}>
+                          {m.name.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                }
+              </div>
+              {/* Right: Tarkov clocks + boss spawns */}
+              {!isMobile && (
+                <div style={{ borderLeft: '1px solid var(--brd)', paddingLeft: 16, flexShrink: 0 }}>
+                  <BossPanel mapNorm={party.map_norm || null} />
+                </div>
+              )}
+            </div>
           </div>
 
           {party.map_id && (

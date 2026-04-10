@@ -44,8 +44,10 @@ function keyToMap(name) {
   return null
 }
 
-let keysCache  = null
-let tasksCache = null // cache busted — trader imageLink + markerItem iconLink added
+let keysCache       = null
+let tasksCache      = null // cache busted — trader imageLink + markerItem iconLink added
+let mapBossCache    = null
+let bossPortraitsCache = null
 const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink trader { name imageLink } map { id normalizedName } objectives { id description type optional maps { normalizedName } ... on TaskObjectiveItem { item { id name iconLink } count foundInRaid } ... on TaskObjectiveMark { markerItem { id name iconLink } } ... on TaskObjectiveBasic { zones { id position { x y z } map { normalizedName } } } ... on TaskObjectiveShoot { zones { id position { x y z } map { normalizedName } } } } } }`
 
 export function useMaps() {
@@ -90,6 +92,54 @@ export function useTasks(mapNorm) {
     : tasks.filter(t => !t.map || t.map === null || t.map?.normalizedName === mapNorm)
 
   return { tasks: filtered, loading }
+}
+
+const MAP_BOSSES_QUERY  = `{ maps { name normalizedName bosses { name spawnChance } } }`
+const BOSS_INFO_QUERY   = `{ bosses { name normalizedName imagePortraitLink } }`
+
+const BOSS_EXCLUDE = new Set([
+  'reshala guard', 'shturman guard', 'sanitar guard', 'glukhar guard (assault)',
+  'glukhar guard (security)', 'glukhar guard (scout)', 'zryachiy guard',
+  'kaban guard', 'kaban guard (sniper)', 'kollontay guard (assault)',
+  'kollontay guard (security)', 'cultist warrior', 'rogue', 'raider',
+  'af', 'black div.', 'basmach', 'gus', 'pillager',
+])
+
+export function useBossSpawns() {
+  const [mapBosses, setMapBosses]       = useState(mapBossCache || [])
+  const [bossPortraits, setBossPortraits] = useState(bossPortraitsCache || {})
+  const [loading, setLoading]           = useState(!mapBossCache || !bossPortraitsCache)
+
+  useEffect(() => {
+    if (mapBossCache && bossPortraitsCache) return
+    const p1 = mapBossCache
+      ? Promise.resolve(mapBossCache)
+      : fetch(TARKOV_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: MAP_BOSSES_QUERY }) })
+          .then(r => r.json()).then(d => { mapBossCache = d.data?.maps || []; return mapBossCache })
+    const p2 = bossPortraitsCache
+      ? Promise.resolve(bossPortraitsCache)
+      : fetch(TARKOV_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: BOSS_INFO_QUERY }) })
+          .then(r => r.json()).then(d => {
+            const map = {}
+            for (const b of d.data?.bosses || []) map[b.name] = b.imagePortraitLink
+            bossPortraitsCache = map
+            return bossPortraitsCache
+          })
+    Promise.all([p1, p2])
+      .then(([maps, portraits]) => { setMapBosses(maps); setBossPortraits(portraits) })
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, []) // eslint-disable-line
+
+  function getBossesForMap(normName) {
+    const mapData = mapBosses.find(m => m.normalizedName === normName)
+    if (!mapData) return []
+    return mapData.bosses
+      .filter(b => !BOSS_EXCLUDE.has(b.name.toLowerCase()))
+      .map(b => ({ name: b.name, spawnChance: b.spawnChance, portrait: bossPortraits[b.name] || null }))
+  }
+
+  return { getBossesForMap, loading }
 }
 
 export function useKeys(mapNorm) {
