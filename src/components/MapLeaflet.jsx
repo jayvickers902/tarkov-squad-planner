@@ -128,6 +128,7 @@ export default function MapLeaflet({
   progress = {},
   onAddStroke, onClearMyStrokes,
   onAddMarker, onClearMyMarkers,
+  mapHeight = 520,
 }) {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
@@ -711,7 +712,7 @@ export default function MapLeaflet({
         )}
         <div
           ref={mapContainerRef}
-          style={{ width: '100%', height: 520, borderRadius: 4 }}
+          style={{ width: '100%', height: mapHeight, borderRadius: 4 }}
         />
       </div>
 

@@ -9,6 +9,7 @@ import RequiredItems from './RequiredItems'
 import FindItems from './FindItems'
 import BossPanel from './BossPanel'
 import StartRaidModal from './StartRaidModal'
+import RaidView from './RaidView'
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
@@ -48,6 +49,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
   const [confirmUnfriend, setConfirmUnfriend] = useState(null)
   const [chipTooltip, setChipTooltip] = useState(null)  // { task, anchor }
   const [dismissedRaidStart, setDismissedRaidStart] = useState(null)
+  const [raidView, setRaidView] = useState(false)
 
   const raidStart = party.progress?.['__raid_start__'] || null
   const showRaidModal = !!party.map_id && raidStart !== null && raidStart !== dismissedRaidStart
@@ -125,6 +127,24 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
         />
       )}
 
+      {raidView && party.map_id && (
+        <RaidView
+          party={party}
+          myName={myName}
+          members={members}
+          tasks={tasks}
+          allTasks={allTasks}
+          loadingTasks={loadingTasks}
+          skippedQuestIds={skippedQuestIds}
+          onToggleStar={onToggleStar}
+          onAddStroke={onAddStroke}
+          onClearMyStrokes={onClearMyStrokes}
+          onAddMarker={onAddMarker}
+          onClearMyMarkers={onClearMyMarkers}
+          onClose={() => setRaidView(false)}
+        />
+      )}
+
       {/* Header */}
       <div style={{ marginBottom: 16, paddingBottom: 14, borderBottom: '1px solid var(--brd)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -141,6 +161,9 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
             {!isMobile && (
               <>
                 <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>
+                {raidStart !== null && party.map_id && (
+                  <button className="btn-ghost btn-sm" onClick={() => setRaidView(true)} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}>⛺ RAID VIEW</button>
+                )}
                 <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
                   {pendingIn.length > 0 && <span className="mono" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)', color: 'var(--gold)' }}>{pendingIn.length}</span>}
@@ -164,6 +187,9 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
         {isMobile && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
             <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>
+            {raidStart !== null && party.map_id && (
+              <button className="btn-ghost btn-sm" onClick={() => setRaidView(true)} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}>⛺ RAID VIEW</button>
+            )}
             <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}>
               FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
             </button>

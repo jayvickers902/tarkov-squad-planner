@@ -17,9 +17,9 @@ function toHHMM(secs) {
 }
 
 function isDaytime(secs) {
-  // Rough day window: 06:00–21:00 Tarkov time
+  // Day window: 07:00–19:00 Tarkov time
   const h = secs / 3600
-  return h >= 6 && h < 21
+  return h >= 7 && h < 19
 }
 
 function TarkovClocks() {
@@ -36,13 +36,13 @@ function TarkovClocks() {
   return (
     <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
       {[
-        { label: 'LEFT CLICK', secs: times.left,  day: leftDay  },
-        { label: 'RIGHT CLICK', secs: times.right, day: rightDay },
-      ].map(({ label, secs, day }) => (
-        <div key={label} style={{
+        { secs: times.left,  day: leftDay  },
+        { secs: times.right, day: rightDay },
+      ].map(({ secs, day }) => (
+        <div key={secs} style={{
           flex: 1,
           background: 'var(--sur2)',
-          border: `1px solid ${day ? 'var(--golddim)' : 'var(--brd2)'}`,
+          border: `1px solid ${day ? 'var(--golddim)' : '#2a3d52'}`,
           borderRadius: 5,
           padding: '6px 10px',
           display: 'flex',
@@ -50,7 +50,6 @@ function TarkovClocks() {
           alignItems: 'center',
           gap: 2,
         }}>
-          <div className="mono" style={{ fontSize: 9, color: 'var(--txm)', letterSpacing: '.08em' }}>{label}</div>
           <div style={{
             fontFamily: 'Orbitron, Share Tech Mono, monospace',
             fontSize: 20,
