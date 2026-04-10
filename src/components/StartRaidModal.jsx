@@ -123,11 +123,11 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
             position: 'absolute', inset: 0,
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
           }}>
-            <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.18em' }}>◆ INSERTING INTO</div>
-            <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '.12em', lineHeight: 1, color: 'var(--goldtx)' }}>
+            <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.18em', textShadow: '0 0 4px #000, 0 1px 3px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>◆ INSERTING INTO</div>
+            <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '.12em', lineHeight: 1, color: 'var(--goldtx)', textShadow: '0 0 4px #000, 0 1px 4px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>
               {(mapName || 'UNKNOWN').toUpperCase()}
             </div>
-            <div className="mono" style={{ fontSize: 9, color: 'var(--txm)', letterSpacing: '.14em' }}>START RAID</div>
+            <div className="mono" style={{ fontSize: 9, color: 'var(--txm)', letterSpacing: '.14em', textShadow: '0 0 4px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>START RAID</div>
           </div>
         </div>
 

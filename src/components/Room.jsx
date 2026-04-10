@@ -446,14 +446,11 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
 
           {/* Map selector */}
           <div className="card" style={{ padding: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <div className="lbl" style={{ marginBottom: 0 }}>{isLeader ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
-              <TarkovClocks />
-            </div>
+            <div className="lbl">{isLeader ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
             {loadingMaps
               ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAPS...</span></div>
               : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
                   {maps.map(m => (
                     <button key={m.id}
                       onClick={() => isLeader && onSelectMap(m)}
@@ -462,6 +459,10 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                       {m.name.toUpperCase()}
                     </button>
                   ))}
+                  <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                    <div className="lbl" style={{ marginBottom: 0 }}>CURRENT TIME</div>
+                    <TarkovClocks />
+                  </div>
                 </div>
               )
             }
