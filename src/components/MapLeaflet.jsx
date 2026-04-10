@@ -16,6 +16,28 @@ async function fetchAllSpawns() {
   return spawnsCache
 }
 
+// Cluster individual PMC player slots into zone centers via greedy nearest-centroid
+function clusterPmcZones(spawns, threshold = 30) {
+  const pmcSlots = spawns.filter(s => s.sides.includes('pmc') && s.categories.includes('player'))
+  const clusters = []
+  for (const s of pmcSlots) {
+    const { x, z } = s.position
+    let best = null, bestDist = Infinity
+    for (const c of clusters) {
+      const d = Math.hypot(c.cx - x, c.cz - z)
+      if (d < threshold && d < bestDist) { best = c; bestDist = d }
+    }
+    if (best) {
+      best.pts.push(s)
+      best.cx = best.pts.reduce((a, p) => a + p.position.x, 0) / best.pts.length
+      best.cz = best.pts.reduce((a, p) => a + p.position.z, 0) / best.pts.length
+    } else {
+      clusters.push({ cx: x, cz: z, pts: [s] })
+    }
+  }
+  return clusters.map(c => ({ position: { x: c.cx, z: c.cz } }))
+}
+
 const USER_COLORS = ['#e85d5d', '#5db8e8', '#5de87a', '#f5a623', '#c45de8', '#5de8d4', '#e8e85d', '#e85da8']
 const PALETTE = ['#e85d5d', '#f5a623', '#e8e85d', '#5de87a', '#5de8d4', '#5db8e8', '#c45de8', '#e85da8', '#ffffff', '#b0b0b0']
 
@@ -468,15 +490,9 @@ export default function MapLeaflet({
   // ─── Fetch spawn data from tarkov.dev API ────────────────────────────────────
   useEffect(() => {
     fetchAllSpawns().then(maps => {
-      const customs = maps.find(m => m.normalizedName === 'customs')
-      if (customs) {
-        const pmcOnly = customs.spawns.filter(s => s.sides.includes('pmc') && s.categories.includes('player') && !s.categories.includes('botpmc'))
-        console.log('[spawns] sides:pmc cats:player (no botpmc) count:', pmcOnly.length)
-        pmcOnly.forEach((s, i) => console.log(`  [${i}] x:${s.position.x.toFixed(1)} z:${s.position.z.toFixed(1)}`))
-      }
       const byMap = {}
       for (const m of maps) {
-        byMap[m.normalizedName] = m.spawns.filter(s => s.categories.includes('botpmc'))
+        byMap[m.normalizedName] = clusterPmcZones(m.spawns)
       }
       setApiSpawns(byMap)
     }).catch(() => {})
