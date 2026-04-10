@@ -61,6 +61,7 @@ export default function RaidView({
           onAddMarker={onAddMarker}
           onClearMyMarkers={onClearMyMarkers}
           mapHeight={mapHeight}
+          defaultMode="pan"
         />
 
         {/* Floating objectives pill */}
@@ -99,7 +100,7 @@ export default function RaidView({
               ) : (
                 <TodoList
                   tasks={tasks}
-                  memberQuests={party.members}
+                  memberQuests={party.members || {}}
                   progress={party.progress || {}}
                   starredQuests={party.starred || {}}
                   onToggleStar={onToggleStar}

@@ -129,6 +129,7 @@ export default function MapLeaflet({
   onAddStroke, onClearMyStrokes,
   onAddMarker, onClearMyMarkers,
   mapHeight = 520,
+  defaultMode = 'draw',
 }) {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
@@ -145,7 +146,7 @@ export default function MapLeaflet({
   const [mapStyle, setMapStyle] = useState('svg') // 'svg' | 'tile'
   const [showSpawns, setShowSpawns] = useState(true)
   const [showQuestPins, setShowQuestPins] = useState(true)
-  const [mode, setMode] = useState('draw')
+  const [mode, setMode] = useState(defaultMode)
   const [selectedQuestId, setSelectedQuestId] = useState('')
   const [myColor, setMyColor] = useState(() => getUserColor(myName, memberNames))
   const [svgReady, setSvgReady] = useState(false)
@@ -495,6 +496,13 @@ export default function MapLeaflet({
     const map = mapRef.current
     const bounds = boundsRef.current
     if (!map || !bounds) return
+    // Ensure dragging is enabled whenever we're not in draw mode (safety net for mid-stroke mode switches)
+    if (mode !== 'draw') {
+      isDrawing.current = false
+      if (currentPolyline.current) { map.removeLayer(currentPolyline.current); currentPolyline.current = null }
+      currentPts.current = []
+      map.dragging.enable()
+    }
 
     function onMouseDown(e) {
       if (mode !== 'draw') return
@@ -560,11 +568,11 @@ export default function MapLeaflet({
 
   // Reset mode and layer toggles when map changes
   useEffect(() => {
-    setMode('draw')
+    setMode(defaultMode)
     setSelectedQuestId('')
     setShowSpawns(true)
     setShowQuestPins(true)
-  }, [mapNorm])
+  }, [mapNorm]) // eslint-disable-line
 
   // Update cursor style on map container
   useEffect(() => {
@@ -574,6 +582,8 @@ export default function MapLeaflet({
       el.style.cursor = 'crosshair'
     } else if (mode === 'marker') {
       el.style.cursor = selectedQuestId ? 'crosshair' : 'default'
+    } else {
+      el.style.cursor = ''
     }
   }, [mode, selectedQuestId])
 
@@ -593,13 +603,18 @@ export default function MapLeaflet({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
         <button
           className={mode === 'draw' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-          onClick={() => { setMode('draw'); setSelectedQuestId('') }}
+          onClick={() => { setMode(mode === 'draw' ? 'pan' : 'draw'); setSelectedQuestId('') }}
           style={{ fontSize: 10 }}>
           ✏ DRAW
         </button>
+        {mode === 'draw' && (
+          <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.05em' }}>
+            MID CLICK TO PAN
+          </span>
+        )}
         <button
           className={mode === 'marker' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-          onClick={() => setMode('marker')}
+          onClick={() => setMode(mode === 'marker' ? 'pan' : 'marker')}
           style={{ fontSize: 10 }}>
           ◎ QUEST MARKER
         </button>
@@ -719,7 +734,9 @@ export default function MapLeaflet({
       <div className="mono" style={{ marginTop: 8, fontSize: 10, color: 'var(--txd)', textAlign: 'center' }}>
         {mode === 'draw'
           ? <>YOUR COLOR: <span style={{ color: myColor }}>■</span>&nbsp; DRAW ROUTES — VISIBLE TO ALL PARTY MEMBERS IN REAL TIME</>
-          : <>◎ QUEST MARKER MODE — PINS ARE VISIBLE TO ALL PARTY MEMBERS</>
+          : mode === 'marker'
+          ? <>◎ QUEST MARKER MODE — PINS ARE VISIBLE TO ALL PARTY MEMBERS</>
+          : <>LEFT CLICK DRAG TO PAN — ENABLE DRAW MODE TO ANNOTATE THE MAP</>
         }
         {autoObjPins.length > 0 && (
           <> &mdash; <span style={{ color: 'var(--gold)' }}>◆ {autoObjPins.length}</span> OBJECTIVE{autoObjPins.length !== 1 ? 'S' : ''} ON THIS MAP</>
