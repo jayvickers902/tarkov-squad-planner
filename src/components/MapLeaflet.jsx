@@ -468,6 +468,12 @@ export default function MapLeaflet({
   // ─── Fetch spawn data from tarkov.dev API ────────────────────────────────────
   useEffect(() => {
     fetchAllSpawns().then(maps => {
+      const customs = maps.find(m => m.normalizedName === 'customs')
+      if (customs) {
+        const unique = [...new Set(customs.spawns.map(s => `sides:${s.sides.join('+')} cats:${s.categories.join('+')}`))].sort()
+        console.log('[spawns] Customs category combos:', unique)
+        console.log('[spawns] All Customs spawns:', customs.spawns.length, 'total,', customs.spawns.filter(s => s.categories.includes('botpmc')).length, 'with botpmc')
+      }
       const byMap = {}
       for (const m of maps) {
         byMap[m.normalizedName] = m.spawns.filter(s => s.categories.includes('botpmc'))
