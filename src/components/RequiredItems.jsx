@@ -43,7 +43,9 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
   // Build per-member item lists from their active quests' objectives
   const memberItems = useMemo(() => {
     return members.map(member => {
-      const quests = memberQuests[member] || []
+      // Deduplicate quest IDs — party.members can accumulate duplicates
+      const seen = new Set()
+      const quests = (memberQuests[member] || []).filter(q => seen.has(q.id) ? false : (seen.add(q.id), true))
       const itemMap = {}
 
       quests.forEach(q => {
@@ -66,6 +68,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
             itemMap[key] = {
               itemId: item.id,
               name: item.name,
+              iconLink: item.iconLink || null,
               count,
               foundInRaid: false,
               quests: [q.name],
@@ -161,31 +164,29 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {items.map(item => (
                           <div key={`${item.itemId}::${item.foundInRaid}`} style={{
-                            display: 'flex', alignItems: 'flex-start', gap: 10,
+                            display: 'flex', alignItems: 'center', gap: 10,
                             background: 'var(--sur2)', border: '1px solid var(--brd)',
-                            borderLeft: `3px solid ${item.foundInRaid ? 'var(--gold)' : 'var(--brd2)'}`,
+                            borderLeft: `3px solid var(--brd2)`,
                             borderRadius: 4, padding: '8px 10px',
                           }}>
-                            <div style={{
-                              minWidth: 28, textAlign: 'center',
-                              background: 'var(--sur)', border: '1px solid var(--brd2)',
-                              borderRadius: 3, padding: '2px 5px', flexShrink: 0,
-                            }}>
-                              <span className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', fontWeight: 700 }}>
-                                {item.count}x
-                              </span>
-                            </div>
+                            {item.iconLink
+                              ? <img src={item.iconLink} alt="" style={{ width: 40, height: 40, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', borderRadius: 3, background: 'var(--sur)', border: '1px solid var(--brd2)' }} />
+                              : (
+                                <div style={{ minWidth: 28, textAlign: 'center', background: 'var(--sur)', border: '1px solid var(--brd2)', borderRadius: 3, padding: '2px 5px', flexShrink: 0 }}>
+                                  <span className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', fontWeight: 700 }}>{item.count}x</span>
+                                </div>
+                              )
+                            }
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)', letterSpacing: '.02em' }}>
-                                {item.name}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {item.iconLink && (
+                                  <span className="mono" style={{ fontSize: 12, color: 'var(--goldtx)', fontWeight: 700 }}>{item.count}x</span>
+                                )}
+                                <div style={{ fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)', letterSpacing: '.02em' }}>
+                                  {item.name}
+                                </div>
                               </div>
                               <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
-                                {item.foundInRaid && (
-                                  <span className="mono" style={{
-                                    fontSize: 9, color: 'var(--gold)', background: 'rgba(229,173,0,.12)',
-                                    border: '1px solid var(--golddim)', borderRadius: 2, padding: '1px 5px', letterSpacing: '.06em',
-                                  }}>FIR</span>
-                                )}
                                 {item.quests.map(q => (
                                   <span key={q} className="mono" style={{
                                     fontSize: 10, color: 'var(--txd)',

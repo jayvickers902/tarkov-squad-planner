@@ -103,8 +103,8 @@ const QuestCard = memo(function QuestCard({
           </div>
           <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
             {owners.map(o => <MemberPill key={o} name={o} allMembers={members} />)}
-            {task.trader && (
-              <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>{task.trader.name}</span>
+            {task.trader?.imageLink && (
+              <img src={task.trader.imageLink} alt={task.trader.name} title={task.trader.name} style={{ width: 18, height: 18, borderRadius: 2, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--brd2)', opacity: completed || allDone ? 0.4 : 0.8 }} />
             )}
           </div>
         </div>

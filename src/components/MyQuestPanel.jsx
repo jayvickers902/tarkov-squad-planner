@@ -167,6 +167,9 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                 display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
                 borderBottom: objs.length && !isDone ? '1px solid var(--brd)' : 'none',
               }}>
+                {task.trader?.imageLink && (
+                  <img src={task.trader.imageLink} alt={task.trader.name} title={task.trader.name} style={{ width: 28, height: 28, borderRadius: 3, objectFit: 'cover', flexShrink: 0, opacity: isDone ? 0.4 : 1, border: '1px solid var(--brd2)' }} />
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
                     fontSize: 12, fontWeight: 600,
