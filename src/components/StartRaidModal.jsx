@@ -121,13 +121,13 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
           }} />
           <div style={{
             position: 'absolute', inset: 0,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
           }}>
-            <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.18em' }}>◆ INSERTING</div>
-            <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: '.1em', lineHeight: 1 }}>START RAID</div>
-            <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', letterSpacing: '.1em' }}>
-              // {(mapName || 'UNKNOWN').toUpperCase()}
+            <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.18em' }}>◆ INSERTING INTO</div>
+            <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '.12em', lineHeight: 1, color: 'var(--goldtx)' }}>
+              {(mapName || 'UNKNOWN').toUpperCase()}
             </div>
+            <div className="mono" style={{ fontSize: 9, color: 'var(--txm)', letterSpacing: '.14em' }}>START RAID</div>
           </div>
         </div>
 

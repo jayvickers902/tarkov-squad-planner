@@ -1,73 +1,4 @@
-import { useState, useEffect } from 'react'
 import { useBossSpawns } from '../useTarkov'
-
-// Tarkov game clock runs at 7x real-world speed.
-// Left and Right times differ by 12 Tarkov hours (43 200 in-game seconds).
-function getTarkovTimes() {
-  const utcSecs = Date.now() / 1000
-  const tarkovSecs = (utcSecs * 7) % 86400
-  const rightSecs  = (tarkovSecs + 43200) % 86400
-  return { left: tarkovSecs, right: rightSecs }
-}
-
-function toHHMM(secs) {
-  const h = Math.floor(secs / 3600)
-  const m = Math.floor((secs % 3600) / 60)
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-}
-
-function isDaytime(secs) {
-  // Day window: 07:00–19:00 Tarkov time
-  const h = secs / 3600
-  return h >= 7 && h < 19
-}
-
-function TarkovClocks() {
-  const [times, setTimes] = useState(getTarkovTimes)
-
-  useEffect(() => {
-    const id = setInterval(() => setTimes(getTarkovTimes()), 1000)
-    return () => clearInterval(id)
-  }, [])
-
-  const leftDay  = isDaytime(times.left)
-  const rightDay = isDaytime(times.right)
-
-  return (
-    <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
-      {[
-        { secs: times.left,  day: leftDay  },
-        { secs: times.right, day: rightDay },
-      ].map(({ secs, day }) => (
-        <div key={secs} style={{
-          flex: 1,
-          background: 'var(--sur2)',
-          border: `1px solid ${day ? 'var(--golddim)' : '#2a3d52'}`,
-          borderRadius: 5,
-          padding: '6px 10px',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 2,
-        }}>
-          <div style={{
-            fontFamily: 'Orbitron, Share Tech Mono, monospace',
-            fontSize: 20,
-            fontWeight: 700,
-            letterSpacing: '0.12em',
-            color: day ? 'var(--goldtx)' : '#8ab0cc',
-            lineHeight: 1,
-          }}>
-            {toHHMM(secs)}
-          </div>
-          <div className="mono" style={{ fontSize: 9, color: day ? 'var(--gold)' : '#5a7a8a', letterSpacing: '.06em' }}>
-            {day ? '☀ DAY' : '☽ NIGHT'}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
 
 function SpawnBar({ chance }) {
   const pct = Math.round(chance * 100)
@@ -131,9 +62,6 @@ export default function BossPanel({ mapNorm }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ maxWidth: 380 }}>
-        <TarkovClocks />
-      </div>
       <div>
         <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 10 }}>◆ BOSS SPAWNS</div>
         {loading ? (

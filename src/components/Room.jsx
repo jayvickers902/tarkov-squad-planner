@@ -8,6 +8,7 @@ import MapLeaflet from './MapLeaflet'
 import RequiredItems from './RequiredItems'
 import FindItems from './FindItems'
 import BossPanel from './BossPanel'
+import TarkovClocks from './TarkovClocks'
 import StartRaidModal from './StartRaidModal'
 import RaidView from './RaidView'
 
@@ -445,7 +446,10 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
 
           {/* Map selector */}
           <div className="card" style={{ padding: 16 }}>
-            <div className="lbl">{isLeader ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div className="lbl" style={{ marginBottom: 0 }}>{isLeader ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
+              <TarkovClocks />
+            </div>
             {loadingMaps
               ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAPS...</span></div>
               : (
