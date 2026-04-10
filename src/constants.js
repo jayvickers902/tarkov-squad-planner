@@ -28,7 +28,7 @@ export const MAP_IMAGES = {
 export const SPAWNS = {
   // Customs: PMCs spawn along the perimeter, mostly east (dorms side) and west (gas station side)
   customs: [
-    { id: 'c1',  label: 'Dorms East',        x: .80, y: .28 },
+    { id: 'c1',  label: 'Dorms East',         x: .80, y: .28 },
     { id: 'c2',  label: 'Dorms West',         x: .68, y: .32 },
     { id: 'c3',  label: 'Dorms North',        x: .74, y: .22 },
     { id: 'c4',  label: 'ZB-011 Bunker',      x: .88, y: .38 },
@@ -40,6 +40,12 @@ export const SPAWNS = {
     { id: 'c10', label: 'Customs Building',   x: .44, y: .52 },
     { id: 'c11', label: 'Bridge',             x: .58, y: .60 },
     { id: 'c12', label: 'Warehouse',          x: .30, y: .36 },
+    { id: 'c13', label: 'New Gas Station',    x: .22, y: .64 },
+    { id: 'c14', label: 'Customs Building',   x: .44, y: .52 },
+    { id: 'c15', label: 'Bridge',             x: .58, y: .60 },
+    { id: 'c16', label: 'Warehouse',          x: .30, y: .36 },
+    { id: 'c17', label: 'New Gas Station',    x: .22, y: .64 },
+    { id: 'c18', label: 'Customs Building',   x: .44, y: .52 },
   ],
 
   // Woods: PMCs spawn around the map edges — UN Roadblock, RUAF Roadblock, outskirts

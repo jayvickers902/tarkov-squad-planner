@@ -2,8 +2,19 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { TARKOV_MAP_CONFIGS } from '../data/tarkovMapConfigs'
-import { SPAWNS } from '../constants'
+import { TARKOV_API } from '../constants'
 import { useMapKeys } from '../useMapKeys'
+
+const SPAWNS_QUERY = `{ maps { normalizedName spawns { position { x y z } sides categories } } }`
+let spawnsCache = null
+
+async function fetchAllSpawns() {
+  if (spawnsCache) return spawnsCache
+  const res = await fetch(TARKOV_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: SPAWNS_QUERY }) })
+  const { data } = await res.json()
+  spawnsCache = data.maps
+  return spawnsCache
+}
 
 const USER_COLORS = ['#e85d5d', '#5db8e8', '#5de87a', '#f5a623', '#c45de8', '#5de8d4', '#e8e85d', '#e85da8']
 const PALETTE = ['#e85d5d', '#f5a623', '#e8e85d', '#5de87a', '#5de8d4', '#5db8e8', '#c45de8', '#e85da8', '#ffffff', '#b0b0b0']
@@ -155,6 +166,7 @@ export default function MapLeaflet({
   const [mapStyle, setMapStyle] = useState('svg') // 'svg' | 'tile'
   const [showSpawns, setShowSpawns] = useState(true)
   const [showQuestPins, setShowQuestPins] = useState(true)
+  const [apiSpawns, setApiSpawns] = useState({})
   const [debugCoord, setDebugCoord] = useState(null)
   const [internalMode, setInternalMode] = useState(defaultMode)
   const mode = modeProp !== undefined ? modeProp : internalMode
@@ -453,29 +465,39 @@ export default function MapLeaflet({
     }
   }, [mapKeys, mapNorm])
 
+  // ─── Fetch spawn data from tarkov.dev API ────────────────────────────────────
+  useEffect(() => {
+    fetchAllSpawns().then(maps => {
+      const byMap = {}
+      for (const m of maps) {
+        byMap[m.normalizedName] = m.spawns.filter(s => s.categories.includes('botpmc'))
+      }
+      setApiSpawns(byMap)
+    }).catch(() => {})
+  }, [])
+
   // ─── Sync PMC spawn markers ───────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current
-    const bounds = boundsRef.current
-    if (!map || !bounds) return
+    if (!map) return
 
     for (const m of spawnMarkersRef.current) map.removeLayer(m)
     spawnMarkersRef.current = []
     if (!showSpawns) return
 
-    const spawns = SPAWNS[mapNorm] || []
+    const spawns = apiSpawns[mapNorm] || []
     for (const s of spawns) {
-      const latlng = normToLatlng([s.x, s.y], bounds)
+      const latlng = L.latLng(s.position.z, s.position.x)
       const icon = makeSpawnIcon()
       const sm = L.marker(latlng, { icon, interactive: true, zIndexOffset: 50 })
       sm.bindTooltip(
-        `<div><div style="color:#e8a030;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;margin-bottom:2px">PMC SPAWN</div><div style="color:#e4e0d4;font-size:11px">${s.label}</div></div>`,
+        `<div><div style="color:#e8a030;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">PMC SPAWN</div></div>`,
         { direction: 'top', offset: [0, -10], opacity: 1, className: 'tac-tooltip' }
       )
       sm.addTo(map)
       spawnMarkersRef.current.push(sm)
     }
-  }, [showSpawns, mapNorm])
+  }, [showSpawns, mapNorm, apiSpawns])
 
   // ─── Sync auto objective pins ────────────────────────────────────────────────
   useEffect(() => {
