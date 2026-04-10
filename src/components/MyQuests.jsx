@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useTasks } from '../useTarkov'
 import { FEATURED } from '../constants'
 import QuestScanner from './QuestScanner'
@@ -28,6 +28,18 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
   const [searchOpen, setSearchOpen]   = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [recentlyAdded, setRecentlyAdded] = useState(new Set())
+  const [questOrder, setQuestOrder] = useState(() => userQuests.map(q => q.quest_id))
+
+  // Sync questOrder when userQuests changes externally (restore, clear, done)
+  useEffect(() => {
+    setQuestOrder(prev => {
+      const currentIds = new Set(userQuests.map(q => q.quest_id))
+      const cleaned = prev.filter(id => currentIds.has(id))
+      const existingSet = new Set(cleaned)
+      const newIds = userQuests.filter(q => !existingSet.has(q.quest_id)).map(q => q.quest_id)
+      return [...newIds, ...cleaned]
+    })
+  }, [userQuests])
 
   const snapKey = userId ? `tarkov_quests_${userId}` : null
   const [snapshot, setSnapshot] = useState(() => {
@@ -67,16 +79,51 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
       .slice(0, 12)
   }, [searchQ, tasks, userQuests])
 
-  // Filter the saved list
+  // Filter the saved list (no sort — questOrder handles ordering)
   const filtered = useMemo(() => {
-    let list = [...userQuests].sort((a, b) => {
-      if (a.important !== b.important) return a.important ? -1 : 1
-      return a.quest_name.localeCompare(b.quest_name)
-    })
-    if (mapFilter === 'any')   return list.filter(q => !q.map_norm)
-    if (mapFilter !== 'all')   return list.filter(q => q.map_norm === mapFilter)
+    let list = [...userQuests]
+    if (mapFilter === 'any')  return list.filter(q => !q.map_norm)
+    if (mapFilter !== 'all')  return list.filter(q => q.map_norm === mapFilter)
     return list
   }, [userQuests, mapFilter])
+
+  // Apply questOrder sort to filtered list
+  const orderedFiltered = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const ai = questOrder.indexOf(a.quest_id)
+      const bi = questOrder.indexOf(b.quest_id)
+      if (ai === -1 && bi === -1) return 0
+      if (ai === -1) return 1
+      if (bi === -1) return -1
+      return ai - bi
+    })
+  }, [filtered, questOrder])
+
+  function moveToTop(questId) {
+    const filteredIds = orderedFiltered.map(q => q.quest_id)
+    setQuestOrder(prev => {
+      const newOrder = prev.filter(id => id !== questId)
+      const firstId = filteredIds.find(id => id !== questId)
+      if (!firstId) return [questId, ...newOrder]
+      const firstIdx = newOrder.indexOf(firstId)
+      if (firstIdx === -1) return [questId, ...newOrder]
+      newOrder.splice(firstIdx, 0, questId)
+      return newOrder
+    })
+  }
+
+  function moveToBottom(questId) {
+    const filteredIds = orderedFiltered.map(q => q.quest_id)
+    setQuestOrder(prev => {
+      const newOrder = prev.filter(id => id !== questId)
+      const lastId = [...filteredIds].reverse().find(id => id !== questId)
+      if (!lastId) return [...newOrder, questId]
+      const lastIdx = newOrder.indexOf(lastId)
+      if (lastIdx === -1) return [...newOrder, questId]
+      newOrder.splice(lastIdx + 1, 0, questId)
+      return newOrder
+    })
+  }
 
   const mapCounts = useMemo(() => {
     const counts = { all: userQuests.length, any: 0 }
@@ -289,10 +336,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {[...filtered].sort((a, b) => {
-              const an = recentlyAdded.has(a.quest_id), bn = recentlyAdded.has(b.quest_id)
-              if (an && !bn) return -1; if (!an && bn) return 1; return 0
-            }).map(q => (
+            {orderedFiltered.map((q, idx) => (
               <div key={q.quest_id} className={recentlyAdded.has(q.quest_id) ? 'quest-new-flash' : ''} style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px',
                 background: 'var(--sur2)',
@@ -324,6 +368,28 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
                     {q.map_norm ? (MAP_NAMES[q.map_norm] || q.map_norm).toUpperCase() : 'ANY MAP'}
                     {q.skipped && <span style={{ marginLeft: 8, color: 'var(--txd)' }}>⊘ SKIPPED</span>}
                   </div>
+                </div>
+
+                {/* Move to top / bottom */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+                  <button
+                    onClick={() => moveToTop(q.quest_id)}
+                    title="Move to top"
+                    disabled={idx === 0}
+                    style={{
+                      background: 'none', border: 'none', padding: '1px 4px', cursor: idx === 0 ? 'default' : 'pointer',
+                      fontSize: 10, lineHeight: 1, color: idx === 0 ? 'var(--brd2)' : 'var(--txd)',
+                      transition: 'color .15s',
+                    }}>▲</button>
+                  <button
+                    onClick={() => moveToBottom(q.quest_id)}
+                    title="Move to bottom"
+                    disabled={idx === orderedFiltered.length - 1}
+                    style={{
+                      background: 'none', border: 'none', padding: '1px 4px', cursor: idx === orderedFiltered.length - 1 ? 'default' : 'pointer',
+                      fontSize: 10, lineHeight: 1, color: idx === orderedFiltered.length - 1 ? 'var(--brd2)' : 'var(--txd)',
+                      transition: 'color .15s',
+                    }}>▼</button>
                 </div>
 
                 {/* Done + Skip actions */}
