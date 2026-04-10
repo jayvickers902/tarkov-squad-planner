@@ -155,6 +155,7 @@ export default function MapLeaflet({
   const [mapStyle, setMapStyle] = useState('svg') // 'svg' | 'tile'
   const [showSpawns, setShowSpawns] = useState(true)
   const [showQuestPins, setShowQuestPins] = useState(true)
+  const [debugCoord, setDebugCoord] = useState(null)
   const [internalMode, setInternalMode] = useState(defaultMode)
   const mode = modeProp !== undefined ? modeProp : internalMode
   const [selectedQuestId, setSelectedQuestId] = useState('')
@@ -560,11 +561,12 @@ export default function MapLeaflet({
     }
 
     function onClick(e) {
+      const pt = latlngToNorm(e.latlng, bounds)
+      setDebugCoord({ x: pt[0].toFixed(3), y: pt[1].toFixed(3) })
       if (mode !== 'marker') return
       if (!selectedQuestId) return
       const quest = myQuests.find(q => q.id === selectedQuestId)
       if (!quest) return
-      const pt = latlngToNorm(e.latlng, bounds)
       onAddMarker?.({ id: crypto.randomUUID(), user: myName, questId: quest.id, questName: quest.name, x: pt[0], y: pt[1] })
     }
 
@@ -748,6 +750,13 @@ export default function MapLeaflet({
           ref={mapContainerRef}
           style={{ width: '100%', height: mapHeight, borderRadius: 4 }}
         />
+        {debugCoord && (
+          <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 9999, background: '#0c0e0d', border: '1px solid var(--gold)', borderRadius: 4, padding: '5px 10px', pointerEvents: 'none' }}>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--goldtx)', letterSpacing: '.06em' }}>
+              x: {debugCoord.x} &nbsp; y: {debugCoord.y}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="mono" style={{ marginTop: 8, fontSize: 10, color: 'var(--txd)', textAlign: 'center' }}>

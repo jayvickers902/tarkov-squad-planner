@@ -16,7 +16,8 @@
       "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ bosses { name normalizedName } }\\\\\"}\")",
       "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ __type\\(name: \\\\\\\\\\\\\"MobInfo\\\\\\\\\\\\\"\\) { fields { name type { name kind ofType { name } } } } }\\\\\"}\")",
       "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ maps { name bosses { name spawnChance spawnLocations { name chance } } } }\\\\\"}\")",
-      "Bash(python -c ':*)"
+      "Bash(python -c ':*)",
+      "WebFetch(domain:tarkov-time.adam.id.au)"
     ],
     "additionalDirectories": [
       "c:\\projects\\owen-scarlet-hq\\src",

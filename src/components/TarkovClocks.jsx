@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 
 function getTarkovTimes() {
-  const utcSecs = Date.now() / 1000
-  const tarkovSecs = (utcSecs * 7) % 86400
-  const rightSecs  = (tarkovSecs + 43200) % 86400
-  return { left: tarkovSecs, right: rightSecs }
+  const realMs = Date.now()
+  const dayMs  = 24 * 3600 * 1000
+  const left  = ((3  * 3600000 + 7 * realMs) % dayMs) / 1000
+  const right = ((15 * 3600000 + 7 * realMs) % dayMs) / 1000
+  return { left, right }
 }
 
 function toHHMM(secs) {
