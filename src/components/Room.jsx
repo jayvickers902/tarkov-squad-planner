@@ -150,7 +150,6 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
       <div style={{ marginBottom: 16, paddingBottom: 14, borderBottom: '1px solid var(--brd)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-            <TarkovClocks />
             <div style={{ width: 4, height: 26, background: 'var(--gold)', borderRadius: 2, flexShrink: 0 }} />
             <div style={{ minWidth: 0 }}>
               <h1 style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>SQUAD PLANNER</h1>
@@ -160,6 +159,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <TarkovClocks />
             {!isMobile && (
               <>
                 <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>

@@ -2,6 +2,11 @@ import { useState, useEffect, useMemo } from 'react'
 import { useBossSpawns } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
 
+function toAntifandom(url) {
+  if (!url) return null
+  return url.replace('escapefromtarkov.fandom.com', 'escapefromtarkov.antifandom.com')
+}
+
 function getTarkovTimes() {
   const utcSecs = Date.now() / 1000
   const tarkovSecs = (utcSecs * 7) % 86400
@@ -227,9 +232,18 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
                       </div>
                     ) : null}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)', lineHeight: 1.2 }}>
-                        {task.name}
-                      </div>
+                      {toAntifandom(task.wikiLink) ? (
+                        <a href={toAntifandom(task.wikiLink)} target="_blank" rel="noreferrer"
+                          style={{ fontSize: 12, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--goldtx)', lineHeight: 1.2, textDecoration: 'none' }}
+                          onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
+                          onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}>
+                          {task.name}
+                        </a>
+                      ) : (
+                        <div style={{ fontSize: 12, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)', lineHeight: 1.2 }}>
+                          {task.name}
+                        </div>
+                      )}
                       {task.trader && (
                         <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', marginTop: 1 }}>{task.trader.name}</div>
                       )}
