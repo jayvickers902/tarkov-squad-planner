@@ -45,8 +45,8 @@ function keyToMap(name) {
 }
 
 let keysCache  = null
-let tasksCache = null // cache busted — zone positions added
-const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink trader { name } map { id normalizedName } objectives { id description type optional maps { normalizedName } ... on TaskObjectiveItem { item { id name } count foundInRaid } ... on TaskObjectiveMark { markerItem { id name } } ... on TaskObjectiveBasic { zones { id position { x y z } map { normalizedName } } } ... on TaskObjectiveShoot { zones { id position { x y z } map { normalizedName } } } } } }`
+let tasksCache = null // cache busted — item iconLink added
+const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink trader { name } map { id normalizedName } objectives { id description type optional maps { normalizedName } ... on TaskObjectiveItem { item { id name iconLink } count foundInRaid } ... on TaskObjectiveMark { markerItem { id name } } ... on TaskObjectiveBasic { zones { id position { x y z } map { normalizedName } } } ... on TaskObjectiveShoot { zones { id position { x y z } map { normalizedName } } } } } }`
 
 export function useMaps() {
   const [maps, setMaps]       = useState([])

@@ -50,6 +50,7 @@ export default function FindItems({ tasks, memberQuests, mapNorm, progress, myNa
             itemMap[key] = {
               itemId: obj.item.id,
               name: obj.item.name,
+              iconLink: obj.item.iconLink || null,
               count: obj.count || 1,
               foundInRaid: obj.foundInRaid || false,
               quests: [q.name],
@@ -74,6 +75,7 @@ export default function FindItems({ tasks, memberQuests, mapNorm, progress, myNa
           map[key] = {
             itemId: item.itemId,
             name: item.name,
+            iconLink: item.iconLink,
             foundInRaid: item.foundInRaid,
             members: [{ name: member, count: item.count, quests: item.quests }],
           }
@@ -108,12 +110,15 @@ export default function FindItems({ tasks, memberQuests, mapNorm, progress, myNa
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {sharedItems.filter(i => i.members.length > 1).map(item => (
               <div key={`${item.itemId}::${item.foundInRaid}`} style={{
-                display: 'flex', alignItems: 'flex-start', gap: 10,
+                display: 'flex', alignItems: 'center', gap: 10,
                 background: 'rgba(201,168,76,0.05)',
                 border: '1px solid var(--golddim)',
                 borderLeft: `3px solid var(--gold)`,
                 borderRadius: 4, padding: '8px 10px',
               }}>
+                {item.iconLink && (
+                  <img src={item.iconLink} alt="" style={{ width: 40, height: 40, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', borderRadius: 3, background: 'var(--sur)', border: '1px solid var(--brd2)' }} />
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)', letterSpacing: '.02em' }}>
@@ -211,23 +216,27 @@ export default function FindItems({ tasks, memberQuests, mapNorm, progress, myNa
                             .map(m => m.member)
                           return (
                             <div key={`${item.itemId}::${item.foundInRaid}`} style={{
-                              display: 'flex', alignItems: 'flex-start', gap: 10,
+                              display: 'flex', alignItems: 'center', gap: 10,
                               background: 'var(--sur2)', border: '1px solid var(--brd)',
                               borderLeft: `3px solid ${item.foundInRaid ? 'var(--gold)' : 'var(--brd2)'}`,
                               borderRadius: 4, padding: '8px 10px',
                             }}>
-                              <div style={{
-                                minWidth: 28, textAlign: 'center',
-                                background: 'var(--sur)', border: '1px solid var(--brd2)',
-                                borderRadius: 3, padding: '2px 5px', flexShrink: 0,
-                              }}>
-                                <span className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', fontWeight: 700 }}>
-                                  {item.count}x
-                                </span>
-                              </div>
+                              {item.iconLink
+                                ? <img src={item.iconLink} alt="" style={{ width: 40, height: 40, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', borderRadius: 3, background: 'var(--sur)', border: '1px solid var(--brd2)' }} />
+                                : (
+                                  <div style={{ minWidth: 28, textAlign: 'center', background: 'var(--sur)', border: '1px solid var(--brd2)', borderRadius: 3, padding: '2px 5px', flexShrink: 0 }}>
+                                    <span className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', fontWeight: 700 }}>{item.count}x</span>
+                                  </div>
+                                )
+                              }
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)', letterSpacing: '.02em' }}>
-                                  {item.name}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  {item.iconLink && (
+                                    <span className="mono" style={{ fontSize: 12, color: 'var(--goldtx)', fontWeight: 700 }}>{item.count}x</span>
+                                  )}
+                                  <div style={{ fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)', letterSpacing: '.02em' }}>
+                                    {item.name}
+                                  </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
                                   {item.foundInRaid && (
