@@ -8,10 +8,11 @@ function getTarkovTimes() {
   return { left, right }
 }
 
-function toHHMM(secs) {
+function toHHMMSS(secs) {
   const h = Math.floor(secs / 3600)
   const m = Math.floor((secs % 3600) / 60)
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  const s = Math.floor(secs % 60)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 function isDaytime(secs) {
@@ -23,7 +24,7 @@ export default function TarkovClocks() {
   const [times, setTimes] = useState(getTarkovTimes)
 
   useEffect(() => {
-    const id = setInterval(() => setTimes(getTarkovTimes()), 1000)
+    const id = setInterval(() => setTimes(getTarkovTimes()), 100)
     return () => clearInterval(id)
   }, [])
 
@@ -55,7 +56,7 @@ export default function TarkovClocks() {
             color: day ? 'var(--goldtx)' : '#8ab0cc',
             lineHeight: 1,
           }}>
-            {toHHMM(secs)}
+            {toHHMMSS(secs)}
           </div>
           <div className="mono" style={{ fontSize: 8, color: day ? 'var(--gold)' : '#5a7a8a', letterSpacing: '.06em' }}>
             {day ? '☀ DAY' : '☽ NIGHT'}
