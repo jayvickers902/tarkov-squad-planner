@@ -176,7 +176,7 @@ export function useParty() {
     if (rpcErr) { setError('Failed to join party.'); setLoading(false); return false }
 
     const allQuests = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
-    const updatedMQA = { ...(result.member_quests_all || {}), [name]: allQuests }
+    const updatedMQA = { ...(existing.member_quests_all || {}), [name]: allQuests }
     codeRef.current = code
     setPartyCode(code)
     myNameRef.current = name
@@ -235,7 +235,7 @@ export function useParty() {
     }
 
     const allQuests = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
-    const updatedMQA = { ...(result.member_quests_all || {}), [name]: allQuests }
+    const updatedMQA = { ...(existing.member_quests_all || {}), [name]: allQuests }
     codeRef.current = code
     setPartyCode(code)
     myNameRef.current = name
