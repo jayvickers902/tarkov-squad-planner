@@ -8,6 +8,7 @@ import MapLeaflet from './MapLeaflet'
 import RequiredItems from './RequiredItems'
 import FindItems from './FindItems'
 import BossPanel from './BossPanel'
+import StartRaidModal from './StartRaidModal'
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
@@ -35,7 +36,7 @@ function MemberPill({ name, allMembers }) {
   )
 }
 
-export default function Room({ party, myName, isAdmin, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh }) {
+export default function Room({ party, myName, isAdmin, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
@@ -46,6 +47,11 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
   const [addBusy, setAddBusy]   = useState(false)
   const [confirmUnfriend, setConfirmUnfriend] = useState(null)
   const [chipTooltip, setChipTooltip] = useState(null)  // { task, anchor }
+  const [dismissedRaidStart, setDismissedRaidStart] = useState(null)
+
+  const raidStart = party.progress?.['__raid_start__'] || null
+  const showRaidModal = !!party.map_id && raidStart !== null && raidStart !== dismissedRaidStart
+
 
   async function handleSendRequest() {
     if (!addInput.trim()) return
@@ -110,6 +116,15 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
   return (
     <div style={{ minHeight: '100vh', padding: '14px 16px' }}>
 
+      {showRaidModal && (
+        <StartRaidModal
+          party={party}
+          myName={myName}
+          tasks={allTasks}
+          onClose={() => setDismissedRaidStart(raidStart)}
+        />
+      )}
+
       {/* Header */}
       <div style={{ marginBottom: 16, paddingBottom: 14, borderBottom: '1px solid var(--brd)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -138,6 +153,9 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                 </div>
               </>
             )}
+            {isLeader && party.map_id && (
+              <button className="btn-gold btn-sm" onClick={onStartRaid} style={{ letterSpacing: '.06em' }}>▶ START RAID</button>
+            )}
             <button className="btn-danger btn-sm" onClick={onLeave}>LEAVE</button>
           </div>
         </div>
@@ -154,6 +172,9 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
               <span className="mono" style={{ fontSize: 15, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
               <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
             </div>
+            {isLeader && party.map_id && (
+              <button className="btn-gold btn-sm" onClick={onStartRaid} style={{ letterSpacing: '.06em' }}>▶ START RAID</button>
+            )}
           </div>
         )}
       </div>
@@ -398,40 +419,29 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
 
           {/* Map selector */}
           <div className="card" style={{ padding: 16 }}>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-              {/* Left: map buttons */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="lbl">{isLeader ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
-                {loadingMaps
-                  ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAPS...</span></div>
-                  : (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                      {maps.map(m => (
-                        <button key={m.id}
-                          onClick={() => isLeader && onSelectMap(m)}
-                          className={party.map_id === m.id ? 'btn-gold' : 'btn-ghost'}
-                          style={{ padding: '7px 12px', fontSize: 13, opacity: isLeader ? 1 : .7, cursor: isLeader ? 'pointer' : 'default' }}>
-                          {m.name.toUpperCase()}
-                        </button>
-                      ))}
-                    </div>
-                  )
-                }
-              </div>
-              {/* Right: Tarkov clocks + boss spawns */}
-              {!isMobile && (
-                <div style={{ borderLeft: '1px solid var(--brd)', paddingLeft: 16, flexShrink: 0 }}>
-                  <BossPanel mapNorm={party.map_norm || null} />
+            <div className="lbl">{isLeader ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
+            {loadingMaps
+              ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAPS...</span></div>
+              : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  {maps.map(m => (
+                    <button key={m.id}
+                      onClick={() => isLeader && onSelectMap(m)}
+                      className={party.map_id === m.id ? 'btn-gold' : 'btn-ghost'}
+                      style={{ padding: '7px 12px', fontSize: 13, opacity: isLeader ? 1 : .7, cursor: isLeader ? 'pointer' : 'default' }}>
+                      {m.name.toUpperCase()}
+                    </button>
+                  ))}
                 </div>
-              )}
-            </div>
+              )
+            }
           </div>
 
           {party.map_id && (
             <>
               {/* Tabs */}
               <div className="tab-bar">
-                {[['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['find', 'WHAT TO LOOK FOR'], ['map', 'MAP / ROUTE']].map(([id, lbl]) => (
+                {[['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['find', 'WHAT TO LOOK FOR'], ['map', 'MAP / ROUTE'], ['bosses', 'BOSS SPAWNS']].map(([id, lbl]) => (
                   <button key={id} onClick={() => setTab(id)} style={{
                     background: 'none', border: 'none',
                     borderBottom: `2px solid ${tab === id ? 'var(--gold)' : 'transparent'}`,
@@ -512,6 +522,12 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
                     : <FindItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} myName={myName} />
                   }
+                </div>
+              )}
+
+              {tab === 'bosses' && (
+                <div className="card fade-in" style={{ padding: 16 }}>
+                  <BossPanel mapNorm={party.map_norm} />
                 </div>
               )}
 

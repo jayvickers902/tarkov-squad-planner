@@ -409,6 +409,14 @@ export function useParty() {
     updatePartyDB({ markers })
   }, [updatePartyDB])
 
+  const startRaid = useCallback(() => {
+    const prev = partyRef.current
+    if (!prev) return
+    const progress = { ...(prev.progress || {}), '__raid_start__': Date.now() }
+    applyParty({ ...prev, progress })
+    updatePartyDB({ progress })
+  }, [updatePartyDB])
+
   const refreshParty = useCallback(async () => {
     if (!codeRef.current) return
     const fresh = await fetchParty(codeRef.current)
@@ -490,6 +498,6 @@ export function useParty() {
     addStroke, clearMyStrokes,
     addMarker, clearMyMarkers,
     leaveParty, setError,
-    syncSavedQuests, refreshParty,
+    syncSavedQuests, refreshParty, startRaid,
   }
 }

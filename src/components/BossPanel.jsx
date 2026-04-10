@@ -126,31 +126,30 @@ function MapBossSection({ label, bosses }) {
 export default function BossPanel({ mapNorm }) {
   const { getBossesForMap, loading } = useBossSpawns()
 
-  const isFactory = mapNorm === 'factory'
-  const dayBosses   = mapNorm ? getBossesForMap(isFactory ? 'factory'       : mapNorm) : []
+  const isFactory   = mapNorm === 'factory'
+  const dayBosses   = mapNorm ? getBossesForMap(isFactory ? 'factory' : mapNorm) : []
   const nightBosses = isFactory ? getBossesForMap('night-factory') : []
 
   return (
-    <div style={{ minWidth: 200, maxWidth: 280, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <TarkovClocks />
-
-      {mapNorm && (
-        <div style={{ borderTop: '1px solid var(--brd)', paddingTop: 8 }}>
-          <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 6 }}>
-            ◆ BOSS SPAWNS
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ maxWidth: 380 }}>
+        <TarkovClocks />
+      </div>
+      <div>
+        <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 10 }}>◆ BOSS SPAWNS</div>
+        {loading ? (
+          <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>LOADING...</div>
+        ) : isFactory ? (
+          <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 200 }}><MapBossSection label="FACTORY (DAY)" bosses={dayBosses} /></div>
+            <div style={{ minWidth: 200 }}><MapBossSection label="NIGHT FACTORY" bosses={nightBosses} /></div>
           </div>
-          {loading ? (
-            <div className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>LOADING...</div>
-          ) : isFactory ? (
-            <div style={{ display: 'flex', gap: 12 }}>
-              <MapBossSection label="FACTORY (DAY)" bosses={dayBosses} />
-              <MapBossSection label="NIGHT FACTORY" bosses={nightBosses} />
-            </div>
-          ) : (
+        ) : (
+          <div style={{ maxWidth: 320 }}>
             <MapBossSection label={null} bosses={dayBosses} />
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
