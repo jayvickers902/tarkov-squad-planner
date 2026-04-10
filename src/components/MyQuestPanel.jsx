@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
@@ -14,6 +14,18 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
 
 export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, loading }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
+  const [questOrder, setQuestOrder] = useState(() => myQuests.map(q => q.id))
+
+  // Sync questOrder when myQuests changes — new quests bubble to front
+  useEffect(() => {
+    setQuestOrder(prev => {
+      const currentIds = new Set(myQuests.map(q => q.id))
+      const cleaned = prev.filter(id => currentIds.has(id))
+      const existingSet = new Set(cleaned)
+      const newIds = myQuests.filter(q => !existingSet.has(q.id)).map(q => q.id)
+      return [...newIds, ...cleaned]
+    })
+  }, [myQuests])
 
   function getEffective(key) {
     if (pending[key] !== undefined) return pending[key]
@@ -50,6 +62,12 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
   }
 
   const rows = useMemo(() => {
+    const byOrder = (a, b) => {
+      const ai = questOrder.indexOf(a.task.id), bi = questOrder.indexOf(b.task.id)
+      if (ai === -1 && bi === -1) return 0
+      if (ai === -1) return 1; if (bi === -1) return -1
+      return ai - bi
+    }
     const mapped = myQuests
       .map(q => {
         const task = tasks.find(t => t.id === q.id)
@@ -75,13 +93,40 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
       })
       .filter(Boolean)
     // Sort: map-specific incomplete → any-map incomplete → map-specific complete → any-map complete
+    // Within each section, respect questOrder (most recently added first)
     return [
-      ...mapped.filter(r => r.isMapSpecific && !r.isComplete),
-      ...mapped.filter(r => !r.isMapSpecific && !r.isComplete),
-      ...mapped.filter(r => r.isMapSpecific && r.isComplete),
-      ...mapped.filter(r => !r.isMapSpecific && r.isComplete),
+      ...mapped.filter(r => r.isMapSpecific && !r.isComplete).sort(byOrder),
+      ...mapped.filter(r => !r.isMapSpecific && !r.isComplete).sort(byOrder),
+      ...mapped.filter(r => r.isMapSpecific && r.isComplete).sort(byOrder),
+      ...mapped.filter(r => !r.isMapSpecific && r.isComplete).sort(byOrder),
     ]
-  }, [myQuests, tasks, mapNorm, pending, progress, myName])
+  }, [myQuests, tasks, mapNorm, pending, progress, myName, questOrder])
+
+  function moveToTop(questId, sectionRows) {
+    setQuestOrder(prev => {
+      const sectionIds = sectionRows.map(r => r.task.id)
+      const newOrder = prev.filter(id => id !== questId)
+      const firstId = sectionIds.find(id => id !== questId)
+      if (!firstId) return [questId, ...newOrder]
+      const firstIdx = newOrder.indexOf(firstId)
+      if (firstIdx === -1) return [questId, ...newOrder]
+      newOrder.splice(firstIdx, 0, questId)
+      return newOrder
+    })
+  }
+
+  function moveToBottom(questId, sectionRows) {
+    setQuestOrder(prev => {
+      const sectionIds = sectionRows.map(r => r.task.id)
+      const newOrder = prev.filter(id => id !== questId)
+      const lastId = [...sectionIds].reverse().find(id => id !== questId)
+      if (!lastId) return [...newOrder, questId]
+      const lastIdx = newOrder.indexOf(lastId)
+      if (lastIdx === -1) return [...newOrder, questId]
+      newOrder.splice(lastIdx + 1, 0, questId)
+      return newOrder
+    })
+  }
 
   if (!rows.length) {
     const hasAnyQuests = myQuests.length > 0
@@ -141,6 +186,9 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
           const isPendingDone = pending[doneKey] !== undefined
           const doneObjCount = objs.filter(o => getEffective(`${task.id}::${o.id}::${myName}`)).length
           const allObjsDone = objs.length > 0 && doneObjCount === objs.length
+          // Section peers for move-to-top/bottom (same isMapSpecific + isComplete group)
+          const sectionRows = rows.filter(r => r.isMapSpecific === isMapSpecific && r.isComplete === isComplete)
+          const sectionIdx = sectionRows.findIndex(r => r.task.id === task.id)
 
           return (
             <div key={task.id}>
@@ -190,6 +238,33 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                     )}
                   </div>
                 </div>
+                {/* Move to top / bottom within section */}
+                {sectionRows.length > 1 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+                    <button
+                      onClick={() => moveToTop(task.id, sectionRows)}
+                      title="Move to top"
+                      disabled={sectionIdx === 0}
+                      style={{
+                        background: 'none', border: 'none', padding: '1px 4px',
+                        cursor: sectionIdx === 0 ? 'default' : 'pointer',
+                        fontSize: 10, lineHeight: 1,
+                        color: sectionIdx === 0 ? 'var(--brd2)' : 'var(--txd)',
+                        transition: 'color .15s',
+                      }}>▲</button>
+                    <button
+                      onClick={() => moveToBottom(task.id, sectionRows)}
+                      title="Move to bottom"
+                      disabled={sectionIdx === sectionRows.length - 1}
+                      style={{
+                        background: 'none', border: 'none', padding: '1px 4px',
+                        cursor: sectionIdx === sectionRows.length - 1 ? 'default' : 'pointer',
+                        fontSize: 10, lineHeight: 1,
+                        color: sectionIdx === sectionRows.length - 1 ? 'var(--brd2)' : 'var(--txd)',
+                        transition: 'color .15s',
+                      }}>▼</button>
+                  </div>
+                )}
                 <button
                   onClick={() => toggleDone(task.id)}
                   style={{
