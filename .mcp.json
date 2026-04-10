@@ -3,6 +3,10 @@
     "aidesigner": {
       "type": "http",
       "url": "https://api.aidesigner.ai/api/v1/mcp"
+    },
+    "ui-expert": {
+      "command": "npx",
+      "args": ["-y", "@reallygood83/ui-expert-mcp"]
     }
   }
 }
