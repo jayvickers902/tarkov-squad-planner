@@ -94,25 +94,22 @@ button {
   font-family: 'Share Tech Mono', monospace;
 }
 
-/* Dark tooltip base */
-.leaflet-tooltip {
+/* Custom dark tooltip — className: 'tac-tooltip' set on every bindTooltip call */
+.tac-tooltip {
   background: #131614 !important;
   border: 1px solid #262b25 !important;
   border-left: 2px solid #c9a84c !important;
   border-radius: 6px !important;
-  box-shadow: 0 15px 40px rgba(0,0,0,0.9) !important;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.95) !important;
   color: #e4e0d4 !important;
   padding: 10px 13px !important;
   font-family: 'Share Tech Mono', monospace;
   font-size: 11px;
   max-width: 280px;
   white-space: normal;
-  /* kill the default drop shadow that Leaflet adds */
   filter: none !important;
 }
-
-/* Remove default tooltip arrow */
-.leaflet-tooltip::before { display: none !important; }
+.tac-tooltip::before { display: none !important; }
 
 /* Attribution control — hide it (we set attributionControl: false but just in case) */
 .leaflet-control-attribution { display: none !important; }

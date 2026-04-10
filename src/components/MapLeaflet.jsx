@@ -373,7 +373,7 @@ export default function MapLeaflet({
           </div>` : ''}
         </div>`
       const lm = L.marker(latlng, { icon, interactive: true })
-      lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -20], opacity: 1 })
+      lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -20], opacity: 1, className: 'tac-tooltip' })
       lm.addTo(map)
       markerLayersRef.current[m.id] = lm
     }
@@ -400,6 +400,7 @@ export default function MapLeaflet({
         direction: 'top',
         offset: [0, -10],
         opacity: 1,
+        className: 'tac-tooltip',
       })
       km.addTo(map)
       keyMarkersRef.current[keyName] = km
@@ -429,7 +430,7 @@ export default function MapLeaflet({
           </div>
         </div>`
       const lm = L.marker(latlng, { icon, interactive: true, zIndexOffset: 200 })
-      lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -12], opacity: 1 })
+      lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -12], opacity: 1, className: 'tac-tooltip' })
       lm.addTo(map)
       objMarkersRef.current.push(lm)
     }
