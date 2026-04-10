@@ -94,13 +94,19 @@ function makeQuestIcon(color, initial) {
 function makeSpawnIcon() {
   return L.divIcon({
     className: '',
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
-    html: `<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="8" cy="8" r="6.5" fill="none" stroke="#e8a030" stroke-width="1.5" opacity="0.9"/>
-      <line x1="8" y1="1" x2="8" y2="15" stroke="#e8a030" stroke-width="1" opacity="0.85"/>
-      <line x1="1" y1="8" x2="15" y2="8" stroke="#e8a030" stroke-width="1" opacity="0.85"/>
-      <circle cx="8" cy="8" r="1.8" fill="#e8a030" opacity="0.95"/>
+    iconSize: [18, 24],
+    iconAnchor: [9, 24],
+    html: `<svg width="18" height="24" viewBox="0 0 18 24" xmlns="http://www.w3.org/2000/svg">
+      <!-- Black outline: head + body -->
+      <circle cx="9" cy="6" r="6" fill="rgba(0,0,0,0.9)"/>
+      <rect x="2" y="11" width="14" height="12" rx="2.5" fill="rgba(0,0,0,0.9)"/>
+      <!-- Helmet -->
+      <circle cx="9" cy="6" r="5" fill="#e8a030"/>
+      <!-- Helmet brim -->
+      <rect x="1" y="9.5" width="16" height="3" rx="1.5" fill="rgba(0,0,0,0.9)"/>
+      <rect x="1.5" y="10" width="15" height="2.5" rx="1.25" fill="#c87820"/>
+      <!-- Body / vest -->
+      <rect x="3.5" y="13" width="11" height="9" rx="1.5" fill="#e8a030"/>
     </svg>`,
   })
 }
@@ -130,6 +136,9 @@ export default function MapLeaflet({
   onAddMarker, onClearMyMarkers,
   mapHeight = 520,
   defaultMode = 'draw',
+  mode: modeProp,       // optional controlled mode from parent
+  onModeChange,         // called when mode changes (controlled mode)
+  hideDrawButton = false, // hide draw toggle + palette (parent controls it)
 }) {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
@@ -146,7 +155,8 @@ export default function MapLeaflet({
   const [mapStyle, setMapStyle] = useState('svg') // 'svg' | 'tile'
   const [showSpawns, setShowSpawns] = useState(true)
   const [showQuestPins, setShowQuestPins] = useState(true)
-  const [mode, setMode] = useState(defaultMode)
+  const [internalMode, setInternalMode] = useState(defaultMode)
+  const mode = modeProp !== undefined ? modeProp : internalMode
   const [selectedQuestId, setSelectedQuestId] = useState('')
   const [myColor, setMyColor] = useState(() => getUserColor(myName, memberNames))
   const [svgReady, setSvgReady] = useState(false)
@@ -155,6 +165,11 @@ export default function MapLeaflet({
   const isDrawing = useRef(false)
   const currentPolyline = useRef(null)
   const currentPts = useRef([])
+
+  function changeMode(m) {
+    if (modeProp !== undefined) onModeChange?.(m)
+    else setInternalMode(m)
+  }
 
   const { mapKeys } = useMapKeys(mapNorm)
 
@@ -568,7 +583,7 @@ export default function MapLeaflet({
 
   // Reset mode and layer toggles when map changes
   useEffect(() => {
-    setMode(defaultMode)
+    changeMode(defaultMode)
     setSelectedQuestId('')
     setShowSpawns(true)
     setShowQuestPins(true)
@@ -590,7 +605,7 @@ export default function MapLeaflet({
   function handleQuestSelect(e) {
     const val = e.target.value
     setSelectedQuestId(val)
-    setMode(val ? 'marker' : 'draw')
+    changeMode(val ? 'marker' : 'pan')
   }
 
   const hasTile = cfg?.tilePath
@@ -601,20 +616,24 @@ export default function MapLeaflet({
     <div>
       {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-        <button
-          className={mode === 'draw' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-          onClick={() => { setMode(mode === 'draw' ? 'pan' : 'draw'); setSelectedQuestId('') }}
-          style={{ fontSize: 10 }}>
-          ✏ DRAW
-        </button>
-        {mode === 'draw' && (
-          <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.05em' }}>
-            MID CLICK TO PAN
-          </span>
+        {!hideDrawButton && (
+          <>
+            <button
+              className={mode === 'draw' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+              onClick={() => { changeMode(mode === 'draw' ? 'pan' : 'draw'); setSelectedQuestId('') }}
+              style={{ fontSize: 10 }}>
+              ✏ DRAW
+            </button>
+            {mode === 'draw' && (
+              <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.05em' }}>
+                MID CLICK TO PAN
+              </span>
+            )}
+          </>
         )}
         <button
           className={mode === 'marker' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-          onClick={() => setMode(mode === 'marker' ? 'pan' : 'marker')}
+          onClick={() => { changeMode(mode === 'marker' ? 'pan' : 'marker'); setSelectedQuestId('') }}
           style={{ fontSize: 10 }}>
           ◎ QUEST MARKER
         </button>
@@ -680,7 +699,7 @@ export default function MapLeaflet({
 
       {/* Color palette + clear buttons */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
-        {mode === 'draw' && (
+        {mode === 'draw' && !hideDrawButton && (
           <>
             <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', marginRight: 2 }}>COLOR</span>
             {PALETTE.map(c => (
@@ -732,8 +751,10 @@ export default function MapLeaflet({
       </div>
 
       <div className="mono" style={{ marginTop: 8, fontSize: 10, color: 'var(--txd)', textAlign: 'center' }}>
-        {mode === 'draw'
+        {mode === 'draw' && !hideDrawButton
           ? <>YOUR COLOR: <span style={{ color: myColor }}>■</span>&nbsp; DRAW ROUTES — VISIBLE TO ALL PARTY MEMBERS IN REAL TIME</>
+          : mode === 'draw'
+          ? <>✏ DRAWING — ROUTES VISIBLE TO ALL PARTY MEMBERS</>
           : mode === 'marker'
           ? <>◎ QUEST MARKER MODE — PINS ARE VISIBLE TO ALL PARTY MEMBERS</>
           : <>LEFT CLICK DRAG TO PAN — ENABLE DRAW MODE TO ANNOTATE THE MAP</>

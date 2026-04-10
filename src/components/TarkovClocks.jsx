@@ -43,6 +43,7 @@ export default function TarkovClocks() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
+          justifyContent: 'center',
           gap: 1,
         }}>
           <div style={{

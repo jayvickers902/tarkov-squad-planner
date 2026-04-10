@@ -13,6 +13,7 @@ export default function RaidView({
 }) {
   const [pillOpen, setPillOpen] = useState(true)
   const [mapHeight, setMapHeight] = useState(() => window.innerHeight - 40)
+  const [drawMode, setDrawMode] = useState('pan')
   const mine = party.members?.[myName] || []
 
   useEffect(() => {
@@ -39,8 +40,17 @@ export default function RaidView({
             {(party.map_name || '').toUpperCase()}
           </span>
         </div>
-        {/* Spacer to visually center the title */}
-        <div style={{ width: 110, flexShrink: 0 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {drawMode === 'draw' && (
+            <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.05em' }}>MID CLICK TO PAN</span>
+          )}
+          <button
+            className={drawMode === 'draw' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+            onClick={() => setDrawMode(m => m === 'draw' ? 'pan' : 'draw')}
+            style={{ fontSize: 10 }}>
+            ✏ DRAW
+          </button>
+        </div>
       </div>
 
       {/* Map + floating pill */}
@@ -62,6 +72,9 @@ export default function RaidView({
           onClearMyMarkers={onClearMyMarkers}
           mapHeight={mapHeight}
           defaultMode="pan"
+          mode={drawMode}
+          onModeChange={setDrawMode}
+          hideDrawButton
         />
 
         {/* Floating objectives pill — position:fixed to escape overflow:hidden on map container */}

@@ -214,6 +214,18 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
                     background: 'var(--sur2)', border: '1px solid var(--brd)',
                     borderLeft: '3px solid var(--golddim)', borderRadius: 3,
                   }}>
+                    {task.trader?.imageLink ? (
+                      <img
+                        src={task.trader.imageLink}
+                        alt={task.trader.name}
+                        title={task.trader.name}
+                        style={{ width: 32, height: 32, borderRadius: 3, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--brd2)' }}
+                      />
+                    ) : task.trader ? (
+                      <div style={{ width: 32, height: 32, borderRadius: 3, background: 'var(--sur3)', border: '1px solid var(--brd2)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span className="mono" style={{ fontSize: 8, color: 'var(--txd)' }}>{task.trader.name.slice(0, 3).toUpperCase()}</span>
+                      </div>
+                    ) : null}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)', lineHeight: 1.2 }}>
                         {task.name}
