@@ -64,9 +64,9 @@ export default function RaidView({
           defaultMode="pan"
         />
 
-        {/* Floating objectives pill */}
+        {/* Floating objectives pill — position:fixed to escape overflow:hidden on map container */}
         <div style={{
-          position: 'absolute', top: 10, right: 10,
+          position: 'fixed', top: 50, right: 10,
           width: 340, maxWidth: 'calc(100vw - 20px)',
           zIndex: 1000,
           background: 'var(--sur)',
@@ -75,7 +75,7 @@ export default function RaidView({
           boxShadow: '0 4px 24px rgba(0,0,0,0.65)',
           display: 'flex',
           flexDirection: 'column',
-          maxHeight: 'calc(100% - 20px)',
+          maxHeight: 'calc(100vh - 60px)',
           overflow: 'hidden',
         }}>
           {/* Pill header */}
