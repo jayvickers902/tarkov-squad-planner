@@ -80,3 +80,39 @@ button {
 /* Horizontally scrollable tab bar on mobile */
 .tab-bar { display: flex; border-bottom: 1px solid var(--brd); overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .tab-bar::-webkit-scrollbar { display: none; }
+
+/* ── Leaflet dark theme overrides ────────────────────────────────────────── */
+.leaflet-container {
+  background: #0c0e0d !important;
+  /* Subtle tactical grid */
+  background-image:
+    linear-gradient(to right, #131715 1px, transparent 1px),
+    linear-gradient(to bottom, #131715 1px, transparent 1px),
+    linear-gradient(to right, #1a221f 1px, transparent 1px),
+    linear-gradient(to bottom, #1a221f 1px, transparent 1px) !important;
+  background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px !important;
+  font-family: 'Share Tech Mono', monospace;
+}
+
+/* Dark tooltip base */
+.leaflet-tooltip {
+  background: #131614 !important;
+  border: 1px solid #262b25 !important;
+  border-left: 2px solid #c9a84c !important;
+  border-radius: 6px !important;
+  box-shadow: 0 15px 40px rgba(0,0,0,0.9) !important;
+  color: #e4e0d4 !important;
+  padding: 10px 13px !important;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  max-width: 280px;
+  white-space: normal;
+  /* kill the default drop shadow that Leaflet adds */
+  filter: none !important;
+}
+
+/* Remove default tooltip arrow */
+.leaflet-tooltip::before { display: none !important; }
+
+/* Attribution control — hide it (we set attributionControl: false but just in case) */
+.leaflet-control-attribution { display: none !important; }

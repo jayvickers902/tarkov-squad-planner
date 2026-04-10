@@ -365,10 +365,12 @@ export default function MapLeaflet({
       const task = tasks.find(t => t.id === m.questId)
       const objectives = task?.objectives?.filter(o => !o.optional) || []
       const tooltipHtml = `
-        <div style="font-family:'Share Tech Mono',monospace;font-size:11px;min-width:140px">
-          <div style="color:${color};margin-bottom:3px">${m.user.toUpperCase()}</div>
-          <div style="color:#c9a84c;margin-bottom:${objectives.length ? 4 : 0}px">${m.questName}</div>
-          ${objectives.map(o => `<div style="color:#aaa;padding-left:8px">· ${o.description}</div>`).join('')}
+        <div style="min-width:160px">
+          <div style="color:${color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;margin-bottom:4px">${m.user.toUpperCase()}</div>
+          <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;line-height:1.2;margin-bottom:${objectives.length ? 6 : 0}px">${m.questName}</div>
+          ${objectives.length ? `<div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">
+            ${objectives.map(o => `<div style="color:#9aaa98;font-size:11px">· ${o.description}</div>`).join('')}
+          </div>` : ''}
         </div>`
       const lm = L.marker(latlng, { icon, interactive: true })
       lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -20], opacity: 1 })
@@ -394,7 +396,7 @@ export default function MapLeaflet({
       const latlng = normToLatlng([v.loc_x, v.loc_y], bounds)
       const icon = makeKeyIcon(v.priority)
       const km = L.marker(latlng, { icon, interactive: true, zIndexOffset: 100 })
-      km.bindTooltip(`<span style="font-family:'Share Tech Mono',monospace;font-size:11px;color:#c9a84c">🔑 ${keyName}</span>`, {
+      km.bindTooltip(`<div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em">🔑 ${keyName}</div>`, {
         direction: 'top',
         offset: [0, -10],
         opacity: 1,
@@ -418,11 +420,13 @@ export default function MapLeaflet({
       const icon = makeObjIcon(pin.color, pin.initial)
       const typeLabel = pin.objType === 'visit' ? 'LOCATE' : pin.objType?.toUpperCase() ?? ''
       const tooltipHtml = `
-        <div style="font-family:'Share Tech Mono',monospace;font-size:11px;min-width:150px;max-width:220px">
-          <div style="color:${pin.color};margin-bottom:3px">${pin.memberName.toUpperCase()}</div>
-          <div style="color:#c9a84c;margin-bottom:4px">${pin.questName}</div>
-          ${typeLabel ? `<div style="color:#888;font-size:9px;margin-bottom:2px">${typeLabel}</div>` : ''}
-          <div style="color:#ddd">${pin.objDescription}</div>
+        <div style="min-width:170px;max-width:260px">
+          <div style="color:${pin.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;margin-bottom:4px">${pin.memberName.toUpperCase()}</div>
+          <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;line-height:1.2;margin-bottom:6px">${pin.questName}</div>
+          <div style="border-top:1px solid #262b25;padding-top:6px">
+            ${typeLabel ? `<div style="color:#5c6b61;font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px">${typeLabel}</div>` : ''}
+            <div style="color:#e4e0d4;font-size:11px;line-height:1.4">${pin.objDescription}</div>
+          </div>
         </div>`
       const lm = L.marker(latlng, { icon, interactive: true, zIndexOffset: 200 })
       lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -12], opacity: 1 })
