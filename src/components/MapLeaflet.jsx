@@ -470,9 +470,9 @@ export default function MapLeaflet({
     fetchAllSpawns().then(maps => {
       const customs = maps.find(m => m.normalizedName === 'customs')
       if (customs) {
-        const unique = [...new Set(customs.spawns.map(s => `sides:${s.sides.join('+')} cats:${s.categories.join('+')}`))].sort()
-        console.log('[spawns] Customs category combos:', unique)
-        console.log('[spawns] All Customs spawns:', customs.spawns.length, 'total,', customs.spawns.filter(s => s.categories.includes('botpmc')).length, 'with botpmc')
+        const pmcOnly = customs.spawns.filter(s => s.sides.includes('pmc') && s.categories.includes('player') && !s.categories.includes('botpmc'))
+        console.log('[spawns] sides:pmc cats:player (no botpmc) count:', pmcOnly.length)
+        pmcOnly.forEach((s, i) => console.log(`  [${i}] x:${s.position.x.toFixed(1)} z:${s.position.z.toFixed(1)}`))
       }
       const byMap = {}
       for (const m of maps) {
