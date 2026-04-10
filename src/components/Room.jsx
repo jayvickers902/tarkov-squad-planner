@@ -548,7 +548,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                 <div className="card fade-in" style={{ padding: 16 }}>
                   {loadingTasks
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
-                    : <FindItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} myName={myName} />
+                    : <FindItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} myName={myName} userObjProgress={userObjProgress} />
                   }
                 </div>
               )}

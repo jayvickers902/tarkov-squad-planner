@@ -21,7 +21,7 @@ function objIsOnMap(obj, mapNorm, taskMapNorm) {
   return true
 }
 
-export default function FindItems({ tasks, memberQuests, mapNorm, progress, myName }) {
+export default function FindItems({ tasks, memberQuests, mapNorm, progress, myName, userObjProgress }) {
   const members = Object.keys(memberQuests)
   const [activeMember, setActiveMember] = useState('all')
 
@@ -38,7 +38,8 @@ export default function FindItems({ tasks, memberQuests, mapNorm, progress, myNa
         if (!task) return
         task.objectives?.forEach(obj => {
           if (obj.optional) return
-          if (progress?.[`${task.id}::${obj.id}::${member}`]) return
+          const objKey = `${task.id}::${obj.id}::${member}`
+          if (progress?.[objKey] || (member === myName && userObjProgress?.[objKey])) return
           if (obj.type !== 'findItem' || !obj.item) return
           if (!objIsOnMap(obj, mapNorm, task.map?.normalizedName)) return
 
@@ -61,7 +62,7 @@ export default function FindItems({ tasks, memberQuests, mapNorm, progress, myNa
 
       return { member, items: Object.values(itemMap).sort((a, b) => (b.foundInRaid ? 1 : 0) - (a.foundInRaid ? 1 : 0)) }
     })
-  }, [tasks, memberQuests, progress, mapNorm]) // eslint-disable-line
+  }, [tasks, memberQuests, progress, userObjProgress, mapNorm]) // eslint-disable-line
 
   // Build a cross-party view: group by item, show which members need it
   const sharedItems = useMemo(() => {
