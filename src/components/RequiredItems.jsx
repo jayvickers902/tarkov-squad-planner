@@ -33,12 +33,14 @@ function Spin() {
 export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }) {
   const members = Object.keys(memberQuests)
   const [activeMember, setActiveMember] = useState('all')
-  const { keys, loading: keysLoading } = useKeys(mapNorm)
+  const { keys, allKeys, loading: keysLoading } = useKeys(mapNorm)
   const { mapKeys } = useMapKeys(mapNorm)
 
   const priorityKeys = keys
     .filter(k => mapKeys[k.name]?.priority === true)
     .sort((a, b) => (b.avg24hPrice || b.lastLowPrice || 0) - (a.avg24hPrice || a.lastLowPrice || 0))
+
+  const keyIdSet = useMemo(() => new Set(allKeys.map(k => k.id)), [allKeys])
 
   // Build per-member item lists from their active quests' objectives
   const memberItems = useMemo(() => {
@@ -56,21 +58,23 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
           if (progress?.[`${task.id}::${obj.id}::${member}`]) return
           const isPlant = obj.type === 'plantItem' && obj.item
           const isMark  = obj.type === 'mark' && obj.markerItem
-          if (!isPlant && !isMark) return
+          const isKeyObj = (obj.type === 'findItem' || obj.type === 'giveItem') && obj.item && keyIdSet.has(obj.item.id)
+          if (!isPlant && !isMark && !isKeyObj) return
           if (!objIsOnMap(obj, mapNorm, task.map?.normalizedName)) return
-          const item = isPlant ? obj.item : obj.markerItem
-          const count = isPlant ? (obj.count || 1) : 1
-          const key = `${item.id}::bring`
-          if (itemMap[key]) {
-            itemMap[key].count += count
-            if (!itemMap[key].quests.includes(q.name)) itemMap[key].quests.push(q.name)
+          const item = isMark ? obj.markerItem : obj.item
+          const count = isPlant || isKeyObj ? (obj.count || 1) : 1
+          const mapKey = `${item.id}::bring`
+          if (itemMap[mapKey]) {
+            itemMap[mapKey].count += count
+            if (!itemMap[mapKey].quests.includes(q.name)) itemMap[mapKey].quests.push(q.name)
           } else {
-            itemMap[key] = {
+            itemMap[mapKey] = {
               itemId: item.id,
               name: item.name,
               iconLink: item.iconLink || null,
               count,
-              foundInRaid: false,
+              foundInRaid: obj.foundInRaid || false,
+              isKey: isKeyObj,
               quests: [q.name],
             }
           }
@@ -79,7 +83,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
 
       return { member, items: Object.values(itemMap) }
     })
-  }, [tasks, memberQuests, progress, mapNorm]) // eslint-disable-line
+  }, [tasks, memberQuests, progress, mapNorm, keyIdSet]) // eslint-disable-line
 
   const hasAnyItems = memberItems.some(m => m.items.length > 0)
   const hasCliffDescent = RED_REBEL_MAPS.has(mapNorm)
@@ -166,7 +170,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
                           <div key={`${item.itemId}::${item.foundInRaid}`} style={{
                             display: 'flex', alignItems: 'center', gap: 10,
                             background: 'var(--sur2)', border: '1px solid var(--brd)',
-                            borderLeft: `3px solid var(--brd2)`,
+                            borderLeft: item.isKey ? `3px solid var(--gold)` : `3px solid var(--brd2)`,
                             borderRadius: 4, padding: '8px 10px',
                           }}>
                             {item.iconLink
@@ -185,6 +189,9 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
                                 <div style={{ fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)', letterSpacing: '.02em' }}>
                                   {item.name}
                                 </div>
+                                {item.isKey && (
+                                  <span className="mono" style={{ fontSize: 9, color: 'var(--goldtx)', background: 'rgba(201,168,76,0.12)', border: '1px solid var(--golddim)', borderRadius: 3, padding: '1px 5px', letterSpacing: '.06em', flexShrink: 0 }}>KEY</span>
+                                )}
                               </div>
                               <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
                                 {item.quests.map(q => (

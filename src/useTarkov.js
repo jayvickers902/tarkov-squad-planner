@@ -167,5 +167,5 @@ export function useKeys(mapNorm) {
       })
   }, [allKeys, mapNorm])
 
-  return { keys, loading }
+  return { keys, allKeys, loading }
 }
