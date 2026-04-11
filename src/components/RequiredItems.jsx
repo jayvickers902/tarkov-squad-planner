@@ -80,10 +80,10 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
           }
 
           // Keys required to unlock doors for this objective
+          // requiredKeys is [[Item]] — each inner array is a set of alternatives for one lock
           if (obj.requiredKeys?.length && objIsOnMap(obj, mapNorm, task.map?.normalizedName)) {
-            obj.requiredKeys.forEach(keyGroup => {
-              // keyGroup.items are alternatives — show all options
-              keyGroup.items?.forEach(keyItem => {
+            obj.requiredKeys.forEach(alternatives => {
+              alternatives?.forEach(keyItem => {
                 const rk = `${keyItem.id}::required`
                 if (itemMap[rk]) {
                   if (!itemMap[rk].quests.includes(q.name)) itemMap[rk].quests.push(q.name)
