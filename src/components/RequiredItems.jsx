@@ -78,6 +78,29 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
               quests: [q.name],
             }
           }
+
+          // Keys required to unlock doors for this objective
+          if (obj.requiredKeys?.length && objIsOnMap(obj, mapNorm, task.map?.normalizedName)) {
+            obj.requiredKeys.forEach(keyGroup => {
+              // keyGroup.items are alternatives — show all options
+              keyGroup.items?.forEach(keyItem => {
+                const rk = `${keyItem.id}::required`
+                if (itemMap[rk]) {
+                  if (!itemMap[rk].quests.includes(q.name)) itemMap[rk].quests.push(q.name)
+                } else {
+                  itemMap[rk] = {
+                    itemId: keyItem.id,
+                    name: keyItem.name,
+                    iconLink: keyItem.iconLink || null,
+                    count: 1,
+                    foundInRaid: false,
+                    isKey: true,
+                    quests: [q.name],
+                  }
+                }
+              })
+            })
+          }
         })
       })
 
