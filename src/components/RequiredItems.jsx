@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { useKeys } from '../useTarkov'
-import { useMapKeys } from '../useMapKeys'
 import { RED_REBEL_MAPS } from '../constants'
 
 const MEMBER_COLORS = [
@@ -24,28 +23,18 @@ function objIsOnMap(obj, mapNorm, taskMapNorm) {
   return true
 }
 
-const FMT = new Intl.NumberFormat('en-US')
-
-function Spin() {
-  return <div style={{ width: 18, height: 18, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
-}
-
 export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }) {
   const members = Object.keys(memberQuests)
   const [activeMember, setActiveMember] = useState('all')
-  const { keys, allKeys, loading: keysLoading } = useKeys(mapNorm)
-  const { mapKeys } = useMapKeys(mapNorm)
-
-  const priorityKeys = keys
-    .filter(k => mapKeys[k.name]?.priority === true)
-    .sort((a, b) => (b.avg24hPrice || b.lastLowPrice || 0) - (a.avg24hPrice || a.lastLowPrice || 0))
+  const { allKeys } = useKeys(mapNorm)
 
   const keyIdSet = useMemo(() => new Set(allKeys.map(k => k.id)), [allKeys])
+  // Lookup map for key iconLink by id — tasks query may return null iconLink, fall back to keys query
+  const keyIconMap = useMemo(() => Object.fromEntries(allKeys.map(k => [k.id, k.iconLink || null])), [allKeys])
 
   // Build per-member item lists from their active quests' objectives
   const memberItems = useMemo(() => {
     return members.map(member => {
-      // Deduplicate quest IDs — party.members can accumulate duplicates
       const seen = new Set()
       const quests = (memberQuests[member] || []).filter(q => seen.has(q.id) ? false : (seen.add(q.id), true))
       const itemMap = {}
@@ -63,7 +52,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
           const isMark  = obj.type === 'mark' && obj.markerItem
           const isKeyObj = (obj.type === 'findItem' || obj.type === 'giveItem') && obj.item && keyIdSet.has(obj.item.id)
 
-          // Add bring-in items (plants, markers, key hand-ins)
+          // Bring-in items: plants, markers, key hand-ins
           if (isPlant || isMark || isKeyObj) {
             const item = isMark ? obj.markerItem : obj.item
             const count = isPlant || isKeyObj ? (obj.count || 1) : 1
@@ -84,7 +73,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
             }
           }
 
-          // Keys required to access/complete this objective (all objective types)
+          // Keys required to access/complete this objective — processed for ALL objective types
           if (obj.requiredKeys?.length) {
             obj.requiredKeys.forEach(keyItem => {
               if (!keyItem?.id) return
@@ -95,7 +84,8 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
                 itemMap[rk] = {
                   itemId: keyItem.id,
                   name: keyItem.name,
-                  iconLink: keyItem.iconLink || null,
+                  // tasks API may return null iconLink for keys — fall back to keys query data
+                  iconLink: keyItem.iconLink || keyIconMap[keyItem.id] || null,
                   count: 1,
                   foundInRaid: false,
                   isKey: true,
@@ -109,7 +99,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
 
       return { member, items: Object.values(itemMap) }
     })
-  }, [tasks, memberQuests, progress, mapNorm, keyIdSet]) // eslint-disable-line
+  }, [tasks, memberQuests, progress, mapNorm, keyIdSet, keyIconMap]) // eslint-disable-line
 
   const hasAnyItems = memberItems.some(m => m.items.length > 0)
   const hasCliffDescent = RED_REBEL_MAPS.has(mapNorm)
@@ -218,6 +208,9 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
                                 {item.isKey && (
                                   <span className="mono" style={{ fontSize: 9, color: 'var(--goldtx)', background: 'rgba(201,168,76,0.12)', border: '1px solid var(--golddim)', borderRadius: 3, padding: '1px 5px', letterSpacing: '.06em', flexShrink: 0 }}>KEY</span>
                                 )}
+                                {item.foundInRaid && (
+                                  <span className="mono" style={{ fontSize: 9, color: '#e85a5a', background: 'rgba(232,90,90,0.10)', border: '1px solid rgba(232,90,90,0.3)', borderRadius: 3, padding: '1px 5px', letterSpacing: '.06em', flexShrink: 0 }}>FIR</span>
+                                )}
                               </div>
                               <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
                                 {item.quests.map(q => (
@@ -237,59 +230,6 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
               })}
             </div>
           </>
-        )}
-      </div>
-
-      {/* Keys */}
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-          <h3 style={{ fontSize: 18, color: 'var(--goldtx)' }}>PRIORITY KEYS</h3>
-          <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>CLICK NAME TO VIEW LOOT ON WIKI</span>
-        </div>
-
-        {keysLoading ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
-            <Spin />
-            <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING KEYS...</span>
-          </div>
-        ) : !priorityKeys.length ? (
-          <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', padding: '12px 0', textAlign: 'center' }}>
-            NO PRIORITY KEYS SET FOR THIS MAP
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {priorityKeys.map(k => {
-              const price = k.avg24hPrice || k.lastLowPrice || 0
-              return (
-                <div key={k.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '7px 10px',
-                  background: 'var(--sur2)', border: '1px solid var(--gold)',
-                  borderRadius: 4,
-                }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {k.wikiLink
-                      ? <a href={k.wikiLink} target="_blank" rel="noreferrer"
-                          title="Click to view loot details on wiki"
-                          style={{ fontSize: 13, color: 'var(--tx)', textDecoration: 'none' }}
-                          onMouseEnter={e => e.currentTarget.style.color = 'var(--gold)'}
-                          onMouseLeave={e => e.currentTarget.style.color = 'var(--tx)'}>
-                          {k.name} <span style={{ fontSize: 10, color: 'var(--txd)' }}>↗</span>
-                        </a>
-                      : <span style={{ fontSize: 13, color: 'var(--tx)' }}>{k.name}</span>
-                    }
-                  </div>
-                  <div className="mono" style={{
-                    fontSize: 12,
-                    color: price ? 'var(--goldtx)' : 'var(--txd)',
-                    minWidth: 90, textAlign: 'right', whiteSpace: 'nowrap', flexShrink: 0,
-                  }}>
-                    {price ? `₽${FMT.format(price)}` : '—'}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
         )}
       </div>
 

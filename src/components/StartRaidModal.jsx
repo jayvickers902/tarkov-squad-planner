@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useBossSpawns } from '../useTarkov'
+import { useBossSpawns, useKeys } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
 
 function toAntifandom(url) {
@@ -50,6 +50,8 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
   const mapNorm = party.map_norm
   const mapName = party.map_name
   const isFactory = mapNorm === 'factory'
+  const { allKeys } = useKeys(mapNorm)
+  const keyIconMap = useMemo(() => Object.fromEntries(allKeys.map(k => [k.id, k.iconLink || null])), [allKeys])
   const dayBosses   = mapNorm ? getBossesForMap(isFactory ? 'factory' : mapNorm) : []
   const nightBosses = isFactory ? getBossesForMap('night-factory') : []
   const bosses = isFactory ? [...dayBosses, ...nightBosses] : dayBosses
@@ -89,16 +91,23 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
         // Keys required to access/complete objectives on this map
         if (obj.requiredKeys?.length) {
           obj.requiredKeys.forEach(keyItem => {
+            if (!keyItem?.id) return
             const rk = `rk::${keyItem.id}`
             if (!itemMap[rk]) {
-              itemMap[rk] = { name: keyItem.name, iconLink: keyItem.iconLink || null, count: 1, isKey: true, questName: task.name }
+              itemMap[rk] = {
+                name: keyItem.name,
+                iconLink: keyItem.iconLink || keyIconMap[keyItem.id] || null,
+                count: 1,
+                isKey: true,
+                questName: task.name,
+              }
             }
           })
         }
       })
     })
     return Object.values(itemMap)
-  }, [myQuests, tasks, mapNorm, party.progress, myName]) // eslint-disable-line
+  }, [myQuests, tasks, mapNorm, party.progress, myName, keyIconMap]) // eslint-disable-line
 
   const hasCliffDescent = RED_REBEL_MAPS.has(mapNorm)
   const leftDay  = isDaytime(times.left)

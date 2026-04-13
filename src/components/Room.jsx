@@ -469,7 +469,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
             <>
               {/* Tabs */}
               <div className="tab-bar">
-                {[['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['find', 'WHAT TO LOOK FOR'], ['map', 'MAP / ROUTE'], ['bosses', 'BOSS SPAWNS']].map(([id, lbl]) => (
+                {[['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['find', 'WHAT TO LOOK FOR'], ['map', 'MAP / ROUTE'], ['bosses', 'BOSS SPAWNS / KEYS']].map(([id, lbl]) => (
                   <button key={id} onClick={() => setTab(id)} style={{
                     background: 'none', border: 'none',
                     borderBottom: `2px solid ${tab === id ? 'var(--gold)' : 'transparent'}`,

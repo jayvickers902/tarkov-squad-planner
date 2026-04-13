@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { TARKOV_API, FEATURED } from './constants'
 
 const MAPS_QUERY = `{ maps { id name normalizedName } }`
-const KEYS_QUERY = `{ items(types: [keys]) { id name avg24hPrice lastLowPrice wikiLink } }`
+const KEYS_QUERY = `{ items(types: [keys]) { id name avg24hPrice lastLowPrice wikiLink iconLink } }`
 
 // Known high-value keys per map — used to sort/badge priority keys to the top
 const PRIORITY_KEYS = {
