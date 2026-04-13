@@ -56,49 +56,52 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
         task.objectives?.forEach(obj => {
           if (obj.optional) return
           if (progress?.[`${task.id}::${obj.id}::${member}`]) return
+          const isOnMap = objIsOnMap(obj, mapNorm, task.map?.normalizedName)
+          if (!isOnMap) return
+
           const isPlant = obj.type === 'plantItem' && obj.item
           const isMark  = obj.type === 'mark' && obj.markerItem
           const isKeyObj = (obj.type === 'findItem' || obj.type === 'giveItem') && obj.item && keyIdSet.has(obj.item.id)
-          if (!isPlant && !isMark && !isKeyObj) return
-          if (!objIsOnMap(obj, mapNorm, task.map?.normalizedName)) return
-          const item = isMark ? obj.markerItem : obj.item
-          const count = isPlant || isKeyObj ? (obj.count || 1) : 1
-          const mapKey = `${item.id}::bring`
-          if (itemMap[mapKey]) {
-            itemMap[mapKey].count += count
-            if (!itemMap[mapKey].quests.includes(q.name)) itemMap[mapKey].quests.push(q.name)
-          } else {
-            itemMap[mapKey] = {
-              itemId: item.id,
-              name: item.name,
-              iconLink: item.iconLink || null,
-              count,
-              foundInRaid: obj.foundInRaid || false,
-              isKey: isKeyObj,
-              quests: [q.name],
+
+          // Add bring-in items (plants, markers, key hand-ins)
+          if (isPlant || isMark || isKeyObj) {
+            const item = isMark ? obj.markerItem : obj.item
+            const count = isPlant || isKeyObj ? (obj.count || 1) : 1
+            const mapKey = `${item.id}::bring`
+            if (itemMap[mapKey]) {
+              itemMap[mapKey].count += count
+              if (!itemMap[mapKey].quests.includes(q.name)) itemMap[mapKey].quests.push(q.name)
+            } else {
+              itemMap[mapKey] = {
+                itemId: item.id,
+                name: item.name,
+                iconLink: item.iconLink || null,
+                count,
+                foundInRaid: obj.foundInRaid || false,
+                isKey: isKeyObj,
+                quests: [q.name],
+              }
             }
           }
 
-          // Keys required to unlock doors for this objective
-          // requiredKeys is [[Item]] — each inner array is a set of alternatives for one lock
-          if (obj.requiredKeys?.length && objIsOnMap(obj, mapNorm, task.map?.normalizedName)) {
-            obj.requiredKeys.forEach(alternatives => {
-              alternatives?.forEach(keyItem => {
-                const rk = `${keyItem.id}::required`
-                if (itemMap[rk]) {
-                  if (!itemMap[rk].quests.includes(q.name)) itemMap[rk].quests.push(q.name)
-                } else {
-                  itemMap[rk] = {
-                    itemId: keyItem.id,
-                    name: keyItem.name,
-                    iconLink: keyItem.iconLink || null,
-                    count: 1,
-                    foundInRaid: false,
-                    isKey: true,
-                    quests: [q.name],
-                  }
+          // Keys required to access/complete this objective (all objective types)
+          if (obj.requiredKeys?.length) {
+            obj.requiredKeys.forEach(keyItem => {
+              if (!keyItem?.id) return
+              const rk = `${keyItem.id}::required`
+              if (itemMap[rk]) {
+                if (!itemMap[rk].quests.includes(q.name)) itemMap[rk].quests.push(q.name)
+              } else {
+                itemMap[rk] = {
+                  itemId: keyItem.id,
+                  name: keyItem.name,
+                  iconLink: keyItem.iconLink || null,
+                  count: 1,
+                  foundInRaid: false,
+                  isKey: true,
+                  quests: [q.name],
                 }
-              })
+              }
             })
           }
         })

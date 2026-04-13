@@ -73,17 +73,27 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
         if (progress[`${task.id}::${obj.id}::${myName}`]) return
         const isPlant = obj.type === 'plantItem' && obj.item
         const isMark  = obj.type === 'mark' && obj.markerItem
-        if (!isPlant && !isMark) return
         const onMap = obj.maps?.length > 0
           ? obj.maps.some(m => m.normalizedName === mapNorm)
           : task.map?.normalizedName === mapNorm
         if (!onMap) return
-        const item  = isPlant ? obj.item : obj.markerItem
-        const count = isPlant ? (obj.count || 1) : 1
-        if (itemMap[item.id]) {
-          itemMap[item.id].count += count
-        } else {
-          itemMap[item.id] = { name: item.name, iconLink: item.iconLink || null, count }
+        if (isPlant || isMark) {
+          const item  = isPlant ? obj.item : obj.markerItem
+          const count = isPlant ? (obj.count || 1) : 1
+          if (itemMap[item.id]) {
+            itemMap[item.id].count += count
+          } else {
+            itemMap[item.id] = { name: item.name, iconLink: item.iconLink || null, count, isKey: false }
+          }
+        }
+        // Keys required to access/complete objectives on this map
+        if (obj.requiredKeys?.length) {
+          obj.requiredKeys.forEach(keyItem => {
+            const rk = `rk::${keyItem.id}`
+            if (!itemMap[rk]) {
+              itemMap[rk] = { name: keyItem.name, iconLink: keyItem.iconLink || null, count: 1, isKey: true, questName: task.name }
+            }
+          })
         }
       })
     })
@@ -263,7 +273,10 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
                   <div key={item.name} style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     padding: '5px 9px',
-                    background: 'var(--sur2)', border: '1px solid var(--brd)', borderRadius: 3,
+                    background: 'var(--sur2)',
+                    border: '1px solid var(--brd)',
+                    borderLeft: item.isKey ? '3px solid var(--gold)' : '1px solid var(--brd)',
+                    borderRadius: 3,
                   }}>
                     {item.iconLink && (
                       <img src={item.iconLink} alt="" style={{
@@ -275,9 +288,19 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
                     <span className="mono" style={{ fontSize: 12, color: 'var(--goldtx)', fontWeight: 700, flexShrink: 0 }}>
                       {item.count}x
                     </span>
-                    <span style={{ fontSize: 12, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)' }}>
-                      {item.name}
-                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 12, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)' }}>
+                          {item.name}
+                        </span>
+                        {item.isKey && (
+                          <span className="mono" style={{ fontSize: 9, color: 'var(--goldtx)', background: 'rgba(201,168,76,0.12)', border: '1px solid var(--golddim)', borderRadius: 3, padding: '1px 5px', letterSpacing: '.06em', flexShrink: 0 }}>KEY</span>
+                        )}
+                      </div>
+                      {item.isKey && item.questName && (
+                        <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', marginTop: 1 }}>{item.questName}</div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
