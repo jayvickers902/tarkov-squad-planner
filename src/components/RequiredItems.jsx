@@ -74,24 +74,28 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
           }
 
           // Keys required to access/complete this objective — processed for ALL objective types
+          // requiredKeys is [[Item]] — each inner array is a set of alternatives for one lock
           if (obj.requiredKeys?.length) {
-            obj.requiredKeys.forEach(keyItem => {
-              if (!keyItem?.id) return
-              const rk = `${keyItem.id}::required`
-              if (itemMap[rk]) {
-                if (!itemMap[rk].quests.includes(q.name)) itemMap[rk].quests.push(q.name)
-              } else {
-                itemMap[rk] = {
-                  itemId: keyItem.id,
-                  name: keyItem.name,
-                  // tasks API may return null iconLink for keys — fall back to keys query data
-                  iconLink: keyItem.iconLink || keyIconMap[keyItem.id] || null,
-                  count: 1,
-                  foundInRaid: false,
-                  isKey: true,
-                  quests: [q.name],
+            obj.requiredKeys.forEach(alternatives => {
+              if (!alternatives?.length) return
+              alternatives.forEach(keyItem => {
+                if (!keyItem?.id) return
+                const rk = `${keyItem.id}::required`
+                if (itemMap[rk]) {
+                  if (!itemMap[rk].quests.includes(q.name)) itemMap[rk].quests.push(q.name)
+                } else {
+                  itemMap[rk] = {
+                    itemId: keyItem.id,
+                    name: keyItem.name,
+                    // tasks API may return null iconLink for keys — fall back to keys query data
+                    iconLink: keyItem.iconLink || keyIconMap[keyItem.id] || null,
+                    count: 1,
+                    foundInRaid: false,
+                    isKey: true,
+                    quests: [q.name],
+                  }
                 }
-              }
+              })
             })
           }
         })

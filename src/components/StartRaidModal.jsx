@@ -89,19 +89,23 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
           }
         }
         // Keys required to access/complete objectives on this map
+        // requiredKeys is [[Item]] — each inner array is a set of alternatives for one lock
         if (obj.requiredKeys?.length) {
-          obj.requiredKeys.forEach(keyItem => {
-            if (!keyItem?.id) return
-            const rk = `rk::${keyItem.id}`
-            if (!itemMap[rk]) {
-              itemMap[rk] = {
-                name: keyItem.name,
-                iconLink: keyItem.iconLink || keyIconMap[keyItem.id] || null,
-                count: 1,
-                isKey: true,
-                questName: task.name,
+          obj.requiredKeys.forEach(alternatives => {
+            if (!alternatives?.length) return
+            alternatives.forEach(keyItem => {
+              if (!keyItem?.id) return
+              const rk = `rk::${keyItem.id}`
+              if (!itemMap[rk]) {
+                itemMap[rk] = {
+                  name: keyItem.name,
+                  iconLink: keyItem.iconLink || keyIconMap[keyItem.id] || null,
+                  count: 1,
+                  isKey: true,
+                  questName: task.name,
+                }
               }
-            }
+            })
           })
         }
       })
