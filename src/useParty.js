@@ -39,7 +39,15 @@ export function useParty() {
 
     const poll = setInterval(async () => {
       const fresh = await fetchParty(code)
-      if (fresh) applyParty(fresh)
+      if (!fresh) return
+      const pending = pendingFieldsRef.current
+      if (pending.size === 0) {
+        applyParty(fresh)
+        return
+      }
+      const merged = { ...(partyRef.current || {}) }
+      Object.keys(fresh).forEach(k => { if (!pending.has(k)) merged[k] = fresh[k] })
+      applyParty(merged)
     }, 5000)
 
     const channel = supabase

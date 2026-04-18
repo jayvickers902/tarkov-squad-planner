@@ -58,11 +58,18 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
 
   const myQuests = party.members?.[myName] || []
 
+  const completedQuestIds = useMemo(() => new Set(
+    Object.entries(party.progress || {})
+      .filter(([k, v]) => k.startsWith('__done__:') && k.endsWith(`::${myName}`) && v)
+      .map(([k]) => k.slice(9, k.lastIndexOf('::')))
+  ), [party.progress, myName])
+
   const myMapQuests = useMemo(() => {
     return myQuests
+      .filter(q => !completedQuestIds.has(q.id))
       .map(q => tasks.find(t => t.id === q.id))
       .filter(t => t && t.map?.normalizedName === mapNorm)
-  }, [myQuests, tasks, mapNorm]) // eslint-disable-line
+  }, [myQuests, tasks, mapNorm, completedQuestIds]) // eslint-disable-line
 
   const myItems = useMemo(() => {
     const progress = party.progress || {}
