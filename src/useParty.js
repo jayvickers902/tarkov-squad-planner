@@ -417,10 +417,10 @@ export function useParty() {
     updatePartyDB({ markers })
   }, [updatePartyDB])
 
-  const startRaid = useCallback(() => {
+  const startRaid = useCallback((ts = Date.now()) => {
     const prev = partyRef.current
     if (!prev) return
-    const progress = { ...(prev.progress || {}), '__raid_start__': Date.now() }
+    const progress = { ...(prev.progress || {}), '__raid_start__': ts }
     applyParty({ ...prev, progress })
     updatePartyDB({ progress })
   }, [updatePartyDB])

@@ -50,10 +50,11 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
   const [confirmUnfriend, setConfirmUnfriend] = useState(null)
   const [chipTooltip, setChipTooltip] = useState(null)  // { task, anchor }
   const [dismissedRaidStart, setDismissedRaidStart] = useState(null)
+  const [startRaidPending, setStartRaidPending] = useState(false)
   const [raidView, setRaidView] = useState(false)
 
   const raidStart = party.progress?.['__raid_start__'] || null
-  const showRaidModal = !!party.map_id && raidStart !== null && raidStart !== dismissedRaidStart
+  const showRaidModal = startRaidPending || (!!party.map_id && raidStart !== null && raidStart !== dismissedRaidStart)
 
 
   async function handleSendRequest() {
@@ -124,7 +125,16 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
           party={party}
           myName={myName}
           tasks={allTasks}
-          onClose={() => setDismissedRaidStart(raidStart)}
+          onClose={() => {
+            if (startRaidPending) {
+              const ts = Date.now()
+              setStartRaidPending(false)
+              setDismissedRaidStart(ts)
+              onStartRaid(ts)
+            } else {
+              setDismissedRaidStart(raidStart)
+            }
+          }}
         />
       )}
 
@@ -179,7 +189,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
               </>
             )}
             {isLeader && party.map_id && (
-              <button className="btn-gold btn-sm" onClick={onStartRaid} style={{ letterSpacing: '.06em' }}>▶ START RAID</button>
+              <button className="btn-gold btn-sm" onClick={() => setStartRaidPending(true)} style={{ letterSpacing: '.06em' }}>▶ START RAID</button>
             )}
             <button className="btn-danger btn-sm" onClick={onLeave}>LEAVE</button>
           </div>
@@ -201,7 +211,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
               <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
             </div>
             {isLeader && party.map_id && (
-              <button className="btn-gold btn-sm" onClick={onStartRaid} style={{ letterSpacing: '.06em' }}>▶ START RAID</button>
+              <button className="btn-gold btn-sm" onClick={() => setStartRaidPending(true)} style={{ letterSpacing: '.06em' }}>▶ START RAID</button>
             )}
           </div>
         )}
