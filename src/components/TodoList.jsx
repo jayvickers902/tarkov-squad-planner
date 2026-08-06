@@ -93,6 +93,11 @@ const QuestCard = memo(function QuestCard({
               letterSpacing: '.03em',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{task.name}</div>
+            {task.incompleteData && (
+              <span className="mono" title="This saved quest is not present in the current API dataset" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.05em', flexShrink: 0 }}>
+                DATA INCOMPLETE
+              </span>
+            )}
             {task.kappaRequired && (
               <span className="mono" title="Required for Kappa" style={{
                 fontSize: 9, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
@@ -227,8 +232,14 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
 
   const questRows = useMemo(() => {
     const ids = [...new Set(Object.values(memberQuests).flat().map(q => q.id))]
-    return tasks
-      .filter(t => ids.includes(t.id))
+    return ids
+      .map(id => tasks.find(t => t.id === id) || {
+        id,
+        name: Object.values(memberQuests).flat().find(q => q.id === id)?.name || id,
+        objectives: [],
+        trader: null,
+        incompleteData: true,
+      })
       .map(task => {
         const owners    = Object.entries(memberQuests).filter(([, qs]) => qs.find(q => q.id === task.id)).map(([n]) => n)
         const objs      = objsForMap(task.objectives, mapNorm, task.map?.normalizedName)

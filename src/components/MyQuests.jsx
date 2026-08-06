@@ -72,6 +72,9 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
   const retryTarkovTasks = () => { retryTasks(); retryAllTasks() }
   const tarkovTaskCachedAt = tasksCachedAt || allTasksCachedAt
   const kappaIds = useMemo(() => new Set(allTasks.filter(t => t.kappaRequired).map(t => t.id)), [allTasks])
+  const unresolvedTaskIds = useMemo(() => new Set(
+    userQuests.filter(q => !allTasks.some(t => t.id === q.quest_id)).map(q => q.quest_id)
+  ), [userQuests, allTasks])
 
   const searchHits = useMemo(() => {
     if (searchQ.length < 1) return []
@@ -369,6 +372,11 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
                       {q.quest_name}
                     </span>
                     {kappaIds.has(q.quest_id) && <KappaBadge />}
+                    {unresolvedTaskIds.has(q.quest_id) && (
+                      <span className="mono" title="This saved quest is not present in the current API dataset" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.05em', flexShrink: 0 }}>
+                        DATA INCOMPLETE
+                      </span>
+                    )}
                   </div>
                   <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginTop: 2 }}>
                     {q.map_norm ? (MAP_NAMES[q.map_norm] || q.map_norm).toUpperCase() : 'ANY MAP'}

@@ -82,8 +82,13 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
     }
     const mapped = myQuests
       .map(q => {
-        const task = tasks.find(t => t.id === q.id)
-        if (!task) return null
+        const task = tasks.find(t => t.id === q.id) || {
+          id: q.id,
+          name: q.name || q.id,
+          objectives: [],
+          trader: null,
+          incompleteData: true,
+        }
         const objs = objsForMap(task.objectives, mapNorm, task.map?.normalizedName)
         // If a map is selected, hide quests with non-optional objectives but none on this map
         if (mapNorm) {
@@ -242,6 +247,11 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                   }}>
                     {task.name}
+                    {task.incompleteData && (
+                      <span className="mono" title="This saved quest is not present in the current API dataset" style={{ marginLeft: 7, fontSize: 9, color: 'var(--gold)', letterSpacing: '.05em' }}>
+                        DATA INCOMPLETE
+                      </span>
+                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                     {task.kappaRequired && (

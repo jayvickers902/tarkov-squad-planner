@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css'
 import { TARKOV_MAP_CONFIGS } from '../data/tarkovMapConfigs'
 import { SPAWNS } from '../constants'
 import { gqlRetry } from '../useTarkov'
+import { getRestSpawns } from '../tarkovRest'
 import { useMapKeys } from '../useMapKeys'
 
 const SPAWNS_QUERY = `{ maps { normalizedName spawns { position { x y z } sides categories } } }`
@@ -11,10 +12,18 @@ let spawnsCache = null
 
 async function fetchAllSpawns({ signal } = {}) {
   if (spawnsCache !== null) return spawnsCache
-  const data = await gqlRetry(SPAWNS_QUERY, { signal })
-  if (!Array.isArray(data?.maps)) throw new Error('tarkov.dev returned no spawn data')
-  spawnsCache = data.maps
-  return spawnsCache
+  try {
+    const data = await gqlRetry(SPAWNS_QUERY, { signal })
+    if (!Array.isArray(data?.maps)) throw new Error('tarkov.dev returned no spawn data')
+    spawnsCache = data.maps
+    return spawnsCache
+  } catch (graphqlError) {
+    if (graphqlError?.name === 'AbortError') throw graphqlError
+    const result = await getRestSpawns(signal)
+    console.warn('tarkov.dev GraphQL PMC spawns unavailable; using json.tarkov.dev', graphqlError)
+    spawnsCache = result.data
+    return spawnsCache
+  }
 }
 
 function fallbackSpawns(mapNorm) {

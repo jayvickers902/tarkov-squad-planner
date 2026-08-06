@@ -83,6 +83,8 @@ button {
   font-size: 12px;
 }
 .tarkov-status strong { color: #e07070; }
+.tarkov-status-rest { border-color: var(--golddim); background: rgba(201,168,76,0.06); }
+.tarkov-status-rest strong { color: var(--goldtx); }
 .tarkov-status-cache { color: var(--goldtx); font-family: 'Share Tech Mono', monospace; font-size: 11px; }
 .tarkov-status button { margin-left: auto; color: var(--goldtx); border-color: var(--golddim); }
 

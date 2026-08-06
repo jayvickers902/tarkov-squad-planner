@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { TARKOV_API, FEATURED } from './constants'
+import { getRestMaps, getRestTasks, getRestKeys, getRestBosses } from './tarkovRest'
 
 const MAPS_QUERY = `{ maps { id name normalizedName } }`
 const KEYS_QUERY = `{ items(types: [keys]) { id name avg24hPrice lastLowPrice wikiLink iconLink } }`
@@ -151,6 +152,10 @@ function isAbort(error) {
   return error?.name === 'AbortError'
 }
 
+function restFallbackError(cause, fromCache) {
+  return { source: 'rest', cause, fromCache }
+}
+
 const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink trader { name imageLink } map { id normalizedName } objectives { id description type optional maps { normalizedName } ... on TaskObjectiveItem { item { id name iconLink } count foundInRaid requiredKeys { id name iconLink } } ... on TaskObjectiveMark { markerItem { id name iconLink } requiredKeys { id name iconLink } } ... on TaskObjectiveBasic { zones { id position { x y z } map { normalizedName } } requiredKeys { id name iconLink } } ... on TaskObjectiveShoot { zones { id position { x y z } map { normalizedName } } } } } }`
 
 export function useMaps() {
@@ -174,10 +179,21 @@ export function useMaps() {
         setCachedAt(Date.now())
         writePersisted(STORAGE_KEYS.maps, nextMaps)
       })
-      .catch(err => {
-        if (active && !isAbort(err)) {
-          console.warn('tarkov.dev maps fetch failed', err)
-          setError(err)
+      .catch(async err => {
+        if (!active || isAbort(err)) return
+        try {
+          const result = await getRestMaps(controller.signal)
+          const nextMaps = filteredMaps(result.data)
+          if (!active) return
+          console.warn('tarkov.dev GraphQL maps unavailable; using json.tarkov.dev', err)
+          setMaps(nextMaps)
+          setCachedAt(result.cachedAt)
+          setError(restFallbackError(err, result.fromCache))
+        } catch (restError) {
+          if (active && !isAbort(restError)) {
+            console.warn('tarkov.dev and json.tarkov.dev maps fetch failed', restError)
+            setError(restError)
+          }
         }
       })
       .finally(() => { if (active) setLoading(false) })
@@ -213,10 +229,20 @@ export function useTasks(mapNorm) {
         setCachedAt(tasksCacheAt)
         writePersisted(STORAGE_KEYS.tasks, nextTasks)
       })
-      .catch(err => {
-        if (active && !isAbort(err)) {
-          console.warn('tarkov.dev tasks fetch failed', err)
-          setError(err)
+      .catch(async err => {
+        if (!active || isAbort(err)) return
+        try {
+          const result = await getRestTasks(controller.signal)
+          if (!active) return
+          console.warn('tarkov.dev GraphQL tasks unavailable; using json.tarkov.dev', err)
+          setTasks(result.data)
+          setCachedAt(result.cachedAt)
+          setError(restFallbackError(err, result.fromCache))
+        } catch (restError) {
+          if (active && !isAbort(restError)) {
+            console.warn('tarkov.dev and json.tarkov.dev tasks fetch failed', restError)
+            setError(restError)
+          }
         }
       })
       .finally(() => { if (active) setLoading(false) })
@@ -257,38 +283,44 @@ export function useBossSpawns() {
     let active = true
     setError(null)
     setLoading(mapBosses.length === 0 || Object.keys(bossPortraits).length === 0)
-    const mapRequest = gqlRetry(MAP_BOSSES_QUERY, { signal: controller.signal })
-      .then(data => {
-        const maps = requireArray(data, 'maps')
-        if (active) {
-          mapBossCache = maps
-          mapBossCacheAt = Date.now()
-          setMapBosses(maps)
-          setCachedAt(mapBossCacheAt)
-          writePersisted(STORAGE_KEYS.bosses, maps)
-        }
-      })
-    const portraitRequest = gqlRetry(BOSS_INFO_QUERY, { signal: controller.signal })
-      .then(data => {
-        const bosses = requireArray(data, 'bosses')
+    Promise.all([
+      gqlRetry(MAP_BOSSES_QUERY, { signal: controller.signal }),
+      gqlRetry(BOSS_INFO_QUERY, { signal: controller.signal }),
+    ])
+      .then(([mapData, portraitData]) => {
+        const maps = requireArray(mapData, 'maps')
+        const bosses = requireArray(portraitData, 'bosses')
         const portraits = {}
         for (const b of bosses) portraits[b.name] = b.imagePortraitLink
-        if (active) {
-          bossPortraitsCache = portraits
-          bossPortraitsCacheAt = Date.now()
-          setBossPortraits(portraits)
-          setCachedAt(bossPortraitsCacheAt)
-          writePersisted(STORAGE_KEYS.bossPortraits, portraits)
+        if (!active) return
+        mapBossCache = maps
+        mapBossCacheAt = Date.now()
+        bossPortraitsCache = portraits
+        bossPortraitsCacheAt = mapBossCacheAt
+        setMapBosses(maps)
+        setBossPortraits(portraits)
+        setCachedAt(mapBossCacheAt)
+        writePersisted(STORAGE_KEYS.bosses, maps)
+        writePersisted(STORAGE_KEYS.bossPortraits, portraits)
+      })
+      .catch(async err => {
+        if (!active || isAbort(err)) return
+        try {
+          const result = await getRestBosses(controller.signal)
+          if (!active) return
+          console.warn('tarkov.dev GraphQL boss data unavailable; using json.tarkov.dev', err)
+          setMapBosses(result.data.maps)
+          setBossPortraits(result.data.portraits)
+          setCachedAt(result.cachedAt)
+          setError(restFallbackError(err, result.fromCache))
+        } catch (restError) {
+          if (active && !isAbort(restError)) {
+            console.warn('tarkov.dev and json.tarkov.dev boss data fetch failed', restError)
+            setError(restError)
+          }
         }
       })
-    Promise.allSettled([mapRequest, portraitRequest]).then(results => {
-      if (!active) return
-      const failed = results.find(result => result.status === 'rejected' && !isAbort(result.reason))
-      if (failed) {
-        console.warn('tarkov.dev boss data fetch failed', failed.reason)
-        setError(failed.reason)
-      }
-    }).finally(() => { if (active) setLoading(false) })
+      .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
   }, [retryToken]) // eslint-disable-line
 
@@ -327,10 +359,20 @@ export function useKeys(mapNorm) {
         setCachedAt(keysCacheAt)
         writePersisted(STORAGE_KEYS.keys, nextKeys)
       })
-      .catch(err => {
-        if (active && !isAbort(err)) {
-          console.warn('tarkov.dev keys fetch failed', err)
-          setError(err)
+      .catch(async err => {
+        if (!active || isAbort(err)) return
+        try {
+          const result = await getRestKeys(controller.signal)
+          if (!active) return
+          console.warn('tarkov.dev GraphQL keys unavailable; using json.tarkov.dev', err)
+          setAllKeys(result.data)
+          setCachedAt(result.cachedAt)
+          setError(restFallbackError(err, result.fromCache))
+        } catch (restError) {
+          if (active && !isAbort(restError)) {
+            console.warn('tarkov.dev and json.tarkov.dev keys fetch failed', restError)
+            setError(restError)
+          }
         }
       })
       .finally(() => { if (active) setLoading(false) })
