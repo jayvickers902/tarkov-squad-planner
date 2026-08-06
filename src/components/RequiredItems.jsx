@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useKeys } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
+import TarkovStatus from './TarkovStatus'
 
 const MEMBER_COLORS = [
   { bg: '#1a2e3a', border: '#1e5a7a', text: '#5aace8' },
@@ -26,7 +27,7 @@ function objIsOnMap(obj, mapNorm, taskMapNorm) {
 export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }) {
   const members = Object.keys(memberQuests)
   const [activeMember, setActiveMember] = useState('all')
-  const { allKeys } = useKeys(mapNorm)
+  const { allKeys, error: keysError, retry: retryKeys, cachedAt: keysCachedAt } = useKeys(mapNorm)
 
   const keyIdSet = useMemo(() => new Set(allKeys.map(k => k.id)), [allKeys])
   // Lookup map for key iconLink by id — tasks query may return null iconLink, fall back to keys query
@@ -114,6 +115,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <TarkovStatus error={keysError} retry={retryKeys} cachedAt={keysCachedAt} />
 
       {/* Cliff descent reminder */}
       {hasCliffDescent && (

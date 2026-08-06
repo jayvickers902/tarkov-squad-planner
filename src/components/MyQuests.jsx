@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useTasks } from '../useTarkov'
 import { FEATURED } from '../constants'
 import QuestScanner from './QuestScanner'
+import TarkovStatus from './TarkovStatus'
 
 // Small Kappa badge — reused in search results and saved list
 function KappaBadge() {
@@ -64,9 +65,12 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
   }
 
   // Load tasks for the currently selected search map
-  const { tasks, loading: tasksLoading } = useTasks(searchMap === 'any' ? null : searchMap)
+  const { tasks, loading: tasksLoading, error: tasksError, retry: retryTasks, cachedAt: tasksCachedAt } = useTasks(searchMap === 'any' ? null : searchMap)
   // Always load all tasks for kappa lookup (uses module-level cache — no extra fetch)
-  const { tasks: allTasks } = useTasks(null)
+  const { tasks: allTasks, error: allTasksError, retry: retryAllTasks, cachedAt: allTasksCachedAt } = useTasks(null)
+  const tarkovTaskError = tasksError || allTasksError
+  const retryTarkovTasks = () => { retryTasks(); retryAllTasks() }
+  const tarkovTaskCachedAt = tasksCachedAt || allTasksCachedAt
   const kappaIds = useMemo(() => new Set(allTasks.filter(t => t.kappaRequired).map(t => t.id)), [allTasks])
 
   const searchHits = useMemo(() => {
@@ -169,6 +173,8 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
           ◆ YOUR PARTY IS STILL ACTIVE — CHANGES HERE WON'T AFFECT THE CURRENT RAID
         </div>
       )}
+
+      <TarkovStatus error={tarkovTaskError} retry={retryTarkovTasks} cachedAt={tarkovTaskCachedAt} />
 
       {/* Snapshot save / restore */}
       {snapKey && (

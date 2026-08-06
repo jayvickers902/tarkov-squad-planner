@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useBossSpawns, useKeys } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
+import TarkovStatus from './TarkovStatus'
 
 function toAntifandom(url) {
   if (!url) return null
@@ -40,7 +41,7 @@ function SpawnBar({ chance }) {
 
 export default function StartRaidModal({ party, myName, tasks, onClose }) {
   const [times, setTimes] = useState(getTarkovTimes)
-  const { getBossesForMap, loading: bossLoading } = useBossSpawns()
+  const { getBossesForMap, loading: bossLoading, error: bossError, retry: retryBosses, cachedAt: bossesCachedAt } = useBossSpawns()
 
   useEffect(() => {
     const id = setInterval(() => setTimes(getTarkovTimes()), 1000)
@@ -50,7 +51,7 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
   const mapNorm = party.map_norm
   const mapName = party.map_name
   const isFactory = mapNorm === 'factory'
-  const { allKeys } = useKeys(mapNorm)
+  const { allKeys, error: keysError, retry: retryKeys, cachedAt: keysCachedAt } = useKeys(mapNorm)
   const keyIconMap = useMemo(() => Object.fromEntries(allKeys.map(k => [k.id, k.iconLink || null])), [allKeys])
   const dayBosses   = mapNorm ? getBossesForMap(isFactory ? 'factory' : mapNorm) : []
   const nightBosses = isFactory ? getBossesForMap('night-factory') : []
@@ -168,6 +169,8 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
 
         {/* Body */}
         <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <TarkovStatus error={bossError} retry={retryBosses} cachedAt={bossesCachedAt} />
+          <TarkovStatus error={keysError} retry={retryKeys} cachedAt={keysCachedAt} />
 
           {/* Clocks + Bosses */}
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>

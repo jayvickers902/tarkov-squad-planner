@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import TarkovStatus from './TarkovStatus'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
@@ -12,7 +13,7 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
-export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, loading }) {
+export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, loading, error, retry, cachedAt }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
 
   const orderKey = myName ? `tarkov_quest_order_${myName}` : null
@@ -150,7 +151,9 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
       )
     }
     return (
-      <div style={{ textAlign: 'center', padding: '40px 24px' }}>
+      <div>
+        <TarkovStatus error={error} retry={retry} cachedAt={cachedAt} />
+        <div style={{ textAlign: 'center', padding: '40px 24px' }}>
         <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>
           {hasAnyQuests ? 'NO QUESTS FOR THIS MAP' : 'NO QUESTS ADDED'}
         </div>
@@ -160,12 +163,14 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
             : <>CLICK <button onClick={onOpenQuestManager} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11, color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button> AT THE TOP TO IMPORT YOUR QUESTS</>
           }
         </div>
+        </div>
       </div>
     )
   }
 
   return (
     <div>
+      <TarkovStatus error={error} retry={retry} cachedAt={cachedAt} />
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div>

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useBossSpawns, useKeys } from '../useTarkov'
 import { useMapKeys } from '../useMapKeys'
+import TarkovStatus from './TarkovStatus'
 
 const FMT = new Intl.NumberFormat('en-US')
 
@@ -58,8 +59,8 @@ function MapBossSection({ label, bosses }) {
 }
 
 export default function BossPanel({ mapNorm }) {
-  const { getBossesForMap, loading: bossLoading } = useBossSpawns()
-  const { keys, allKeys, loading: keysLoading } = useKeys(mapNorm)
+  const { getBossesForMap, loading: bossLoading, error: bossError, retry: retryBosses, cachedAt: bossesCachedAt } = useBossSpawns()
+  const { keys, allKeys, loading: keysLoading, error: keysError, retry: retryKeys, cachedAt: keysCachedAt } = useKeys(mapNorm)
   const { mapKeys } = useMapKeys(mapNorm)
 
   const isFactory   = mapNorm === 'factory'
@@ -74,6 +75,8 @@ export default function BossPanel({ mapNorm }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <TarkovStatus error={bossError} retry={retryBosses} cachedAt={bossesCachedAt} />
+      <TarkovStatus error={keysError} retry={retryKeys} cachedAt={keysCachedAt} />
 
       {/* Boss Spawns */}
       <div>

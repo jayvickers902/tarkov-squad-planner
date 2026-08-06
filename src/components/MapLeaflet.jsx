@@ -2,18 +2,35 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { TARKOV_MAP_CONFIGS } from '../data/tarkovMapConfigs'
-import { TARKOV_API } from '../constants'
+import { SPAWNS } from '../constants'
+import { gqlRetry } from '../useTarkov'
 import { useMapKeys } from '../useMapKeys'
 
 const SPAWNS_QUERY = `{ maps { normalizedName spawns { position { x y z } sides categories } } }`
 let spawnsCache = null
 
-async function fetchAllSpawns() {
-  if (spawnsCache) return spawnsCache
-  const res = await fetch(TARKOV_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: SPAWNS_QUERY }) })
-  const { data } = await res.json()
+async function fetchAllSpawns({ signal } = {}) {
+  if (spawnsCache !== null) return spawnsCache
+  const data = await gqlRetry(SPAWNS_QUERY, { signal })
+  if (!Array.isArray(data?.maps)) throw new Error('tarkov.dev returned no spawn data')
   spawnsCache = data.maps
   return spawnsCache
+}
+
+function fallbackSpawns(mapNorm) {
+  const cfg = TARKOV_MAP_CONFIGS[mapNorm]
+  const points = SPAWNS[mapNorm]
+  if (!cfg || !points) return []
+  const minX = Math.min(cfg.bounds[0][0], cfg.bounds[1][0])
+  const maxX = Math.max(cfg.bounds[0][0], cfg.bounds[1][0])
+  const minZ = Math.min(cfg.bounds[0][1], cfg.bounds[1][1])
+  const maxZ = Math.max(cfg.bounds[0][1], cfg.bounds[1][1])
+  return points.map(point => ({
+    position: {
+      x: minX + point.x * (maxX - minX),
+      z: minZ + (1 - point.y) * (maxZ - minZ),
+    },
+  }))
 }
 
 // Cluster individual PMC player slots into zone centers via greedy nearest-centroid
@@ -489,13 +506,21 @@ export default function MapLeaflet({
 
   // ─── Fetch spawn data from tarkov.dev API ────────────────────────────────────
   useEffect(() => {
-    fetchAllSpawns().then(maps => {
+    const controller = new AbortController()
+    fetchAllSpawns({ signal: controller.signal }).then(maps => {
       const byMap = {}
       for (const m of maps) {
         byMap[m.normalizedName] = clusterPmcZones(m.spawns)
       }
       setApiSpawns(byMap)
-    }).catch(() => {})
+    }).catch(error => {
+      if (error.name !== 'AbortError') {
+        console.warn('tarkov.dev PMC spawn fetch failed; using built-in spawn coordinates', error)
+        const fallback = Object.fromEntries(Object.keys(SPAWNS).map(norm => [norm, fallbackSpawns(norm)]))
+        setApiSpawns(fallback)
+      }
+    })
+    return () => controller.abort()
   }, [])
 
   // ─── Sync PMC spawn markers ───────────────────────────────────────────────

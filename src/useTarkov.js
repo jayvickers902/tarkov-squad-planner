@@ -44,58 +44,194 @@ function keyToMap(name) {
   return null
 }
 
-let keysCache       = null
-let tasksCache      = null // cache busted — requiredKeys moved to inline fragments
-let mapBossCache    = null
+let keysCache = null
+let tasksCache = null // cache busted — requiredKeys moved to inline fragments
+let mapBossCache = null
 let bossPortraitsCache = null
+let keysCacheAt = null
+let tasksCacheAt = null
+let mapBossCacheAt = null
+let bossPortraitsCacheAt = null
+
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000
+const STORAGE_KEYS = {
+  keys: 'tsp.cache.keys',
+  tasks: 'tsp.cache.tasks',
+  maps: 'tsp.cache.maps',
+  bosses: 'tsp.cache.bosses',
+  bossPortraits: 'tsp.cache.bossPortraits',
+}
+
+function readPersisted(key) {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const entry = JSON.parse(raw)
+    if (entry?.v !== 1 || !Number.isFinite(entry.savedAt) || entry.data == null) return null
+    if (Date.now() - entry.savedAt > CACHE_TTL) return null
+    return { data: entry.data, savedAt: entry.savedAt }
+  } catch {
+    return null
+  }
+}
+
+function writePersisted(key, data) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ v: 1, savedAt: Date.now(), data }))
+  } catch {
+    // Storage is optional. A large tasks payload may exceed quota.
+  }
+}
+
+function cacheSeed(storageKey, memoryValue, memorySavedAt, fallback, isValid = () => true) {
+  if (memoryValue !== null) return { data: memoryValue, savedAt: memorySavedAt, fromMemory: true }
+  const persisted = readPersisted(storageKey)
+  return persisted && isValid(persisted.data)
+    ? { data: persisted.data, savedAt: persisted.savedAt, fromMemory: false }
+    : { data: fallback, savedAt: null, fromMemory: false }
+}
+
+function abortError(signal) {
+  return new Promise((_, reject) => {
+    if (!signal) return
+    if (signal.aborted) {
+      reject(new DOMException('The operation was aborted.', 'AbortError'))
+      return
+    }
+    signal.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')), { once: true })
+  })
+}
+
+export async function gql(query, { signal } = {}) {
+  const res = await fetch(TARKOV_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+    signal,
+  })
+  if (!res.ok) throw new Error(`tarkov.dev HTTP ${res.status}`)
+  const body = await res.json()
+  if (body.errors?.length) {
+    const first = body.errors[0]
+    throw new Error(first?.message || first || 'GraphQL error')
+  }
+  if (!body.data) throw new Error('tarkov.dev returned no data')
+  return body.data
+}
+
+export async function gqlRetry(query, { signal, attempts = 3 } = {}) {
+  let lastErr
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await gql(query, { signal })
+    } catch (e) {
+      if (e.name === 'AbortError') throw e
+      lastErr = e
+      if (i < attempts - 1) {
+        const delay = new Promise(resolve => setTimeout(resolve, 500 * 2 ** i))
+        await Promise.race([delay, abortError(signal)])
+      }
+    }
+  }
+  throw lastErr
+}
+
+function requireArray(data, key) {
+  if (!Array.isArray(data?.[key])) throw new Error(`tarkov.dev returned no ${key} data`)
+  return data[key]
+}
+
+function filteredMaps(maps) {
+  return maps
+    .filter(m => FEATURED.includes(m.normalizedName))
+    .sort((a, b) => FEATURED.indexOf(a.normalizedName) - FEATURED.indexOf(b.normalizedName))
+}
+
+function isAbort(error) {
+  return error?.name === 'AbortError'
+}
+
 const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink trader { name imageLink } map { id normalizedName } objectives { id description type optional maps { normalizedName } ... on TaskObjectiveItem { item { id name iconLink } count foundInRaid requiredKeys { id name iconLink } } ... on TaskObjectiveMark { markerItem { id name iconLink } requiredKeys { id name iconLink } } ... on TaskObjectiveBasic { zones { id position { x y z } map { normalizedName } } requiredKeys { id name iconLink } } ... on TaskObjectiveShoot { zones { id position { x y z } map { normalizedName } } } } } }`
 
 export function useMaps() {
-  const [maps, setMaps]       = useState([])
-  const [loading, setLoading] = useState(true)
+  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.maps, null, null, [], Array.isArray))
+  const [maps, setMaps] = useState(seed.data)
+  const [cachedAt, setCachedAt] = useState(seed.savedAt)
+  const [loading, setLoading] = useState(seed.data.length === 0)
+  const [error, setError] = useState(null)
+  const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
-    fetch(TARKOV_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: MAPS_QUERY }) })
-      .then(r => r.json())
-      .then(d => setMaps(
-        (d.data?.maps || [])
-          .filter(m => FEATURED.includes(m.normalizedName))
-          .sort((a, b) => FEATURED.indexOf(a.normalizedName) - FEATURED.indexOf(b.normalizedName))
-      ))
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [])
+    const controller = new AbortController()
+    let active = true
+    setError(null)
+    setLoading(maps.length === 0)
+    gqlRetry(MAPS_QUERY, { signal: controller.signal })
+      .then(data => {
+        const nextMaps = filteredMaps(requireArray(data, 'maps'))
+        if (!active) return
+        setMaps(nextMaps)
+        setCachedAt(Date.now())
+        writePersisted(STORAGE_KEYS.maps, nextMaps)
+      })
+      .catch(err => {
+        if (active && !isAbort(err)) {
+          console.warn('tarkov.dev maps fetch failed', err)
+          setError(err)
+        }
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false; controller.abort() }
+  }, [retryToken]) // eslint-disable-line
 
-  return { maps, loading }
+  return { maps, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
 }
 
 // Pass mapNorm=null to get all tasks (used in MyQuests search)
 // Pass a mapNorm string to get map-filtered tasks (used in party quest search)
 export function useTasks(mapNorm) {
-  const [tasks, setTasks]     = useState(() => tasksCache || [])
-  const [loading, setLoading] = useState(!tasksCache)
-  const [fetched, setFetched] = useState(!!tasksCache)
+  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.tasks, tasksCache, tasksCacheAt, [], Array.isArray))
+  const [tasks, setTasks] = useState(seed.data)
+  const [cachedAt, setCachedAt] = useState(seed.savedAt)
+  const [loading, setLoading] = useState(seed.data.length === 0)
+  const [error, setError] = useState(null)
+  const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
-    if (fetched) return  // only fetch once — all tasks come in one call
-    setLoading(true)
-    fetch(TARKOV_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: TASKS_QUERY }) })
-      .then(r => r.json())
-      .then(d => { tasksCache = d.data?.tasks || []; setTasks(tasksCache); setFetched(true) })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, []) // eslint-disable-line
+    if (seed.fromMemory && retryToken === 0) return
+    const controller = new AbortController()
+    let active = true
+    setError(null)
+    setLoading(tasks.length === 0)
+    gqlRetry(TASKS_QUERY, { signal: controller.signal })
+      .then(data => {
+        const nextTasks = requireArray(data, 'tasks')
+        if (!active) return
+        tasksCache = nextTasks
+        tasksCacheAt = Date.now()
+        setTasks(nextTasks)
+        setCachedAt(tasksCacheAt)
+        writePersisted(STORAGE_KEYS.tasks, nextTasks)
+      })
+      .catch(err => {
+        if (active && !isAbort(err)) {
+          console.warn('tarkov.dev tasks fetch failed', err)
+          setError(err)
+        }
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false; controller.abort() }
+  }, [retryToken]) // eslint-disable-line
 
-  // Filter client-side based on mapNorm
   const filtered = mapNorm === null
-    ? tasks  // return everything for MyQuests
+    ? tasks
     : tasks.filter(t => !t.map || t.map === null || t.map?.normalizedName === mapNorm)
 
-  return { tasks: filtered, loading }
+  return { tasks: filtered, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
 }
 
-const MAP_BOSSES_QUERY  = `{ maps { name normalizedName bosses { name spawnChance } } }`
-const BOSS_INFO_QUERY   = `{ bosses { name normalizedName imagePortraitLink } }`
+const MAP_BOSSES_QUERY = `{ maps { name normalizedName bosses { name spawnChance } } }`
+const BOSS_INFO_QUERY = `{ bosses { name normalizedName imagePortraitLink } }`
 
 const BOSS_EXCLUDE = new Set([
   'reshala guard', 'shturman guard', 'sanitar guard', 'glukhar guard (assault)',
@@ -106,30 +242,55 @@ const BOSS_EXCLUDE = new Set([
 ])
 
 export function useBossSpawns() {
-  const [mapBosses, setMapBosses]       = useState(mapBossCache || [])
-  const [bossPortraits, setBossPortraits] = useState(bossPortraitsCache || {})
-  const [loading, setLoading]           = useState(!mapBossCache || !bossPortraitsCache)
+  const [mapSeed] = useState(() => cacheSeed(STORAGE_KEYS.bosses, mapBossCache, mapBossCacheAt, [], Array.isArray))
+  const [portraitSeed] = useState(() => cacheSeed(STORAGE_KEYS.bossPortraits, bossPortraitsCache, bossPortraitsCacheAt, {}, value => value && !Array.isArray(value) && typeof value === 'object'))
+  const [mapBosses, setMapBosses] = useState(mapSeed.data)
+  const [bossPortraits, setBossPortraits] = useState(portraitSeed.data)
+  const [cachedAt, setCachedAt] = useState(mapSeed.savedAt || portraitSeed.savedAt)
+  const [loading, setLoading] = useState(mapSeed.data.length === 0 || Object.keys(portraitSeed.data).length === 0)
+  const [error, setError] = useState(null)
+  const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
-    if (mapBossCache && bossPortraitsCache) return
-    const p1 = mapBossCache
-      ? Promise.resolve(mapBossCache)
-      : fetch(TARKOV_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: MAP_BOSSES_QUERY }) })
-          .then(r => r.json()).then(d => { mapBossCache = d.data?.maps || []; return mapBossCache })
-    const p2 = bossPortraitsCache
-      ? Promise.resolve(bossPortraitsCache)
-      : fetch(TARKOV_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: BOSS_INFO_QUERY }) })
-          .then(r => r.json()).then(d => {
-            const map = {}
-            for (const b of d.data?.bosses || []) map[b.name] = b.imagePortraitLink
-            bossPortraitsCache = map
-            return bossPortraitsCache
-          })
-    Promise.all([p1, p2])
-      .then(([maps, portraits]) => { setMapBosses(maps); setBossPortraits(portraits) })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, []) // eslint-disable-line
+    if (mapSeed.fromMemory && portraitSeed.fromMemory && retryToken === 0) return
+    const controller = new AbortController()
+    let active = true
+    setError(null)
+    setLoading(mapBosses.length === 0 || Object.keys(bossPortraits).length === 0)
+    const mapRequest = gqlRetry(MAP_BOSSES_QUERY, { signal: controller.signal })
+      .then(data => {
+        const maps = requireArray(data, 'maps')
+        if (active) {
+          mapBossCache = maps
+          mapBossCacheAt = Date.now()
+          setMapBosses(maps)
+          setCachedAt(mapBossCacheAt)
+          writePersisted(STORAGE_KEYS.bosses, maps)
+        }
+      })
+    const portraitRequest = gqlRetry(BOSS_INFO_QUERY, { signal: controller.signal })
+      .then(data => {
+        const bosses = requireArray(data, 'bosses')
+        const portraits = {}
+        for (const b of bosses) portraits[b.name] = b.imagePortraitLink
+        if (active) {
+          bossPortraitsCache = portraits
+          bossPortraitsCacheAt = Date.now()
+          setBossPortraits(portraits)
+          setCachedAt(bossPortraitsCacheAt)
+          writePersisted(STORAGE_KEYS.bossPortraits, portraits)
+        }
+      })
+    Promise.allSettled([mapRequest, portraitRequest]).then(results => {
+      if (!active) return
+      const failed = results.find(result => result.status === 'rejected' && !isAbort(result.reason))
+      if (failed) {
+        console.warn('tarkov.dev boss data fetch failed', failed.reason)
+        setError(failed.reason)
+      }
+    }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false; controller.abort() }
+  }, [retryToken]) // eslint-disable-line
 
   function getBossesForMap(normName) {
     const mapData = mapBosses.find(m => m.normalizedName === normName)
@@ -139,22 +300,42 @@ export function useBossSpawns() {
       .map(b => ({ name: b.name, spawnChance: b.spawnChance, portrait: bossPortraits[b.name] || null }))
   }
 
-  return { getBossesForMap, loading }
+  return { getBossesForMap, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
 }
 
 export function useKeys(mapNorm) {
-  const [allKeys, setAllKeys] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.keys, keysCache, keysCacheAt, [], Array.isArray))
+  const [allKeys, setAllKeys] = useState(seed.data)
+  const [cachedAt, setCachedAt] = useState(seed.savedAt)
+  const [loading, setLoading] = useState(seed.data.length === 0)
+  const [error, setError] = useState(null)
+  const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
-    if (keysCache) { setAllKeys(keysCache); return }
-    setLoading(true)
-    fetch(TARKOV_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: KEYS_QUERY }) })
-      .then(r => r.json())
-      .then(d => { keysCache = d.data?.items || []; setAllKeys(keysCache) })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [])
+    if (seed.fromMemory && retryToken === 0) return
+    const controller = new AbortController()
+    let active = true
+    setError(null)
+    setLoading(allKeys.length === 0)
+    gqlRetry(KEYS_QUERY, { signal: controller.signal })
+      .then(data => {
+        const nextKeys = requireArray(data, 'items')
+        if (!active) return
+        keysCache = nextKeys
+        keysCacheAt = Date.now()
+        setAllKeys(nextKeys)
+        setCachedAt(keysCacheAt)
+        writePersisted(STORAGE_KEYS.keys, nextKeys)
+      })
+      .catch(err => {
+        if (active && !isAbort(err)) {
+          console.warn('tarkov.dev keys fetch failed', err)
+          setError(err)
+        }
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false; controller.abort() }
+  }, [retryToken]) // eslint-disable-line
 
   const keys = useMemo(() => {
     if (!mapNorm || !allKeys.length) return []
@@ -167,5 +348,5 @@ export function useKeys(mapNorm) {
       })
   }, [allKeys, mapNorm])
 
-  return { keys, allKeys, loading }
+  return { keys, allKeys, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
 }

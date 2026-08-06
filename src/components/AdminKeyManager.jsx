@@ -3,6 +3,7 @@ import { FEATURED, MAP_IMAGES } from '../constants'
 import { useKeys } from '../useTarkov'
 import { useMapKeys } from '../useMapKeys'
 import { useIsMobile } from '../useIsMobile'
+import TarkovStatus from './TarkovStatus'
 
 const MAP_LABELS = {
   'customs': 'Customs', 'woods': 'Woods', 'interchange': 'Interchange',
@@ -19,7 +20,7 @@ export default function AdminKeyManager({ onBack }) {
   const imgRef = useRef(null)
 
   const isMobile = useIsMobile()
-  const { keys, loading: keysLoading } = useKeys(mapNorm)
+  const { keys, loading: keysLoading, error: keysError, retry: retryKeys, cachedAt: keysCachedAt } = useKeys(mapNorm)
   const { mapKeys, upsertKey }         = useMapKeys(mapNorm)
 
   function flash(msg) { setFeedback(msg); setTimeout(() => setFeedback(''), 2000) }
@@ -94,6 +95,7 @@ export default function AdminKeyManager({ onBack }) {
 
         {/* Key list */}
         <div className="card" style={{ padding: 14, maxHeight: '80vh', overflowY: 'auto' }}>
+          <TarkovStatus error={keysError} retry={retryKeys} cachedAt={keysCachedAt} />
           <div className="lbl" style={{ marginBottom: 10 }}>
             {keys.length} KEYS — TOGGLE PRIORITY / CLICK TO PLACE
           </div>

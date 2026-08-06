@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
+import TarkovStatus from './TarkovStatus'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
@@ -48,7 +49,7 @@ function QuestTooltip({ task, anchor, mapNorm }) {
   )
 }
 
-export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, onRemove, loading, mapNorm }) {
+export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, onRemove, loading, mapNorm, error, retry, cachedAt }) {
   const [q, setQ]           = useState('')
   const [open, setOpen]     = useState(false)
   const [tooltip, setTooltip] = useState(null)  // { task, anchor }
@@ -79,6 +80,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
 
   return (
     <div style={{ position: 'relative' }}>
+      <TarkovStatus error={error} retry={retry} cachedAt={cachedAt} />
       <QuestTooltip task={tooltip?.task} anchor={tooltip?.anchor} mapNorm={mapNorm} />
 
       {loading ? (

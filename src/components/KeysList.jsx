@@ -1,5 +1,6 @@
 import { useKeys } from '../useTarkov'
 import { useMapKeys } from '../useMapKeys'
+import TarkovStatus from './TarkovStatus'
 
 const FMT = new Intl.NumberFormat('en-US')
 
@@ -8,7 +9,7 @@ function Spin() {
 }
 
 export default function KeysList({ mapNorm }) {
-  const { keys, loading } = useKeys(mapNorm)
+  const { keys, loading, error, retry, cachedAt } = useKeys(mapNorm)
   const { mapKeys } = useMapKeys(mapNorm)
 
   // Only show keys explicitly starred in the admin panel
@@ -18,23 +19,30 @@ export default function KeysList({ mapNorm }) {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}>
+      <div>
+        <TarkovStatus error={error} retry={retry} cachedAt={cachedAt} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}>
         <Spin />
         <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING KEYS...</span>
+        </div>
       </div>
     )
   }
 
   if (!mergedKeys.length) {
     return (
-      <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', padding: '32px 0', textAlign: 'center' }}>
-        NO PRIORITY KEYS SET FOR THIS MAP
+      <div>
+        <TarkovStatus error={error} retry={retry} cachedAt={cachedAt} />
+        <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', padding: '32px 0', textAlign: 'center' }}>
+          NO PRIORITY KEYS SET FOR THIS MAP
+        </div>
       </div>
     )
   }
 
   return (
     <div>
+      <TarkovStatus error={error} retry={retry} cachedAt={cachedAt} />
       <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginBottom: 12, letterSpacing: '.04em' }}>
         {mergedKeys.length} PRIORITY KEYS — CLICK NAME TO VIEW LOOT ON WIKI
       </div>

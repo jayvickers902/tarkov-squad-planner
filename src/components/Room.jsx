@@ -11,6 +11,7 @@ import BossPanel from './BossPanel'
 import TarkovClocks from './TarkovClocks'
 import StartRaidModal from './StartRaidModal'
 import RaidView from './RaidView'
+import TarkovStatus from './TarkovStatus'
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
@@ -66,9 +67,12 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
     setAddBusy(false)
   }
 
-  const { maps, loading: loadingMaps } = useMaps()
-  const { tasks, loading: loadingTasks } = useTasks(party.map_norm)
-  const { tasks: allTasks } = useTasks(null)
+  const { maps, loading: loadingMaps, error: mapsError, retry: retryMaps, cachedAt: mapsCachedAt } = useMaps()
+  const { tasks, loading: loadingTasks, error: tasksError, retry: retryTasks, cachedAt: tasksCachedAt } = useTasks(party.map_norm)
+  const { tasks: allTasks, error: allTasksError, retry: retryAllTasks, cachedAt: allTasksCachedAt } = useTasks(null)
+  const tarkovTaskError = tasksError || allTasksError
+  const retryTarkovTasks = () => { retryTasks(); retryAllTasks() }
+  const tarkovTaskCachedAt = tasksCachedAt || allTasksCachedAt
   const isLeader = party.leader === myName
   const members  = Object.keys(party.members || {})
   const mine     = party.members?.[myName] || []
@@ -458,7 +462,8 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
           {/* Map selector */}
           <div className="card" style={{ padding: 16 }}>
             <div className="lbl">{isLeader ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
-            {loadingMaps
+            <TarkovStatus error={mapsError} retry={retryMaps} cachedAt={mapsCachedAt} />
+            {loadingMaps && !maps.length
               ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAPS...</span></div>
               : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
@@ -495,6 +500,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                 <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
                   {/* Squad Objectives — party-wide card */}
                   <div className="card fade-in" style={{ padding: 16, flex: 1, minWidth: 0 }}>
+                    <TarkovStatus error={tarkovTaskError} retry={retryTarkovTasks} cachedAt={tarkovTaskCachedAt} />
                     {!mine.length ? (
                       (mineWasNonEmpty.current || questsLoading) ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '32px 24px', justifyContent: 'center' }}>
@@ -540,6 +546,9 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                       onOpenQuestManager={onMyQuests}
                       mapNorm={party.map_norm}
                       loading={questsLoading}
+                      error={tarkovTaskError}
+                      retry={retryTarkovTasks}
+                      cachedAt={tarkovTaskCachedAt}
                     />
                   </div>
                 </div>
@@ -547,7 +556,8 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
 
               {tab === 'items' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  {loadingTasks
+                  <TarkovStatus error={tarkovTaskError} retry={retryTarkovTasks} cachedAt={tarkovTaskCachedAt} />
+                  {loadingTasks && !tasks.length
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
                     : <RequiredItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} />
                   }
@@ -556,7 +566,8 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
 
               {tab === 'find' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  {loadingTasks
+                  <TarkovStatus error={tarkovTaskError} retry={retryTarkovTasks} cachedAt={tarkovTaskCachedAt} />
+                  {loadingTasks && !tasks.length
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
                     : <FindItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} myName={myName} userObjProgress={userObjProgress} />
                   }
@@ -571,6 +582,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
 
               {tab === 'map' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
+                  <TarkovStatus error={allTasksError} retry={retryAllTasks} cachedAt={allTasksCachedAt} />
                   <MapLeaflet
                     mapNorm={party.map_norm}
                     mapName={party.map_name}

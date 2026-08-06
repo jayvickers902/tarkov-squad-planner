@@ -69,6 +69,23 @@ button {
 
 .card { background: var(--sur); border: 1px solid var(--brd); border-radius: 6px; }
 
+.tarkov-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 11px;
+  background: rgba(184,64,64,0.08);
+  border: 1px solid rgba(184,64,64,0.45);
+  border-left: 3px solid var(--red);
+  border-radius: 4px;
+  color: var(--tx);
+  font-size: 12px;
+}
+.tarkov-status strong { color: #e07070; }
+.tarkov-status-cache { color: var(--goldtx); font-family: 'Share Tech Mono', monospace; font-size: 11px; }
+.tarkov-status button { margin-left: auto; color: var(--goldtx); border-color: var(--golddim); }
+
 @keyframes spin   { to { transform: rotate(360deg); } }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 .fade-in { animation: fadeIn .2s ease; }
