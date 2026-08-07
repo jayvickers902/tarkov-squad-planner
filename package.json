@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/prebake.mjs",
+    "prebake": "node scripts/prebake.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

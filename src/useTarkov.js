@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
-import { TARKOV_API, FEATURED } from './constants'
+import { TARKOV_API, FEATURED, GRAPHQL_ENABLED } from './constants'
 import { getRestMaps, getRestTasks, getRestKeys, getRestBosses } from './tarkovRest'
+import { loadPrebaked } from './data/prebaked'
 
 const MAPS_QUERY = `{ maps { id name normalizedName } }`
 const KEYS_QUERY = `{ items(types: [keys]) { id name avg24hPrice lastLowPrice wikiLink iconLink } }`
@@ -156,6 +157,43 @@ function restFallbackError(cause, fromCache) {
   return { source: 'rest', cause, fromCache }
 }
 
+// json.tarkov.dev is the primary source. GraphQL is only attempted when
+// GRAPHQL_ENABLED — with the flag off we must not spend three failing requests
+// and two backoff sleeps on a known-dead endpoint before every panel loads.
+//
+// `gql` resolves to the data itself; `rest` resolves to { data, cachedAt, fromCache }.
+// `fallback` is true only when GraphQL was tried and lost, which is what tells
+// TarkovStatus to show the informational note. REST-as-primary is not a degraded
+// state and must not surface one.
+// Load order is prebaked -> live REST -> GraphQL (only when flagged on).
+// The prebaked JSON ships with the build, so it paints before any network call
+// and keeps the app usable when json.tarkov.dev is down. It is only ever a
+// floor: the live result always wins, and a prebaked chunk that resolves after
+// the live fetch must not clobber it. Call the returned function the moment
+// live data lands.
+function seedFromPrebaked(name, apply) {
+  let superseded = false
+  loadPrebaked(name).then(prebaked => {
+    if (prebaked && !superseded) apply(prebaked)
+  })
+  return () => { superseded = true }
+}
+
+async function loadData({ label, signal, gql, rest }) {
+  if (GRAPHQL_ENABLED) {
+    try {
+      return { data: await gql(signal), cachedAt: Date.now(), fromCache: false, source: 'graphql', fallback: false }
+    } catch (err) {
+      if (isAbort(err)) throw err
+      console.warn(`tarkov.dev GraphQL ${label} unavailable; using json.tarkov.dev`, err)
+      const result = await rest(signal)
+      return { ...result, source: 'rest', fallback: true, cause: err }
+    }
+  }
+  const result = await rest(signal)
+  return { ...result, source: 'rest', fallback: false }
+}
+
 const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink trader { name imageLink } map { id normalizedName } objectives { id description type optional maps { normalizedName } ... on TaskObjectiveItem { item { id name iconLink } count foundInRaid requiredKeys { id name iconLink } } ... on TaskObjectiveMark { markerItem { id name iconLink } requiredKeys { id name iconLink } } ... on TaskObjectiveBasic { zones { id position { x y z } map { normalizedName } } requiredKeys { id name iconLink } } ... on TaskObjectiveShoot { zones { id position { x y z } map { normalizedName } } } } } }`
 
 export function useMaps() {
@@ -171,30 +209,34 @@ export function useMaps() {
     let active = true
     setError(null)
     setLoading(maps.length === 0)
-    gqlRetry(MAPS_QUERY, { signal: controller.signal })
-      .then(data => {
-        const nextMaps = filteredMaps(requireArray(data, 'maps'))
-        if (!active) return
-        setMaps(nextMaps)
-        setCachedAt(Date.now())
-        writePersisted(STORAGE_KEYS.maps, nextMaps)
-      })
-      .catch(async err => {
-        if (!active || isAbort(err)) return
-        try {
-          const result = await getRestMaps(controller.signal)
-          const nextMaps = filteredMaps(result.data)
+    const markLive = maps.length === 0
+      ? seedFromPrebaked('maps', prebaked => {
           if (!active) return
-          console.warn('tarkov.dev GraphQL maps unavailable; using json.tarkov.dev', err)
-          setMaps(nextMaps)
-          setCachedAt(result.cachedAt)
-          setError(restFallbackError(err, result.fromCache))
-        } catch (restError) {
-          if (active && !isAbort(restError)) {
-            console.warn('tarkov.dev and json.tarkov.dev maps fetch failed', restError)
-            setError(restError)
-          }
-        }
+          setMaps(filteredMaps(prebaked.data))
+          setLoading(false)
+        })
+      : () => {}
+    loadData({
+      label: 'maps',
+      signal: controller.signal,
+      gql: async signal => filteredMaps(requireArray(await gqlRetry(MAPS_QUERY, { signal }), 'maps')),
+      rest: async signal => {
+        const result = await getRestMaps(signal)
+        return { ...result, data: filteredMaps(result.data) }
+      },
+    })
+      .then(result => {
+        markLive()
+        if (!active) return
+        setMaps(result.data)
+        setCachedAt(result.cachedAt)
+        if (result.source === 'graphql') writePersisted(STORAGE_KEYS.maps, result.data)
+        if (result.fallback) setError(restFallbackError(result.cause, result.fromCache))
+      })
+      .catch(err => {
+        if (!active || isAbort(err)) return
+        console.warn('tarkov.dev maps fetch failed', err)
+        setError(err)
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
@@ -219,31 +261,37 @@ export function useTasks(mapNorm) {
     let active = true
     setError(null)
     setLoading(tasks.length === 0)
-    gqlRetry(TASKS_QUERY, { signal: controller.signal })
-      .then(data => {
-        const nextTasks = requireArray(data, 'tasks')
-        if (!active) return
-        tasksCache = nextTasks
-        tasksCacheAt = Date.now()
-        setTasks(nextTasks)
-        setCachedAt(tasksCacheAt)
-        writePersisted(STORAGE_KEYS.tasks, nextTasks)
-      })
-      .catch(async err => {
-        if (!active || isAbort(err)) return
-        try {
-          const result = await getRestTasks(controller.signal)
+    const markLive = tasks.length === 0
+      ? seedFromPrebaked('tasks', prebaked => {
           if (!active) return
-          console.warn('tarkov.dev GraphQL tasks unavailable; using json.tarkov.dev', err)
-          setTasks(result.data)
-          setCachedAt(result.cachedAt)
-          setError(restFallbackError(err, result.fromCache))
-        } catch (restError) {
-          if (active && !isAbort(restError)) {
-            console.warn('tarkov.dev and json.tarkov.dev tasks fetch failed', restError)
-            setError(restError)
-          }
-        }
+          setTasks(prebaked.data)
+          setLoading(false)
+        })
+      : () => {}
+    loadData({
+      label: 'tasks',
+      signal: controller.signal,
+      gql: async signal => requireArray(await gqlRetry(TASKS_QUERY, { signal }), 'tasks'),
+      rest: signal => getRestTasks(signal),
+    })
+      .then(result => {
+        markLive()
+        if (!active) return
+        // Module cache is populated from either source — it only ever holds a
+        // success, so the Phase 1 poisoning rule still holds. localStorage stays
+        // GraphQL-only: tarkovRest persists its own adapted copy under
+        // tsp.cache.rest.* and the two must not collide.
+        tasksCache = result.data
+        tasksCacheAt = result.cachedAt
+        setTasks(result.data)
+        setCachedAt(result.cachedAt)
+        if (result.source === 'graphql') writePersisted(STORAGE_KEYS.tasks, result.data)
+        if (result.fallback) setError(restFallbackError(result.cause, result.fromCache))
+      })
+      .catch(err => {
+        if (!active || isAbort(err)) return
+        console.warn('tarkov.dev tasks fetch failed', err)
+        setError(err)
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
@@ -283,42 +331,49 @@ export function useBossSpawns() {
     let active = true
     setError(null)
     setLoading(mapBosses.length === 0 || Object.keys(bossPortraits).length === 0)
-    Promise.all([
-      gqlRetry(MAP_BOSSES_QUERY, { signal: controller.signal }),
-      gqlRetry(BOSS_INFO_QUERY, { signal: controller.signal }),
-    ])
-      .then(([mapData, portraitData]) => {
-        const maps = requireArray(mapData, 'maps')
-        const bosses = requireArray(portraitData, 'bosses')
+    const markLive = mapBosses.length === 0
+      ? seedFromPrebaked('bosses', prebaked => {
+          if (!active) return
+          setMapBosses(prebaked.data.maps || [])
+          setBossPortraits(prebaked.data.portraits || {})
+          setLoading(false)
+        })
+      : () => {}
+    loadData({
+      label: 'boss data',
+      signal: controller.signal,
+      gql: async signal => {
+        const [mapData, portraitData] = await Promise.all([
+          gqlRetry(MAP_BOSSES_QUERY, { signal }),
+          gqlRetry(BOSS_INFO_QUERY, { signal }),
+        ])
         const portraits = {}
-        for (const b of bosses) portraits[b.name] = b.imagePortraitLink
+        for (const b of requireArray(portraitData, 'bosses')) portraits[b.name] = b.imagePortraitLink
+        return { maps: requireArray(mapData, 'maps'), portraits }
+      },
+      rest: signal => getRestBosses(signal),
+    })
+      .then(result => {
+        markLive()
         if (!active) return
+        const { maps, portraits } = result.data
         mapBossCache = maps
-        mapBossCacheAt = Date.now()
+        mapBossCacheAt = result.cachedAt
         bossPortraitsCache = portraits
-        bossPortraitsCacheAt = mapBossCacheAt
+        bossPortraitsCacheAt = result.cachedAt
         setMapBosses(maps)
         setBossPortraits(portraits)
-        setCachedAt(mapBossCacheAt)
-        writePersisted(STORAGE_KEYS.bosses, maps)
-        writePersisted(STORAGE_KEYS.bossPortraits, portraits)
-      })
-      .catch(async err => {
-        if (!active || isAbort(err)) return
-        try {
-          const result = await getRestBosses(controller.signal)
-          if (!active) return
-          console.warn('tarkov.dev GraphQL boss data unavailable; using json.tarkov.dev', err)
-          setMapBosses(result.data.maps)
-          setBossPortraits(result.data.portraits)
-          setCachedAt(result.cachedAt)
-          setError(restFallbackError(err, result.fromCache))
-        } catch (restError) {
-          if (active && !isAbort(restError)) {
-            console.warn('tarkov.dev and json.tarkov.dev boss data fetch failed', restError)
-            setError(restError)
-          }
+        setCachedAt(result.cachedAt)
+        if (result.source === 'graphql') {
+          writePersisted(STORAGE_KEYS.bosses, maps)
+          writePersisted(STORAGE_KEYS.bossPortraits, portraits)
         }
+        if (result.fallback) setError(restFallbackError(result.cause, result.fromCache))
+      })
+      .catch(err => {
+        if (!active || isAbort(err)) return
+        console.warn('tarkov.dev boss data fetch failed', err)
+        setError(err)
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
@@ -349,31 +404,33 @@ export function useKeys(mapNorm) {
     let active = true
     setError(null)
     setLoading(allKeys.length === 0)
-    gqlRetry(KEYS_QUERY, { signal: controller.signal })
-      .then(data => {
-        const nextKeys = requireArray(data, 'items')
-        if (!active) return
-        keysCache = nextKeys
-        keysCacheAt = Date.now()
-        setAllKeys(nextKeys)
-        setCachedAt(keysCacheAt)
-        writePersisted(STORAGE_KEYS.keys, nextKeys)
-      })
-      .catch(async err => {
-        if (!active || isAbort(err)) return
-        try {
-          const result = await getRestKeys(controller.signal)
+    const markLive = allKeys.length === 0
+      ? seedFromPrebaked('keys', prebaked => {
           if (!active) return
-          console.warn('tarkov.dev GraphQL keys unavailable; using json.tarkov.dev', err)
-          setAllKeys(result.data)
-          setCachedAt(result.cachedAt)
-          setError(restFallbackError(err, result.fromCache))
-        } catch (restError) {
-          if (active && !isAbort(restError)) {
-            console.warn('tarkov.dev and json.tarkov.dev keys fetch failed', restError)
-            setError(restError)
-          }
-        }
+          setAllKeys(prebaked.data)
+          setLoading(false)
+        })
+      : () => {}
+    loadData({
+      label: 'keys',
+      signal: controller.signal,
+      gql: async signal => requireArray(await gqlRetry(KEYS_QUERY, { signal }), 'items'),
+      rest: signal => getRestKeys(signal),
+    })
+      .then(result => {
+        markLive()
+        if (!active) return
+        keysCache = result.data
+        keysCacheAt = result.cachedAt
+        setAllKeys(result.data)
+        setCachedAt(result.cachedAt)
+        if (result.source === 'graphql') writePersisted(STORAGE_KEYS.keys, result.data)
+        if (result.fallback) setError(restFallbackError(result.cause, result.fromCache))
+      })
+      .catch(err => {
+        if (!active || isAbort(err)) return
+        console.warn('tarkov.dev keys fetch failed', err)
+        setError(err)
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }

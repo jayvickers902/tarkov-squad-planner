@@ -222,47 +222,146 @@ function adaptObjective(objective, mapsById, taskTranslations, itemTranslations)
   return adapted
 }
 
+// ─── Adapters ──────────────────────────────────────────────────────────────
+// Pure transforms from raw json.tarkov.dev payloads to GraphQL-identical shapes.
+// They take no signal and touch no network, so scripts/prebake.mjs can run the
+// exact same mappings at build time. Every field mapping, `_en` resolution, and
+// id-join lives here and nowhere else.
+
+export function adaptMapBundle(raw, translations) {
+  const mapsById = byId(raw, 'maps')
+  const mobsById = byId(raw, 'mobs')
+  const maps = Object.values(mapsById).map(map => ({
+    id: map.id,
+    name: translated(translations, map.name) || map.name || map.id,
+    normalizedName: map.normalizedName,
+    bosses: (map.bosses || []).map(boss => ({
+      spawnChance: Number(boss.spawnChance) || 0,
+      mob: boss.mob,
+    })),
+    spawns: (map.spawns || []).map(spawn => {
+      const sides = Array.isArray(spawn.sides) ? spawn.sides : []
+      const categories = Array.isArray(spawn.categories) ? spawn.categories : []
+      const isPmc = sides.includes('pmc') || (sides.includes('all') && categories.includes('player') && !sides.includes('scav'))
+      if (!isPmc || !spawn.position) return null
+      return {
+        position: spawn.position,
+        sides: ['pmc'],
+        categories,
+        zoneName: spawn.zoneName,
+      }
+    }).filter(Boolean),
+  }))
+  const mobs = Object.values(mobsById).map(mob => ({
+    id: mob.id,
+    name: translated(translations, mob.name) || mob.name || mob.id,
+    imagePortraitLink: mob.imagePortraitLink || null,
+  }))
+  return { maps, mobs }
+}
+
+export function adaptMaps(bundle) {
+  return bundle.maps.map(({ id, name, normalizedName }) => ({ id, name, normalizedName }))
+}
+
+export function adaptBosses(bundle) {
+  const mobsById = Object.fromEntries(bundle.mobs.map(mob => [mob.id, mob]))
+  const portraits = {}
+  const maps = bundle.maps.map(map => ({
+    id: map.id,
+    name: map.name,
+    normalizedName: map.normalizedName,
+    bosses: map.bosses.map(boss => {
+      const mob = mobsById[boss.mob]
+      const name = mob?.name || boss.mob
+      if (mob?.imagePortraitLink) portraits[name] = mob.imagePortraitLink
+      return { name, spawnChance: boss.spawnChance }
+    }),
+  }))
+  return { maps, portraits }
+}
+
+export function adaptSpawns(bundle) {
+  return bundle.maps.map(map => ({ normalizedName: map.normalizedName, spawns: map.spawns }))
+}
+
+export function adaptKeys(rawItems, itemTranslations) {
+  return values(rawItems, 'items')
+    .filter(item => Array.isArray(item.types) && item.types.includes('keys'))
+    .map(item => ({
+      id: item.id,
+      name: translated(itemTranslations, item.name) || item.name || item.id,
+      avg24hPrice: item.avg24hPrice ?? null,
+      lastLowPrice: item.lastLowPrice ?? null,
+      wikiLink: item.wikiLink || item.wiki || null,
+      iconLink: item.iconLink || `https://assets.tarkov.dev/${item.id}-icon.webp`,
+    }))
+}
+
+export function adaptTasks({ rawTasks, taskTranslations, rawTraders, traderTranslations, bundle, itemTranslations }) {
+  const mapsById = Object.fromEntries(bundle.maps.map(map => [map.id, map]))
+  const tradersById = byId(rawTraders)
+  return values(rawTasks, 'tasks').map(task => {
+    const traderId = typeof task.trader === 'object' ? task.trader?.id : task.trader
+    const trader = traderId ? tradersById[traderId] : null
+    const traderName = translated(traderTranslations, trader?.name || `${traderId} Nickname`) || traderId
+    const map = mapReference(task.map, mapsById)
+    return {
+      id: task.id,
+      name: translated(taskTranslations, task.name) || task.name || task.id,
+      kappaRequired: Boolean(task.kappaRequired),
+      minPlayerLevel: task.minPlayerLevel,
+      wikiLink: task.wikiLink || null,
+      trader: traderId ? { name: traderName, imageLink: trader?.imageLink || null } : null,
+      map,
+      objectives: (task.objectives || []).map(objective => adaptObjective(objective, mapsById, taskTranslations, itemTranslations)),
+    }
+  })
+}
+
+// Loose-loot spawn points for the older intel items (Phase 7's free layer).
+// Season 1 document items carry no coordinates upstream — see IMPLEMENTATION-PLAN.md.
+export const INTEL_ITEM_NAMES = ['Intelligence folder', 'Documents case']
+
+export function adaptIntel(rawMaps, itemTranslations) {
+  const wanted = new Set(INTEL_ITEM_NAMES)
+  const intelIds = new Map()
+  for (const [key, name] of Object.entries(itemTranslations || {})) {
+    if (!wanted.has(name)) continue
+    const id = String(key).split(' ')[0]
+    if (id) intelIds.set(id, name)
+  }
+  if (!intelIds.size) return []
+
+  const result = []
+  for (const map of Object.values(byId(rawMaps, 'maps'))) {
+    const points = []
+    for (const entry of map.lootLoose || []) {
+      if (!entry?.position || !Array.isArray(entry.items)) continue
+      const names = [...new Set(entry.items.map(id => intelIds.get(id)).filter(Boolean))]
+      if (!names.length) continue
+      points.push({ position: entry.position, items: names })
+    }
+    if (points.length) result.push({ normalizedName: map.normalizedName, points })
+  }
+  return result
+}
+
+// ─── Runtime loaders ───────────────────────────────────────────────────────
+
 async function getMapBundle(signal) {
   return loadDataset('maps-bundle', async internalSignal => {
     const [raw, translations] = await Promise.all([
       loadJson('maps', internalSignal),
       loadJson('maps_en', internalSignal),
     ])
-    const mapsById = byId(raw, 'maps')
-    const mobsById = byId(raw, 'mobs')
-    const maps = Object.values(mapsById).map(map => ({
-      id: map.id,
-      name: translated(translations, map.name) || map.name || map.id,
-      normalizedName: map.normalizedName,
-      bosses: (map.bosses || []).map(boss => ({
-        spawnChance: Number(boss.spawnChance) || 0,
-        mob: boss.mob,
-      })),
-      spawns: (map.spawns || []).map(spawn => {
-        const sides = Array.isArray(spawn.sides) ? spawn.sides : []
-        const categories = Array.isArray(spawn.categories) ? spawn.categories : []
-        const isPmc = sides.includes('pmc') || (sides.includes('all') && categories.includes('player') && !sides.includes('scav'))
-        if (!isPmc || !spawn.position) return null
-        return {
-          position: spawn.position,
-          sides: ['pmc'],
-          categories,
-          zoneName: spawn.zoneName,
-        }
-      }).filter(Boolean),
-    }))
-    const mobs = Object.values(mobsById).map(mob => ({
-      id: mob.id,
-      name: translated(translations, mob.name) || mob.name || mob.id,
-      imagePortraitLink: mob.imagePortraitLink || null,
-    }))
-    return { maps, mobs }
+    return adaptMapBundle(raw, translations)
   }, signal)
 }
 
 export function getRestMaps(signal) {
   return getMapBundle(signal).then(result => ({
-    data: result.data.maps.map(({ id, name, normalizedName }) => ({ id, name, normalizedName })),
+    data: adaptMaps(result.data),
     cachedAt: result.cachedAt,
     fromCache: result.fromCache,
   }))
@@ -271,27 +370,14 @@ export function getRestMaps(signal) {
 export function getRestBosses(signal) {
   return loadDataset('bosses', async internalSignal => {
     const bundle = await getMapBundle(internalSignal)
-    const mobsById = Object.fromEntries(bundle.data.mobs.map(mob => [mob.id, mob]))
-    const portraits = {}
-    const maps = bundle.data.maps.map(map => ({
-      id: map.id,
-      name: map.name,
-      normalizedName: map.normalizedName,
-      bosses: map.bosses.map(boss => {
-        const mob = mobsById[boss.mob]
-        const name = mob?.name || boss.mob
-        if (mob?.imagePortraitLink) portraits[name] = mob.imagePortraitLink
-        return { name, spawnChance: boss.spawnChance }
-      }),
-    }))
-    return { maps, portraits }
+    return adaptBosses(bundle.data)
   }, signal)
 }
 
 export function getRestSpawns(signal) {
   return loadDataset('spawns', async internalSignal => {
     const bundle = await getMapBundle(internalSignal)
-    return bundle.data.maps.map(map => ({ normalizedName: map.normalizedName, spawns: map.spawns }))
+    return adaptSpawns(bundle.data)
   }, signal)
 }
 
@@ -301,22 +387,13 @@ export function getRestKeys(signal) {
       loadJson('items', internalSignal),
       loadJson('items_en', internalSignal),
     ])
-    return values(raw, 'items')
-      .filter(item => Array.isArray(item.types) && item.types.includes('keys'))
-      .map(item => ({
-        id: item.id,
-        name: translated(translations, item.name) || item.name || item.id,
-        avg24hPrice: item.avg24hPrice ?? null,
-        lastLowPrice: item.lastLowPrice ?? null,
-        wikiLink: item.wikiLink || item.wiki || null,
-        iconLink: item.iconLink || `https://assets.tarkov.dev/${item.id}-icon.webp`,
-      }))
+    return adaptKeys(raw, translations)
   }, signal)
 }
 
 export function getRestTasks(signal) {
   return loadDataset('tasks', async internalSignal => {
-    const [raw, translations, tradersRaw, traderTranslations, bundle, itemTranslations] = await Promise.all([
+    const [rawTasks, taskTranslations, rawTraders, traderTranslations, bundle, itemTranslations] = await Promise.all([
       loadJson('tasks', internalSignal),
       loadJson('tasks_en', internalSignal),
       loadJson('traders', internalSignal),
@@ -324,24 +401,6 @@ export function getRestTasks(signal) {
       getMapBundle(internalSignal),
       loadJson('items_en', internalSignal),
     ])
-    const mapsById = Object.fromEntries(bundle.data.maps.map(map => [map.id, map]))
-    const tradersById = byId(tradersRaw)
-    const tasks = values(raw, 'tasks')
-    return tasks.map(task => {
-      const traderId = typeof task.trader === 'object' ? task.trader?.id : task.trader
-      const trader = traderId ? tradersById[traderId] : null
-      const traderName = translated(traderTranslations, trader?.name || `${traderId} Nickname`) || traderId
-      const map = mapReference(task.map, mapsById)
-      return {
-        id: task.id,
-        name: translated(translations, task.name) || task.name || task.id,
-        kappaRequired: Boolean(task.kappaRequired),
-        minPlayerLevel: task.minPlayerLevel,
-        wikiLink: task.wikiLink || null,
-        trader: traderId ? { name: traderName, imageLink: trader?.imageLink || null } : null,
-        map,
-        objectives: (task.objectives || []).map(objective => adaptObjective(objective, mapsById, translations, itemTranslations)),
-      }
-    })
+    return adaptTasks({ rawTasks, taskTranslations, rawTraders, traderTranslations, bundle: bundle.data, itemTranslations })
   }, signal)
 }

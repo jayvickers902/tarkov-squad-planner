@@ -4,6 +4,10 @@ function cachedAge(cachedAt) {
   return `${days} day${days === 1 ? '' : 's'} ago`
 }
 
+// json.tarkov.dev is the primary source (see constants.js GRAPHQL_ENABLED), so
+// serving REST data is normal operation and sets no error at all — nothing renders.
+// The `rest` branch below only appears when GraphQL is re-enabled and then loses to
+// the fallback; the plain branch means the data source itself failed.
 export default function TarkovStatus({ error, retry, cachedAt }) {
   if (!error) return null
   const age = cachedAge(cachedAt)
@@ -14,7 +18,7 @@ export default function TarkovStatus({ error, retry, cachedAt }) {
       <div>
         {isRestFallback ? (
           <>
-            <strong>Showing backup data.</strong> tarkov.dev&apos;s main API is down; this panel is using the backup JSON API. Some details may be missing.
+            <strong>Using the backup source.</strong> tarkov.dev&apos;s GraphQL API is unavailable; this panel is reading the JSON API instead.
           </>
         ) : (
           <>

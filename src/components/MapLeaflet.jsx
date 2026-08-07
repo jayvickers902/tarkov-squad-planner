@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { TARKOV_MAP_CONFIGS } from '../data/tarkovMapConfigs'
-import { SPAWNS } from '../constants'
+import { SPAWNS, GRAPHQL_ENABLED } from '../constants'
 import { gqlRetry } from '../useTarkov'
 import { getRestSpawns } from '../tarkovRest'
+import { loadPrebaked } from '../data/prebaked'
 import { useMapKeys } from '../useMapKeys'
 
 const SPAWNS_QUERY = `{ maps { normalizedName spawns { position { x y z } sides categories } } }`
@@ -12,18 +13,20 @@ let spawnsCache = null
 
 async function fetchAllSpawns({ signal } = {}) {
   if (spawnsCache !== null) return spawnsCache
-  try {
-    const data = await gqlRetry(SPAWNS_QUERY, { signal })
-    if (!Array.isArray(data?.maps)) throw new Error('tarkov.dev returned no spawn data')
-    spawnsCache = data.maps
-    return spawnsCache
-  } catch (graphqlError) {
-    if (graphqlError?.name === 'AbortError') throw graphqlError
-    const result = await getRestSpawns(signal)
-    console.warn('tarkov.dev GraphQL PMC spawns unavailable; using json.tarkov.dev', graphqlError)
-    spawnsCache = result.data
-    return spawnsCache
+  if (GRAPHQL_ENABLED) {
+    try {
+      const data = await gqlRetry(SPAWNS_QUERY, { signal })
+      if (!Array.isArray(data?.maps)) throw new Error('tarkov.dev returned no spawn data')
+      spawnsCache = data.maps
+      return spawnsCache
+    } catch (graphqlError) {
+      if (graphqlError?.name === 'AbortError') throw graphqlError
+      console.warn('tarkov.dev GraphQL PMC spawns unavailable; using json.tarkov.dev', graphqlError)
+    }
   }
+  const result = await getRestSpawns(signal)
+  spawnsCache = result.data
+  return spawnsCache
 }
 
 function fallbackSpawns(mapNorm) {
@@ -62,6 +65,14 @@ function clusterPmcZones(spawns, threshold = 30) {
     }
   }
   return clusters.map(c => ({ position: { x: c.cx, z: c.cz } }))
+}
+
+// Prebaked and live spawn payloads share the same shape, so they cluster the
+// same way.
+function clusterByMap(maps) {
+  const byMap = {}
+  for (const m of maps) byMap[m.normalizedName] = clusterPmcZones(m.spawns)
+  return byMap
 }
 
 const USER_COLORS = ['#e85d5d', '#5db8e8', '#5de87a', '#f5a623', '#c45de8', '#5de8d4', '#e8e85d', '#e85da8']
@@ -513,21 +524,34 @@ export default function MapLeaflet({
     }
   }, [mapKeys, mapNorm])
 
-  // ─── Fetch spawn data from tarkov.dev API ────────────────────────────────────
+  // ─── Spawn data: prebaked first, then a live refresh ─────────────────────────
   useEffect(() => {
     const controller = new AbortController()
+    let live = false
+    let painted = false
+
+    // Bundled with the build, so spawn markers appear without waiting on the
+    // network. Superseded by the live fetch below the moment it lands.
+    loadPrebaked('spawns').then(prebaked => {
+      if (!prebaked || live || controller.signal.aborted) return
+      painted = true
+      setApiSpawns(clusterByMap(prebaked.data))
+    })
+
     fetchAllSpawns({ signal: controller.signal }).then(maps => {
-      const byMap = {}
-      for (const m of maps) {
-        byMap[m.normalizedName] = clusterPmcZones(m.spawns)
-      }
-      setApiSpawns(byMap)
+      live = true
+      painted = true
+      setApiSpawns(clusterByMap(maps))
     }).catch(error => {
-      if (error.name !== 'AbortError') {
-        console.warn('tarkov.dev PMC spawn fetch failed; using built-in spawn coordinates', error)
-        const fallback = Object.fromEntries(Object.keys(SPAWNS).map(norm => [norm, fallbackSpawns(norm)]))
-        setApiSpawns(fallback)
+      if (error.name === 'AbortError') return
+      // Real game-world coordinates already on screen beat the built-in
+      // fractional approximations, so only fall back if nothing painted.
+      if (painted) {
+        console.warn('tarkov.dev PMC spawn refresh failed; keeping prebaked spawn coordinates', error)
+        return
       }
+      console.warn('tarkov.dev PMC spawn fetch failed; using built-in spawn coordinates', error)
+      setApiSpawns(Object.fromEntries(Object.keys(SPAWNS).map(norm => [norm, fallbackSpawns(norm)])))
     })
     return () => controller.abort()
   }, [])
