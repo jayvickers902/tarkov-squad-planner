@@ -1,131 +1,217 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MapLeaflet from './MapLeaflet'
-import TodoList from './TodoList'
+import RaidRail from './RaidRail'
+import { useIsMobile } from '../useIsMobile'
+import { useMapKeys } from '../useMapKeys'
+import { useIntel } from '../useIntel'
+import { useMapLoot } from '../useMapLoot'
+import { useIntelChecklist } from '../useIntelChecklist'
+import { curatedLootPoints, mergeIntelSources } from '../tarkovIntel'
+import { objectivePins } from '../tarkovObjectives'
+import { useMapPings } from '../useMapPings'
+
+const RAIL_STORAGE_KEY = 'tsp.raid.rail.open'
+
+function readRailPreference() {
+  try { return localStorage.getItem(RAIL_STORAGE_KEY) !== '0' } catch { return true }
+}
+
+function writeRailPreference(value) {
+  try { localStorage.setItem(RAIL_STORAGE_KEY, value ? '1' : '0') } catch { /* storage is optional */ }
+}
 
 export default function RaidView({
   party, myName, members,
   tasks, allTasks, loadingTasks,
   skippedQuestIds,
-  onToggleStar,
   onAddStroke, onClearMyStrokes,
   onAddMarker, onClearMyMarkers,
+  onClearPings,
   onClose,
 }) {
-  const [pillOpen, setPillOpen] = useState(true)
-  const [mapHeight, setMapHeight] = useState(() => window.innerHeight - 40)
-  const [drawMode, setDrawMode] = useState('pan')
+  const isMobile = useIsMobile()
+  const rootRef = useRef(null)
+  const memberNames = members || Object.keys(party.members || {})
   const mine = party.members?.[myName] || []
+  const raidKey = party.progress?.['__raid_start__'] ?? null
 
-  useEffect(() => {
-    function onResize() { setMapHeight(window.innerHeight - 40) }
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+  const [railOpen, setRailOpen] = useState(readRailPreference)
+  const [mobileRailHeight, setMobileRailHeight] = useState(35)
+  const [drawMode, setDrawMode] = useState('pan')
+  const [focusKey, setFocusKey] = useState(null)
+  const [hoverFocusKey, setHoverFocusKey] = useState(null)
+  const [, setFullscreen] = useState(false)
+
+  const { mapKeys } = useMapKeys(party.map_norm)
+  const { intelPoints } = useIntel(party.map_norm)
+  const { lootRows } = useMapLoot(party.map_norm)
+  const { isChecked } = useIntelChecklist(party.map_norm, raidKey)
+  const allIntel = useMemo(
+    () => mergeIntelSources(intelPoints, curatedLootPoints(lootRows, party.map_norm)),
+    [intelPoints, lootRows, party.map_norm],
+  )
+  const pins = useMemo(
+    () => objectivePins(allTasks || tasks || [], party.members || {}, memberNames, party.progress || {}, party.map_norm),
+    [allTasks, tasks, party.members, memberNames, party.progress, party.map_norm],
+  )
+
+  const pingState = useMapPings({
+    pings: party.pings || [],
+    pingLog: party.ping_log,
+    mapNorm: party.map_norm,
+    myName,
+    memberNames,
+    mapKeys,
+    autoObjPins: pins,
+    allIntel,
+    isChecked,
+    hideReplay: true,
+  })
+  const myPing = pingState.pingList.find(ping => ping.user === myName) || null
+  const mapFocusKey = hoverFocusKey || focusKey
+
+  const toggleRail = useCallback(() => {
+    setRailOpen(current => {
+      const next = !current
+      writeRailPreference(next)
+      return next
+    })
   }, [])
 
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
+  const toggleDraw = useCallback(() => {
+    setDrawMode(mode => mode === 'draw' ? 'pan' : 'draw')
+  }, [])
 
-      {/* Top bar */}
-      <div style={{
-        height: 40, flexShrink: 0,
-        display: 'flex', alignItems: 'center',
-        padding: '0 12px', gap: 8,
-        background: 'var(--sur)', borderBottom: '1px solid var(--brd)',
-        zIndex: 10,
-      }}>
-        <button className="btn-ghost btn-sm" onClick={onClose}>◀ EXIT RAID VIEW</button>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <span className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.16em' }}>◆ RAID ACTIVE</span>
-          <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '.08em', color: 'var(--goldtx)' }}>
-            {(party.map_name || '').toUpperCase()}
-          </span>
+  const toggleFullscreen = useCallback(async () => {
+    const root = rootRef.current
+    if (!root) return
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen?.()
+      else await root.requestFullscreen?.()
+    } catch {
+      // Fullscreen is an optional escalation; the fixed overlay remains usable.
+    }
+  }, [])
+
+  useEffect(() => {
+    function onFullscreenChange() {
+      setFullscreen(document.fullscreenElement === rootRef.current)
+    }
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+  }, [])
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      const target = event.target
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT') return
+
+      if (event.key === 'Escape') {
+        // The browser owns Escape while fullscreen is active. Once it has exited,
+        // the same key can close the Raid View overlay without a race.
+        if (document.fullscreenElement) return
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault()
+        toggleRail()
+        return
+      }
+      if (event.key.toLowerCase() === 'm') {
+        event.preventDefault()
+        toggleRail()
+      } else if (event.key.toLowerCase() === 'd') {
+        event.preventDefault()
+        toggleDraw()
+      } else if (event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        toggleFullscreen()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose, toggleDraw, toggleFullscreen, toggleRail])
+
+  return (
+    <div ref={rootRef} className="raid-view">
+      <div className="raid-topbar">
+        <button className="raid-top-button" onClick={onClose} aria-label="Exit Raid View">
+          <span>◀</span><span className="raid-button-label">EXIT</span>
+        </button>
+        <div className="raid-map-title">
+          <span className="mono raid-map-meta">◆ RAID ACTIVE</span>
+          <span className="raid-map-name">{(party.map_name || party.map_norm || '').toUpperCase()}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          {drawMode === 'draw' && (
-            <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.05em' }}>MID CLICK TO PAN</span>
-          )}
-          <button
-            className={drawMode === 'draw' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-            onClick={() => setDrawMode(m => m === 'draw' ? 'pan' : 'draw')}
-            style={{ fontSize: 10 }}>
-            ✏ DRAW
+        <div className="raid-top-actions">
+          <button className="raid-top-button" onClick={toggleRail} aria-label="Toggle squad rail">
+            <span>♟</span><span className="raid-button-label">SQUAD</span>
+          </button>
+          <button className={drawMode === 'draw' ? 'raid-top-button raid-top-button-active' : 'raid-top-button'} onClick={toggleDraw} aria-label="Toggle draw mode">
+            <span>✎</span><span className="raid-button-label">DRAW</span>
+          </button>
+          <button className="raid-top-button" onClick={toggleFullscreen} aria-label="Toggle fullscreen">
+            <span>⛶</span>
           </button>
         </div>
       </div>
 
-      {/* Map + floating pill */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        <MapLeaflet
-          mapNorm={party.map_norm}
-          mapName={party.map_name}
-          drawings={party.drawings || []}
-          markers={party.markers || []}
-          myName={myName}
-          memberNames={members}
-          myQuests={mine}
-          memberQuests={party.members || {}}
-          tasks={allTasks}
-          progress={party.progress || {}}
-          onAddStroke={onAddStroke}
-          onClearMyStrokes={onClearMyStrokes}
-          onAddMarker={onAddMarker}
-          onClearMyMarkers={onClearMyMarkers}
-          mapHeight={mapHeight}
-          defaultMode="pan"
-          mode={drawMode}
-          onModeChange={setDrawMode}
-          hideDrawButton
-        />
+      <div className="raid-body">
+        <main className="raid-map-pane">
+          <MapLeaflet
+            mapNorm={party.map_norm}
+            mapName={party.map_name}
+            drawings={party.drawings || []}
+            markers={party.markers || []}
+            pings={party.pings || []}
+            pingLog={party.ping_log}
+            myName={myName}
+            memberNames={memberNames}
+            myQuests={mine}
+            memberQuests={party.members || {}}
+            tasks={allTasks || tasks || []}
+            progress={party.progress || {}}
+            onAddStroke={onAddStroke}
+            onClearMyStrokes={onClearMyStrokes}
+            onAddMarker={onAddMarker}
+            onClearMyMarkers={onClearMyMarkers}
+            onClearPings={onClearPings}
+            raidKey={raidKey}
+            fill
+            chrome="overlay"
+            focusKey={mapFocusKey}
+            defaultMode="pan"
+            mode={drawMode}
+            onModeChange={setDrawMode}
+            hideDrawButton
+            hideReplay
+            pingStripMode="rail"
+            sharedPingState={pingState}
+          />
+        </main>
 
-        {/* Floating objectives pill — position:fixed to escape overflow:hidden on map container */}
-        <div style={{
-          position: 'fixed', top: 50, right: 10,
-          width: 340, maxWidth: 'calc(100vw - 20px)',
-          zIndex: 1000,
-          background: 'var(--sur)',
-          border: '1px solid var(--brd)',
-          borderRadius: 6,
-          boxShadow: '0 4px 24px rgba(0,0,0,0.65)',
-          display: 'flex',
-          flexDirection: 'column',
-          maxHeight: 'calc(100vh - 60px)',
-          overflow: 'hidden',
-        }}>
-          {/* Pill header */}
-          <div
-            onClick={() => setPillOpen(v => !v)}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '8px 12px', cursor: 'pointer', flexShrink: 0,
-              background: 'var(--sur2)',
-              borderBottom: pillOpen ? '1px solid var(--brd)' : 'none',
-              userSelect: 'none',
-            }}
-          >
-            <span className="mono" style={{ fontSize: 10, color: 'var(--gold)', letterSpacing: '.12em' }}>◆ SQUAD OBJECTIVES</span>
-            <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>{pillOpen ? '▲' : '▼'}</span>
-          </div>
-
-          {pillOpen && (
-            <div style={{ overflow: 'auto', padding: '12px' }}>
-              {loadingTasks ? (
-                <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', padding: '8px 0' }}>LOADING...</div>
-              ) : (
-                <TodoList
-                  tasks={tasks}
-                  memberQuests={party.members || {}}
-                  progress={party.progress || {}}
-                  starredQuests={party.starred || {}}
-                  onToggleStar={onToggleStar}
-                  questOrder={party.quest_order}
-                  initialSkipped={skippedQuestIds}
-                  myName={myName}
-                  mapNorm={party.map_norm}
-                />
-              )}
-            </div>
-          )}
-        </div>
+        {railOpen && (
+          <RaidRail
+            isMobile={isMobile}
+            mobileHeight={mobileRailHeight}
+            onMobileHeight={setMobileRailHeight}
+            pingCards={pingState.pingCards}
+            tasks={allTasks || tasks || []}
+            memberQuests={party.members || {}}
+            memberNames={memberNames}
+            progress={party.progress || {}}
+            starredQuests={party.starred || {}}
+            mapNorm={party.map_norm}
+            objectivePins={pins}
+            myPing={myPing}
+            loadingTasks={loadingTasks}
+            focusKey={mapFocusKey}
+            onHoverFocus={setHoverFocusKey}
+            onToggleFocus={key => setFocusKey(current => current === key ? null : key)}
+          />
+        )}
       </div>
     </div>
   )

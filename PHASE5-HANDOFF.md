@@ -14,7 +14,7 @@ only records what Phases 3–4 actually landed and what that changes for Phase 5
 | 2 — `json.tarkov.dev` REST fallback | landed, `b8e2d4e` |
 | 3 — JSON-first | landed (committed this session) |
 | 4 — Prebake | landed (committed this session) |
-| 5 — Monitor link | **not started — this document** |
+| 5 — Monitor link | landed — see "What Phase 5 landed" at the bottom |
 
 ---
 
@@ -153,3 +153,69 @@ belong to non-featured maps), and a live browser load of all six prebaked datase
 quests, and boss panels from prebaked data, and the visual confirmation that PMC spawn
 markers land correctly from `spawns.json`. Worth a five-minute pass in `npm run dev` before
 building on top of this.
+
+---
+
+## What Phase 5 landed
+
+### Files
+
+- **`src/useTarkovMonitor.js`** — socket lifecycle, code generation/persistence, pong
+  keepalive, watchdog, backoff reconnect. No new dependencies; plain `WebSocket`.
+- **`src/components/MonitorLink.jsx`** — the connect panel. Owns the hook and is the only
+  place a socket message reaches party state.
+- **`src/components/Room.jsx`** — renders `<MonitorLink>` directly under the map selector,
+  always visible (it is most useful when no map is selected yet).
+- **`src/index.css`** — `.mon-dot`, `.mon-note` and variants.
+- **`scripts/fake-monitor.mjs`** — the fake sender. `node scripts/fake-monitor.mjs <ID> [map]
+  [--repeat]`. Node 21+ only (global `WebSocket`), no dependencies.
+
+### Protocol correction — the relay strips `sessionID`
+
+Verified live against `wss://socket.tarkov.dev` on 2026-08-07. A sender connected as
+`{code}-tm` posting `{type:'command', sessionID:'{code}', data:{...}}` is delivered to the
+`{code}` socket as:
+
+```
+{"type":"command","data":{"type":"map","value":"customs"}}
+```
+
+The `sessionID` field is **not** forwarded. Do not validate against it — the relay's
+query-param routing is the only addressing there is. The code alone is the bearer token.
+
+### Guards
+
+`FEATURED` is the allowlist and the hook checks it before the handler is ever called, so
+nothing off the socket reaches `selectMap`. The component then re-checks leadership and
+resolves the value to a real map object from the loaded `maps` list; the only party field a
+socket message can influence is the map, via the existing `selectMap` path.
+
+`useTarkovMonitor` returns `lastMap` for Phase 6 even though the panel no longer renders it.
+
+### Codes
+
+16 chars from a 32-symbol alphabet (80 bits), I/O/0/1 omitted because the user retypes it
+into TarkovMonitor. Persisted at `tsp.monitor.code`; the linked flag at
+`tsp.monitor.enabled` is what makes a reload reconnect without a click. `NEW ID`
+regenerates and the socket effect tears down and reopens on the new code.
+
+### Verified
+
+Against a temporary harness page mounting `MonitorLink` standalone (removed afterwards),
+driven by `scripts/fake-monitor.mjs`:
+
+- relay broadcast `{code}-tm` → `{code}` works, and pings arrive
+- valid map → squad switches
+- same map again → "already the selected map", no write
+- non-leader → command ignored, selection unchanged
+- `the-labyrinth` (not in `FEATURED`) → rejected with a notice
+- reload → same code, auto-reconnects with no click
+- force-closing the socket → old socket at `readyState` 3, new one at 1, back to LISTENING,
+  and it still receives commands
+- "connected, no raid event yet" notice fires past 90 s
+- `npm run build` clean, no new console errors
+
+**Not verified:** a real TarkovMonitor against a real raid. The transport, validation, and
+every UI branch are proven; what is untested is whether TarkovMonitor's Remote ID setting
+accepts a 16-character code. If it truncates or rejects it, shorten `CODE_LEN` — the
+`CODE_RE` guard already accepts 12.

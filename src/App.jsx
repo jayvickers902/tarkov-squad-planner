@@ -34,6 +34,7 @@ export default function App() {
     toggleStar, submitMyProgress,
     addStroke, clearMyStrokes,
     addMarker, clearMyMarkers,
+    addPing, clearPings,
     leaveParty, setError: setPartyError,
     syncSavedQuests, refreshParty, startRaid,
   } = useParty()
@@ -230,6 +231,8 @@ export default function App() {
         onClearMyStrokes={clearMyStrokes}
         onAddMarker={addMarker}
         onClearMyMarkers={clearMyMarkers}
+        onAddPing={addPing}
+        onClearPings={clearPings}
         onMyQuests={() => setPartyScreen('myquests')}
         onAdmin={() => setPartyScreen('admin')}
         friends={friends}

@@ -69,24 +69,154 @@ button {
 
 .card { background: var(--sur); border: 1px solid var(--brd); border-radius: 6px; }
 
-.tarkov-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 9px 11px;
-  background: rgba(184,64,64,0.08);
-  border: 1px solid rgba(184,64,64,0.45);
-  border-left: 3px solid var(--red);
+/* ── TarkovMonitor link panel ─────────────────────────────────────────────── */
+.mon-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.mon-dot-live { animation: monPulse 1.8s ease-in-out infinite; }
+@keyframes monPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+.mon-note {
+  padding: 8px 10px;
   border-radius: 4px;
+  border: 1px solid var(--brd2);
+  border-left: 3px solid var(--brd2);
+  background: var(--sur2);
   color: var(--tx);
   font-size: 12px;
+  line-height: 1.6;
 }
-.tarkov-status strong { color: #e07070; }
-.tarkov-status-rest { border-color: var(--golddim); background: rgba(201,168,76,0.06); }
-.tarkov-status-rest strong { color: var(--goldtx); }
-.tarkov-status-cache { color: var(--goldtx); font-family: 'Share Tech Mono', monospace; font-size: 11px; }
-.tarkov-status button { margin-left: auto; color: var(--goldtx); border-color: var(--golddim); }
+.mon-note-ok   { border-color: rgba(74,140,90,0.45); border-left-color: var(--grn); background: rgba(74,140,90,0.07); }
+.mon-note-warn { border-color: var(--golddim); border-left-color: var(--gold); background: rgba(201,168,76,0.06); }
+.mon-note-warn strong { color: var(--goldtx); }
+
+/* ── Position pings ───────────────────────────────────────────────────────── */
+.mon-ping-help {
+  border: 1px solid var(--brd2);
+  border-radius: 4px;
+  background: var(--sur2);
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.mon-ping-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mon-ping-title { font-size: 10px; color: var(--goldtx); letter-spacing: .1em; }
+.mon-ping-pending { font-size: 10px; color: var(--gold); letter-spacing: .08em; animation: monPulse 1.2s ease-in-out infinite; }
+.mon-cadence { display: flex; gap: 14px; flex-wrap: wrap; }
+.mon-cadence-item { display: flex; align-items: center; gap: 5px; font-size: 10px; letter-spacing: .06em; }
+
+.monitor-collapsed { display: flex; align-items: center; gap: 8px; min-height: 26px; }
+.monitor-collapsed-status { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }
+.monitor-collapsed-separator { color: var(--txd); }
+.monitor-collapsed code {
+  color: var(--goldtx);
+  background: var(--sur2);
+  border: 1px solid var(--brd2);
+  border-radius: 3px;
+  padding: 3px 7px;
+  letter-spacing: .14em;
+}
+
+.ping-strip {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ping-card {
+  flex: 1 1 210px;
+  min-width: 0;
+  border: 1px solid var(--brd);
+  border-left: 3px solid var(--brd2);
+  border-radius: 4px;
+  background: var(--sur2);
+  padding: 6px 9px;
+  transition: opacity .4s ease;
+}
+.ping-card-head { display: flex; align-items: center; gap: 7px; }
+.ping-card-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--txm);
+}
+
+.map-leaflet > .replay-bar,
+.map-leaflet > .ping-strip,
+.map-leaflet > .replay-note,
+.map-leaflet > .intel-legend,
+.map-leaflet > .mono { flex-shrink: 0; }
+
+.room-map-surface {
+  width: 100%;
+  height: clamp(520px, calc(100vh - 180px), 1100px);
+  min-height: 520px;
+}
+
+.raid-map-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-right: 1px solid var(--brd);
+  flex-shrink: 0;
+  color: var(--goldtx);
+}
+.raid-map-chip .mono { font-size: 10px; letter-spacing: .08em; }
+.raid-map-chip button { font-size: 10px; padding: 4px 7px; }
+
+/* ── Post-raid replay ─────────────────────────────────────────────────────── */
+.replay-bar {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--brd2);
+  border-left: 3px solid var(--gold);
+  border-radius: 4px;
+  background: var(--sur2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.replay-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.replay-title { font-size: 10px; color: var(--goldtx); letter-spacing: .12em; }
+.replay-clock { font-size: 11px; color: var(--goldtx); letter-spacing: .06em; flex-shrink: 0; }
+.replay-scrub {
+  flex: 1 1 160px;
+  min-width: 120px;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+.replay-note {
+  font-size: 10px;
+  color: var(--txd);
+  letter-spacing: .05em;
+  line-height: 1.6;
+}
+
+/* ── Intel / document spawns ──────────────────────────────────────────────── */
+.intel-legend {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 12px;
+  font-size: 10px;
+  letter-spacing: .05em;
+}
+.intel-brief {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid var(--brd2);
+  border-left: 3px solid #6a9aaa;
+  border-radius: 4px;
+  background: var(--sur2);
+  font-size: 10px;
+  letter-spacing: .05em;
+}
 
 @keyframes spin   { to { transform: rotate(360deg); } }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
@@ -99,6 +229,187 @@ button {
 /* Horizontally scrollable tab bar on mobile */
 .tab-bar { display: flex; border-bottom: 1px solid var(--brd); overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .tab-bar::-webkit-scrollbar { display: none; }
+
+/* ─── Raid View ───────────────────────────────────────────────────────────── */
+.raid-view {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--tx);
+}
+.raid-topbar {
+  height: 28px;
+  flex: 0 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  background: var(--sur);
+  border-bottom: 1px solid var(--brd);
+  z-index: 10;
+}
+.raid-top-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 2px 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--txm);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+.raid-top-button:hover,
+.raid-top-button-active { color: var(--goldtx); border-color: var(--golddim); background: rgba(201,168,76,.08); }
+.raid-map-title { display: flex; align-items: center; justify-content: center; gap: 9px; min-width: 0; flex: 1; }
+.raid-map-meta { color: var(--gold); font-size: 9px; letter-spacing: .12em; }
+.raid-map-name { color: var(--goldtx); font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.raid-top-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.raid-body { display: flex; flex: 1; min-width: 0; min-height: 0; position: relative; }
+.raid-map-pane { flex: 1 1 auto; min-width: 0; min-height: 0; position: relative; overflow: hidden; }
+.raid-map-pane > .map-leaflet { width: 100%; height: 100%; }
+.raid-rail {
+  width: 340px;
+  flex: 0 0 340px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sur);
+  border-left: 1px solid var(--brd);
+  box-shadow: -8px 0 24px rgba(0,0,0,.25);
+  z-index: 5;
+}
+.raid-rail-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--brd);
+  color: var(--goldtx);
+  font-size: 10px;
+  letter-spacing: .13em;
+  flex: 0 0 auto;
+}
+.raid-rail-count { color: var(--txd); font-size: 9px; letter-spacing: .07em; }
+.raid-rail-scroll { overflow: auto; min-height: 0; padding: 8px; }
+.raid-rail-section + .raid-rail-section { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--brd); }
+.raid-rail-heading { display: flex; align-items: center; gap: 7px; margin: 0 2px 6px; color: var(--gold); font-size: 9px; letter-spacing: .12em; }
+.raid-rail-heading .raid-rail-count { margin-left: auto; }
+.raid-rail-empty { padding: 9px 4px; color: var(--txd); font-size: 10px; letter-spacing: .05em; }
+.raid-ping-list { display: flex; flex-direction: column; gap: 5px; }
+.raid-ping-card { flex: none; min-width: 0; padding: 6px 8px; }
+.raid-ping-body { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; color: var(--txm); font-size: 10px; line-height: 1.4; }
+.obj-list { display: flex; flex-direction: column; gap: 3px; }
+.obj-row {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  width: 100%;
+  gap: 5px;
+  padding: 4px 6px;
+  background: var(--sur2);
+  border: 1px solid var(--brd);
+  border-left: 3px solid var(--brd);
+  border-radius: 3px;
+  color: var(--tx);
+  text-align: left;
+  transition: background .12s, border-color .12s, opacity .12s;
+}
+.obj-row[role='button'] { cursor: pointer; }
+.obj-row[role='button']:hover,
+.obj-row-active { background: rgba(201,168,76,.12); border-color: var(--golddim); }
+.obj-row:focus-visible { outline: 1px solid var(--gold); outline-offset: 1px; }
+.obj-row-no-location { color: var(--txd); cursor: default; }
+.obj-row-mark { font-size: 10px; flex: 0 0 auto; }
+.obj-row-member { max-width: 58px; min-width: 35px; overflow: hidden; text-overflow: ellipsis; font-size: 9px; letter-spacing: .04em; flex: 0 0 auto; }
+.obj-row-quest { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-family: 'Rajdhani', sans-serif; font-weight: 600; }
+.obj-row-separator { color: var(--txd); flex: 0 0 auto; }
+.obj-row-action { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txm); font-size: 10px; }
+.obj-row-distance { margin-left: auto; flex: 0 0 auto; color: var(--goldtx); font-size: 9px; white-space: nowrap; }
+.obj-row-no-location .obj-row-distance { color: var(--txd); }
+.raid-rail-drag-handle { display: none; }
+
+.obj-pin { display: block; width: 20px; height: 20px; transition: opacity .18s, filter .18s; }
+.obj-pin-dim { opacity: .3; }
+.obj-pin-focus { animation: objPinPulse 1.15s ease-in-out infinite; filter: drop-shadow(0 0 4px var(--gold)); }
+@keyframes objPinPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }
+
+.map-chrome { backdrop-filter: blur(4px); }
+.map-chrome-style,
+.map-chrome-members {
+  position: absolute;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  background: rgba(12,14,13,.72);
+  border: 1px solid rgba(201,168,76,.28);
+  border-radius: 4px;
+}
+.map-chrome-style { top: 8px; right: 8px; }
+.map-chrome-members { right: 8px; bottom: 8px; flex-wrap: wrap; gap: 8px; max-width: 42%; }
+.map-leaflet-overlay > .map-mode-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  z-index: 1001;
+  max-width: calc(100% - 16px);
+  padding: 4px 7px;
+  transform: translateX(-50%);
+  background: rgba(12,14,13,.72);
+  border: 1px solid rgba(201,168,76,.22);
+  border-radius: 4px;
+  pointer-events: none;
+}
+.map-leaflet-overlay > .map-intel-legend {
+  position: absolute;
+  left: 50%;
+  bottom: 34px;
+  z-index: 1001;
+  max-width: calc(100% - 16px);
+  margin-top: 0;
+  padding: 4px 7px;
+  transform: translateX(-50%);
+  background: rgba(12,14,13,.72);
+  border: 1px solid rgba(201,168,76,.22);
+  border-radius: 4px;
+}
+.map-leaflet-overlay > .map-intel-legend + .map-intel-legend { bottom: 64px; }
+
+@media (max-width: 768px) {
+  .raid-topbar { padding: 0 4px; gap: 2px; }
+  .raid-map-meta, .raid-map-name, .raid-button-label { display: none; }
+  .raid-map-title { justify-content: flex-start; }
+  .raid-top-button { width: 28px; justify-content: center; padding: 2px; }
+  .raid-body { position: relative; display: block; }
+  .raid-map-pane { position: absolute; inset: 0; }
+  .raid-rail-mobile {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 78%;
+    flex: none;
+    border-left: none;
+    border-top: 1px solid var(--brd);
+    border-radius: 7px 7px 0 0;
+    box-shadow: 0 -8px 24px rgba(0,0,0,.45);
+  }
+  .raid-rail-drag-handle { display: flex; align-items: center; justify-content: center; height: 18px; flex: 0 0 18px; cursor: ns-resize; touch-action: none; }
+  .raid-rail-drag-handle span { width: 42px; height: 3px; border-radius: 3px; background: var(--brd2); }
+  .raid-rail-mobile .raid-rail-title { padding-top: 3px; }
+  .raid-map-pane .map-chrome-toolbar { left: 5px !important; bottom: 5px !important; max-width: calc(100% - 10px) !important; }
+  .raid-map-pane .map-chrome-palette { left: 5px !important; bottom: 45px !important; max-width: calc(100% - 10px) !important; }
+  .room-map-surface { height: calc(100vh - 250px); min-height: 460px; }
+}
 
 /* ── Leaflet dark theme overrides ────────────────────────────────────────── */
 .leaflet-container {

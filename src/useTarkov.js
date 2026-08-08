@@ -162,9 +162,9 @@ function restFallbackError(cause, fromCache) {
 // and two backoff sleeps on a known-dead endpoint before every panel loads.
 //
 // `gql` resolves to the data itself; `rest` resolves to { data, cachedAt, fromCache }.
-// `fallback` is true only when GraphQL was tried and lost, which is what tells
-// TarkovStatus to show the informational note. REST-as-primary is not a degraded
-// state and must not surface one.
+// `fallback` is true only when GraphQL was tried and lost. Nothing renders it any
+// more — the source-status banners were removed deliberately — but it is still the
+// honest signal in the returned shape, and REST-as-primary is not a degraded state.
 // Load order is prebaked -> live REST -> GraphQL (only when flagged on).
 // The prebaked JSON ships with the build, so it paints before any network call
 // and keeps the app usable when json.tarkov.dev is down. It is only ever a

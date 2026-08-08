@@ -1,7 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useBossSpawns, useKeys } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
-import TarkovStatus from './TarkovStatus'
+import { useIntel } from '../useIntel'
+import { useMapLoot } from '../useMapLoot'
+import { useIntelChecklist } from '../useIntelChecklist'
+import { curatedLootPoints, mergeIntelSources, countByKind, INTEL_KINDS, bestCluster, RING_RADII_M } from '../tarkovIntel'
 
 function toAntifandom(url) {
   if (!url) return null
@@ -41,7 +44,7 @@ function SpawnBar({ chance }) {
 
 export default function StartRaidModal({ party, myName, tasks, onClose }) {
   const [times, setTimes] = useState(getTarkovTimes)
-  const { getBossesForMap, loading: bossLoading, error: bossError, retry: retryBosses, cachedAt: bossesCachedAt } = useBossSpawns()
+  const { getBossesForMap, loading: bossLoading } = useBossSpawns()
 
   useEffect(() => {
     const id = setInterval(() => setTimes(getTarkovTimes()), 1000)
@@ -51,11 +54,30 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
   const mapNorm = party.map_norm
   const mapName = party.map_name
   const isFactory = mapNorm === 'factory'
-  const { allKeys, error: keysError, retry: retryKeys, cachedAt: keysCachedAt } = useKeys(mapNorm)
+  const { allKeys } = useKeys(mapNorm)
   const keyIconMap = useMemo(() => Object.fromEntries(allKeys.map(k => [k.id, k.iconLink || null])), [allKeys])
   const dayBosses   = mapNorm ? getBossesForMap(isFactory ? 'factory' : mapNorm) : []
   const nightBosses = isFactory ? getBossesForMap('night-factory') : []
   const bosses = isFactory ? [...dayBosses, ...nightBosses] : dayBosses
+
+  // Pre-raid intel brief — "6 document spawns on Customs", known before you load
+  // in, which is the one moment the count is actually actionable.
+  const { intelPoints } = useIntel(mapNorm)
+  const { lootRows } = useMapLoot(mapNorm)
+  const { foundToday } = useIntelChecklist(mapNorm, party.progress?.['__raid_start__'] ?? null)
+  const allIntel = useMemo(
+    () => mergeIntelSources(intelPoints, curatedLootPoints(lootRows, mapNorm)),
+    [intelPoints, lootRows, mapNorm],
+  )
+  const intelCounts = useMemo(() => countByKind(allIntel), [allIntel])
+  const intelTotal = intelCounts.folder + intelCounts.case + intelCounts.document
+  // The pre-raid half of the planning rings: the tightest group on this map,
+  // quoted at the same radius the map's default ring uses so the number the
+  // brief gives is the number the gold ring will show.
+  const intelCluster = useMemo(
+    () => (intelTotal > 1 ? bestCluster(allIntel, RING_RADII_M[0]) : null),
+    [allIntel, intelTotal],
+  )
 
   const myQuests = party.members?.[myName] || []
 
@@ -169,8 +191,6 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
 
         {/* Body */}
         <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <TarkovStatus error={bossError} retry={retryBosses} cachedAt={bossesCachedAt} />
-          <TarkovStatus error={keysError} retry={retryKeys} cachedAt={keysCachedAt} />
 
           {/* Clocks + Bosses */}
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
@@ -235,6 +255,31 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
               <span className="mono" style={{ fontSize: 10, color: 'var(--goldtx)', letterSpacing: '.04em' }}>
                 CLIFF DESCENT — BRING RED REBEL ICE PICK + PARACORD
               </span>
+            </div>
+          )}
+
+          {/* Intel brief */}
+          {intelTotal > 0 && (
+            <div className="mono intel-brief">
+              <span style={{ color: 'var(--goldtx)', letterSpacing: '.1em' }}>▤ INTEL SPAWNS</span>
+              {intelCounts.folder > 0 && (
+                <span style={{ color: INTEL_KINDS.folder.color }}>{intelCounts.folder} FOLDER</span>
+              )}
+              {intelCounts.case > 0 && (
+                <span style={{ color: INTEL_KINDS.case.color }}>{intelCounts.case} CASE</span>
+              )}
+              {intelCounts.document > 0 && (
+                <span style={{ color: INTEL_KINDS.document.color }}>{intelCounts.document} DOCUMENT</span>
+              )}
+              <span style={{ color: 'var(--txd)' }}>— ENABLE THE INTEL LAYER ON THE MAP</span>
+              {intelCluster && intelCluster.count > 1 && (
+                <span style={{ color: 'var(--goldtx)' }}>
+                  · TIGHTEST GROUP {intelCluster.count} WITHIN {RING_RADII_M[0]} M — TURN ON ◎ RINGS TO SEE IT
+                </span>
+              )}
+              {foundToday > 0 && (
+                <span style={{ color: 'var(--txd)', marginLeft: 'auto' }}>{foundToday} CHECKED TODAY</span>
+              )}
             </div>
           )}
 

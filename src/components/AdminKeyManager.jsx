@@ -1,9 +1,27 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { FEATURED, MAP_IMAGES } from '../constants'
 import { useKeys } from '../useTarkov'
 import { useMapKeys } from '../useMapKeys'
+import { useMapLoot } from '../useMapLoot'
+import { useIntel } from '../useIntel'
 import { useIsMobile } from '../useIsMobile'
-import TarkovStatus from './TarkovStatus'
+import { INTEL_KINDS, worldToNorm } from '../tarkovIntel'
+
+// Season 1 "Kord Breach" document items. Upstream has these items but *no*
+// coordinates for them on any map — 0 hits across all 17 maps in lootLoose and
+// lootContainers — so every point in map_loot is placed by hand here. If that
+// ever changes upstream, this editor becomes redundant rather than wrong.
+const DOCUMENT_NAMES = [
+  'Project documentation',
+  'Blueprints and technical documentation',
+  'Test documentation',
+  'User documentation',
+  'Medical documents',
+  'Technical documentation',
+  'Classified documents',
+  'Financial documents',
+  'Battle Pass Document',
+]
 
 const MAP_LABELS = {
   'customs': 'Customs', 'woods': 'Woods', 'interchange': 'Interchange',
@@ -14,14 +32,29 @@ const MAP_LABELS = {
 
 export default function AdminKeyManager({ onBack }) {
   const [mapNorm, setMapNorm]       = useState('customs')
+  const [section, setSection]       = useState('keys')  // 'keys' | 'loot'
   const [placing, setPlacing]       = useState(null)   // key name being placed on map
   const [saving, setSaving]         = useState(null)   // key name currently saving
   const [feedback, setFeedback]     = useState('')
+  const [lootName, setLootName]     = useState(DOCUMENT_NAMES[0])
+  const [lootNotes, setLootNotes]   = useState('')
+  const [placingLoot, setPlacingLoot] = useState(false)
+  const [showIntelRef, setShowIntelRef] = useState(true)
   const imgRef = useRef(null)
 
   const isMobile = useIsMobile()
-  const { keys, loading: keysLoading, error: keysError, retry: retryKeys, cachedAt: keysCachedAt } = useKeys(mapNorm)
+  const { keys, loading: keysLoading } = useKeys(mapNorm)
   const { mapKeys, upsertKey }         = useMapKeys(mapNorm)
+  const { lootRows, error: lootError, addLoot, removeLoot } = useMapLoot(mapNorm)
+  const { intelPoints } = useIntel(mapNorm)
+
+  // The prebaked loose-loot points, projected back onto the flat map image, so a
+  // hand-placed document can be put where the intel spawns already are instead
+  // of somewhere plausible-looking.
+  const intelRefMarks = useMemo(
+    () => intelPoints.map(p => ({ id: p.id, ...worldToNorm(p.x, p.z, mapNorm) })).filter(m => m.nx != null),
+    [intelPoints, mapNorm],
+  )
 
   function flash(msg) { setFeedback(msg); setTimeout(() => setFeedback(''), 2000) }
 
@@ -36,10 +69,25 @@ export default function AdminKeyManager({ onBack }) {
   }
 
   async function handleMapClick(e) {
-    if (!placing) return
     const rect = imgRef.current.getBoundingClientRect()
     const loc_x = (e.clientX - rect.left) / rect.width
     const loc_y = (e.clientY - rect.top) / rect.height
+
+    if (section === 'loot') {
+      if (!placingLoot || !lootName.trim()) return
+      setSaving('__loot__')
+      const { error } = await addLoot({
+        mapNorm, lootName: lootName.trim(), lootType: 'document',
+        locX: loc_x, locY: loc_y, notes: lootNotes.trim() || null,
+      })
+      setSaving(null)
+      if (error) flash('Save failed: ' + error.message)
+      // Placement stays armed: these go in runs of three or four per document.
+      else flash(`📄 ${lootName} placed`)
+      return
+    }
+
+    if (!placing) return
     const current = mapKeys[placing]
     setSaving(placing)
     const { error } = await upsertKey(mapNorm, placing, current?.priority ?? false, loc_x, loc_y)
@@ -60,6 +108,7 @@ export default function AdminKeyManager({ onBack }) {
 
   const imgSrc = MAP_IMAGES[mapNorm]
   const located = Object.entries(mapKeys).filter(([, v]) => v.loc_x != null && v.loc_y != null)
+  const armed = section === 'loot' ? placingLoot : !!placing
 
   return (
     <div style={{ minHeight: '100vh', padding: '14px 16px' }}>
@@ -69,8 +118,16 @@ export default function AdminKeyManager({ onBack }) {
         <button className="btn-ghost btn-sm" onClick={onBack}>← BACK</button>
         <div style={{ width: 4, height: 26, background: 'var(--gold)', borderRadius: 2 }} />
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>KEY ADMIN</h1>
-          <div className="mono" style={{ fontSize: 11, color: 'var(--txm)' }}>// PRIORITY + LOCATION MANAGER</div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>MAP DATA ADMIN</h1>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--txm)' }}>
+            // {section === 'keys' ? 'KEY PRIORITY + LOCATION MANAGER' : 'HAND-PLACED DOCUMENT SPAWNS'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button className={section === 'keys' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+            onClick={() => { setSection('keys'); setPlacingLoot(false) }}>🔑 KEYS</button>
+          <button className={section === 'loot' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+            onClick={() => { setSection('loot'); setPlacing(null) }}>📄 DOCUMENTS</button>
         </div>
         {feedback && (
           <div className="mono" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--gold)', background: 'var(--sur2)', border: '1px solid var(--golddim)', borderRadius: 4, padding: '4px 10px' }}>
@@ -83,7 +140,7 @@ export default function AdminKeyManager({ onBack }) {
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 20 }}>
         {FEATURED.map(m => (
           <button key={m}
-            onClick={() => { setMapNorm(m); setPlacing(null) }}
+            onClick={() => { setMapNorm(m); setPlacing(null); setPlacingLoot(false) }}
             className={mapNorm === m ? 'btn-gold' : 'btn-ghost'}
             style={{ padding: '5px 12px', fontSize: 12 }}>
             {MAP_LABELS[m]}
@@ -94,8 +151,8 @@ export default function AdminKeyManager({ onBack }) {
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '320px 1fr', gap: 16, alignItems: 'start' }}>
 
         {/* Key list */}
+        {section === 'keys' && (
         <div className="card" style={{ padding: 14, maxHeight: '80vh', overflowY: 'auto' }}>
-          <TarkovStatus error={keysError} retry={retryKeys} cachedAt={keysCachedAt} />
           <div className="lbl" style={{ marginBottom: 10 }}>
             {keys.length} KEYS — TOGGLE PRIORITY / CLICK TO PLACE
           </div>
@@ -161,38 +218,136 @@ export default function AdminKeyManager({ onBack }) {
             )
           })}
         </div>
+        )}
+
+        {/* Document list — curated map_loot rows for this map */}
+        {section === 'loot' && (
+        <div className="card" style={{ padding: 14, maxHeight: '80vh', overflowY: 'auto' }}>
+          {lootError && (
+            <div className="mono" style={{ fontSize: 11, color: 'var(--red)', marginBottom: 10, lineHeight: 1.5 }}>
+              ⚠ {lootError}
+              <div style={{ color: 'var(--txd)', marginTop: 4 }}>
+                RUN THE map_loot BLOCK IN supabase-schema.sql
+              </div>
+            </div>
+          )}
+
+          <div className="lbl" style={{ marginBottom: 8 }}>PLACE A DOCUMENT SPAWN</div>
+
+          <select value={lootName} onChange={e => setLootName(e.target.value)}
+            style={{ width: '100%', fontSize: 12, padding: '4px 6px', marginBottom: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, color: 'var(--tx)' }}>
+            {DOCUMENT_NAMES.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <input placeholder="Note (e.g. 3rd floor office desk)" value={lootNotes}
+            onChange={e => setLootNotes(e.target.value)}
+            style={{ width: '100%', fontSize: 12, marginBottom: 6 }} />
+          <button
+            className={placingLoot ? 'btn-gold' : 'btn-ghost'}
+            onClick={() => setPlacingLoot(v => !v)}
+            style={{ width: '100%', padding: '5px', fontSize: 11 }}>
+            {placingLoot ? 'PLACING — CLICK MAP (CLICK HERE TO STOP)' : 'PLACE ON MAP'}
+          </button>
+
+          <div className="lbl" style={{ margin: '14px 0 8px' }}>
+            {lootRows.length} PLACED ON {MAP_LABELS[mapNorm]?.toUpperCase()}
+          </div>
+          {lootRows.length === 0 && (
+            <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>— NONE YET</div>
+          )}
+          {lootRows.map(row => (
+            <div key={row.id} style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '6px 8px', marginBottom: 3,
+              background: 'var(--sur2)', border: '1px solid var(--brd)', borderRadius: 4,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {row.loot_name}
+                </div>
+                <div className="mono" style={{ fontSize: 9, color: 'var(--txd)' }}>
+                  {row.notes ? `${row.notes} · ` : ''}
+                  {row.loc_x?.toFixed(3)} / {row.loc_y?.toFixed(3)}
+                </div>
+              </div>
+              <button className="btn-ghost btn-sm" style={{ fontSize: 10, color: 'var(--red)', flexShrink: 0 }}
+                onClick={async () => {
+                  const { error } = await removeLoot(row.id)
+                  flash(error ? 'Delete failed: ' + error.message : `Removed ${row.loot_name}`)
+                }}>
+                ×
+              </button>
+            </div>
+          ))}
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 14, cursor: 'pointer' }}>
+            <input type="checkbox" checked={showIntelRef} onChange={e => setShowIntelRef(e.target.checked)} style={{ width: 'auto' }} />
+            <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>
+              SHOW {intelRefMarks.length} PREBAKED INTEL SPAWNS FOR REFERENCE
+            </span>
+          </label>
+        </div>
+        )}
 
         {/* Map with click-to-place */}
         <div className="card" style={{ padding: 14 }}>
-          {placing && (
+          {armed && (
             <div className="mono" style={{
               marginBottom: 10, padding: '8px 12px',
               background: 'rgba(201,168,76,0.1)', border: '1px solid var(--gold)', borderRadius: 4,
               fontSize: 12, color: 'var(--gold)',
             }}>
-              CLICK MAP TO PLACE: {placing}
+              CLICK MAP TO PLACE: {section === 'loot' ? lootName : placing}
             </div>
           )}
-          {!placing && (
+          {!armed && (
             <div className="mono" style={{ marginBottom: 10, fontSize: 11, color: 'var(--txd)' }}>
-              SELECT A KEY FROM THE LIST AND CLICK PLACE, THEN CLICK THE MAP
+              {section === 'loot'
+                ? 'PICK A DOCUMENT, CLICK PLACE ON MAP, THEN CLICK THE MAP — PLACEMENT STAYS ARMED'
+                : 'SELECT A KEY FROM THE LIST AND CLICK PLACE, THEN CLICK THE MAP'}
             </div>
           )}
 
           <div style={{
             position: 'relative', width: '100%', lineHeight: 0,
             borderRadius: 4, overflow: 'hidden',
-            cursor: placing ? 'crosshair' : 'default',
+            cursor: armed ? 'crosshair' : 'default',
           }}>
             {imgSrc
               ? <img ref={imgRef} src={imgSrc} alt={mapNorm} draggable={false}
                   onClick={handleMapClick}
-                  style={{ width: '100%', display: 'block', userSelect: 'none', opacity: placing ? 0.85 : 1 }} />
+                  style={{ width: '100%', display: 'block', userSelect: 'none', opacity: armed ? 0.85 : 1 }} />
               : <div style={{ width: '100%', paddingBottom: '66%', background: 'var(--sur)' }} />
             }
 
+            {/* Prebaked intel spawns, as placement reference only */}
+            {section === 'loot' && showIntelRef && intelRefMarks.map(m => (
+              <div key={m.id} style={{
+                position: 'absolute', left: `${m.nx * 100}%`, top: `${m.ny * 100}%`,
+                width: 6, height: 6, marginLeft: -3, marginTop: -3,
+                borderRadius: '50%', background: 'rgba(106,154,170,0.75)',
+                border: '1px solid rgba(0,0,0,0.7)', pointerEvents: 'none',
+              }} />
+            ))}
+
+            {/* Curated document points */}
+            {section === 'loot' && lootRows.filter(r => r.loc_x != null && r.loc_y != null).map(row => (
+              <div key={row.id} title={row.loot_name} style={{
+                position: 'absolute',
+                left: `${row.loc_x * 100}%`,
+                top: `${row.loc_y * 100}%`,
+                transform: 'translate(-50%, -50%)',
+                pointerEvents: 'none',
+                filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.8))',
+              }}>
+                <svg width="20" height="20" viewBox="0 0 22 22">
+                  <path d="M6 4.5 h7 l4 4 v9.5 a1 1 0 0 1 -1 1 h-10 a1 1 0 0 1 -1 -1 v-12.5 a1 1 0 0 1 1 -1 Z"
+                    fill={INTEL_KINDS.document.color} stroke="rgba(0,0,0,0.85)" strokeWidth="1.3" strokeLinejoin="round" />
+                </svg>
+              </div>
+            ))}
+
             {/* Existing location markers */}
-            {located.map(([keyName, v]) => (
+            {section === 'keys' && located.map(([keyName, v]) => (
               <div key={keyName} style={{
                 position: 'absolute',
                 left: `${v.loc_x * 100}%`,
@@ -209,11 +364,24 @@ export default function AdminKeyManager({ onBack }) {
           </div>
 
           <div className="mono" style={{ marginTop: 8, fontSize: 10, color: 'var(--txd)' }}>
-            {located.length} KEY{located.length !== 1 ? 'S' : ''} PLACED ON THIS MAP
-            {' — '}
-            <span style={{ color: 'var(--gold)' }}>● PRIORITY</span>
-            {'  '}
-            <span style={{ color: '#6a9aaa' }}>● STANDARD</span>
+            {section === 'keys' ? (
+              <>
+                {located.length} KEY{located.length !== 1 ? 'S' : ''} PLACED ON THIS MAP
+                {' — '}
+                <span style={{ color: 'var(--gold)' }}>● PRIORITY</span>
+                {'  '}
+                <span style={{ color: '#6a9aaa' }}>● STANDARD</span>
+              </>
+            ) : (
+              <>
+                {lootRows.length} DOCUMENT SPAWN{lootRows.length !== 1 ? 'S' : ''} PLACED
+                {' — '}
+                <span style={{ color: INTEL_KINDS.document.color }}>▧ HAND-PLACED</span>
+                {showIntelRef && intelRefMarks.length > 0 && (
+                  <>{'  '}<span style={{ color: '#6a9aaa' }}>● PREBAKED INTEL (REFERENCE)</span></>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>

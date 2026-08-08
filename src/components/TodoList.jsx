@@ -93,11 +93,6 @@ const QuestCard = memo(function QuestCard({
               letterSpacing: '.03em',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{task.name}</div>
-            {task.incompleteData && (
-              <span className="mono" title="This saved quest is not present in the current API dataset" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.05em', flexShrink: 0 }}>
-                DATA INCOMPLETE
-              </span>
-            )}
             {task.kappaRequired && (
               <span className="mono" title="Required for Kappa" style={{
                 fontSize: 9, padding: '1px 5px', borderRadius: 3, flexShrink: 0,

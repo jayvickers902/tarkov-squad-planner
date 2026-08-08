@@ -23,6 +23,8 @@ begin
     starred  = '{}'::jsonb,
     drawings = '[]'::jsonb,
     markers  = '[]'::jsonb,
+    pings    = '[]'::jsonb,
+    ping_log = '[]'::jsonb,
     members  = jsonb_set(members, array[p_leader], p_leader_quests)
   where code = p_code
   returning *;

@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import { useMaps, useTasks } from '../useTarkov'
 import { useIsMobile } from '../useIsMobile'
 import QuestSearch from './QuestSearch'
@@ -11,7 +11,7 @@ import BossPanel from './BossPanel'
 import TarkovClocks from './TarkovClocks'
 import StartRaidModal from './StartRaidModal'
 import RaidView from './RaidView'
-import TarkovStatus from './TarkovStatus'
+import MonitorLink from './MonitorLink'
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
@@ -39,7 +39,7 @@ function MemberPill({ name, allMembers }) {
   )
 }
 
-export default function Room({ party, myName, isAdmin, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid }) {
+export default function Room({ party, myName, isAdmin, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
@@ -53,9 +53,22 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
   const [dismissedRaidStart, setDismissedRaidStart] = useState(null)
   const [startRaidPending, setStartRaidPending] = useState(false)
   const [raidView, setRaidView] = useState(false)
+  const [mapSelectorOpen, setMapSelectorOpen] = useState(false)
+
+  useEffect(() => {
+    if (tab === 'map') setSidebarOpen(false)
+  }, [tab])
 
   const raidStart = party.progress?.['__raid_start__'] || null
   const showRaidModal = startRaidPending || (!!party.map_id && raidStart !== null && raidStart !== dismissedRaidStart)
+
+  // Work a map change would destroy — select_map_party resets exactly these four.
+  // __raid_start__ is bookkeeping the modal writes, not something anyone would mourn,
+  // so it does not count: otherwise every raid would arm the prompt for the next one.
+  const hasPlan = (party.drawings?.length || 0) > 0
+    || (party.markers?.length || 0) > 0
+    || Object.keys(party.starred || {}).length > 0
+    || Object.keys(party.progress || {}).some(k => k !== '__raid_start__')
 
 
   async function handleSendRequest() {
@@ -67,12 +80,9 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
     setAddBusy(false)
   }
 
-  const { maps, loading: loadingMaps, error: mapsError, retry: retryMaps, cachedAt: mapsCachedAt } = useMaps()
-  const { tasks, loading: loadingTasks, error: tasksError, retry: retryTasks, cachedAt: tasksCachedAt } = useTasks(party.map_norm)
-  const { tasks: allTasks, error: allTasksError, retry: retryAllTasks, cachedAt: allTasksCachedAt } = useTasks(null)
-  const tarkovTaskError = tasksError || allTasksError
-  const retryTarkovTasks = () => { retryTasks(); retryAllTasks() }
-  const tarkovTaskCachedAt = tasksCachedAt || allTasksCachedAt
+  const { maps, loading: loadingMaps } = useMaps()
+  const { tasks, loading: loadingTasks } = useTasks(party.map_norm)
+  const { tasks: allTasks } = useTasks(null)
   const isLeader = party.leader === myName
   const members  = Object.keys(party.members || {})
   const mine     = party.members?.[myName] || []
@@ -156,6 +166,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
           onClearMyStrokes={onClearMyStrokes}
           onAddMarker={onAddMarker}
           onClearMyMarkers={onClearMyMarkers}
+          onClearPings={onClearPings}
           onClose={() => setRaidView(false)}
         />
       )}
@@ -177,7 +188,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
             {!isMobile && (
               <>
                 <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>
-                {raidStart !== null && party.map_id && (
+                {party.map_id && (
                   <button className="btn-ghost btn-sm" onClick={() => setRaidView(true)} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}>⛺ RAID VIEW</button>
                 )}
                 <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -203,7 +214,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
         {isMobile && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
             <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>
-            {raidStart !== null && party.map_id && (
+            {party.map_id && (
               <button className="btn-ghost btn-sm" onClick={() => setRaidView(true)} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}>⛺ RAID VIEW</button>
             )}
             <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}>
@@ -460,16 +471,19 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
 
           {/* Map selector */}
-          <div className="card" style={{ padding: 16 }}>
+          <div className="room-map-selector-card card" style={{ padding: 16, display: raidStart && !mapSelectorOpen ? 'none' : undefined }}>
             <div className="lbl">{isLeader ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
-            <TarkovStatus error={mapsError} retry={retryMaps} cachedAt={mapsCachedAt} />
             {loadingMaps && !maps.length
               ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAPS...</span></div>
               : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
                   {maps.map(m => (
                     <button key={m.id}
-                      onClick={() => isLeader && onSelectMap(m)}
+                      onClick={() => {
+                        if (!isLeader) return
+                        onSelectMap(m)
+                        if (raidStart) setMapSelectorOpen(false)
+                      }}
                       className={party.map_id === m.id ? 'btn-gold' : 'btn-ghost'}
                       style={{ padding: '7px 12px', fontSize: 13, opacity: isLeader ? 1 : .7, cursor: isLeader ? 'pointer' : 'default' }}>
                       {m.name.toUpperCase()}
@@ -480,10 +494,26 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
             }
           </div>
 
+          <MonitorLink
+            maps={maps}
+            mapNorm={party.map_norm}
+            myName={myName}
+            isLeader={isLeader}
+            hasPlan={hasPlan}
+            onSelectMap={onSelectMap}
+            onAddPing={onAddPing}
+          />
+
           {party.map_id && (
             <>
               {/* Tabs */}
               <div className="tab-bar">
+                {raidStart && !mapSelectorOpen && (
+                  <div className="raid-map-chip">
+                    <span className="mono">{(party.map_name || party.map_norm || '').toUpperCase()}</span>
+                    <button className="btn-ghost btn-sm" onClick={() => setMapSelectorOpen(true)}>CHANGE</button>
+                  </div>
+                )}
                 {[['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['find', 'WHAT TO LOOK FOR'], ['map', 'MAP / ROUTE'], ['bosses', 'BOSS SPAWNS / KEYS']].map(([id, lbl]) => (
                   <button key={id} onClick={() => setTab(id)} style={{
                     background: 'none', border: 'none',
@@ -500,7 +530,6 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                 <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
                   {/* Squad Objectives — party-wide card */}
                   <div className="card fade-in" style={{ padding: 16, flex: 1, minWidth: 0 }}>
-                    <TarkovStatus error={tarkovTaskError} retry={retryTarkovTasks} cachedAt={tarkovTaskCachedAt} />
                     {!mine.length ? (
                       (mineWasNonEmpty.current || questsLoading) ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '32px 24px', justifyContent: 'center' }}>
@@ -546,9 +575,6 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                       onOpenQuestManager={onMyQuests}
                       mapNorm={party.map_norm}
                       loading={questsLoading}
-                      error={tarkovTaskError}
-                      retry={retryTarkovTasks}
-                      cachedAt={tarkovTaskCachedAt}
                     />
                   </div>
                 </div>
@@ -556,7 +582,6 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
 
               {tab === 'items' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  <TarkovStatus error={tarkovTaskError} retry={retryTarkovTasks} cachedAt={tarkovTaskCachedAt} />
                   {loadingTasks && !tasks.length
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
                     : <RequiredItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} />
@@ -566,7 +591,6 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
 
               {tab === 'find' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  <TarkovStatus error={tarkovTaskError} retry={retryTarkovTasks} cachedAt={tarkovTaskCachedAt} />
                   {loadingTasks && !tasks.length
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
                     : <FindItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} myName={myName} userObjProgress={userObjProgress} />
@@ -582,12 +606,14 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
 
               {tab === 'map' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  <TarkovStatus error={allTasksError} retry={retryAllTasks} cachedAt={allTasksCachedAt} />
+                  <div className="room-map-surface">
                   <MapLeaflet
                     mapNorm={party.map_norm}
                     mapName={party.map_name}
                     drawings={party.drawings || []}
                     markers={party.markers || []}
+                    pings={party.pings || []}
+                    pingLog={party.ping_log}
                     myName={myName}
                     memberNames={members}
                     myQuests={mine}
@@ -598,7 +624,12 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                     onClearMyStrokes={onClearMyStrokes}
                     onAddMarker={onAddMarker}
                     onClearMyMarkers={onClearMyMarkers}
+                    onClearPings={onClearPings}
+                    raidKey={raidStart}
+                    fill
+                    chrome="overlay"
                   />
+                  </div>
                 </div>
               )}
             </>

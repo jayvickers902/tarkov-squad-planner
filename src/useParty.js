@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from './supabase'
+import { prunePings, appendLog } from './tarkovPings'
+
+// One failed `ping_log` write disables the rest for the session. The column is a
+// Phase 8 migration that may not be applied yet, and a per-ping write that
+// always fails is noise in the console and latency on the live path.
+let pingLogWritable = true
 
 function mkCode() {
   const chars = 'ACDEFGHJKLMNPQRTUVWXYZ23456789' // no 0/O/1/I (digit/letter pairs), no S (vs 5), no B (vs 8)
@@ -280,7 +286,7 @@ export function useParty() {
 
     // Optimistic update — only patch leader's own entry, preserve other members
     const optimisticMembers = { ...prev.members, [name]: merged }
-    const optimisticChanges = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, drawings: [], markers: [] }
+    const optimisticChanges = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, drawings: [], markers: [], pings: [], ping_log: [] }
     applyParty({ ...prev, ...optimisticChanges, members: optimisticMembers })
 
     // RPC updates only the leader's members entry via jsonb_set — other members' entries untouched
@@ -408,6 +414,53 @@ export function useParty() {
     updatePartyDB({ markers })
   }, [updatePartyDB])
 
+  // Position pings (Phase 6). Rare — a few per raid — so the row write that
+  // drawings and markers already use is the right transport. Pruned on every
+  // write so the column cannot grow without bound.
+  // The replay log (Phase 8) is written on its own, not folded into the ping
+  // write above. Two reasons, both about the column possibly not existing yet:
+  // a combined update would fail whole and take the live ping down with it, and
+  // `updatePartyDB` merges its response back into party state, so a failure
+  // would leave the optimistic ping applied but unconfirmed. Pings are a few
+  // per raid — a second row write is affordable here and nowhere else.
+  const setPingLog = useCallback(async (ping_log) => {
+    const prev = partyRef.current
+    if (!prev || !codeRef.current) return
+    // Column absent from the selected row means the migration has not run.
+    // Nothing to append to, and the UI says so rather than failing silently.
+    if (prev.ping_log === undefined || !pingLogWritable) return
+    applyParty({ ...prev, ping_log })
+    // Mark the field in flight, exactly as updatePartyDB does. The `pings` write
+    // that runs alongside this one broadcasts the *whole* row over realtime, and
+    // the 5s poll re-reads it — either can arrive carrying the pre-write log and
+    // hand it back to local state. The row would still be correct, but the next
+    // append builds on `prev.ping_log`, so it would write a log that has silently
+    // forgotten this ping.
+    pendingFieldsRef.current.add('ping_log')
+    const { error: err } = await supabase.from('parties').update({ ping_log }).eq('code', codeRef.current)
+    pendingFieldsRef.current.delete('ping_log')
+    if (err) {
+      pingLogWritable = false
+      console.warn('parties.ping_log write failed — post-raid replay is unavailable until the Phase 8 SQL is applied', err)
+    }
+  }, [])
+
+  const addPing = useCallback((ping) => {
+    const prev = partyRef.current
+    if (!prev) return
+    const pings = prunePings([...(prev.pings || []), ping])
+    applyParty({ ...prev, pings })
+    updatePartyDB({ pings })
+    setPingLog(appendLog(prev.ping_log, ping))
+  }, [updatePartyDB, setPingLog])
+
+  const clearPings = useCallback(() => {
+    const prev = partyRef.current
+    if (!prev) return
+    applyParty({ ...prev, pings: [] })
+    updatePartyDB({ pings: [] })
+  }, [updatePartyDB])
+
   const clearMyMarkers = useCallback(() => {
     const prev = partyRef.current
     if (!prev) return
@@ -423,7 +476,10 @@ export function useParty() {
     const progress = { ...(prev.progress || {}), '__raid_start__': ts }
     applyParty({ ...prev, progress })
     updatePartyDB({ progress })
-  }, [updatePartyDB])
+    // A new raid is a new replay. Last raid's track scrubbing over this raid's
+    // map would be worse than having no replay at all.
+    setPingLog([])
+  }, [updatePartyDB, setPingLog])
 
   const refreshParty = useCallback(async () => {
     if (!codeRef.current) return
@@ -505,6 +561,7 @@ export function useParty() {
     reorderQuests,
     addStroke, clearMyStrokes,
     addMarker, clearMyMarkers,
+    addPing, clearPings,
     leaveParty, setError,
     syncSavedQuests, refreshParty, startRaid,
   }

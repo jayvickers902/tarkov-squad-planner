@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from 'react'
-import TarkovStatus from './TarkovStatus'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
@@ -13,7 +12,7 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
-export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, loading, error, retry, cachedAt }) {
+export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, loading }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
 
   const orderKey = myName ? `tarkov_quest_order_${myName}` : null
@@ -157,7 +156,6 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
     }
     return (
       <div>
-        <TarkovStatus error={error} retry={retry} cachedAt={cachedAt} />
         <div style={{ textAlign: 'center', padding: '40px 24px' }}>
         <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>
           {hasAnyQuests ? 'NO QUESTS FOR THIS MAP' : 'NO QUESTS ADDED'}
@@ -175,7 +173,6 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
 
   return (
     <div>
-      <TarkovStatus error={error} retry={retry} cachedAt={cachedAt} />
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div>
@@ -247,11 +244,6 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                   }}>
                     {task.name}
-                    {task.incompleteData && (
-                      <span className="mono" title="This saved quest is not present in the current API dataset" style={{ marginLeft: 7, fontSize: 9, color: 'var(--gold)', letterSpacing: '.05em' }}>
-                        DATA INCOMPLETE
-                      </span>
-                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                     {task.kappaRequired && (

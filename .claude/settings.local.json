@@ -17,7 +17,9 @@
       "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ __type\\(name: \\\\\\\\\\\\\"MobInfo\\\\\\\\\\\\\"\\) { fields { name type { name kind ofType { name } } } } }\\\\\"}\")",
       "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ maps { name bosses { name spawnChance spawnLocations { name chance } } } }\\\\\"}\")",
       "Bash(python -c ':*)",
-      "WebFetch(domain:tarkov-time.adam.id.au)"
+      "WebFetch(domain:tarkov-time.adam.id.au)",
+      "Bash(curl -s -i -X OPTIONS https://api.tarkov.dev/graphql -H \"Origin: https://www.dudgy.net\" -H \"Access-Control-Request-Method: POST\" -H \"Access-Control-Request-Headers: content-type\")",
+      "Bash(curl -s -i -X POST https://api.tarkov.dev/graphql -H \"Origin: https://www.dudgy.net\" -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ maps { id name normalizedName } }\\\\\"}\")"
     ],
     "additionalDirectories": [
       "c:\\projects\\owen-scarlet-hq\\src",

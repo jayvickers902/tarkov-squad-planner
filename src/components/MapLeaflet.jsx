@@ -3,10 +3,23 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { TARKOV_MAP_CONFIGS } from '../data/tarkovMapConfigs'
 import { SPAWNS, GRAPHQL_ENABLED } from '../constants'
+import {
+  pingAngle, staleness, ageLabel, floorLabel, elevationLabel, replayElapsed,
+} from '../tarkovPings'
+import {
+  curatedLootPoints, mergeIntelSources, kindOf, countByKind,
+  CLUSTER_RADIUS_M, RING_RADII_M, ringPath, clusterCounts, bestCluster,
+} from '../tarkovIntel'
 import { gqlRetry } from '../useTarkov'
 import { getRestSpawns } from '../tarkovRest'
 import { loadPrebaked } from '../data/prebaked'
 import { useMapKeys } from '../useMapKeys'
+import { useMapLoot } from '../useMapLoot'
+import { useIntel } from '../useIntel'
+import { useIntelChecklist } from '../useIntelChecklist'
+import { useMapLayer } from '../useMapLayer'
+import { objectivePins, getUserColor } from '../tarkovObjectives'
+import { useMapPings } from '../useMapPings'
 
 const SPAWNS_QUERY = `{ maps { normalizedName spawns { position { x y z } sides categories } } }`
 let spawnsCache = null
@@ -75,13 +88,7 @@ function clusterByMap(maps) {
   return byMap
 }
 
-const USER_COLORS = ['#e85d5d', '#5db8e8', '#5de87a', '#f5a623', '#c45de8', '#5de8d4', '#e8e85d', '#e85da8']
 const PALETTE = ['#e85d5d', '#f5a623', '#e8e85d', '#5de87a', '#5de8d4', '#5db8e8', '#c45de8', '#e85da8', '#ffffff', '#b0b0b0']
-
-function getUserColor(user, memberNames) {
-  const idx = memberNames.indexOf(user)
-  return USER_COLORS[Math.max(idx, 0) % USER_COLORS.length]
-}
 
 // Build a Leaflet CRS from the tarkov-dev map config (mirrors getCRS in tarkov-dev source)
 function buildCRS(cfg) {
@@ -182,33 +189,101 @@ function makeSpawnIcon() {
 }
 
 // Auto-pin for API-sourced objective locations — diamond shape to distinguish from manual pins
-function makeObjIcon(color, initial) {
+function makeObjIcon(color, initial, focusState = 'normal') {
+  const pinClass = focusState === 'focus'
+    ? 'obj-pin obj-pin-focus'
+    : focusState === 'dim'
+    ? 'obj-pin obj-pin-dim'
+    : 'obj-pin'
   return L.divIcon({
     className: '',
     iconSize: [20, 20],
     iconAnchor: [10, 10],
-    html: `<svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+    html: `<div class="${pinClass}"><svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
       <polygon points="10,1 19,10 10,19 1,10"
         fill="${color}" stroke="rgba(0,0,0,0.8)" stroke-width="1.5"/>
       <text x="10" y="13.5" text-anchor="middle" fill="rgba(0,0,0,0.85)"
         font-size="7" font-weight="bold" font-family="Share Tech Mono">${initial}</text>
+    </svg></div>`,
+  })
+}
+
+// Intel / document spawn. Three glyphs so the kind reads without a tooltip:
+// a folder, a case, and a page for the hand-placed Season 1 documents.
+// A checked point stays on the map at low opacity — removing it would lose the
+// "already cleared this one" information the tick was for.
+function makeIntelIcon(kind, checked) {
+  const color = checked ? '#5c6b61' : kind.color
+  const glyph = kind.key === 'case'
+    ? `<path d="M4 8 h14 v9 a1.5 1.5 0 0 1 -1.5 1.5 h-11 A1.5 1.5 0 0 1 4 17 Z M8.5 8 V6.5 a1 1 0 0 1 1 -1 h3 a1 1 0 0 1 1 1 V8"
+         fill="${color}" stroke="rgba(0,0,0,0.85)" stroke-width="1.3" stroke-linejoin="round"/>`
+    : kind.key === 'folder'
+    ? `<path d="M3.5 6.5 h5 l1.5 2 h7 a1 1 0 0 1 1 1 v7 a1 1 0 0 1 -1 1 h-13.5 a1 1 0 0 1 -1 -1 Z"
+         fill="${color}" stroke="rgba(0,0,0,0.85)" stroke-width="1.3" stroke-linejoin="round"/>`
+    : `<path d="M6 4.5 h7 l4 4 v9.5 a1 1 0 0 1 -1 1 h-10 a1 1 0 0 1 -1 -1 v-12.5 a1 1 0 0 1 1 -1 Z"
+         fill="${color}" stroke="rgba(0,0,0,0.85)" stroke-width="1.3" stroke-linejoin="round"/>
+       <path d="M8.5 12 h5 M8.5 15 h5" stroke="rgba(0,0,0,0.55)" stroke-width="1.1" stroke-linecap="round"/>`
+  const tick = checked
+    ? `<path d="M14.5 15.5 l2.5 2.5 l4.5 -5.5" fill="none" stroke="#5de87a" stroke-width="2.4"
+         stroke-linecap="round" stroke-linejoin="round"/>`
+    : ''
+  return L.divIcon({
+    className: '',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+    html: `<svg width="22" height="22" viewBox="0 0 22 22" xmlns="http://www.w3.org/2000/svg" style="opacity:${checked ? 0.45 : 1}">
+      ${glyph}${tick}
+    </svg>`,
+  })
+}
+
+// Position ping — a view cone, not a bare dot: "here, watching that way".
+// `angle` is already in screen space (see pingAngle); 0 points up.
+function makePingIcon(color, initial, angle, opacity, taps) {
+  const dots = taps > 1
+    ? `<g>${Array.from({ length: taps }, (_, i) =>
+        `<circle cx="${22 + (i - (taps - 1) / 2) * 6}" cy="37" r="2.1" fill="${color}" stroke="rgba(0,0,0,0.85)" stroke-width="0.8"/>`).join('')}</g>`
+    : ''
+  return L.divIcon({
+    className: '',
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
+    html: `<svg width="44" height="44" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg" style="opacity:${opacity}">
+      <g transform="rotate(${angle.toFixed(1)} 22 22)">
+        <path d="M22 22 L10.5 3.5 A22 22 0 0 1 33.5 3.5 Z" fill="${color}" fill-opacity="0.28" stroke="${color}" stroke-opacity="0.55" stroke-width="1"/>
+      </g>
+      <circle cx="22" cy="22" r="6.5" fill="${color}" stroke="rgba(0,0,0,0.85)" stroke-width="1.5"/>
+      <text x="22" y="25.5" text-anchor="middle" fill="rgba(0,0,0,0.85)"
+        font-size="8" font-weight="bold" font-family="Share Tech Mono">${initial}</text>
+      ${dots}
     </svg>`,
   })
 }
 
 export default function MapLeaflet({
   mapNorm, mapName,
-  drawings = [], markers = [],
+  drawings = [], markers = [], pings = [],
+  pingLog,              // party.ping_log — raw on purpose: undefined means the
+                        // Phase 8 column is not applied, [] means no pings yet
   myName, memberNames = [],
   myQuests = [], memberQuests = {}, tasks = [],
   progress = {},
   onAddStroke, onClearMyStrokes,
   onAddMarker, onClearMyMarkers,
+  onClearPings,
+  raidKey = null,       // party __raid_start__ stamp — resets the intel checklist
   mapHeight = 520,
+  fill = false,
+  chrome = 'inline',
+  focusKey = null,
   defaultMode = 'draw',
   mode: modeProp,       // optional controlled mode from parent
   onModeChange,         // called when mode changes (controlled mode)
   hideDrawButton = false, // hide draw toggle + palette (parent controls it)
+  hidePingStrip = false,  // RaidView is full-bleed; the strip would fall off-screen
+  hideReplay = false,
+  pingStripMode = 'inline',
+  sharedPingState = null,
 }) {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
@@ -216,15 +291,21 @@ export default function MapLeaflet({
   const tileLayerRef = useRef(null)
   const drawingLayersRef = useRef([])   // L.polyline instances
   const markerLayersRef = useRef({})    // id -> L.marker (manual pins)
-  const objMarkersRef = useRef([])      // L.marker[] (auto objective pins)
-  const spawnMarkersRef = useRef([])    // L.marker[] (PMC spawn markers)
-  const keyMarkersRef = useRef({})      // keyName -> L.marker
+  // Every other overlay is owned by useMapLayer, which keeps its own refs:
+  // PMC spawns, key markers, objective pins, position pings, intel spawns,
+  // planning rings and replay trails.
   const boundsRef = useRef(null)
   const currentStyleRef = useRef('svg') // 'svg' | 'tile'
 
   const [mapStyle, setMapStyle] = useState('svg') // 'svg' | 'tile'
   const [showSpawns, setShowSpawns] = useState(true)
   const [showQuestPins, setShowQuestPins] = useState(true)
+  const [showPings, setShowPings] = useState(true)
+  // Off by default: Reserve alone carries 64 points, and a map that opens under
+  // a blanket of loot icons is worse than one you have to ask for them on.
+  const [showIntel, setShowIntel] = useState(false)
+  // Planning rings: 0 is off, otherwise a radius in metres from RING_RADII_M.
+  const [ringRadius, setRingRadius] = useState(0)
   const [apiSpawns, setApiSpawns] = useState({})
   const [debugCoord, setDebugCoord] = useState(null)
   const [internalMode, setInternalMode] = useState(defaultMode)
@@ -244,56 +325,80 @@ export default function MapLeaflet({
   }
 
   const { mapKeys } = useMapKeys(mapNorm)
+  const { intelPoints } = useIntel(mapNorm)
+  const { lootRows } = useMapLoot(mapNorm)
+  const { isChecked, toggle: toggleChecked, clear: clearChecked, checkedCount, foundToday } =
+    useIntelChecklist(mapNorm, raidKey)
 
   const cfg = TARKOV_MAP_CONFIGS[mapNorm]
+
+  // ─── Intel and document spawns ───────────────────────────────────────────────
+  // Prebaked loose-loot points plus the admin-curated Season 1 document points,
+  // in one list because the reader does not care which table a spawn came from.
+  const allIntel = useMemo(
+    () => mergeIntelSources(intelPoints, curatedLootPoints(lootRows, mapNorm)),
+    [intelPoints, lootRows, mapNorm],
+  )
+  const intelCounts = useMemo(() => countByKind(allIntel), [allIntel])
+
+  // ─── Planning rings ──────────────────────────────────────────────────────────
+  // Overlapping rings read as coverage: where three of them merge, one detour
+  // clears three spawns. The densest is called out by number so the map does not
+  // have to be squinted at.
+  const intelCheckSig = allIntel.map(p => (isChecked(p.id) ? '1' : '0')).join('')
+  const ringData = useMemo(() => {
+    if (!ringRadius || !allIntel.length) return null
+    return {
+      counts: clusterCounts(allIntel, ringRadius, isChecked),
+      best: bestCluster(allIntel, ringRadius, isChecked),
+    }
+  }, [ringRadius, allIntel, intelCheckSig]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Compute auto-pins from API objective zone data ──────────────────────────
   // For each member, find their quests that have objectives with zone positions
   // on the current map, and are not yet completed.
-  const autoObjPins = useMemo(() => {
-    if (!tasks.length || !mapNorm) return []
-    const pins = []
-    for (const [memberName, questIds] of Object.entries(memberQuests)) {
-      if (!Array.isArray(questIds)) continue
-      const color = getUserColor(memberName, memberNames)
-      const initial = memberName[0].toUpperCase()
-      for (const questEntry of questIds) {
-        // questEntry may be a quest object {id, name} or a plain string ID
-        const questId = questEntry?.id ?? questEntry
-        // Skip completed quests
-        const doneKey = `__done__:${questId}::${memberName}`
-        if (progress[doneKey]) continue
-        const task = tasks.find(t => t.id === questId)
-        if (!task) continue
-        // Skip tasks explicitly assigned to a different map
-        if (task.map && task.map.normalizedName !== mapNorm) continue
-        for (const obj of (task.objectives || [])) {
-          if (obj.optional) continue
-          const zones = obj.zones || []
-          for (const zone of zones) {
-            if (!zone.position) continue
-            // Filter to zones on current map (some zones list multiple map variants)
-            if (zone.map && zone.map.normalizedName !== mapNorm
-                && !zone.map.normalizedName.startsWith(mapNorm)) continue
-            pins.push({
-              id: `${memberName}::${task.id}::${obj.id}::${zone.id}`,
-              memberName,
-              color,
-              initial,
-              questName: task.name,
-              objDescription: obj.description,
-              objType: obj.type,
-              // game coords: lat = z, lng = x (matches tarkov-dev pos() function)
-              lat: zone.position.z,
-              lng: zone.position.x,
-            })
-          }
-        }
-      }
-    }
-    return pins
-  }, [memberQuests, tasks, mapNorm, memberNames, progress])
+  const autoObjPins = useMemo(
+    () => objectivePins(tasks, memberQuests, memberNames, progress, mapNorm),
+    [memberQuests, tasks, mapNorm, memberNames, progress],
+  )
 
+  // ─── Position pings ─────────────────────────────────────────────────────────
+  // Decay is time-based, so the component re-renders on a slow tick while any
+  // ping is on screen. A ping that looks live when it is five minutes old is
+  // actively misleading — this is a ping, not tracking.
+  //
+  // ─── Post-raid replay ───────────────────────────────────────────────────────
+  // Replay swaps two things and nothing else: where the pings come from, and
+  // what "now" means. Everything downstream — the cards, motion inference,
+  // staleness decay, the marker layer, the strip — is fed the same shapes and
+  // does not know which mode it is in.
+  const localPingState = useMapPings({
+    pings,
+    pingLog,
+    mapNorm,
+    myName,
+    memberNames,
+    mapKeys,
+    autoObjPins,
+    allIntel,
+    isChecked,
+    hideReplay,
+    enabled: !sharedPingState,
+  })
+  const {
+    replay, setReplay, replayData, canReplay, replayOn,
+    pingList, replayTrails, pingCards, pingSig,
+  } = sharedPingState || localPingState
+  // In-raid full-bleed view hides the strip for space; replay is a post-raid
+  // tool and does not belong there either.
+  // Playback. A fixed 200 ms tick scaled by speed, so 16× advances 3.2 s of raid
+  // per frame rather than skipping frames. Stops itself at the end of the window
+  // instead of looping — a replay that restarts silently reads as live data.
+  // The window moves as pings arrive or the raid resets. Keep the scrubber inside it.
+  // Context annotation — the thing tarkov.dev cannot do (no party) and
+  // TarkovTracker cannot (no map): we already hold the squad's quests, the key
+  // list and the objective zones for this map, so every ping gets its
+  // surroundings named.
   // ─── Init / teardown Leaflet map when mapNorm changes ───────────────────────
   useEffect(() => {
     if (!mapContainerRef.current || !cfg) return
@@ -306,9 +411,6 @@ export default function MapLeaflet({
       tileLayerRef.current = null
       drawingLayersRef.current = []
       markerLayersRef.current = {}
-      objMarkersRef.current = []
-      spawnMarkersRef.current = []
-      keyMarkersRef.current = {}
     }
 
     setSvgReady(false)
@@ -336,6 +438,11 @@ export default function MapLeaflet({
 
     // Custom pane for drawings — above overlayPane (400) so they render over the SVG/tile layer
     map.createPane('drawingsPane').style.zIndex = 450
+
+    // Planning rings and replay trails sit above the map image but below the
+    // squad's own drawings, so turning rings on never buries a hand-drawn route.
+    map.createPane('ringsPane').style.zIndex = 420
+    map.getPane('ringsPane').style.pointerEvents = 'none'
 
     // ── Tile layer ──────────────────────────────────────────────────────────
     if (cfg.tilePath) {
@@ -404,6 +511,31 @@ export default function MapLeaflet({
       }
     }
   }, [mapNorm]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Leaflet only tracks window resizes. Fill-mode rails, drawers and fullscreen
+  // change this element without changing the window, so keep the projection in
+  // sync with the actual box and batch resize callbacks to one frame.
+  useEffect(() => {
+    const map = mapRef.current
+    const element = mapContainerRef.current
+    if (!map || !element || typeof ResizeObserver === 'undefined') return undefined
+
+    let frame = null
+    const observer = new ResizeObserver(() => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        frame = null
+        map.invalidateSize({ pan: false })
+      })
+    })
+    observer.observe(element)
+    map.invalidateSize({ pan: false })
+
+    return () => {
+      observer.disconnect()
+      if (frame !== null) cancelAnimationFrame(frame)
+    }
+  }, [mapNorm])
 
   // ─── Style toggle (SVG ↔ tile) ───────────────────────────────────────────
   useEffect(() => {
@@ -497,31 +629,22 @@ export default function MapLeaflet({
   }, [markers, memberNames, tasks, mapNorm, showQuestPins])
 
   // ─── Sync key markers ─────────────────────────────────────────────────────
-  useEffect(() => {
-    const map = mapRef.current
+  // Rebuilt wholesale rather than diffed — keys change infrequently.
+  useMapLayer(mapRef, () => {
     const bounds = boundsRef.current
-    if (!map || !bounds) return
-
-    // Remove all existing key markers and re-add (keys change infrequently)
-    for (const km of Object.values(keyMarkersRef.current)) {
-      map.removeLayer(km)
-    }
-    keyMarkersRef.current = {}
-
-    for (const [keyName, v] of Object.entries(mapKeys)) {
-      if (v.loc_x == null || v.loc_y == null) continue
+    if (!bounds) return []
+    return Object.entries(mapKeys).map(([keyName, v]) => {
+      if (v.loc_x == null || v.loc_y == null) return null
       const latlng = normToLatlng([v.loc_x, v.loc_y], bounds)
-      const icon = makeKeyIcon(v.priority)
-      const km = L.marker(latlng, { icon, interactive: true, zIndexOffset: 100 })
+      const km = L.marker(latlng, { icon: makeKeyIcon(v.priority), interactive: true, zIndexOffset: 100 })
       km.bindTooltip(`<div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em">🔑 ${keyName}</div>`, {
         direction: 'top',
         offset: [0, -10],
         opacity: 1,
         className: 'tac-tooltip',
       })
-      km.addTo(map)
-      keyMarkersRef.current[keyName] = km
-    }
+      return km
+    })
   }, [mapKeys, mapNorm])
 
   // ─── Spawn data: prebaked first, then a live refresh ─────────────────────────
@@ -557,41 +680,29 @@ export default function MapLeaflet({
   }, [])
 
   // ─── Sync PMC spawn markers ───────────────────────────────────────────────
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-
-    for (const m of spawnMarkersRef.current) map.removeLayer(m)
-    spawnMarkersRef.current = []
-    if (!showSpawns) return
-
-    const spawns = apiSpawns[mapNorm] || []
-    for (const s of spawns) {
-      const latlng = L.latLng(s.position.z, s.position.x)
-      const icon = makeSpawnIcon()
-      const sm = L.marker(latlng, { icon, interactive: true, zIndexOffset: 50 })
+  useMapLayer(mapRef, () => {
+    if (!showSpawns) return []
+    return (apiSpawns[mapNorm] || []).map(s => {
+      const sm = L.marker(L.latLng(s.position.z, s.position.x), {
+        icon: makeSpawnIcon(), interactive: true, zIndexOffset: 50,
+      })
       sm.bindTooltip(
         `<div><div style="color:#e8a030;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">PMC SPAWN</div></div>`,
         { direction: 'top', offset: [0, -10], opacity: 1, className: 'tac-tooltip' }
       )
-      sm.addTo(map)
-      spawnMarkersRef.current.push(sm)
-    }
+      return sm
+    })
   }, [showSpawns, mapNorm, apiSpawns])
 
   // ─── Sync auto objective pins ────────────────────────────────────────────────
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-
-    // Remove all previous auto-pins
-    for (const m of objMarkersRef.current) map.removeLayer(m)
-    objMarkersRef.current = []
-    if (!showQuestPins) return
-
-    for (const pin of autoObjPins) {
+  useMapLayer(mapRef, () => {
+    if (!showQuestPins) return []
+    return autoObjPins.map(pin => {
       const latlng = L.latLng(pin.lat, pin.lng)
-      const icon = makeObjIcon(pin.color, pin.initial)
+      const focusState = focusKey
+        ? (pin.key === focusKey ? 'focus' : 'dim')
+        : 'normal'
+      const icon = makeObjIcon(pin.color, pin.initial, focusState)
       const typeLabel = pin.objType === 'visit' ? 'LOCATE' : pin.objType?.toUpperCase() ?? ''
       const tooltipHtml = `
         <div style="min-width:170px;max-width:260px">
@@ -604,10 +715,148 @@ export default function MapLeaflet({
         </div>`
       const lm = L.marker(latlng, { icon, interactive: true, zIndexOffset: 200 })
       lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -12], opacity: 1, className: 'tac-tooltip' })
-      lm.addTo(map)
-      objMarkersRef.current.push(lm)
+      return lm
+    })
+  }, [autoObjPins, focusKey, mapNorm, showQuestPins])
+
+  // Rail focus is a map action, not just a visual state. One zone gets a fly-to;
+  // several zones get a bounded view so find-item objectives stay honest.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !focusKey || !cfg) return
+    const matching = autoObjPins.filter(pin => pin.key === focusKey)
+    if (!matching.length) return
+    const points = matching.map(pin => L.latLng(pin.lat, pin.lng))
+    if (points.length === 1) {
+      const zoom = Math.min(cfg.maxZoom, Math.max(map.getZoom(), cfg.minZoom + 1))
+      map.flyTo(points[0], zoom, { duration: 0.55 })
+    } else {
+      map.fitBounds(L.latLngBounds(points), { padding: [80, 80], maxZoom: cfg.maxZoom, animate: true })
     }
-  }, [autoObjPins, mapNorm, showQuestPins])
+  }, [autoObjPins, cfg, focusKey, mapNorm])
+
+  // ─── Sync position ping markers ─────────────────────────────────────────────
+  // Keyed on a coarse signature rather than on pingCards itself: the tick that
+  // drives the decay fires every 5s, and rebuilding markers that often would
+  // shut a tooltip in the reader's face. The strip re-renders on every tick;
+  // the markers only when a decay tier or a 15s age bucket actually changes.
+  useMapLayer(mapRef, () => {
+    if (!showPings) return []
+    return pingCards.map(card => {
+      const p = card.ping
+      const decay = staleness(card.age)
+      const angle = pingAngle(p.yaw, p.map)
+      const icon = makePingIcon(card.color, p.user[0].toUpperCase(), angle, decay.opacity, p.taps)
+      const lines = [
+        card.floor ? `${card.floor} · ${card.elev}` : `ELEVATION ${card.elev}`,
+        card.motion ? `MOVING ${card.motion.dir} · ${card.motion.speed} m/s` : null,
+        card.fromMe ? `${card.fromMe.dist} m ${card.fromMe.dir} OF YOU` : null,
+        card.nearObj ? `${card.nearObj.dist} m FROM ${card.nearObj.questName.toUpperCase()}` : null,
+        card.nearKey ? `${card.nearKey.dist} m FROM ${card.nearKey.name.toUpperCase()}` : null,
+        card.nearIntel
+          ? `NEAREST ${kindOf(card.nearIntel.point).short}: ${card.nearIntel.dist} m ${card.nearIntel.dir}`
+            + (card.nearIntel.more ? ` · ${card.nearIntel.more} MORE WITHIN ${CLUSTER_RADIUS_M} M` : '')
+          : null,
+      ].filter(Boolean)
+      const tooltipHtml = `
+        <div style="min-width:170px;max-width:280px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="color:${card.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${p.user.toUpperCase()}</span>
+            <span style="color:${card.cadence.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.08em">${card.cadence.label}</span>
+            <span style="color:#5c6b61;font-size:10px;margin-left:auto">${ageLabel(card.age)} AGO</span>
+          </div>
+          <div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">
+            ${lines.map(l => `<div style="color:#9aaa98;font-size:11px">· ${l}</div>`).join('')}
+            ${card.nearObj ? `<div style="color:#5c6b61;font-size:10px;line-height:1.4">${card.nearObj.desc}</div>` : ''}
+          </div>
+        </div>`
+      // z then x — y is height, never placement.
+      const lm = L.marker(L.latLng(p.z, p.x), { icon, interactive: true, zIndexOffset: 400 })
+      lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -18], opacity: 1, className: 'tac-tooltip' })
+      return lm
+    })
+  }, [pingSig, showPings, mapNorm]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Replay trails ──────────────────────────────────────────────────────────
+  // The payoff of a replay is the *path*, not the dots — where the squad
+  // actually went. Dashed, because the line between two pings is an assumption:
+  // we know both endpoints and nothing about the route taken between them.
+  useMapLayer(mapRef, () => {
+    if (!replayOn || !showPings) return []
+    return replayTrails.map(trail => L.polyline(
+      trail.pts.map(p => L.latLng(p.z, p.x)),
+      {
+        color: getUserColor(trail.user, memberNames),
+        weight: 2,
+        opacity: 0.65,
+        dashArray: '5 6',
+        lineCap: 'round',
+        interactive: false,
+        pane: 'ringsPane',
+      },
+    ))
+  }, [replayOn, showPings, replayTrails, memberNames, mapNorm])
+
+  // ─── Sync intel / document spawn markers ────────────────────────────────────
+  // Rebuilt whenever the point set or a tick changes. Cheap: the largest map is
+  // 64 points and this only runs while the layer is on.
+  const intelSig = allIntel.map(p => `${p.id}${isChecked(p.id) ? '!' : ''}`).join('|')
+  useMapLayer(mapRef, () => {
+    if (!showIntel) return []
+    return allIntel.map(point => {
+      const kind = kindOf(point)
+      const checked = isChecked(point.id)
+      const floor = point.y != null ? floorLabel(point.y, point.map) : null
+      const lines = [
+        point.items.join(' · '),
+        floor ? `${floor} · ${elevationLabel(point.y)}` : (point.y != null ? `ELEVATION ${elevationLabel(point.y)}` : null),
+        point.notes || null,
+        point.source === 'loot' ? 'HAND-PLACED' : null,
+      ].filter(Boolean)
+      const tooltipHtml = `
+        <div style="min-width:150px;max-width:250px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="color:${checked ? '#5de87a' : kind.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${kind.short}</span>
+            ${checked ? `<span style="color:#5de87a;font-size:10px">✓ CHECKED</span>` : ''}
+          </div>
+          <div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">
+            ${lines.map(l => `<div style="color:#9aaa98;font-size:11px">· ${l}</div>`).join('')}
+            <div style="color:#5c6b61;font-size:10px">click to ${checked ? 'un-check' : 'check off'}</div>
+          </div>
+        </div>`
+      // z then x, the same call PMC spawns and pings use — no calibration.
+      const lm = L.marker(L.latLng(point.z, point.x), {
+        icon: makeIntelIcon(kind, checked),
+        interactive: true,
+        zIndexOffset: 150,
+      })
+      lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -10], opacity: 1, className: 'tac-tooltip' })
+      lm.on('click', () => toggleChecked(point.id))
+      return lm
+    })
+  }, [intelSig, showIntel, mapNorm]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Planning rings ─────────────────────────────────────────────────────────
+  // One ring per unchecked spawn. Checked spawns get none: the rings answer
+  // "where should I go next", and a ring around a spawn you have already cleared
+  // makes the answer look denser than it is.
+  useMapLayer(mapRef, () => {
+    if (!showIntel || !ringData) return []
+    return allIntel.map(point => {
+      const count = ringData.counts.get(point.id)
+      if (count == null) return null                    // checked
+      const isBest = ringData.best && ringData.best.point.id === point.id
+      return L.polygon(ringPath(point.x, point.z, ringRadius), {
+        color: isBest ? '#c9a84c' : kindOf(point).color,
+        weight: isBest ? 1.6 : 1,
+        opacity: isBest ? 0.85 : 0.4,
+        fillColor: isBest ? '#c9a84c' : kindOf(point).color,
+        fillOpacity: isBest ? 0.1 : 0.05,
+        interactive: false,
+        pane: 'ringsPane',
+      })
+    })
+  }, [showIntel, ringRadius, ringData, intelSig, mapNorm]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Drawing mouse handlers ────────────────────────────────────────────────
   useEffect(() => {
@@ -691,6 +940,10 @@ export default function MapLeaflet({
     setSelectedQuestId('')
     setShowSpawns(true)
     setShowQuestPins(true)
+    setShowPings(true)
+    setShowIntel(false)
+    setRingRadius(0)
+    setReplay(null)
   }, [mapNorm]) // eslint-disable-line
 
   // Update cursor style on map container
@@ -716,10 +969,54 @@ export default function MapLeaflet({
   const hasSvg = cfg?.svgPath
   const canToggle = hasTile && hasSvg
 
+  const overlayChrome = chrome === 'overlay'
+
+  const styleControls = canToggle && svgReady ? (
+    <>
+      <button
+        className={mapStyle === 'svg' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+        onClick={() => setMapStyle('svg')}
+        style={{ fontSize: 10 }}>
+        ABSTRACT
+      </button>
+      <button
+        className={mapStyle === 'tile' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+        onClick={() => setMapStyle('tile')}
+        style={{ fontSize: 10 }}>
+        SATELLITE
+      </button>
+    </>
+  ) : null
+
+  const memberLegend = memberNames.map(m => (
+    <div key={m} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div style={{ width: 8, height: 8, borderRadius: '50%', background: m === myName ? myColor : getUserColor(m, memberNames), flexShrink: 0 }} />
+      <span className="mono" style={{ fontSize: 10, color: m === myName ? 'var(--goldtx)' : 'var(--txm)' }}>
+        {m.toUpperCase()}
+      </span>
+    </div>
+  ))
+
   return (
-    <div>
+    <div
+      className={overlayChrome ? 'map-leaflet map-leaflet-overlay' : 'map-leaflet'}
+      style={fill
+        ? { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, position: 'relative' }
+        : { position: 'relative' }}>
       {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+      <div
+        className={overlayChrome ? 'map-chrome map-chrome-toolbar' : undefined}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          marginBottom: overlayChrome ? 0 : 8,
+          flexWrap: 'wrap', flexShrink: 0,
+          ...(overlayChrome ? {
+            position: 'absolute', left: 8, bottom: 8, zIndex: 1001,
+            maxWidth: 'calc(100% - 16px)', padding: 6,
+            background: 'rgba(12,14,13,0.78)', border: '1px solid rgba(201,168,76,0.38)',
+            borderRadius: 4,
+          } : {}),
+        }}>
         {!hideDrawButton && (
           <>
             <button
@@ -754,8 +1051,9 @@ export default function MapLeaflet({
           </select>
         )}
 
-        {/* Layer toggles */}
-        <div style={{ display: 'flex', gap: 4 }}>
+        {/* Layer toggles — wraps, because this row is already at its limit on a
+            narrow viewport and the intel toggle is the seventh thing in it */}
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           <button
             className={showSpawns ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
             onClick={() => setShowSpawns(s => !s)}
@@ -768,41 +1066,92 @@ export default function MapLeaflet({
             style={{ fontSize: 10 }}>
             ◆ QUEST PINS
           </button>
+          {allIntel.length > 0 && (
+            <button
+              className={showIntel ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+              onClick={() => setShowIntel(v => !v)}
+              title="Intelligence folder / Documents case loose-loot spawns, plus hand-placed document spawns"
+              style={{ fontSize: 10 }}>
+              ▤ INTEL ({allIntel.length})
+            </button>
+          )}
+          {/* Rings cycle through the radii and back off, so planning costs one
+              control rather than a toggle plus a select */}
+          {showIntel && allIntel.length > 0 && (
+            <button
+              className={ringRadius ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+              onClick={() => setRingRadius(r => {
+                const i = RING_RADII_M.indexOf(r)
+                return i < 0 ? RING_RADII_M[0] : (RING_RADII_M[i + 1] ?? 0)
+              })}
+              title="Draw a radius around every unchecked spawn — where rings overlap, one detour covers several"
+              style={{ fontSize: 10 }}>
+              ◎ RINGS{ringRadius ? ` ${ringRadius} M` : ''}
+            </button>
+          )}
+          {showIntel && checkedCount > 0 && (
+            <button className="btn-ghost btn-sm" onClick={clearChecked} style={{ fontSize: 10, color: 'var(--txd)' }}>
+              UNCHECK {checkedCount}
+            </button>
+          )}
+          {pingList.length > 0 && (
+            <>
+              <button
+                className={showPings ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+                onClick={() => setShowPings(p => !p)}
+                style={{ fontSize: 10 }}>
+                ▲ PINGS ({pingList.length})
+              </button>
+              {onClearPings && !replayOn && (
+                <button className="btn-ghost btn-sm" onClick={onClearPings} style={{ fontSize: 10, color: 'var(--txd)' }}>
+                  CLEAR
+                </button>
+              )}
+            </>
+          )}
+          {canReplay && (
+            <button
+              className={replayOn ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+              onClick={() => setReplay(r => (r ? null : { t: replayData.from, playing: false, speed: 4 }))}
+              title="Scrub back through this raid's pings"
+              style={{ fontSize: 10 }}>
+              ⏱ REPLAY ({replayData.count})
+            </button>
+          )}
         </div>
 
-        {/* Style toggle */}
-        {canToggle && svgReady && (
-          <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
-            <button
-              className={mapStyle === 'svg' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-              onClick={() => setMapStyle('svg')}
-              style={{ fontSize: 10 }}>
-              ABSTRACT
-            </button>
-            <button
-              className={mapStyle === 'tile' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-              onClick={() => setMapStyle('tile')}
-              style={{ fontSize: 10 }}>
-              SATELLITE
-            </button>
-          </div>
+        {!overlayChrome && canToggle && svgReady && (
+          <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>{styleControls}</div>
         )}
 
-        {/* Member legend */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: canToggle ? 8 : 'auto', flexShrink: 0, flexWrap: 'wrap' }}>
-          {memberNames.map(m => (
-            <div key={m} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: m === myName ? myColor : getUserColor(m, memberNames), flexShrink: 0 }} />
-              <span className="mono" style={{ fontSize: 10, color: m === myName ? 'var(--goldtx)' : 'var(--txm)' }}>
-                {m.toUpperCase()}
-              </span>
-            </div>
-          ))}
-        </div>
+        {!overlayChrome && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: canToggle ? 8 : 'auto', flexShrink: 0, flexWrap: 'wrap' }}>
+            {memberLegend}
+          </div>
+        )}
       </div>
 
+      {overlayChrome && canToggle && svgReady && (
+        <div className="map-chrome map-chrome-style">{styleControls}</div>
+      )}
+      {overlayChrome && (
+        <div className="map-chrome map-chrome-members">{memberLegend}</div>
+      )}
+
       {/* Color palette + clear buttons */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
+      <div
+        className={overlayChrome ? 'map-chrome map-chrome-palette' : undefined}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 5,
+          marginBottom: overlayChrome ? 0 : 10,
+          flexWrap: 'wrap', flexShrink: 0,
+          ...(overlayChrome ? {
+            position: 'absolute', left: 8, bottom: 48, zIndex: 1001,
+            maxWidth: 'calc(100% - 16px)', padding: 5,
+            background: 'rgba(12,14,13,0.72)', border: '1px solid rgba(201,168,76,0.28)',
+            borderRadius: 4,
+          } : {}),
+        }}>
         {mode === 'draw' && !hideDrawButton && (
           <>
             <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', marginRight: 2 }}>COLOR</span>
@@ -838,7 +1187,7 @@ export default function MapLeaflet({
       </div>
 
       {/* Leaflet map container */}
-      <div style={{ position: 'relative', borderRadius: 4, overflow: 'hidden' }}>
+      <div style={{ position: 'relative', borderRadius: 4, overflow: 'hidden', ...(fill ? { flex: 1, minHeight: 0 } : {}) }}>
         {!svgReady && (
           <div style={{
             position: 'absolute', inset: 0, zIndex: 1000,
@@ -850,7 +1199,7 @@ export default function MapLeaflet({
         )}
         <div
           ref={mapContainerRef}
-          style={{ width: '100%', height: mapHeight, borderRadius: 4 }}
+          style={{ width: '100%', height: fill ? '100%' : mapHeight, minHeight: fill ? 0 : undefined, borderRadius: 4 }}
         />
         {debugCoord && (
           <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 9999, background: '#0c0e0d', border: '1px solid var(--gold)', borderRadius: 4, padding: '5px 10px', pointerEvents: 'none' }}>
@@ -861,7 +1210,98 @@ export default function MapLeaflet({
         )}
       </div>
 
-      <div className="mono" style={{ marginTop: 8, fontSize: 10, color: 'var(--txd)', textAlign: 'center' }}>
+      {/* Post-raid replay — scrub the raid's pings back. The map above shows the
+          squad as it was at the scrubbed instant, decay and all. */}
+      {replayOn && (
+        <div className="replay-bar">
+          <div className="replay-row">
+            <span className="mono replay-title">⏱ REPLAY</span>
+            <button
+              className="btn-gold btn-sm"
+              onClick={() => setReplay(r => ({
+                ...r,
+                // Replaying from the end would show one frozen frame, so a play
+                // press at the end starts over rather than doing nothing.
+                t: r.t >= replayData.to ? replayData.from : r.t,
+                playing: !r.playing,
+              }))}
+              style={{ fontSize: 10, minWidth: 44 }}>
+              {replay.playing ? '❚❚' : '▶'}
+            </button>
+            <input
+              className="replay-scrub"
+              type="range"
+              min={replayData.from}
+              max={replayData.to}
+              step={100}
+              value={replay.t}
+              onChange={e => setReplay(r => ({ ...r, t: Number(e.target.value), playing: false }))}
+            />
+            <span className="mono replay-clock">
+              {replayElapsed(replayData.from, replay.t)} / {replayElapsed(replayData.from, replayData.to)}
+            </span>
+            {[1, 4, 16].map(s => (
+              <button
+                key={s}
+                className={replay.speed === s ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+                onClick={() => setReplay(r => ({ ...r, speed: s }))}
+                style={{ fontSize: 10 }}>
+                {s}×
+              </button>
+            ))}
+            <button className="btn-ghost btn-sm" onClick={() => setReplay(null)} style={{ fontSize: 10, color: 'var(--txd)' }}>
+              CLOSE
+            </button>
+          </div>
+          <div className="mono replay-note">
+            {pingList.length} PING{pingList.length === 1 ? '' : 'S'} SO FAR · {replayTrails.length} TRACK{replayTrails.length === 1 ? '' : 'S'} —
+            LIVE PINGS ARE HIDDEN WHILE REPLAYING. THE DASHED LINE JOINS TWO PINGS; IT IS NOT THE ROUTE WALKED BETWEEN THEM.
+          </div>
+        </div>
+      )}
+
+      {/* The Phase 8 column is the only thing replay needs. Say so out loud
+          rather than quietly not offering the feature. */}
+      {!hidePingStrip && pingStripMode !== 'rail' && pingLog === undefined && pings.length > 0 && (
+        <div className="mono replay-note" style={{ marginTop: 8 }}>
+          REPLAY UNAVAILABLE — <span style={{ color: 'var(--goldtx)' }}>parties.ping_log</span> IS NOT IN THE DATABASE YET (SEE supabase-schema.sql).
+        </div>
+      )}
+
+      {/* Ping strip — the callout in words, since a cone alone does not say "140 m NE" */}
+      {showPings && !hidePingStrip && pingStripMode !== 'rail' && pingCards.length > 0 && (
+        <div className="ping-strip">
+          {pingCards.map(card => {
+            const decay = staleness(card.age)
+            return (
+              <div key={card.ping.id} className="ping-card" style={{ opacity: Math.max(decay.opacity, 0.35), borderLeftColor: card.cadence.color }}>
+                <div className="ping-card-head">
+                  <span className="mono" style={{ color: card.color, fontSize: 11, letterSpacing: '.08em' }}>{card.ping.user.toUpperCase()}</span>
+                  <span className="mono" style={{ color: card.cadence.color, fontSize: 10, letterSpacing: '.08em' }}>{card.cadence.label}</span>
+                  <span className="mono" style={{ color: decay.color, fontSize: 10, marginLeft: 'auto' }}>{ageLabel(card.age)}</span>
+                </div>
+                <div className="mono ping-card-body">
+                  {card.fromMe && <span>{card.fromMe.dist} m {card.fromMe.dir} of you</span>}
+                  <span>{card.floor || `elev ${card.elev}`}</span>
+                  {card.motion && <span>moving {card.motion.dir} {card.motion.speed} m/s</span>}
+                  {card.nearObj && <span>{card.nearObj.dist} m from {card.nearObj.questName}</span>}
+                  {card.nearKey && <span>{card.nearKey.dist} m from {card.nearKey.name}</span>}
+                  {card.nearIntel && (
+                    <span style={{ color: kindOf(card.nearIntel.point).color }}>
+                      nearest {kindOf(card.nearIntel.point).short.toLowerCase()} {card.nearIntel.dist} m {card.nearIntel.dir}
+                      {card.nearIntel.more ? ` · ${card.nearIntel.more} more within ${CLUSTER_RADIUS_M} m` : ''}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div
+        className={overlayChrome ? 'mono map-chrome map-mode-hint' : 'mono'}
+        style={{ marginTop: overlayChrome ? 0 : 8, fontSize: 10, color: 'var(--txd)', textAlign: 'center' }}>
         {mode === 'draw' && !hideDrawButton
           ? <>YOUR COLOR: <span style={{ color: myColor }}>■</span>&nbsp; DRAW ROUTES — VISIBLE TO ALL PARTY MEMBERS IN REAL TIME</>
           : mode === 'draw'
@@ -874,6 +1314,42 @@ export default function MapLeaflet({
           <> &mdash; <span style={{ color: 'var(--gold)' }}>◆ {autoObjPins.length}</span> OBJECTIVE{autoObjPins.length !== 1 ? 'S' : ''} ON THIS MAP</>
         )}
       </div>
+
+      {/* Intel legend — only while the layer is on, so it costs nothing when off */}
+      {showIntel && allIntel.length > 0 && (
+        <div className={overlayChrome ? 'mono intel-legend map-chrome map-intel-legend' : 'mono intel-legend'}>
+          <span style={{ color: 'var(--txd)' }}>CLICK A SPAWN TO CHECK IT OFF —</span>
+          {intelCounts.folder > 0 && (
+            <span style={{ color: kindOf({ kind: 'folder' }).color }}>▤ {intelCounts.folder} FOLDER</span>
+          )}
+          {intelCounts.case > 0 && (
+            <span style={{ color: kindOf({ kind: 'case' }).color }}>▣ {intelCounts.case} CASE</span>
+          )}
+          {intelCounts.document > 0 && (
+            <span style={{ color: kindOf({ kind: 'document' }).color }}>▧ {intelCounts.document} DOCUMENT</span>
+          )}
+          <span style={{ color: checkedCount ? 'var(--grn)' : 'var(--txd)' }}>✓ {checkedCount} CHECKED THIS RAID</span>
+          {foundToday > 0 && <span style={{ color: 'var(--txd)' }}>{foundToday} TODAY</span>}
+        </div>
+      )}
+
+      {/* The planning number: the densest group of unchecked spawns at the
+          current radius, which is the detour worth building a route around. */}
+      {showIntel && ringRadius > 0 && (
+        <div className={overlayChrome ? 'mono intel-legend map-chrome map-intel-legend' : 'mono intel-legend'}>
+          <span style={{ color: 'var(--txd)' }}>◎ {ringRadius} M RINGS —</span>
+          {ringData?.best && ringData.best.count > 1 ? (
+            <span style={{ color: 'var(--goldtx)' }}>
+              BEST CLUSTER {ringData.best.count} SPAWNS WITHIN {ringRadius} M (GOLD RING)
+            </span>
+          ) : (
+            <span style={{ color: 'var(--txd)' }}>
+              {ringData?.best ? 'NO TWO UNCHECKED SPAWNS ARE THIS CLOSE' : 'EVERY SPAWN ON THIS MAP IS CHECKED'}
+            </span>
+          )}
+          <span style={{ color: 'var(--txd)' }}>WHERE RINGS OVERLAP, ONE DETOUR COVERS BOTH</span>
+        </div>
+      )}
     </div>
   )
 }

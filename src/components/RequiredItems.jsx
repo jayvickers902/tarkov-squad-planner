@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useKeys } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
-import TarkovStatus from './TarkovStatus'
 
 const MEMBER_COLORS = [
   { bg: '#1a2e3a', border: '#1e5a7a', text: '#5aace8' },
@@ -27,21 +26,11 @@ function objIsOnMap(obj, mapNorm, taskMapNorm) {
 export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }) {
   const members = Object.keys(memberQuests)
   const [activeMember, setActiveMember] = useState('all')
-  const { allKeys, error: keysError, retry: retryKeys, cachedAt: keysCachedAt } = useKeys(mapNorm)
+  const { allKeys } = useKeys(mapNorm)
 
   const keyIdSet = useMemo(() => new Set(allKeys.map(k => k.id)), [allKeys])
   // Lookup map for key iconLink by id — tasks query may return null iconLink, fall back to keys query
   const keyIconMap = useMemo(() => Object.fromEntries(allKeys.map(k => [k.id, k.iconLink || null])), [allKeys])
-  const unresolvedQuests = useMemo(() => {
-    const ids = new Set()
-    for (const quests of Object.values(memberQuests)) {
-      for (const quest of quests || []) {
-        if (!tasks.some(task => task.id === quest.id)) ids.add(quest.id)
-      }
-    }
-    return [...ids]
-  }, [memberQuests, tasks])
-
   // Build per-member item lists from their active quests' objectives
   const memberItems = useMemo(() => {
     return members.map(member => {
@@ -124,15 +113,6 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <TarkovStatus error={keysError} retry={retryKeys} cachedAt={keysCachedAt} />
-      {unresolvedQuests.length > 0 && (
-        <div className="tarkov-status tarkov-status-rest" role="status">
-          <div>
-            <strong>Some saved quests are not in the current dataset.</strong> They remain saved and will return when the source data is restored; required-item totals omit them for now.
-          </div>
-        </div>
-      )}
-
       {/* Cliff descent reminder */}
       {hasCliffDescent && (
         <div style={{
