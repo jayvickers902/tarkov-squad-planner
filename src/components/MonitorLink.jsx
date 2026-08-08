@@ -244,9 +244,31 @@ export default function MonitorLink({ maps, mapNorm, myName, isLeader, hasPlan, 
             </div>
             <p className="mono" style={{ fontSize: 11, color: 'var(--txm)', lineHeight: 1.7, margin: 0 }}>
               PRESS <strong style={{ color: 'var(--goldtx)' }}>EFT&apos;S OWN SCREENSHOT KEY</strong> IN RAID AND YOUR POSITION, FACING AND FLOOR APPEAR ON THE SQUAD MAP.
-              IT MUST BE THE GAME&apos;S KEY — STEAM OVERLAY, GEFORCE EXPERIENCE AND WIN+PRTSCN WRITE FILES WITH NO COORDINATES AND NOTHING HAPPENS AT ALL.
+              TARKOV SHIPS IT BOUND TO <strong style={{ color: 'var(--goldtx)' }}>PRTSCN</strong> — SETTINGS → CONTROLS → SCREENSHOT.
+              IT MUST BE THE GAME&apos;S KEY — STEAM OVERLAY (F12), GEFORCE EXPERIENCE AND WIN+PRTSCN WRITE FILES WITH NO COORDINATES AND NOTHING HAPPENS AT ALL.
               EACH TAP SAVES A REAL SCREENSHOT TO YOUR DISK.
             </p>
+
+            {/* The default-path trap: Windows 11 claims PrtScn out of the box and EFT
+                ships bound to it, so the stock setup on the commonest OS is silence
+                with no symptom. Everyone hits this once; say it before they do. */}
+            <div className="mon-note mon-note-warn">
+              <strong>On Windows 11, PrtScn opens the Snipping Tool instead.</strong> Tarkov never sees the
+              key, no screenshot is written, and no ping arrives — with nothing on screen to say so. Fix it
+              either way round:
+              <span style={{ display: 'block', marginTop: 6 }}>
+                · <strong>Rebind in Tarkov</strong> (Settings → Controls → Screenshot) to a spare key —
+                F9 is clear of Steam&apos;s F12 and of GeForce&apos;s Alt+F-keys.
+              </span>
+              <span style={{ display: 'block', marginTop: 3 }}>
+                · <strong>Or free the key in Windows</strong>: Settings → Accessibility → Keyboard →
+                turn off &ldquo;Use the Print screen key to open Snipping Tool&rdquo;.
+              </span>
+              <span style={{ display: 'block', marginTop: 6, color: 'var(--txm)' }}>
+                First screenshot creates <span className="mono">Documents\Escape from Tarkov\Screenshots</span>.
+                If that folder did not exist before, restart TarkovMonitor once afterwards so it starts watching it.
+              </span>
+            </div>
             <div className="mon-cadence">
               {[1, 2, 3].map(n => {
                 const c = cadenceOf(n)
