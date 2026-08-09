@@ -72,7 +72,7 @@ export function unlockedFrom(graph, completeIds, opts = {}) {
 
 export function tasksByTrader(graph) {
   const ancestorCounts = new Map(
-    (graph?.tasks || []).map(task => [task.id, ancestorsOf(graph, task).size]),
+    (graph?.tasks || []).map(task => [task.id, ancestorsOf(graph, task.id).size]),
   )
   const grouped = new Map()
 
