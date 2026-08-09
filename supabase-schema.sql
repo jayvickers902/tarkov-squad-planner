@@ -26,8 +26,8 @@ alter table public.parties add column if not exists markers jsonb not null defau
 alter table public.parties add column if not exists pings jsonb not null default '[]';
 -- Post-raid replay (Phase 8). `pings` is age-pruned and capped at 24 by design,
 -- so it cannot be replayed from; this is the same rows kept whole for one raid
--- and cleared when the raid or the map changes. Apply this BEFORE re-running
--- supabase/select_map_party.sql, which now resets it.
+-- and cleared when the raid or the map changes. The Phase 10 RPC migration
+-- resets it at map and raid boundaries.
 alter table public.parties add column if not exists ping_log jsonb not null default '[]';
 
 -- Add obj_progress to user_quests if upgrading (stores per-objective completion state)
@@ -50,8 +50,11 @@ create table if not exists public.user_quests (
 create table if not exists public.profiles (
   id         uuid references auth.users(id) on delete cascade primary key,
   callsign   text unique not null,
+  is_admin   boolean not null default false,
   created_at timestamptz default now()
 );
+
+alter table public.profiles add column if not exists is_admin boolean not null default false;
 
 -- ── Row Level Security ──────────────────────────────────────
 
@@ -59,13 +62,15 @@ alter table public.parties     enable row level security;
 alter table public.user_quests enable row level security;
 alter table public.profiles    enable row level security;
 
--- Parties: anyone can read/insert/update (code is the access control)
+-- Parties: the Phase 10 cutover replaces these bootstrap policies with
+-- membership-based policies. Authenticated-only access keeps this baseline
+-- from exposing party rows to anonymous requests before the cutover.
 drop policy if exists "Parties public read"   on public.parties;
 drop policy if exists "Parties public insert" on public.parties;
 drop policy if exists "Parties public update" on public.parties;
-create policy "Parties public read"   on public.parties for select using (true);
-create policy "Parties public insert" on public.parties for insert with check (true);
-create policy "Parties public update" on public.parties for update using (true);
+create policy "Parties public read"   on public.parties for select using (auth.uid() is not null);
+create policy "Parties public insert" on public.parties for insert with check (auth.uid() is not null);
+create policy "Parties public update" on public.parties for update using (auth.uid() is not null);
 
 -- User quests: users can only see and edit their own
 drop policy if exists "User quests select" on public.user_quests;
@@ -81,7 +86,7 @@ create policy "User quests delete" on public.user_quests for delete using (auth.
 drop policy if exists "Profiles public read"  on public.profiles;
 drop policy if exists "Profiles own update"   on public.profiles;
 drop policy if exists "Profiles own insert"   on public.profiles;
-create policy "Profiles public read" on public.profiles for select using (true);
+create policy "Profiles public read" on public.profiles for select using (auth.uid() is not null);
 create policy "Profiles own insert"  on public.profiles for insert with check (auth.uid() = id);
 create policy "Profiles own update"  on public.profiles for update using (auth.uid() = id);
 
@@ -100,8 +105,10 @@ create table if not exists public.map_keys (
 alter table public.map_keys enable row level security;
 drop policy if exists "map_keys public read"  on public.map_keys;
 drop policy if exists "map_keys admin write"  on public.map_keys;
-create policy "map_keys public read" on public.map_keys for select using (true);
-create policy "map_keys admin write" on public.map_keys for all using (auth.uid() = '8134ec3a-aff3-4610-b03e-9977bb841e57'::uuid);
+create policy "map_keys public read" on public.map_keys for select using (auth.uid() is not null);
+create policy "map_keys admin write" on public.map_keys for all
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
 
 -- Curated loot points — hand-placed spawns for items upstream has no
 -- coordinates for (Season 1 documents). Same shape and RLS as map_keys, but one
@@ -123,8 +130,10 @@ create index if not exists map_loot_map_idx on public.map_loot (map_norm);
 alter table public.map_loot enable row level security;
 drop policy if exists "map_loot public read" on public.map_loot;
 drop policy if exists "map_loot admin write" on public.map_loot;
-create policy "map_loot public read" on public.map_loot for select using (true);
-create policy "map_loot admin write" on public.map_loot for all using (auth.uid() = '8134ec3a-aff3-4610-b03e-9977bb841e57'::uuid);
+create policy "map_loot public read" on public.map_loot for select using (auth.uid() is not null);
+create policy "map_loot admin write" on public.map_loot for all
+  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
+  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
 
 -- Quest scan rate-limit log (used by the scan-quests edge function)
 create table if not exists public.quest_scan_log (

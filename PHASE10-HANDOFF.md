@@ -102,11 +102,11 @@ Four migration revisions matter most:
   work with zero dependency on identity or parties. Losing it costs real effort
   and buys nothing.
 - **R2 — Kill the hardcoded admin UUID.** There are currently *two, and they
-  disagree*: `App.jsx:13` says `ce64151c-c10b-45c4-9baa-9fbf794a5945`, the
+  disagree*: the old client and policy each used a different hardcoded UUID;
   `map_keys`/`map_loot` RLS policies in `supabase-schema.sql:104,127` say
-  `8134ec3a-aff3-4610-b03e-9977bb841e57`. Re-registering produces a third.
+  re-registering produces another one.
   Replace the mechanism with `profiles.is_admin boolean`; RLS policies check it,
-  the client reads `profile.is_admin`, `ADMIN_USER_ID` is deleted.
+  the client reads `profile.is_admin`, and the old constant is deleted.
 - **R3 — Rebuild `friendships` on `user_id`.** Do not reverse-engineer the live
   callsign-keyed table. Callsign is the last mutable-identity holdout; a reset
   is the cheapest moment to remove it. `useFriends.js` changes with it.

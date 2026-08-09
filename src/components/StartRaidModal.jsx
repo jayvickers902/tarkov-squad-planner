@@ -5,6 +5,7 @@ import { useIntel } from '../useIntel'
 import { useMapLoot } from '../useMapLoot'
 import { useIntelChecklist } from '../useIntelChecklist'
 import { curatedLootPoints, mergeIntelSources, countByKind, INTEL_KINDS, bestCluster, RING_RADII_M } from '../tarkovIntel'
+import { findMember, objectiveProgressKey, progressOwnerId, progressQuestId } from '../partyMembers'
 
 function toAntifandom(url) {
   if (!url) return null
@@ -42,7 +43,7 @@ function SpawnBar({ chance }) {
   )
 }
 
-export default function StartRaidModal({ party, myName, tasks, onClose }) {
+export default function StartRaidModal({ party, myUserId, tasks, onClose }) {
   const [times, setTimes] = useState(getTarkovTimes)
   const { getBossesForMap, loading: bossLoading } = useBossSpawns()
 
@@ -79,13 +80,13 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
     [allIntel, intelTotal],
   )
 
-  const myQuests = party.members?.[myName] || []
+  const myQuests = findMember(party.members, myUserId)?.quests || []
 
   const completedQuestIds = useMemo(() => new Set(
     Object.entries(party.progress || {})
-      .filter(([k, v]) => k.startsWith('__done__:') && k.endsWith(`::${myName}`) && v)
-      .map(([k]) => k.slice(9, k.lastIndexOf('::')))
-  ), [party.progress, myName])
+      .filter(([k, v]) => k.startsWith('__done__:') && progressOwnerId(k) === myUserId && v)
+      .map(([k]) => progressQuestId(k))
+  ), [party.progress, myUserId])
 
   const myMapQuests = useMemo(() => {
     return myQuests
@@ -102,7 +103,7 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
       if (!task) return
       task.objectives?.forEach(obj => {
         if (obj.optional) return
-        if (progress[`${task.id}::${obj.id}::${myName}`]) return
+        if (progress[objectiveProgressKey(task.id, obj.id, myUserId)]) return
         const isPlant = obj.type === 'plantItem' && obj.item
         const isMark  = obj.type === 'mark' && obj.markerItem
         const onMap = obj.maps?.length > 0
@@ -141,7 +142,7 @@ export default function StartRaidModal({ party, myName, tasks, onClose }) {
       })
     })
     return Object.values(itemMap)
-  }, [myQuests, tasks, mapNorm, party.progress, myName, keyIconMap]) // eslint-disable-line
+  }, [myQuests, tasks, mapNorm, party.progress, myUserId, keyIconMap]) // eslint-disable-line
 
   const hasCliffDescent = RED_REBEL_MAPS.has(mapNorm)
   const leftDay  = isDaytime(times.left)

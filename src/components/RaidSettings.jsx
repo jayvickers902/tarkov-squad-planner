@@ -1,4 +1,3 @@
-import { getRaidSettings } from '../raidState'
 import { resolveSetting, settingSource, SYSTEM_DEFAULTS } from '../settings'
 
 const TTL_OPTIONS = [
@@ -35,10 +34,10 @@ function YesNo({ value, disabled, onChange }) {
   )
 }
 
-export default function RaidSettings({ party, myName, userSettings = {}, onChange, onClose }) {
-  const raid = getRaidSettings(party.progress)
+export default function RaidSettings({ party, userId, userSettings = {}, onChange, onClose }) {
+  const raid = party.settings || {}
   const layers = { raid, unit: null, user: userSettings }
-  const isLeader = party.leader === myName
+  const isLeader = party.leader_id === userId
   const disabled = !isLeader
   const update = (key, value) => {
     if (!disabled) onChange?.({ [key]: value })

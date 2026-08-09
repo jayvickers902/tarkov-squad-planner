@@ -39,8 +39,10 @@ export function useMapPings({
   pings = [],
   pingLog,
   mapNorm,
+  myUserId,
   myName,
   memberNames = [],
+  memberIds = [],
   mapKeys = {},
   autoObjPins = [],
   allIntel = [],
@@ -103,10 +105,14 @@ export function useMapPings({
   const pingCards = useMemo(() => {
     if (!enabled || !pingList.length) return []
     const keyPoints = mapKeyPoints(mapKeys, mapNorm)
-    const mine = pingList.find(p => p.user === myName) || null
+    const mine = pingList.find(p => p.user_id === myUserId)
+      || pingList.find(p => p.user === myName)
+      || null
 
     return pingList.map((p, i) => {
-      const prev = pingList.slice(i + 1).find(other => other.user === p.user) || null
+      const prev = pingList.slice(i + 1).find(other => p.user_id
+        ? other.user_id === p.user_id
+        : other.user === p.user) || null
       const age = pingAge(p, clock)
       let nearObj = null
       for (const objective of autoObjPins) {
@@ -131,7 +137,7 @@ export function useMapPings({
         ping: p,
         age,
         cadence: cadenceOf(p.taps),
-        color: getUserColor(p.user, memberNames),
+        color: getUserColor(p.user, memberNames, p.user_id, memberIds),
         floor: floorLabel(p.y, p.map),
         elev: elevationLabel(p.y),
         motion: age < 120000 ? motionBetween(prev, p) : null,
@@ -145,7 +151,7 @@ export function useMapPings({
         nearIntel: nearestIntel(p, allIntel, isChecked),
       }
     })
-  }, [enabled, pingList, autoObjPins, mapKeys, mapNorm, memberNames, myName, clock, allIntel, isChecked])
+  }, [enabled, pingList, autoObjPins, mapKeys, mapNorm, memberNames, memberIds, myUserId, myName, clock, allIntel, isChecked])
 
   const pingSig = pingCards
     .map(card => `${card.ping.id}:${staleness(card.age).tier}:${Math.floor(card.age / 15000)}`)

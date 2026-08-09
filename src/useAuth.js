@@ -1,11 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 
-export function hasGoogleIdentity(user) {
-  return user?.app_metadata?.provider === 'google'
-    || (user?.identities || []).some(identity => identity?.provider === 'google')
-}
-
 export function useAuth() {
   const [user, setUser]       = useState(null)
   const [profile, setProfile] = useState(null)
@@ -13,51 +8,38 @@ export function useAuth() {
   const [error, setError]     = useState('')
 
   useEffect(() => {
+    let cancelled = false
+
+    async function fetchProfile(userId) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, callsign, is_admin')
+        .eq('id', userId)
+        .maybeSingle()
+      if (cancelled) return
+      setProfile(data || null)
+      setLoading(false)
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return
       setUser(session?.user ?? null)
       if (session?.user) fetchProfile(session.user.id)
       else setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (cancelled) return
       setUser(session?.user ?? null)
       if (session?.user) fetchProfile(session.user.id)
       else { setProfile(null); setLoading(false) }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
   }, [])
-
-  async function fetchProfile(userId) {
-    const { data } = await supabase.from('profiles').select().eq('id', userId).single()
-    setProfile(data)
-    setLoading(false)
-  }
-
-  function makeEmail(callsign) {
-    return `sq.${callsign.toLowerCase().replace(/[^a-z0-9]/g, '')}.${callsign.length}@gmail.com`
-  }
-
-  // Kept only for existing fake-email accounts while users link Google.
-  async function legacySignIn(callsign, password) {
-    setError('')
-    const trimmed = callsign.trim()
-    if (!trimmed || !password) { setError('Enter your callsign and password'); return false }
-
-    const { data: profileRow } = await supabase
-      .from('profiles')
-      .select('id, callsign')
-      .eq('callsign', trimmed)
-      .maybeSingle()
-    if (!profileRow) { setError('Callsign not found'); return false }
-
-    const { error: signInErr } = await supabase.auth.signInWithPassword({
-      email: makeEmail(trimmed),
-      password,
-    })
-    if (signInErr) { setError('Incorrect password'); return false }
-    return true
-  }
 
   async function loginWithGoogle() {
     setError('')
@@ -69,23 +51,6 @@ export function useAuth() {
     return true
   }
 
-  async function linkGoogleIdentity() {
-    setError('')
-    const { data, error: linkErr } = await supabase.auth.linkIdentity({
-      provider: 'google',
-      options: { redirectTo: window.location.origin },
-    })
-    if (linkErr) { setError(linkErr.message); return false }
-    if (data?.url) window.location.assign(data.url)
-    return true
-  }
-
-  async function migrateLegacy(callsign, password) {
-    const ok = await legacySignIn(callsign, password)
-    if (!ok) return false
-    return linkGoogleIdentity()
-  }
-
   // Called after Google sign-in when the user has no profile yet.
   async function createProfile(callsign) {
     setError('')
@@ -94,16 +59,22 @@ export function useAuth() {
     if (trimmed.length > 20) { setError('Callsign must be 20 characters or fewer'); return false }
     if (!/^[a-zA-Z0-9_\- ]+$/.test(trimmed)) { setError('Callsign can only contain letters, numbers, spaces, - and _'); return false }
 
-    const { data: existing } = await supabase.from('profiles').select('id').eq('callsign', trimmed).maybeSingle()
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('callsign', trimmed)
+      .maybeSingle()
     if (existing) { setError('That callsign is already taken'); return false }
 
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.user) { setError('Not signed in'); return false }
 
-    const { error: profErr } = await supabase.from('profiles').insert({ id: session.user.id, callsign: trimmed })
+    const { error: profErr } = await supabase
+      .from('profiles')
+      .insert({ id: session.user.id, callsign: trimmed })
     if (profErr) { setError(profErr.message); return false }
 
-    setProfile({ id: session.user.id, callsign: trimmed })
+    setProfile({ id: session.user.id, callsign: trimmed, is_admin: false })
     return true
   }
 
@@ -117,9 +88,6 @@ export function useAuth() {
     loading,
     error,
     setError,
-    legacySignIn,
-    migrateLegacy,
-    linkGoogleIdentity,
     logout,
     loginWithGoogle,
     createProfile,

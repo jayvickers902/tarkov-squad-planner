@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useKeys } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
+import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
 
 const MEMBER_COLORS = [
   { bg: '#1a2e3a', border: '#1e5a7a', text: '#5aace8' },
@@ -23,8 +24,9 @@ function objIsOnMap(obj, mapNorm, taskMapNorm) {
   return true
 }
 
-export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }) {
-  const members = Object.keys(memberQuests)
+export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progress }) {
+  const memberRows = normalizeMembers(memberQuests)
+  const members = memberRows.map(member => member.callsign)
   const [activeMember, setActiveMember] = useState('all')
   const { allKeys } = useKeys(mapNorm)
 
@@ -33,9 +35,10 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
   const keyIconMap = useMemo(() => Object.fromEntries(allKeys.map(k => [k.id, k.iconLink || null])), [allKeys])
   // Build per-member item lists from their active quests' objectives
   const memberItems = useMemo(() => {
-    return members.map(member => {
+    return memberRows.map(memberRow => {
+      const member = memberRow.callsign
       const seen = new Set()
-      const quests = (memberQuests[member] || []).filter(q => seen.has(q.id) ? false : (seen.add(q.id), true))
+      const quests = memberRow.quests.filter(q => seen.has(q.id) ? false : (seen.add(q.id), true))
       const itemMap = {}
 
       quests.forEach(q => {
@@ -43,7 +46,7 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
         if (!task) return
         task.objectives?.forEach(obj => {
           if (obj.optional) return
-          if (progress?.[`${task.id}::${obj.id}::${member}`]) return
+          if (progress?.[objectiveProgressKey(task.id, obj.id, memberRow.user_id)]) return
           const isOnMap = objIsOnMap(obj, mapNorm, task.map?.normalizedName)
           if (!isOnMap) return
 
@@ -100,9 +103,9 @@ export default function RequiredItems({ tasks, memberQuests, mapNorm, progress }
         })
       })
 
-      return { member, items: Object.values(itemMap) }
+      return { member, userId: memberRow.user_id, items: Object.values(itemMap) }
     })
-  }, [tasks, memberQuests, progress, mapNorm, keyIdSet, keyIconMap]) // eslint-disable-line
+  }, [tasks, memberRows, progress, mapNorm, keyIdSet, keyIconMap]) // eslint-disable-line
 
   const hasAnyItems = memberItems.some(m => m.items.length > 0)
   const hasCliffDescent = RED_REBEL_MAPS.has(mapNorm)

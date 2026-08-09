@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { objectiveProgressKey, questDoneKey } from '../partyMembers'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
@@ -12,20 +13,20 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
-export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, loading, settings = {}, onSetSetting }) {
+export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myUserId, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, loading, settings = {}, onSetSetting }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
 
   const [questOrder, setQuestOrder] = useState(() => {
-    const saved = myName ? settings.quest_order?.[myName] : null
+    const saved = myUserId ? settings.quest_order?.[myUserId] : null
     if (saved && Array.isArray(saved)) return saved
     return myQuests.map(q => q.id)
   })
 
   // Persist order through the user-settings abstraction whenever it changes.
   useEffect(() => {
-    if (!myName || !onSetSetting) return
-    onSetSetting('quest_order', { ...(settings.quest_order || {}), [myName]: questOrder })
-  }, [questOrder, myName, onSetSetting]) // settings is read from the latest callback closure
+    if (!myUserId || !onSetSetting) return
+    onSetSetting('quest_order', { ...(settings.quest_order || {}), [myUserId]: questOrder })
+  }, [questOrder, myUserId, onSetSetting]) // settings is read from the latest callback closure
 
   // Sync questOrder when myQuests changes — new quests bubble to front
   useEffect(() => {
@@ -45,12 +46,12 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
   }
 
   function toggleObj(taskId, objId) {
-    const key = `${taskId}::${objId}::${myName}`
+    const key = objectiveProgressKey(taskId, objId, myUserId)
     setPending(p => ({ ...p, [key]: !getEffective(key) }))
   }
 
   function toggleDone(questId) {
-    const key = `__done__:${questId}::${myName}`
+    const key = questDoneKey(questId, myUserId)
     setPending(p => ({ ...p, [key]: !getEffective(key) }))
   }
 
@@ -61,10 +62,10 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
     onSubmit({ ...pending })
     // Find quests that are now complete (done button OR all objectives checked)
     rows.forEach(({ task, objs }) => {
-      const doneKey = `__done__:${task.id}::${myName}`
+      const doneKey = questDoneKey(task.id, myUserId)
       const effectiveDone = pending[doneKey] !== undefined ? pending[doneKey] : (progress?.[doneKey] || false)
       const allObjsDone = objs.length > 0 && objs.every(o => {
-        const k = `${task.id}::${o.id}::${myName}`
+        const k = objectiveProgressKey(task.id, o.id, myUserId)
         return pending[k] !== undefined ? pending[k] : (progress?.[k] || false)
       })
       if (effectiveDone || allObjsDone) onQuestComplete?.(task.id)
@@ -97,10 +98,10 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
         const isMapSpecific = mapNorm
           ? (task.objectives || []).some(o => !o.optional && o.maps && o.maps.length > 0)
           : false
-        const doneKey = `__done__:${task.id}::${myName}`
+        const doneKey = questDoneKey(task.id, myUserId)
         const isDone = pending[doneKey] !== undefined ? pending[doneKey] : (progress?.[doneKey] || false)
         const doneObjCount = objs.filter(o => {
-          const k = `${task.id}::${o.id}::${myName}`
+          const k = objectiveProgressKey(task.id, o.id, myUserId)
           return pending[k] !== undefined ? pending[k] : (progress?.[k] || false)
         }).length
         const allObjsDone = objs.length > 0 && doneObjCount === objs.length
@@ -116,7 +117,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
       ...mapped.filter(r => r.isMapSpecific && r.isComplete).sort(byOrder),
       ...mapped.filter(r => !r.isMapSpecific && r.isComplete).sort(byOrder),
     ]
-  }, [myQuests, tasks, mapNorm, pending, progress, myName, questOrder])
+  }, [myQuests, tasks, mapNorm, pending, progress, myUserId, questOrder])
 
   function moveToTop(questId, sectionRows) {
     setQuestOrder(prev => {
@@ -199,10 +200,10 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
           const prev = idx > 0 ? rows[idx - 1] : null
           const showAnyMapDivider = mapNorm && !isMapSpecific && !isComplete && (!prev || prev.isMapSpecific || prev.isComplete) && rows.some(r => r.isMapSpecific)
           const showCompletedDivider = isComplete && (!prev || !prev.isComplete)
-          const doneKey = `__done__:${task.id}::${myName}`
+          const doneKey = questDoneKey(task.id, myUserId)
           const isDone = getEffective(doneKey)
           const isPendingDone = pending[doneKey] !== undefined
-          const doneObjCount = objs.filter(o => getEffective(`${task.id}::${o.id}::${myName}`)).length
+          const doneObjCount = objs.filter(o => getEffective(objectiveProgressKey(task.id, o.id, myUserId))).length
           const allObjsDone = objs.length > 0 && doneObjCount === objs.length
           // Section peers for move-to-top/bottom (same isMapSpecific + isComplete group)
           const sectionRows = rows.filter(r => r.isMapSpecific === isMapSpecific && r.isComplete === isComplete)
@@ -300,7 +301,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
 
               {/* Objectives */}
               {!isDone && objs.map((obj, i) => {
-                const key = `${task.id}::${obj.id}::${myName}`
+                const key = objectiveProgressKey(task.id, obj.id, myUserId)
                 const checked = getEffective(key)
                 const isPendingObj = pending[key] !== undefined
                 const isLast = i === objs.length - 1

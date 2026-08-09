@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabase'
 
-export default function Lobby({ callsign, googleLinked = true, onEnter, onForceJoin, onManageQuests, onLogout, onAdmin, isAdmin, error, loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
+export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManageQuests, onLogout, onAdmin, isAdmin, error, loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const [mode, setMode]         = useState('home')
   const [code, setCode]         = useState('')
   const [local, setLocal]       = useState('')
@@ -24,20 +24,30 @@ export default function Lobby({ callsign, googleLinked = true, onEnter, onForceJ
     if (hint) setLastCode(hint)
 
     async function findCurrentParty() {
-      // The JSONB key lookup is supported by the current parties schema. The
-      // local value remains only as an offline hint while this query runs.
-      const { data, error: lookupError } = await supabase
-        .from('parties')
-        .select('code')
-        .filter('members', 'cs', JSON.stringify({ [callsign]: [] }))
-        .order('created_at', { ascending: false })
+      // The membership row is the authoritative rejoin lookup. The local code
+      // remains only as an offline hint while this query runs.
+      if (!userId) return
+      const { data: membership, error: membershipError } = await supabase
+        .from('party_members')
+        .select('party_id, joined_at')
+        .eq('user_id', userId)
+        .order('joined_at', { ascending: false })
         .limit(1)
       if (cancelled) return
-      if (lookupError) {
+      if (membershipError) {
         setRejoinLookup('offline')
         return
       }
-      const currentCode = data?.[0]?.code || null
+      const partyId = membership?.[0]?.party_id
+      const { data: partyRow, error: partyError } = partyId
+        ? await supabase.from('parties').select('code').eq('id', partyId).maybeSingle()
+        : { data: null, error: null }
+      if (cancelled) return
+      if (partyError) {
+        setRejoinLookup('offline')
+        return
+      }
+      const currentCode = partyRow?.code || null
       setLastCode(currentCode)
       setRejoinLookup('ready')
       try {
@@ -48,7 +58,7 @@ export default function Lobby({ callsign, googleLinked = true, onEnter, onForceJ
 
     findCurrentParty()
     return () => { cancelled = true }
-  }, [callsign])
+  }, [userId])
 
   async function handleSendRequest() {
     if (!addInput.trim()) return
@@ -110,13 +120,6 @@ export default function Lobby({ callsign, googleLinked = true, onEnter, onForceJ
             <button className="btn-ghost btn-sm" onClick={onLogout} style={{ fontSize: 11 }}>LOGOUT</button>
           </div>
         </div>
-
-        {!googleLinked && (
-          <div className="card legacy-auth-banner fade-in">
-            <div className="mono legacy-auth-title">LEGACY PASSWORD ACCOUNT</div>
-            <div className="mono legacy-auth-copy">GOOGLE SIGN-IN IS RECOMMENDED. LOG OUT TO MIGRATE THIS ACCOUNT WITHOUT LOSING YOUR PROFILE, QUESTS OR FRIENDSHIPS.</div>
-          </div>
-        )}
 
         {autoJoinCode && (
           <div className="card fade-in" style={{ padding: 20, textAlign: 'center', marginBottom: 16 }}>
@@ -222,7 +225,7 @@ export default function Lobby({ callsign, googleLinked = true, onEnter, onForceJ
                   )}
 
                   {friends.map(f => (
-                    <div key={f.callsign} style={{ marginBottom: 6 }}>
+                    <div key={f.user_id} style={{ marginBottom: 6 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: f.partyCode ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }} />
                         <span className="mono" style={{ flex: 1, fontSize: 13, color: f.partyCode ? 'var(--tx)' : 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -234,17 +237,17 @@ export default function Lobby({ callsign, googleLinked = true, onEnter, onForceJ
                             JOIN
                           </button>
                         )}
-                        {confirmUnfriend === f.callsign ? (
+                        {confirmUnfriend === f.user_id ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                             <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>REMOVE?</span>
-                            <button className="btn-danger btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => { onRemoveFriend(f.callsign); setConfirmUnfriend(null) }}>YES</button>
+                            <button className="btn-danger btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => { onRemoveFriend(f.user_id); setConfirmUnfriend(null) }}>YES</button>
                             <button className="btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => setConfirmUnfriend(null)}>NO</button>
                           </div>
                         ) : (
                           <button
                             className="btn-ghost btn-sm"
                             style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
-                            onClick={() => setConfirmUnfriend(f.callsign)}
+                            onClick={() => setConfirmUnfriend(f.user_id)}
                             title="Unfriend"
                           >×</button>
                         )}
@@ -309,7 +312,7 @@ export default function Lobby({ callsign, googleLinked = true, onEnter, onForceJ
             {err && <p className="mono" style={{ color: 'var(--red)', fontSize: 12 }}>⚠ {err}</p>}
             {loading && <p className="mono" style={{ color: 'var(--txm)', fontSize: 12 }}>JOINING...</p>}
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-ghost" onClick={() => { setMode('home'); setLocal(''); setForceCode(null) }}>BACK</button>
+              <button className="btn-ghost" onClick={() => { setMode('home'); setLocal(''); setFriendJoinCode(null) }}>BACK</button>
               <button className="btn-gold" style={{ flex: 1 }} onClick={join} disabled={loading}>JOIN</button>
             </div>
           </div>

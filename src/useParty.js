@@ -3,718 +3,726 @@ import { supabase } from './supabase'
 import { prunePings, appendLog } from './tarkovPings'
 import { resolveSetting } from './settings'
 import {
-  beginRaid,
-  getRaidId,
-  getRaidSettings,
-  preserveRaidState,
-  raidIdChanged,
-  withRaidSettings,
-} from './raidState'
+  normalizeMembers,
+  findMember,
+  questDoneKey,
+  progressOwnerId,
+  progressQuestId,
+} from './partyMembers'
 
-// One failed `ping_log` write disables the rest for the session. The column is a
-// Phase 8 migration that may not be applied yet, and a per-ping write that
-// always fails is noise in the console and latency on the live path.
 let pingLogWritable = true
 
-function mkCode() {
-  const chars = 'ACDEFGHJKLMNPQRTUVWXYZ23456789' // no 0/O/1/I (digit/letter pairs), no S (vs 5), no B (vs 8)
-  const bytes = crypto.getRandomValues(new Uint8Array(6))
-  return Array.from(bytes, b => chars[b % chars.length]).join('')
+function saveLastPartyCode(code) {
+  try {
+    if (code) localStorage.setItem('lastPartyCode', code)
+    else localStorage.removeItem('lastPartyCode')
+  } catch { /* local storage is optional */ }
 }
 
-async function fetchParty(code) {
-  const { data } = await supabase.from('parties').select().eq('code', code).single()
-  return data
+function normalizeParty(data, fallbackMembers = []) {
+  if (!data) return null
+  return {
+    ...data,
+    members: normalizeMembers(Array.isArray(data.members) ? data.members : fallbackMembers),
+  }
 }
 
-function isUniqueViolation(error) {
-  return error?.code === '23505' || /duplicate|unique/i.test(error?.message || '')
+async function fetchPartyById(partyId) {
+  if (!partyId) return null
+  const [partyResult, membersResult] = await Promise.all([
+    supabase.from('parties').select().eq('id', partyId).maybeSingle(),
+    supabase.from('party_members').select().eq('party_id', partyId).order('joined_at', { ascending: true }),
+  ])
+  if (partyResult.error || !partyResult.data || membersResult.error) return null
+  return normalizeParty(partyResult.data, membersResult.data || [])
 }
 
-function memberCount(party) {
-  return Object.keys(party?.members || {}).length
+function savedQuestEntry(quest) {
+  return { id: quest.quest_id, name: quest.quest_name }
 }
 
-function maxMembersFor(party, userSettings) {
-  const value = Number(resolveSetting('max_members', {
-    raid: getRaidSettings(party?.progress),
-    unit: null,
-    user: userSettings,
-  }))
-  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 8
+function questsForMap(savedQuests, mapNorm) {
+  return savedQuests
+    .filter(quest => !quest.map_norm || quest.map_norm === mapNorm)
+    .map(savedQuestEntry)
 }
 
-export function useParty(userSettings = {}) {
-  const [party, setParty]     = useState(null)
-  const [myName, setMyName]   = useState('')
-  const [error, setError]     = useState('')
+function allQuestEntries(savedQuests) {
+  return savedQuests.map(savedQuestEntry)
+}
+
+function starredFor(savedQuests) {
+  const starred = {}
+  savedQuests.filter(quest => quest.important).forEach(quest => { starred[quest.quest_id] = true })
+  return starred
+}
+
+function completedQuestIds(progress, userId) {
+  return new Set(
+    Object.entries(progress || {})
+      .filter(([key, value]) => value && key.startsWith('__done__:') && progressOwnerId(key) === userId)
+      .map(([key]) => progressQuestId(key))
+      .filter(Boolean),
+  )
+}
+
+function mergeQuestsForMap(currentQuests, savedQuests, mapNorm, progress, userId) {
+  const completedIds = completedQuestIds(progress, userId)
+  const kept = (currentQuests || []).filter(quest => !completedIds.has(quest.id))
+  const incoming = questsForMap(savedQuests, mapNorm).filter(quest => !completedIds.has(quest.id))
+  const merged = [...kept]
+  incoming.forEach(quest => {
+    if (!merged.find(existing => existing.id === quest.id)) merged.push(quest)
+  })
+  return merged
+}
+
+function isPartyFullMessage(message) {
+  return /party is full|full \(max/i.test(message || '')
+}
+
+export function useParty(userId, userSettings = {}) {
+  const [party, setParty] = useState(null)
+  const [myName, setMyName] = useState('')
+  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [partyCode, setPartyCode] = useState(null)
-  const [onlineMembers, setOnlineMembers] = useState([])
+  const [onlineMemberIds, setOnlineMemberIds] = useState([])
   const [presenceReady, setPresenceReady] = useState(false)
-  const codeRef         = useRef(null)
-  const partyRef        = useRef(null)   // always mirrors party state — safe to read in callbacks
-  const savedQuestsRef  = useRef([])
-  const prevMapNormRef  = useRef(null)
-  const myNameRef       = useRef('')
-  const pendingFieldsRef = useRef(new Set())  // fields currently being written to DB
+
+  const partyRef = useRef(null)
+  const partyIdRef = useRef(null)
+  const codeRef = useRef(null)
+  const myNameRef = useRef('')
+  const userIdRef = useRef(userId)
+  const savedQuestsRef = useRef([])
+  const prevMapNormRef = useRef(null)
   const userSettingsRef = useRef(userSettings)
-  const onlineMembersRef = useRef([])
+  const pendingFieldsRef = useRef(new Set())
+  const onlineMemberIdsRef = useRef([])
   const presenceReadyRef = useRef(false)
 
-  // Keep refs in sync
+  useEffect(() => { userIdRef.current = userId }, [userId])
   useEffect(() => { userSettingsRef.current = userSettings || {} }, [userSettings])
+  useEffect(() => { myNameRef.current = myName }, [myName])
 
   function applyParty(data) {
     if (!data) {
-      partyRef.current = data
-      setParty(data)
+      partyRef.current = null
+      setParty(null)
       return
     }
-    const current = partyRef.current
-    const sameParty = current?.code && data.code && current.code === data.code
-    const next = sameParty
-      ? { ...data, progress: preserveRaidState(data.progress, current.progress) }
-      : data
+    const currentMembers = partyRef.current?.members || []
+    const next = normalizeParty(data, currentMembers)
     partyRef.current = next
+    partyIdRef.current = next.id
+    codeRef.current = next.code
     setParty(next)
   }
 
-  useEffect(() => { myNameRef.current = myName }, [myName])
+  function enterParty(data, fallbackName) {
+    const next = normalizeParty(data)
+    if (!next) return false
+    const mine = findMember(next.members, userIdRef.current)
+    const name = mine?.callsign || fallbackName || ''
+    partyRef.current = next
+    partyIdRef.current = next.id
+    codeRef.current = next.code
+    myNameRef.current = name
+    prevMapNormRef.current = null
+    setParty(next)
+    setPartyCode(next.code)
+    setMyName(name)
+    saveLastPartyCode(next.code)
+    return true
+  }
 
+  function clearPartyState(clearHint = true) {
+    partyRef.current = null
+    partyIdRef.current = null
+    codeRef.current = null
+    myNameRef.current = ''
+    prevMapNormRef.current = null
+    setParty(null)
+    setPartyCode(null)
+    setMyName('')
+    if (clearHint) saveLastPartyCode(null)
+  }
+
+  // The poll remains a reconnect/repair safety net for the row-based realtime
+  // channel. Stage C may demote it once child-table writes land.
   useEffect(() => {
-    if (!partyCode) return
+    if (!partyCode || !partyIdRef.current) return undefined
+    const partyId = partyIdRef.current
     const code = partyCode
+    let cancelled = false
 
-    const poll = setInterval(async () => {
-      const fresh = await fetchParty(code)
-      if (!fresh) return
+    async function refreshFromDatabase() {
+      const fresh = await fetchPartyById(partyId)
+      if (cancelled || !fresh) return
       const pending = pendingFieldsRef.current
       if (pending.size === 0) {
         applyParty(fresh)
         return
       }
-      const merged = { ...(partyRef.current || {}) }
-      Object.keys(fresh).forEach(k => { if (!pending.has(k)) merged[k] = fresh[k] })
+      const merged = { ...(partyRef.current || {}), ...fresh }
+      for (const key of pending) {
+        if (partyRef.current && Object.prototype.hasOwnProperty.call(partyRef.current, key)) {
+          merged[key] = partyRef.current[key]
+        }
+      }
       applyParty(merged)
-    }, 5000)
-
-    function namesFromPresence(channel) {
-      const names = new Set()
-      const state = channel.presenceState() || {}
-      Object.values(state).flat().forEach(meta => {
-        const name = meta?.callsign || meta?.name
-        if (typeof name === 'string' && name) names.add(name)
-      })
-      return [...names]
     }
 
-    // Presence drives the online indicator and nothing else. It deliberately
-    // does not evict: a presence `leave` fires on any transient disconnect — a
-    // backgrounded tab, a wifi blip, a suspended laptop — and a 40-minute raid
-    // produces plenty of those. Removing the member would delete their quest
-    // list from the party row, so a dropped packet would cost a squadmate their
-    // state mid-raid. A ghost name in the member list is the cheaper failure.
-    // Real eviction needs a server-side `last_seen` with a grace window; that is
-    // `cleanup_stale()` in supabase/10a2_05_lifecycle.sql, and it lands with A2.
     function updatePresence(channel) {
-      const next = namesFromPresence(channel)
-      onlineMembersRef.current = next
-      setOnlineMembers(next)
+      const ids = new Set()
+      const state = channel.presenceState() || {}
+      Object.values(state).flat().forEach(meta => {
+        if (meta?.user_id) ids.add(meta.user_id)
+      })
+      const next = [...ids]
+      onlineMemberIdsRef.current = next
+      setOnlineMemberIds(next)
       presenceReadyRef.current = true
       setPresenceReady(true)
     }
 
     const channel = supabase
-      .channel(`party-${code}`, { config: { presence: { key: myNameRef.current || code } } })
+      .channel(`party-${partyId}`, { config: { presence: { key: userIdRef.current || code } } })
       .on('presence', { event: 'sync' }, () => updatePresence(channel))
       .on('presence', { event: 'join' }, () => updatePresence(channel))
       .on('presence', { event: 'leave' }, () => updatePresence(channel))
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'parties', filter: `code=eq.${code}` },
-        payload => {
-          if (!payload.new) return
-          const pending = pendingFieldsRef.current
-          if (pending.size === 0) {
-            // No in-flight writes — safe to apply the full row
-            applyParty(payload.new)
-            return
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'parties', filter: `id=eq.${partyId}`,
+      }, payload => {
+        if (!payload.new) return
+        const pending = pendingFieldsRef.current
+        const merged = { ...(partyRef.current || {}), ...payload.new }
+        for (const key of pending) {
+          if (partyRef.current && Object.prototype.hasOwnProperty.call(partyRef.current, key)) {
+            merged[key] = partyRef.current[key]
           }
-          // Selectively skip fields currently being written locally so a concurrent
-          // progress update doesn't overwrite an in-flight members update (and vice-versa)
-          const merged = { ...(partyRef.current || {}) }
-          Object.keys(payload.new).forEach(k => {
-            if (!pending.has(k)) merged[k] = payload.new[k]
-          })
-          applyParty(merged)
-        })
+        }
+        applyParty(merged)
+      })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'party_members', filter: `party_id=eq.${partyId}`,
+      }, () => { refreshFromDatabase() })
       .subscribe(async status => {
         if (status !== 'SUBSCRIBED') return
         try {
-          await channel.track({ callsign: myNameRef.current })
+          await channel.track({ user_id: userIdRef.current, callsign: myNameRef.current })
         } catch {
-          // Realtime presence is best-effort; the party row remains usable.
+          // Presence is best-effort; party state remains usable.
         }
       })
 
+    const poll = setInterval(refreshFromDatabase, 5000)
+    const heartbeat = setInterval(() => {
+      supabase.rpc('heartbeat', { p_code: code }).catch(() => {})
+    }, 30000)
+
     return () => {
+      cancelled = true
       clearInterval(poll)
+      clearInterval(heartbeat)
       presenceReadyRef.current = false
-      onlineMembersRef.current = []
+      onlineMemberIdsRef.current = []
       setPresenceReady(false)
-      setOnlineMembers([])
+      setOnlineMemberIds([])
       supabase.removeChannel(channel)
     }
-  }, [partyCode]) // eslint-disable-line
+  }, [partyCode]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // When the leader switches maps, non-leaders refresh their own quest list for the new map
+  // Non-leaders import saved quests for the newly selected map after the
+  // leader's select_map_party RPC has reset the leader's own row.
   useEffect(() => {
-    if (!party || !myName || !party.map_norm) return
-    if (party.map_norm === prevMapNormRef.current) return
-    prevMapNormRef.current = party.map_norm
-    if (party.leader === myName) return  // leader already handled this in selectMap
+    const current = partyRef.current
+    const currentUserId = userIdRef.current
+    if (!current || !currentUserId || !current.map_norm) return
+    if (current.map_norm === prevMapNormRef.current) return
+    prevMapNormRef.current = current.map_norm
+    if (current.leader_id === currentUserId) return
 
-    const members = { ...party.members }
-    const mine = members[myName] || []
+    const mine = findMember(current.members, currentUserId)
+    if (!mine) return
+    const merged = mergeQuestsForMap(mine.quests, savedQuestsRef.current, current.map_norm, current.progress, currentUserId)
+    const changed = JSON.stringify(merged) !== JSON.stringify(mine.quests)
+    if (changed) updateMemberDB({ quests: merged })
+  }, [party?.map_norm, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-    const completedIds = new Set(
-      Object.entries(party.progress || {})
-        .filter(([k, v]) => k.startsWith('__done__:') && k.endsWith(`::${myName}`) && v)
-        .map(([k]) => k.slice(9, k.lastIndexOf('::')))
-    )
-
-    const kept = mine.filter(q => {
-      if (completedIds.has(q.id)) return false
-      const saved = savedQuestsRef.current.find(sq => sq.quest_id === q.id)
-      if (!saved) return true
-      return !saved.map_norm
-    })
-
-    const newMapQuests = savedQuestsRef.current
-      .filter(q => q.map_norm === party.map_norm && !completedIds.has(q.quest_id))
-      .map(q => ({ id: q.quest_id, name: q.quest_name }))
-    const merged = [...kept]
-    newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
-    members[myName] = merged
-
-    const updated = { ...party, members }
-    applyParty(updated)
-    updatePartyDB({ members })
-  }, [party?.map_norm, myName]) // eslint-disable-line
-
-  const updatePartyDB = useCallback(async (changes) => {
-    if (!codeRef.current) return
+  const updatePartyDB = useCallback(async changes => {
+    const partyId = partyIdRef.current
+    if (!partyId || !changes || Object.keys(changes).length === 0) return null
     const keys = Object.keys(changes)
-    keys.forEach(k => pendingFieldsRef.current.add(k))
-    const { data, error: err } = await supabase.from('parties').update(changes).eq('code', codeRef.current).select().single()
-    keys.forEach(k => pendingFieldsRef.current.delete(k))
-    if (!err && data) {
-      // Only merge back the fields we actually updated — applying the full row would
-      // let a stale-members response from a progress update overwrite a concurrent
-      // members update that was committed in between (and vice-versa).
-      const merged = { ...partyRef.current }
-      keys.forEach(k => { merged[k] = data[k] })
+    keys.forEach(key => pendingFieldsRef.current.add(key))
+    const result = await supabase
+      .from('parties')
+      .update({ ...changes, last_active_at: new Date().toISOString() })
+      .eq('id', partyId)
+      .select()
+      .single()
+    keys.forEach(key => pendingFieldsRef.current.delete(key))
+    if (!result.error && result.data) {
+      const merged = { ...(partyRef.current || {}), ...result.data }
+      if (partyRef.current?.members) merged.members = partyRef.current.members
       applyParty(merged)
     }
+    return result
   }, [])
+
+  const updateMemberDB = useCallback(async changes => {
+    const partyId = partyIdRef.current
+    const currentUserId = userIdRef.current
+    if (!partyId || !currentUserId || !changes || Object.keys(changes).length === 0) return null
+    const result = await supabase
+      .from('party_members')
+      .update(changes)
+      .eq('party_id', partyId)
+      .eq('user_id', currentUserId)
+      .select()
+      .single()
+    if (!result.error && result.data && partyRef.current) {
+      const members = normalizeMembers(partyRef.current.members).map(member =>
+        member.user_id === currentUserId ? { ...member, ...result.data } : member,
+      )
+      applyParty({ ...partyRef.current, members })
+    }
+    return result
+  }, [])
+
+  const patchOwnMember = useCallback((changes, persist = true) => {
+    const current = partyRef.current
+    const currentUserId = userIdRef.current
+    if (!current || !currentUserId) return
+    const members = normalizeMembers(current.members).map(member =>
+      member.user_id === currentUserId ? { ...member, ...changes } : member,
+    )
+    applyParty({ ...current, members })
+    if (persist) updateMemberDB(changes)
+  }, [updateMemberDB])
 
   const createParty = useCallback(async (name, savedQuests = []) => {
     setLoading(true); setError('')
     savedQuestsRef.current = savedQuests
-
-    const myQuests = savedQuests
-      .filter(q => !q.map_norm)
-      .map(q => ({ id: q.quest_id, name: q.quest_name }))
-
-    const allQuests = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
-
-    const starred = {}
-    savedQuests.filter(q => q.important).forEach(q => { starred[q.quest_id] = true })
-
-    let data = null
-    let err = null
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const code = mkCode()
-      const newParty = {
-        code, leader: name,
-        map_id: null, map_name: null, map_norm: null,
-        members: { [name]: myQuests },
-        member_quests_all: { [name]: allQuests },
-        spawn: null,
-        progress: {},
-        starred,
-        drawings: [],
-      }
-      const result = await supabase.from('parties').insert(newParty).select().single()
-      if (!result.error) {
-        data = result.data
-        break
-      }
-      err = result.error
-      if (!isUniqueViolation(err)) break
+    const { data, error: rpcError } = await supabase.rpc('create_party', {
+      p_quests: questsForMap(savedQuests, null),
+      p_quests_all: allQuestEntries(savedQuests),
+      p_starred: starredFor(savedQuests),
+    })
+    if (rpcError || !data) {
+      setError('Failed to create party. Check your Supabase setup.')
+      setLoading(false)
+      return false
     }
-    if (err && !data) { setError('Failed to create party. Check your Supabase setup.'); setLoading(false); return false }
-    codeRef.current = data.code
-    setPartyCode(data.code)
-    myNameRef.current = name
-    localStorage.setItem('lastPartyCode', data.code)
-    applyParty(data); setMyName(name); setLoading(false)
+    enterParty(data, name)
+    setLoading(false)
     return true
   }, [])
 
   const forceJoinParty = useCallback(async (code, name, savedQuests = []) => {
     setLoading(true); setError('')
     savedQuestsRef.current = savedQuests
-
-    const { data: existing, error: fetchErr } = await supabase.from('parties').select().eq('code', code).single()
-    if (fetchErr || !existing) { setError('Party not found — check the code.'); setLoading(false); return false }
-
-    if (!existing.members?.[name] && memberCount(existing) >= maxMembersFor(existing, userSettingsRef.current)) {
-      const max = maxMembersFor(existing, userSettingsRef.current)
-      setError(`Party is full (max ${max} members).`)
+    const allQuests = allQuestEntries(savedQuests)
+    const { data, error: rpcError } = await supabase.rpc('force_join_party', {
+      p_code: code,
+      p_quests: allQuests,
+      p_quests_all: allQuests,
+      p_starred: starredFor(savedQuests),
+    })
+    if (rpcError || !data) {
+      setError(isPartyFullMessage(rpcError?.message) ? 'Party is full.' : 'Failed to join party.')
       setLoading(false)
       return false
     }
-
-    const existingMine = existing.members?.[name] || []
-    const saved = savedQuests
-      .filter(q => !q.map_norm || q.map_norm === existing.map_norm)
-      .map(q => ({ id: q.quest_id, name: q.quest_name }))
-    const merged = [...existingMine]
-    saved.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
-
-    const myStarred = {}
-    savedQuests.filter(q => q.important).forEach(q => { myStarred[q.quest_id] = true })
-
-    const { data: result, error: rpcErr } = await supabase.rpc('force_join_party', {
-      p_code:      code,
-      p_my_quests: merged,
-      p_starred:   myStarred,
-    })
-    if (rpcErr) { setError('Failed to join party.'); setLoading(false); return false }
-
-    const allQuests = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
-    const updatedMQA = { ...(existing.member_quests_all || {}), [name]: allQuests }
-    codeRef.current = code
-    setPartyCode(code)
-    myNameRef.current = name
-    localStorage.setItem('lastPartyCode', code)
-    applyParty({ ...result, member_quests_all: updatedMQA }); setMyName(name); setLoading(false)
-    updatePartyDB({ member_quests_all: updatedMQA })
+    enterParty(data, name)
+    const joined = findMember(data.members, userIdRef.current)
+    const filtered = questsForMap(savedQuests, data.map_norm)
+    if (joined && JSON.stringify(joined.quests) !== JSON.stringify(filtered)) {
+      patchOwnMember({ quests: filtered }, false)
+      await updateMemberDB({ quests: filtered })
+    }
+    setLoading(false)
     return true
-  }, [updatePartyDB])
+  }, [patchOwnMember, updateMemberDB])
 
   const joinParty = useCallback(async (code, name, savedQuests = []) => {
     setLoading(true); setError('')
     savedQuestsRef.current = savedQuests
-
-    // Fetch the party first so we know the current map for quest filtering
-    const { data: existing, error: fetchErr } = await supabase.from('parties').select().eq('code', code).single()
-    if (fetchErr || !existing) { setError('Party not found — check the code.'); setLoading(false); return false }
-
-    if (!existing.members?.[name] && memberCount(existing) >= maxMembersFor(existing, userSettingsRef.current)) {
-      const max = maxMembersFor(existing, userSettingsRef.current)
-      setError(`Party is full (max ${max} members).`)
-      setLoading(false)
-      return false
-    }
-
-    // Compute only this user's quests — server function will set just this key
-    const existingMine = existing.members?.[name] || []
-    const saved = savedQuests
-      .filter(q => !q.map_norm || q.map_norm === existing.map_norm)
-      .map(q => ({ id: q.quest_id, name: q.quest_name }))
-    const merged = [...existingMine]
-    saved.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
-
-    // Only pass this user's new starred entries
-    const myStarred = {}
-    savedQuests.filter(q => q.important).forEach(q => { myStarred[q.quest_id] = true })
-
-    const { data: result, error: rpcErr } = await supabase.rpc('join_party_secure', {
-      p_code:       code,
-      p_my_quests:  merged,
-      p_starred:    myStarred,
+    const allQuests = allQuestEntries(savedQuests)
+    const { data, error: rpcError } = await supabase.rpc('join_party_secure', {
+      p_code: code,
+      p_quests: allQuests,
+      p_quests_all: allQuests,
+      p_starred: starredFor(savedQuests),
     })
-    if (rpcErr) {
-      if (rpcErr.message?.includes('already in another party')) {
-        // Auto-leave current party and force-join without prompting
-        const prevCode = codeRef.current
-        const prevName = myNameRef.current
-        codeRef.current = null
-        setPartyCode(null)
-        partyRef.current = null
-        myNameRef.current = ''
-        localStorage.removeItem('lastPartyCode')
-        setParty(null); setMyName(''); setError('')
-        if (prevCode && prevName) {
-          supabase.rpc('leave_party', { p_code: prevCode, p_name: prevName })
-        }
+    if (rpcError) {
+      if (rpcError.message?.includes('already in another party')) {
+        const previousCode = codeRef.current
+        clearPartyState()
+        if (previousCode) await supabase.rpc('leave_party', { p_code: previousCode })
         setLoading(false)
         return forceJoinParty(code, name, savedQuests)
       }
-      const msg = rpcErr.message?.includes('party not found')
-        ? 'Party not found — check the code.'
-        : 'Failed to join party.'
-      setError(msg); setLoading(false); return false
+      setError(rpcError.message?.includes('party not found')
+        ? 'Party not found - check the code.'
+        : isPartyFullMessage(rpcError.message) ? 'Party is full.' : 'Failed to join party.')
+      setLoading(false)
+      return false
     }
-
-    const allQuests = savedQuests.map(q => ({ id: q.quest_id, name: q.quest_name }))
-    const updatedMQA = { ...(existing.member_quests_all || {}), [name]: allQuests }
-    codeRef.current = code
-    setPartyCode(code)
-    myNameRef.current = name
-    localStorage.setItem('lastPartyCode', code)
-    applyParty({ ...result, member_quests_all: updatedMQA }); setMyName(name); setLoading(false)
-    updatePartyDB({ member_quests_all: updatedMQA })
+    if (!data) {
+      setError('Failed to join party.')
+      setLoading(false)
+      return false
+    }
+    enterParty(data, name)
+    const joined = findMember(data.members, userIdRef.current)
+    const filtered = questsForMap(savedQuests, data.map_norm)
+    if (joined && JSON.stringify(joined.quests) !== JSON.stringify(filtered)) {
+      patchOwnMember({ quests: filtered }, false)
+      await updateMemberDB({ quests: filtered })
+    }
+    setLoading(false)
     return true
-  }, [updatePartyDB, forceJoinParty])
+  }, [forceJoinParty, patchOwnMember, updateMemberDB])
 
-  const selectMap = useCallback(async (map) => {
-    const prev = partyRef.current
-    if (!prev) return
-    const name = myNameRef.current
-    const mine = (prev.members || {})[name] || []
+  const selectMap = useCallback(async map => {
+    const current = partyRef.current
+    const currentUserId = userIdRef.current
+    if (!current || !currentUserId) return
+    if (current.leader_id !== currentUserId && resolveSetting('members_can_change_map', {
+      raid: current.settings || {}, unit: null, user: userSettingsRef.current,
+    }) !== true) return
 
-    const completedIds = new Set(
-      Object.entries(prev.progress || {})
-        .filter(([k, v]) => k.startsWith('__done__:') && k.endsWith(`::${name}`) && v)
-        .map(([k]) => k.slice(9, k.lastIndexOf('::')))
+    const mine = findMember(current.members, currentUserId)
+    const merged = mergeQuestsForMap(mine?.quests, savedQuestsRef.current, map.normalizedName, current.progress, currentUserId)
+    const optimisticMembers = normalizeMembers(current.members).map(member =>
+      member.user_id === currentUserId ? { ...member, quests: merged } : member,
     )
-
-    const kept = mine.filter(q => {
-      if (completedIds.has(q.id)) return false
-      const saved = savedQuestsRef.current.find(sq => sq.quest_id === q.id)
-      if (!saved) return true
-      return !saved.map_norm
+    applyParty({
+      ...current,
+      map_id: map.id,
+      map_name: map.name,
+      map_norm: map.normalizedName,
+      spawn: null,
+      progress: {},
+      starred: {},
+      drawings: [],
+      markers: [],
+      pings: [],
+      ping_log: [],
+      members: optimisticMembers,
     })
 
-    const newMapQuests = savedQuestsRef.current
-      .filter(q => q.map_norm === map.normalizedName && !completedIds.has(q.quest_id))
-      .map(q => ({ id: q.quest_id, name: q.quest_name }))
-    const merged = [...kept]
-    newMapQuests.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
-
-    // Optimistic update — only patch leader's own entry, preserve other members
-    const optimisticMembers = { ...prev.members, [name]: merged }
-    const optimisticProgress = preserveRaidState({}, prev.progress)
-    const optimisticChanges = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: optimisticProgress, starred: {}, drawings: [], markers: [], pings: [] }
-    applyParty({ ...prev, ...optimisticChanges, members: optimisticMembers })
-
-    // RPC updates only the leader's members entry via jsonb_set — other members' entries untouched
-    const { data, error: err } = await supabase.rpc('select_map_party', {
-      p_code:          codeRef.current,
-      p_leader:        name,
+    const { data, error: rpcError } = await supabase.rpc('select_map_party', {
+      p_code: codeRef.current,
       p_leader_quests: merged,
-      p_map_id:        map.id,
-      p_map_name:      map.name,
-      p_map_norm:      map.normalizedName,
+      p_map_id: map.id,
+      p_map_name: map.name,
+      p_map_norm: map.normalizedName,
     })
-    if (!err && data?.[0]) {
-      // data[0] reflects DB state when the RPC ran — other members may have joined or
-      // updated their quests since then. Preserve their current in-memory entries and
-      // only take the leader's own entry from the authoritative RPC result.
-      const current = partyRef.current || {}
-      const progress = preserveRaidState(data[0].progress, prev.progress)
-      applyParty({
-        ...data[0],
-        progress,
-        members: { ...(current.members || {}), [name]: (data[0].members || {})[name] || [] },
-      })
-      if (JSON.stringify(progress) !== JSON.stringify(data[0].progress || {})) {
-        updatePartyDB({ progress })
-      }
+    if (rpcError) {
+      setError(rpcError.message || 'Failed to select map.')
+      return
     }
-  }, [updatePartyDB])
+    if (data) applyParty(data)
+  }, [])
 
-  const addQuest = useCallback((quest) => {
-    const prev = partyRef.current
-    if (!prev) return
-    const name = myNameRef.current
-    const members = { ...prev.members }
-    const mine = members[name] || []
-    if (mine.find(q => q.id === quest.id)) return
-    members[name] = [...mine, { id: quest.id, name: quest.name }]
-    const mqaEntry = prev.member_quests_all?.[name] || []
-    const member_quests_all = {
-      ...(prev.member_quests_all || {}),
-      [name]: mqaEntry.find(q => q.id === quest.id) ? mqaEntry : [...mqaEntry, { id: quest.id, name: quest.name }],
-    }
-    applyParty({ ...prev, members, member_quests_all })
-    updatePartyDB({ members, member_quests_all })
-  }, [updatePartyDB])
+  const addQuest = useCallback(quest => {
+    const current = partyRef.current
+    const currentUserId = userIdRef.current
+    if (!current || !currentUserId) return
+    const mine = findMember(current.members, currentUserId)
+    if (!mine || mine.quests.find(existing => existing.id === quest.id)) return
+    const quests = [...mine.quests, { id: quest.id, name: quest.name }]
+    const questsAll = mine.quests_all.find(existing => existing.id === quest.id)
+      ? mine.quests_all
+      : [...mine.quests_all, { id: quest.id, name: quest.name }]
+    patchOwnMember({ quests, quests_all: questsAll })
+    updateMemberDB({ quests, quests_all: questsAll })
+  }, [patchOwnMember, updateMemberDB])
 
-  const removeQuest = useCallback((questId) => {
-    const prev = partyRef.current
-    if (!prev) return
-    const name = myNameRef.current
-    const members = { ...prev.members }
-    members[name] = (members[name] || []).filter(q => q.id !== questId)
-    const member_quests_all = {
-      ...(prev.member_quests_all || {}),
-      [name]: (prev.member_quests_all?.[name] || []).filter(q => q.id !== questId),
-    }
-    // Immediately remove from savedQuestsRef so selectMap and non-leader map-sync
-    // don't re-import the quest before the async markCompleted write updates userQuests.
-    savedQuestsRef.current = savedQuestsRef.current.filter(q => q.quest_id !== questId)
-    applyParty({ ...prev, members, member_quests_all })
-    updatePartyDB({ members, member_quests_all })
-  }, [updatePartyDB])
+  const removeQuest = useCallback(questId => {
+    const current = partyRef.current
+    const currentUserId = userIdRef.current
+    if (!current || !currentUserId) return
+    const mine = findMember(current.members, currentUserId)
+    if (!mine) return
+    const quests = mine.quests.filter(quest => quest.id !== questId)
+    const questsAll = mine.quests_all.filter(quest => quest.id !== questId)
+    savedQuestsRef.current = savedQuestsRef.current.filter(quest => quest.quest_id !== questId)
+    patchOwnMember({ quests, quests_all: questsAll })
+    updateMemberDB({ quests, quests_all: questsAll })
+  }, [patchOwnMember, updateMemberDB])
 
-  const setSpawn = useCallback((spawnId) => {
+  const setSpawn = useCallback(spawnId => {
+    if (partyRef.current?.leader_id !== userIdRef.current) return
     updatePartyDB({ spawn: spawnId })
   }, [updatePartyDB])
 
-  const toggleObjective = useCallback((key) => {
-    const prev = partyRef.current
-    if (!prev) return
-    const progress = { ...(prev.progress || {}), [key]: !prev.progress?.[key] }
-    applyParty({ ...prev, progress })
+  const toggleObjective = useCallback(key => {
+    const current = partyRef.current
+    if (!current) return
+    const progress = { ...(current.progress || {}), [key]: !current.progress?.[key] }
+    applyParty({ ...current, progress })
     updatePartyDB({ progress })
   }, [updatePartyDB])
 
-  const toggleStar = useCallback((taskId) => {
-    const prev = partyRef.current
-    if (!prev) return
-    const starred = { ...(prev.starred || {}), [taskId]: !prev.starred?.[taskId] }
-    applyParty({ ...prev, starred })
+  const toggleStar = useCallback(taskId => {
+    const current = partyRef.current
+    if (!current) return
+    const starred = { ...(current.starred || {}), [taskId]: !current.starred?.[taskId] }
+    applyParty({ ...current, starred })
     updatePartyDB({ starred })
   }, [updatePartyDB])
 
-  const reorderQuests = useCallback((orderedIds) => {
-    const prev = partyRef.current
-    if (!prev) return
-    applyParty({ ...prev, quest_order: orderedIds })
+  const reorderQuests = useCallback(orderedIds => {
+    const current = partyRef.current
+    if (!current) return
+    applyParty({ ...current, quest_order: orderedIds })
     updatePartyDB({ quest_order: orderedIds })
   }, [updatePartyDB])
 
-  const toggleComplete = useCallback((questId) => {
-    const prev = partyRef.current
-    if (!prev) return
-    const key = `__done__:${questId}`
-    const progress = { ...(prev.progress || {}), [key]: !prev.progress?.[key] }
-    applyParty({ ...prev, progress })
+  const toggleComplete = useCallback(questId => {
+    const current = partyRef.current
+    const currentUserId = userIdRef.current
+    if (!current || !currentUserId) return
+    const key = questDoneKey(questId, currentUserId)
+    const progress = { ...(current.progress || {}), [key]: !current.progress?.[key] }
+    applyParty({ ...current, progress })
     updatePartyDB({ progress })
   }, [updatePartyDB])
 
-  // Batch-submit a member's own progress changes (per-member keyed: taskId::objId::name, __done__:questId::name)
-  const submitMyProgress = useCallback((changes) => {
-    const prev = partyRef.current
-    if (!prev) return
-    const progress = { ...(prev.progress || {}), ...changes }
-    applyParty({ ...prev, progress })
+  const submitMyProgress = useCallback(changes => {
+    const current = partyRef.current
+    if (!current) return
+    const progress = { ...(current.progress || {}), ...changes }
+    applyParty({ ...current, progress })
     updatePartyDB({ progress })
   }, [updatePartyDB])
 
-  const setRaidSettings = useCallback((changes) => {
-    const prev = partyRef.current
-    if (!prev || prev.leader !== myNameRef.current) return
-    const settings = { ...getRaidSettings(prev.progress), ...(changes || {}) }
-    const progress = withRaidSettings(prev.progress, settings)
-    applyParty({ ...prev, progress })
-    updatePartyDB({ progress })
+  const setRaidSettings = useCallback(changes => {
+    const current = partyRef.current
+    if (!current || current.leader_id !== userIdRef.current) return
+    const settings = { ...(current.settings || {}), ...(changes || {}) }
+    applyParty({ ...current, settings })
+    updatePartyDB({ settings })
   }, [updatePartyDB])
 
-  const addStroke = useCallback((stroke) => {
-    const prev = partyRef.current
-    if (!prev) return
-    const drawings = [...(prev.drawings || []), {
+  const addStroke = useCallback(stroke => {
+    const current = partyRef.current
+    const currentUserId = userIdRef.current
+    if (!current || !currentUserId) return
+    const drawings = [...(current.drawings || []), {
       ...stroke,
+      user_id: currentUserId,
+      user: stroke?.user || myNameRef.current,
       created_at: stroke?.created_at ?? Date.now(),
-      raid_id: stroke?.raid_id ?? getRaidId(prev.progress),
+      raid_id: stroke?.raid_id ?? current.raid_id,
     }]
-    applyParty({ ...prev, drawings })
+    applyParty({ ...current, drawings })
     updatePartyDB({ drawings })
   }, [updatePartyDB])
 
   const clearMyStrokes = useCallback(() => {
-    const prev = partyRef.current
-    if (!prev) return
-    const name = myNameRef.current
-    const drawings = (prev.drawings || []).filter(s => s.user !== name)
-    applyParty({ ...prev, drawings })
+    const current = partyRef.current
+    const currentUserId = userIdRef.current
+    if (!current || !currentUserId) return
+    const drawings = (current.drawings || []).filter(stroke => stroke.user_id
+      ? stroke.user_id !== currentUserId
+      : stroke.user !== myNameRef.current)
+    applyParty({ ...current, drawings })
     updatePartyDB({ drawings })
   }, [updatePartyDB])
 
-  const addMarker = useCallback((marker) => {
-    const prev = partyRef.current
-    if (!prev) return
-    const markers = [...(prev.markers || []), {
+  const addMarker = useCallback(marker => {
+    const current = partyRef.current
+    const currentUserId = userIdRef.current
+    if (!current || !currentUserId) return
+    const markers = [...(current.markers || []), {
       ...marker,
+      user_id: currentUserId,
+      user: marker?.user || myNameRef.current,
       created_at: marker?.created_at ?? Date.now(),
-      raid_id: marker?.raid_id ?? getRaidId(prev.progress),
+      raid_id: marker?.raid_id ?? current.raid_id,
     }]
-    applyParty({ ...prev, markers })
+    applyParty({ ...current, markers })
     updatePartyDB({ markers })
-  }, [updatePartyDB])
-
-  // Position pings (Phase 6). Rare — a few per raid — so the row write that
-  // drawings and markers already use is the right transport. Pruned on every
-  // write so the column cannot grow without bound.
-  // The replay log (Phase 8) is written on its own, not folded into the ping
-  // write above. Two reasons, both about the column possibly not existing yet:
-  // a combined update would fail whole and take the live ping down with it, and
-  // `updatePartyDB` merges its response back into party state, so a failure
-  // would leave the optimistic ping applied but unconfirmed. Pings are a few
-  // per raid — a second row write is affordable here and nowhere else.
-  const setPingLog = useCallback(async (ping_log) => {
-    const prev = partyRef.current
-    if (!prev || !codeRef.current) return
-    // Column absent from the selected row means the migration has not run.
-    // Nothing to append to, and the UI says so rather than failing silently.
-    if (prev.ping_log === undefined || !pingLogWritable) return
-    applyParty({ ...prev, ping_log })
-    // Mark the field in flight, exactly as updatePartyDB does. The `pings` write
-    // that runs alongside this one broadcasts the *whole* row over realtime, and
-    // the 5s poll re-reads it — either can arrive carrying the pre-write log and
-    // hand it back to local state. The row would still be correct, but the next
-    // append builds on `prev.ping_log`, so it would write a log that has silently
-    // forgotten this ping.
-    pendingFieldsRef.current.add('ping_log')
-    const { error: err } = await supabase.from('parties').update({ ping_log }).eq('code', codeRef.current)
-    pendingFieldsRef.current.delete('ping_log')
-    if (err) {
-      pingLogWritable = false
-      console.warn('parties.ping_log write failed — post-raid replay is unavailable until the Phase 8 SQL is applied', err)
-    }
-  }, [])
-
-  const addPing = useCallback((ping) => {
-    const prev = partyRef.current
-    if (!prev) return
-    const ttl = Number(resolveSetting('ping_ttl_ms', {
-      raid: getRaidSettings(prev.progress),
-      unit: null,
-      user: userSettingsRef.current,
-    }))
-    const pings = prunePings([...(prev.pings || []), ping], Date.now(), Number.isFinite(ttl) ? ttl : undefined)
-    applyParty({ ...prev, pings })
-    updatePartyDB({ pings })
-    setPingLog(appendLog(prev.ping_log, ping))
-  }, [updatePartyDB, setPingLog])
-
-  const clearPings = useCallback(() => {
-    const prev = partyRef.current
-    if (!prev) return
-    applyParty({ ...prev, pings: [] })
-    updatePartyDB({ pings: [] })
   }, [updatePartyDB])
 
   const clearMyMarkers = useCallback(() => {
-    const prev = partyRef.current
-    if (!prev) return
-    const name = myNameRef.current
-    const markers = (prev.markers || []).filter(m => m.user !== name)
-    applyParty({ ...prev, markers })
+    const current = partyRef.current
+    const currentUserId = userIdRef.current
+    if (!current || !currentUserId) return
+    const markers = (current.markers || []).filter(marker => marker.user_id
+      ? marker.user_id !== currentUserId
+      : marker.user !== myNameRef.current)
+    applyParty({ ...current, markers })
     updatePartyDB({ markers })
   }, [updatePartyDB])
 
-  const startRaid = useCallback((ts = Date.now()) => {
-    const prev = partyRef.current
-    if (!prev || prev.leader !== myNameRef.current) return
-    const progress = beginRaid(prev.progress, ts)
-    const settings = getRaidSettings(prev.progress)
+  const setPingLog = useCallback(async pingLog => {
+    const current = partyRef.current
+    const partyId = partyIdRef.current
+    if (!current || !partyId || !pingLogWritable) return
+    applyParty({ ...current, ping_log: pingLog })
+    pendingFieldsRef.current.add('ping_log')
+    const { error: writeError } = await supabase
+      .from('parties')
+      .update({ ping_log, last_active_at: new Date().toISOString() })
+      .eq('id', partyId)
+    pendingFieldsRef.current.delete('ping_log')
+    if (writeError) {
+      pingLogWritable = false
+      console.warn('parties.ping_log write failed; replay is unavailable for this session', writeError)
+    }
+  }, [])
+
+  const addPing = useCallback(ping => {
+    const current = partyRef.current
+    const currentUserId = userIdRef.current
+    if (!current || !currentUserId) return
+    const enriched = {
+      ...ping,
+      user_id: ping?.user_id || currentUserId,
+      user: ping?.user || myNameRef.current,
+    }
+    const ttl = Number(resolveSetting('ping_ttl_ms', {
+      raid: current.settings || {}, unit: null, user: userSettingsRef.current,
+    }))
+    const pings = prunePings(
+      [...(current.pings || []), enriched],
+      Date.now(),
+      Number.isFinite(ttl) ? ttl : undefined,
+    )
+    applyParty({ ...current, pings })
+    updatePartyDB({ pings })
+    setPingLog(appendLog(current.ping_log, enriched))
+  }, [setPingLog, updatePartyDB])
+
+  const clearPings = useCallback(() => {
+    const current = partyRef.current
+    if (!current) return
+    applyParty({ ...current, pings: [] })
+    updatePartyDB({ pings: [] })
+  }, [updatePartyDB])
+
+  const startRaid = useCallback((timestamp = Date.now()) => {
+    const current = partyRef.current
+    if (!current || current.leader_id !== userIdRef.current) return
+    const raidId = (Number.isInteger(current.raid_id) ? current.raid_id : 0) + 1
+    const progress = { ...(current.progress || {}), __raid_start__: timestamp }
+    const settings = current.settings || {}
     const markerScope = resolveSetting('marker_scope', { raid: settings, unit: null, user: userSettingsRef.current })
     const drawingScope = resolveSetting('drawing_scope', { raid: settings, unit: null, user: userSettingsRef.current })
     const changes = {
+      raid_id: raidId,
       progress,
       pings: [],
-      ...(raidIdChanged(prev.progress, progress) ? { ping_log: [] } : {}),
+      ping_log: [],
       ...(markerScope === 'raid' ? { markers: [] } : {}),
       ...(drawingScope === 'raid' ? { drawings: [] } : {}),
     }
-    applyParty({ ...prev, ...changes })
+    applyParty({ ...current, ...changes })
     updatePartyDB(changes)
   }, [updatePartyDB])
 
-  const sweepEphemeral = useCallback((changes) => {
-    const prev = partyRef.current
-    if (!prev || prev.leader !== myNameRef.current || !changes) return
-    applyParty({ ...prev, ...changes })
+  const sweepEphemeral = useCallback(changes => {
+    const current = partyRef.current
+    if (!current || current.leader_id !== userIdRef.current || !changes) return
+    applyParty({ ...current, ...changes })
     updatePartyDB(changes)
   }, [updatePartyDB])
 
   const refreshParty = useCallback(async () => {
-    if (!codeRef.current) return
-    const fresh = await fetchParty(codeRef.current)
+    const fresh = await fetchPartyById(partyIdRef.current)
     if (fresh) applyParty(fresh)
   }, [])
 
   const leaveParty = useCallback(async () => {
     const code = codeRef.current
-    const name = myNameRef.current
-    codeRef.current = null
-    setPartyCode(null)
-    partyRef.current = null
-    myNameRef.current = ''
-    localStorage.removeItem('lastPartyCode')
-    setParty(null); setMyName(''); setError('')
-    if (code && name) {
-      await supabase.rpc('leave_party', { p_code: code, p_name: name })
-    }
+    clearPartyState()
+    setError('')
+    if (code) await supabase.rpc('leave_party', { p_code: code })
   }, [])
 
-  const syncSavedQuests = useCallback((quests) => {
-    const prevSaved = savedQuestsRef.current   // capture before overwriting
+  const kickMember = useCallback(async memberUserId => {
+    const code = codeRef.current
+    if (!code || !memberUserId) return false
+    const { error: rpcError } = await supabase.rpc('kick_member', {
+      p_code: code,
+      p_user_id: memberUserId,
+    })
+    if (rpcError) {
+      setError(rpcError.message)
+      return false
+    }
+    await refreshParty()
+    return true
+  }, [refreshParty])
+
+  const syncSavedQuests = useCallback(quests => {
+    const previousSaved = savedQuestsRef.current
     savedQuestsRef.current = quests
+    const current = partyRef.current
+    const currentUserId = userIdRef.current
+    if (!current || !currentUserId) return
+    const mine = findMember(current.members, currentUserId)
+    if (!mine) return
 
-    const prev = partyRef.current
-    const name = myNameRef.current
-    if (!prev || !name) return
-
-    const mine = prev.members?.[name] || []
-    const mapNorm = prev.map_norm
-
-    const completedIds = new Set(
-      Object.entries(prev.progress || {})
-        .filter(([k, v]) => k.startsWith('__done__:') && k.endsWith(`::${name}`) && v)
-        .map(([k]) => k.slice(9, k.lastIndexOf('::')))
+    const completedIds = completedQuestIds(current.progress, currentUserId)
+    const kept = mine.quests.filter(quest =>
+      !quests.find(saved => saved.quest_id === quest.id)
+      && !previousSaved.find(saved => saved.quest_id === quest.id)
+      && !completedIds.has(quest.id),
     )
-
-    // Keep only truly manually-added quests: not in the new saved list AND not in the
-    // previous saved list. Quests that were saved but have since been removed should not
-    // be kept — they should fall out because they're absent from `applicable` below.
-    const kept = mine.filter(q =>
-      !quests.find(sq => sq.quest_id === q.id) &&
-      !prevSaved.find(sq => sq.quest_id === q.id) &&
-      !completedIds.has(q.id)
-    )
-
-    // Add saved quests that match the current map (or are any-map), excluding completed
-    const applicable = quests
-      .filter(q => (!q.map_norm || q.map_norm === mapNorm) && !completedIds.has(q.quest_id))
-      .map(q => ({ id: q.quest_id, name: q.quest_name }))
-
+    const applicable = questsForMap(quests, current.map_norm).filter(quest => !completedIds.has(quest.id))
     const merged = [...kept]
-    applicable.forEach(sq => { if (!merged.find(q => q.id === sq.id)) merged.push(sq) })
+    applicable.forEach(quest => { if (!merged.find(existing => existing.id === quest.id)) merged.push(quest) })
 
-    // Only update if something actually changed
-    const changed = merged.length !== mine.length || merged.some(q => !mine.find(m => m.id === q.id))
-
-    // Full unfiltered quest list for recommendation: all saved quests + manually-added ones
-    const savedIds = new Set(quests.map(q => q.quest_id))
-    const allSaved = quests.map(q => ({ id: q.quest_id, name: q.quest_name }))
-    kept.forEach(q => { if (!savedIds.has(q.id)) allSaved.push(q) })
-    const prevMQA = prev.member_quests_all?.[name] || []
-    const mqaChanged = allSaved.length !== prevMQA.length || allSaved.some(q => !prevMQA.find(m => m.id === q.id))
-
-    if (!changed && !mqaChanged) return
-
-    const members = { ...prev.members, [name]: merged }
-    const member_quests_all = { ...(prev.member_quests_all || {}), [name]: allSaved }
-    applyParty({ ...prev, members, member_quests_all })
-    updatePartyDB({ members, member_quests_all })
-  }, [updatePartyDB])
+    const savedIds = new Set(quests.map(quest => quest.quest_id))
+    const questsAll = allQuestEntries(quests)
+    kept.forEach(quest => { if (!savedIds.has(quest.id)) questsAll.push(quest) })
+    const changed = JSON.stringify(merged) !== JSON.stringify(mine.quests)
+    const allChanged = JSON.stringify(questsAll) !== JSON.stringify(mine.quests_all)
+    if (changed || allChanged) patchOwnMember({
+      ...(changed ? { quests: merged } : {}),
+      ...(allChanged ? { quests_all: questsAll } : {}),
+    })
+  }, [patchOwnMember])
 
   return {
-    party, myName, error, loading, onlineMembers, presenceReady,
-    createParty, joinParty, forceJoinParty,
-    selectMap, addQuest, removeQuest, setSpawn,
-    toggleObjective, toggleStar, toggleComplete, submitMyProgress,
+    party,
+    myName,
+    error,
+    loading,
+    onlineMemberIds,
+    presenceReady,
+    createParty,
+    joinParty,
+    forceJoinParty,
+    selectMap,
+    addQuest,
+    removeQuest,
+    setSpawn,
+    toggleObjective,
+    toggleStar,
+    toggleComplete,
+    submitMyProgress,
     reorderQuests,
-    addStroke, clearMyStrokes,
-    addMarker, clearMyMarkers,
-    addPing, clearPings,
-    leaveParty, setError,
-    syncSavedQuests, refreshParty, startRaid, setRaidSettings, sweepEphemeral,
+    addStroke,
+    clearMyStrokes,
+    addMarker,
+    clearMyMarkers,
+    addPing,
+    clearPings,
+    leaveParty,
+    kickMember,
+    setError,
+    syncSavedQuests,
+    refreshParty,
+    startRaid,
+    setRaidSettings,
+    sweepEphemeral,
   }
 }

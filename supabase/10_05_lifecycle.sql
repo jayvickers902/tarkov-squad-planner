@@ -1,5 +1,5 @@
--- Phase 10A migration 5 of 7.
--- Prerequisite: 10a_04_rpcs.sql. Apply before 10a_06_user_settings.sql.
+-- Phase 10 migration 5 of 7.
+-- Prerequisite: 10_04_rpcs.sql. Apply before 10_06_user_settings.sql.
 -- The owner enables pg_cron separately; the schedule below is intentionally
 -- commented and is not executed by this migration.
 
@@ -30,4 +30,3 @@ grant execute on function public.cleanup_stale() to postgres;
 
 -- Owner action after enabling pg_cron:
 -- select cron.schedule('cleanup-stale-parties', '*/5 * * * *', $$select public.cleanup_stale();$$);
-

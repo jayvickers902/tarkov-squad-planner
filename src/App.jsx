@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { hasGoogleIdentity, useAuth } from './useAuth'
+import { useAuth } from './useAuth'
 import { useParty } from './useParty'
 import { useSettings } from './useSettings'
 import { useUserQuests } from './useUserQuests'
@@ -9,14 +9,13 @@ import Lobby from './components/Lobby'
 import MyQuests from './components/MyQuests'
 import Room from './components/Room'
 import AdminKeyManager from './components/AdminKeyManager'
-
-const ADMIN_USER_ID = 'ce64151c-c10b-45c4-9baa-9fbf794a5945'
+import { findMember, objectiveProgressKey, progressParts } from './partyMembers'
 
 export default function App() {
   const {
     user, profile, loading: authLoading,
     error: authError, setError: setAuthError,
-    migrateLegacy, logout, loginWithGoogle, createProfile,
+    logout, loginWithGoogle, createProfile,
   } = useAuth()
 
   const { settings: userSettings, setSetting: setUserSetting } = useSettings(user?.id, profile?.callsign)
@@ -40,9 +39,9 @@ export default function App() {
     addPing, clearPings,
     leaveParty, setError: setPartyError,
     syncSavedQuests, refreshParty, startRaid,
-    onlineMembers, presenceReady,
+    onlineMemberIds, presenceReady,
     setRaidSettings, sweepEphemeral,
-  } = useParty(userSettings)
+  } = useParty(user?.id, userSettings)
 
   // Keep the party hook's savedQuestsRef in sync — quests may load after joining
   useEffect(() => {
@@ -52,9 +51,8 @@ export default function App() {
   const prevProgressRef = useRef(null)
   const pendingCompletedIds = useRef(new Set())
 
-  // When any quest is marked __done__ in party progress:
-  // — for the completer: handleToggleComplete already called markQuestCompleted + removePartyQuest
-  // — for other members who share that quest: do it here
+  // When any quest is marked done in party progress, remove it from this
+  // user's active party list if they share that quest.
   useEffect(() => {
     if (!party) { prevProgressRef.current = null; return }
     const progress = party.progress || {}
@@ -62,32 +60,28 @@ export default function App() {
     prevProgressRef.current = progress
 
     Object.entries(progress).forEach(([k, v]) => {
-      if (!k.startsWith('__done__:') || !v || prev[k]) return
-      const rest = k.slice(9) // questId::memberName
-      const sep = rest.lastIndexOf('::')
-      if (sep === -1) return
-      const questId = rest.slice(0, sep)
-      const member = rest.slice(sep + 2)
-      if (member !== myName) return
-      const myMemberQuests = party.members?.[myName] || []
+      const parts = progressParts(k)
+      if (!parts.done || !v || prev[k] || parts.userId !== user?.id) return
+      const questId = parts.questId
+      const myMemberQuests = findMember(party.members, user?.id)?.quests || []
       if (!myMemberQuests.find(q => q.id === questId)) return
       markQuestCompleted(questId)
       removePartyQuest(questId)
     })
-  }, [party?.progress]) // eslint-disable-line
+  }, [party?.progress, user?.id]) // eslint-disable-line
 
   // Persisted objective progress in party-key format — used as fallback in MyQuestPanel across parties
   const userObjProgress = useMemo(() => {
-    if (!myName) return {}
+    if (!user?.id) return {}
     const out = {}
     for (const q of userQuests) {
       if (!q.obj_progress) continue
       for (const [objId, val] of Object.entries(q.obj_progress)) {
-        out[`${q.quest_id}::${objId}::${myName}`] = val
+        out[objectiveProgressKey(q.quest_id, objId, user.id)] = val
       }
     }
     return out
-  }, [userQuests, myName]) // eslint-disable-line
+  }, [userQuests, user?.id]) // eslint-disable-line
 
   const [screen, setScreen] = useState('lobby')       // 'lobby' | 'myquests' | 'admin'
   const [partyScreen, setPartyScreen] = useState('room') // 'room' | 'myquests' | 'admin'
@@ -107,7 +101,7 @@ export default function App() {
     joinParty(pendingJoinCode, profile.callsign, userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id)))
   }, [user, profile, authLoading, questsLoading, partyLoading, party, pendingJoinCode, autoJoinFired]) // eslint-disable-line
 
-  const isAdmin = user?.id === ADMIN_USER_ID
+  const isAdmin = profile?.is_admin === true
 
   if (authLoading) {
     return (
@@ -137,7 +131,6 @@ export default function App() {
     return (
       <AuthScreen
         onGoogleLogin={loginWithGoogle}
-        onMigrate={migrateLegacy}
         onCreateProfile={createProfile}
         needsCallsign={!!user && !profile}
         error={authError}
@@ -158,7 +151,7 @@ export default function App() {
     }
 
     function handleToggleStar(taskId) {
-      const myQuests = party.members?.[myName] || []
+      const myQuests = findMember(party.members, user.id)?.quests || []
       const iOwn = myQuests.find(q => q.id === taskId)
       if (!iOwn) return
       toggleStar(taskId)
@@ -169,12 +162,10 @@ export default function App() {
       // Persist objective states per quest so they survive across parties
       const questUpdates = {}
       for (const [key, val] of Object.entries(changes)) {
-        if (key.startsWith('__done__:')) continue
-        const parts = key.split('::')
-        if (parts.length !== 3 || parts[2] !== myName) continue
-        const [questId, objId] = parts
-        if (!questUpdates[questId]) questUpdates[questId] = {}
-        questUpdates[questId][objId] = val
+        const parts = progressParts(key)
+        if (parts.done || parts.userId !== user.id || !parts.questId || !parts.objectiveId) continue
+        if (!questUpdates[parts.questId]) questUpdates[parts.questId] = {}
+        questUpdates[parts.questId][parts.objectiveId] = val
       }
       for (const [questId, changes] of Object.entries(questUpdates)) {
         const existing = userQuests.find(q => q.quest_id === questId)
@@ -215,6 +206,7 @@ export default function App() {
     return (
       <Room
         party={party}
+        myUserId={user.id}
         myName={myName}
         isAdmin={isAdmin}
         questsLoading={questsLoading}
@@ -229,7 +221,7 @@ export default function App() {
         userObjProgress={userObjProgress}
         userSettings={userSettings}
         onSetUserSetting={setUserSetting}
-        onlineMembers={onlineMembers}
+        onlineMemberIds={onlineMemberIds}
         presenceReady={presenceReady}
         onSetRaidSettings={setRaidSettings}
         onSweepEphemeral={sweepEphemeral}
@@ -288,8 +280,8 @@ export default function App() {
 
   return (
     <Lobby
+      userId={user.id}
       callsign={profile.callsign}
-      googleLinked={hasGoogleIdentity(user)}
       onEnter={handleEnter}
       onForceJoin={handleForceJoin}
       onManageQuests={() => setScreen('myquests')}

@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, memo } from 'react'
+import { normalizeMembers, objectiveProgressKey, questDoneKey } from '../partyMembers'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
@@ -46,9 +47,15 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
+// UI-only drag ordering keys; these are deliberately separate from party
+// progress keys, which are built by partyMembers.js.
+function objectiveOrderKey(taskId, objectiveId) {
+  return JSON.stringify([taskId, objectiveId])
+}
+
 const QuestCard = memo(function QuestCard({
   task, owners, objs, doneCount, starred, allDone, completed, canAct, dimmed,
-  isOpen, onToggleExpand, onToggleStar, onSkip, members, progress,
+  isOpen, onToggleExpand, onToggleStar, onSkip, members, progress, memberIdsByName,
 }) {
   const pct = objs.length ? (doneCount / objs.length) * 100 : 0
 
@@ -152,7 +159,7 @@ const QuestCard = memo(function QuestCard({
         <div style={{ padding: '6px 10px 10px' }} className="fade-in">
           <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid var(--brd)' }}>OBJECTIVES</div>
           {objs.map(obj => {
-            const doneBy = owners.filter(m => progress?.[`${task.id}::${obj.id}::${m}`])
+            const doneBy = owners.filter(m => progress?.[objectiveProgressKey(task.id, obj.id, memberIdsByName.get(m))])
             const allDoneObj = doneBy.length === owners.length && owners.length > 0
             return (
               <div key={obj.id} style={{
@@ -202,7 +209,7 @@ const QuestCard = memo(function QuestCard({
   )
 })
 
-export default function TodoList({ tasks, memberQuests, progress, onToggleStar, questOrder, initialSkipped, starredQuests, myName, mapNorm }) {
+export default function TodoList({ tasks, memberQuests = [], progress, onToggleStar, questOrder, initialSkipped, starredQuests, myUserId, mapNorm }) {
   const [filter, setFilter]     = useState('all')
   const [kappaOnly, setKappaOnly] = useState(false)
   const [expanded, setExpanded] = useState({})
@@ -211,7 +218,9 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
   const [objOrder, setObjOrder]         = useState([])
   const [dragObjKey, setDragObjKey]     = useState(null)
   const [dragOverObjKey, setDragOverObjKey] = useState(null)
-  const members = Object.keys(memberQuests)
+  const memberRows = normalizeMembers(memberQuests)
+  const members = memberRows.map(member => member.callsign)
+  const memberIdsByName = new Map(memberRows.map(member => [member.callsign, member.user_id]))
 
   const handleToggleExpand = useCallback((taskId) => {
     setExpanded(e => ({ ...e, [taskId]: !e[taskId] }))
@@ -226,25 +235,26 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
   }, [])
 
   const questRows = useMemo(() => {
-    const ids = [...new Set(Object.values(memberQuests).flat().map(q => q.id))]
+    const allQuestEntries = memberRows.flatMap(member => member.quests)
+    const ids = [...new Set(allQuestEntries.map(q => q.id))]
     return ids
       .map(id => tasks.find(t => t.id === id) || {
         id,
-        name: Object.values(memberQuests).flat().find(q => q.id === id)?.name || id,
+        name: allQuestEntries.find(q => q.id === id)?.name || id,
         objectives: [],
         trader: null,
         incompleteData: true,
       })
       .map(task => {
-        const owners    = Object.entries(memberQuests).filter(([, qs]) => qs.find(q => q.id === task.id)).map(([n]) => n)
+        const owners    = memberRows.filter(member => member.quests.find(q => q.id === task.id)).map(member => member.callsign)
         const objs      = objsForMap(task.objectives, mapNorm, task.map?.normalizedName)
         const doneCount = objs.filter(o =>
-          owners.length > 0 && owners.every(m => progress?.[`${task.id}::${o.id}::${m}`])
+          owners.length > 0 && owners.every(m => progress?.[objectiveProgressKey(task.id, o.id, memberIdsByName.get(m))])
         ).length
         const starred   = starredQuests?.[task.id] || false
         const allDone   = objs.length > 0 && doneCount === objs.length
-        const completed = owners.length > 0 && owners.every(m => progress?.[`__done__:${task.id}::${m}`])
-        const canAct    = owners.includes(myName)
+        const completed = owners.length > 0 && owners.every(m => progress?.[questDoneKey(task.id, memberIdsByName.get(m))])
+        const canAct    = owners.some(m => memberIdsByName.get(m) === myUserId)
         // True if any non-optional objective is tied to a specific map — false for any-map quests (Gunsmith etc.)
         const isMapSpecific  = mapNorm
           ? (task.objectives || []).some(o => !o.optional && o.maps && o.maps.length > 0)
@@ -257,7 +267,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
         const allObjs = (r.task.objectives || []).filter(o => !o.optional)
         return allObjs.length === 0 || r.objs.length > 0
       })
-  }, [tasks, memberQuests, progress, starredQuests, myName, mapNorm])
+  }, [tasks, memberRows, progress, starredQuests, myUserId, mapNorm])
 
   const sortedRows = useMemo(() => {
     if (!questOrder || !questOrder.length) {
@@ -284,7 +294,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
   function handleObjDrop(e, targetKey) {
     e.preventDefault()
     if (!dragObjKey || dragObjKey === targetKey) { setDragObjKey(null); setDragOverObjKey(null); return }
-    const keys = sortedObjRows.map(r => `${r.task.id}::${r.obj.id}`)
+    const keys = sortedObjRows.map(r => objectiveOrderKey(r.task.id, r.obj.id))
     const fromIdx = keys.indexOf(dragObjKey)
     const toIdx   = keys.indexOf(targetKey)
     keys.splice(fromIdx, 1)
@@ -294,7 +304,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
   }
 
   function sendObjToTop(key) {
-    const keys = sortedObjRows.map(r => `${r.task.id}::${r.obj.id}`)
+    const keys = sortedObjRows.map(r => objectiveOrderKey(r.task.id, r.obj.id))
     const idx = keys.indexOf(key)
     if (idx <= 0) return
     keys.splice(idx, 1)
@@ -325,7 +335,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
     .filter(r => r.isMapSpecific)
     .flatMap(r => r.objs.map(obj => ({
       obj, task: r.task, owners: r.owners,
-      doneByMembers: r.owners.filter(m => progress?.[`${r.task.id}::${obj.id}::${m}`]),
+      doneByMembers: r.owners.filter(m => progress?.[objectiveProgressKey(r.task.id, obj.id, memberIdsByName.get(m))]),
     })))
     .filter(row => row.obj.type !== 'giveItem' && row.obj.type !== 'giveQuestItem')
 
@@ -337,8 +347,8 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
       const aDone = isDone(a)
       const bDone = isDone(b)
       if (aDone !== bDone) return aDone - bDone
-      const ak = `${a.task.id}::${a.obj.id}`
-      const bk = `${b.task.id}::${b.obj.id}`
+      const ak = objectiveOrderKey(a.task.id, a.obj.id)
+      const bk = objectiveOrderKey(b.task.id, b.obj.id)
       const ai = orderMap.has(ak) ? orderMap.get(ak) : Infinity
       const bi = orderMap.has(bk) ? orderMap.get(bk) : Infinity
       return ai - bi
@@ -362,6 +372,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
     onSkip: handleSkip,
     members,
     progress,
+    memberIdsByName,
   }
 
   return (
@@ -462,7 +473,7 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {sortedObjRows.map(row => {
-              const key = `${row.task.id}::${row.obj.id}`
+              const key = objectiveOrderKey(row.task.id, row.obj.id)
               const isDraggingThis = dragObjKey === key
               const isDragOverThis = dragOverObjKey === key
               return (
@@ -492,11 +503,11 @@ export default function TodoList({ tasks, memberQuests, progress, onToggleStar, 
                     style={{
                       background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                       color: 'var(--txd)', fontSize: 13, flexShrink: 0, lineHeight: 1,
-                      opacity: sortedObjRows[0] && `${sortedObjRows[0].task.id}::${sortedObjRows[0].obj.id}` === key ? 0.2 : 0.6,
+                      opacity: sortedObjRows[0] && objectiveOrderKey(sortedObjRows[0].task.id, sortedObjRows[0].obj.id) === key ? 0.2 : 0.6,
                       transition: 'color .15s, opacity .15s',
                     }}
                     onMouseEnter={e => { e.currentTarget.style.color = 'var(--gold)'; e.currentTarget.style.opacity = '1' }}
-                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--txd)'; e.currentTarget.style.opacity = sortedObjRows[0] && `${sortedObjRows[0].task.id}::${sortedObjRows[0].obj.id}` === key ? '0.2' : '0.6' }}
+                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--txd)'; e.currentTarget.style.opacity = sortedObjRows[0] && objectiveOrderKey(sortedObjRows[0].task.id, sortedObjRows[0].obj.id) === key ? '0.2' : '0.6' }}
                   >↑</button>
 
                   {/* Drag grip */}

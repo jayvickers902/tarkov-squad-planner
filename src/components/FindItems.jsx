@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
 
 const MEMBER_COLORS = [
   { bg: '#1a2e3a', border: '#1e5a7a', text: '#5aace8' },
@@ -21,16 +22,18 @@ function objIsOnMap(obj, mapNorm, taskMapNorm) {
   return true
 }
 
-export default function FindItems({ tasks, memberQuests, mapNorm, progress, myName, userObjProgress }) {
-  const members = Object.keys(memberQuests)
+export default function FindItems({ tasks, memberQuests = [], mapNorm, progress, myName, myUserId, userObjProgress }) {
+  const memberRows = normalizeMembers(memberQuests)
+  const members = memberRows.map(member => member.callsign)
   const [activeMember, setActiveMember] = useState('all')
 
   // Build per-member find-item lists from their active quests' objectives
   const memberItems = useMemo(() => {
-    return members.map(member => {
+    return memberRows.map(memberRow => {
+      const member = memberRow.callsign
       // Deduplicate quest IDs — party.members can accumulate duplicates
       const seen = new Set()
-      const quests = (memberQuests[member] || []).filter(q => seen.has(q.id) ? false : (seen.add(q.id), true))
+      const quests = memberRow.quests.filter(q => seen.has(q.id) ? false : (seen.add(q.id), true))
       const itemMap = {}
 
       quests.forEach(q => {
@@ -38,8 +41,8 @@ export default function FindItems({ tasks, memberQuests, mapNorm, progress, myNa
         if (!task) return
         task.objectives?.forEach(obj => {
           if (obj.optional) return
-          const objKey = `${task.id}::${obj.id}::${member}`
-          if (progress?.[objKey] || (member === myName && userObjProgress?.[objKey])) return
+          const objKey = objectiveProgressKey(task.id, obj.id, memberRow.user_id)
+          if (progress?.[objKey] || (memberRow.user_id === myUserId && userObjProgress?.[objKey])) return
           if (obj.type !== 'findItem' || !obj.item) return
           if (!objIsOnMap(obj, mapNorm, task.map?.normalizedName)) return
 
@@ -60,25 +63,25 @@ export default function FindItems({ tasks, memberQuests, mapNorm, progress, myNa
         })
       })
 
-      return { member, items: Object.values(itemMap).sort((a, b) => (b.foundInRaid ? 1 : 0) - (a.foundInRaid ? 1 : 0)) }
+      return { member, userId: memberRow.user_id, items: Object.values(itemMap).sort((a, b) => (b.foundInRaid ? 1 : 0) - (a.foundInRaid ? 1 : 0)) }
     })
-  }, [tasks, memberQuests, progress, userObjProgress, mapNorm]) // eslint-disable-line
+  }, [tasks, memberRows, progress, userObjProgress, mapNorm, myUserId]) // eslint-disable-line
 
   // Build a cross-party view: group by item, show which members need it
   const sharedItems = useMemo(() => {
     const map = {}
-    memberItems.forEach(({ member, items }) => {
+    memberItems.forEach(({ member, userId, items }) => {
       items.forEach(item => {
         const key = `${item.itemId}::${item.foundInRaid ? 'fir' : 'nonfir'}`
         if (map[key]) {
-          map[key].members.push({ name: member, count: item.count, quests: item.quests })
+          map[key].members.push({ name: member, userId, count: item.count, quests: item.quests })
         } else {
           map[key] = {
             itemId: item.itemId,
             name: item.name,
             iconLink: item.iconLink,
             foundInRaid: item.foundInRaid,
-            members: [{ name: member, count: item.count, quests: item.quests }],
+            members: [{ name: member, userId, count: item.count, quests: item.quests }],
           }
         }
       })
@@ -187,9 +190,9 @@ export default function FindItems({ tasks, memberQuests, mapNorm, progress, myNa
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {visible.map(({ member, items }) => {
+              {visible.map(({ member, userId, items }) => {
                 const c = memberColor(member, members)
-                const isMe = member === myName
+                const isMe = userId === myUserId
                 return (
                   <div key={member}>
                     <div style={{

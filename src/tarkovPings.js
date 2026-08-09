@@ -4,7 +4,7 @@
 // the party write) and MapLeaflet (rendering). No React, no side effects.
 //
 // A stored ping is:
-//   { id, user, map, x, y, z, yaw, at, taps }
+//   { id, user_id, user, map, x, y, z, yaw, at, taps }
 //
 // `x/y/z` are raw game-world coordinates — the same space PMC spawns already use,
 // so no calibration exists anywhere in this file. `yaw` is degrees, already
@@ -199,7 +199,7 @@ export function cadenceOf(taps) {
 
 function validPing(p) {
   return !!p && typeof p === 'object'
-    && typeof p.id === 'string' && typeof p.user === 'string'
+    && typeof p.id === 'string' && typeof p.user === 'string' && typeof p.user_id === 'string'
     && typeof p.at === 'number'
     && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)
     && !!normalizeMapName(p.map)
@@ -291,12 +291,11 @@ export function trailsAt(rows, t, maxAgeMs = TRAIL_MAX_AGE_MS) {
   const byUser = new Map()
   for (const p of rows) {
     if (p.at > t || t - p.at > maxAgeMs) continue
-    if (!byUser.has(p.user)) byUser.set(p.user, [])
-    byUser.get(p.user).push(p)
+    const key = p.user_id || p.user
+    if (!byUser.has(key)) byUser.set(key, { user: p.user, user_id: p.user_id, pts: [] })
+    byUser.get(key).pts.push(p)
   }
-  return [...byUser.entries()]
-    .filter(([, pts]) => pts.length >= 2)
-    .map(([user, pts]) => ({ user, pts }))
+  return [...byUser.values()].filter(entry => entry.pts.length >= 2)
 }
 
 // mm:ss from the start of the window. Wall-clock time of day would be wrong as

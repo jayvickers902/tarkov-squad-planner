@@ -11,10 +11,9 @@ function GoogleIcon() {
   )
 }
 
-export default function AuthScreen({ onGoogleLogin, onMigrate, onCreateProfile, needsCallsign, error, setError }) {
+export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsign, error, setError }) {
   const [mode, setMode]         = useState(needsCallsign ? 'callsign' : 'home')
   const [callsign, setCallsign] = useState('')
-  const [password, setPassword] = useState('')
   const [busy, setBusy]         = useState(false)
   const [local, setLocal]       = useState('')
 
@@ -30,12 +29,6 @@ export default function AuthScreen({ onGoogleLogin, onMigrate, onCreateProfile, 
     if (ok === false) setBusy(false)
   }
 
-  async function handleMigrate() {
-    setBusy(true); setLocal('')
-    const ok = await onMigrate(callsign, password)
-    if (!ok) setBusy(false)
-  }
-
   async function handleCallsign() {
     setBusy(true); setLocal('')
     const ok = await onCreateProfile(callsign)
@@ -44,7 +37,6 @@ export default function AuthScreen({ onGoogleLogin, onMigrate, onCreateProfile, 
 
   function reset() {
     setCallsign('')
-    setPassword('')
     setLocal('')
     setError('')
     setMode('home')
@@ -68,40 +60,25 @@ export default function AuthScreen({ onGoogleLogin, onMigrate, onCreateProfile, 
               <GoogleIcon />
               CONTINUE WITH GOOGLE
             </button>
-            <button className="auth-migration-link" onClick={() => { setMode('migrate'); setLocal(''); setError('') }} disabled={busy}>
-              Existing password account? Migrate it →
-            </button>
           </div>
         )}
 
         {mode === 'callsign' && (
           <div className="card auth-card fade-in">
             <h2>CHOOSE YOUR CALLSIGN</h2>
-            <p className="mono auth-note">THIS IS YOUR IN-GAME NAME — CHOOSE WISELY</p>
+            <p className="mono auth-note">THIS IS YOUR IN-GAME NAME - CHOOSE WISELY</p>
             <div><div className="lbl">CALLSIGN</div><input placeholder="Your in-game name" value={callsign} onChange={event => { setCallsign(event.target.value); setLocal(''); setError('') }} autoFocus onKeyDown={event => event.key === 'Enter' && handleCallsign()} /></div>
-            {err && <p className="mono auth-error">⚠ {err}</p>}
+            {err && <p className="mono auth-error">! {err}</p>}
             {busy && <p className="mono auth-busy">SAVING...</p>}
-            <button className="btn-gold" onClick={handleCallsign} disabled={busy}>CONFIRM CALLSIGN</button>
-          </div>
-        )}
-
-        {mode === 'migrate' && (
-          <div className="card auth-card fade-in">
-            <h2>MIGRATE EXISTING ACCOUNT</h2>
-            <p className="mono auth-note">SIGN IN ONCE, THEN LINK GOOGLE WITHOUT LOSING YOUR QUESTS OR PROFILE.</p>
-            <div><div className="lbl">CALLSIGN</div><input placeholder="Your in-game name" value={callsign} onChange={event => { setCallsign(event.target.value); setLocal(''); setError('') }} autoFocus /></div>
-            <div><div className="lbl">PASSWORD</div><input type="password" placeholder="Your existing password" value={password} onChange={event => { setPassword(event.target.value); setLocal('') }} onKeyDown={event => event.key === 'Enter' && handleMigrate()} /></div>
-            {err && <p className="mono auth-error">⚠ {err}</p>}
-            {busy && <p className="mono auth-busy">OPENING GOOGLE...</p>}
             <div className="auth-form-actions">
-              <button className="btn-ghost" onClick={reset} disabled={busy}>BACK</button>
-              <button className="btn-gold" onClick={handleMigrate} disabled={busy}>SIGN IN &amp; LINK GOOGLE</button>
+              {!needsCallsign && <button className="btn-ghost" onClick={reset} disabled={busy}>BACK</button>}
+              <button className="btn-gold" onClick={handleCallsign} disabled={busy}>CONFIRM CALLSIGN</button>
             </div>
           </div>
         )}
 
-        {err && mode === 'home' && <p className="mono auth-error auth-home-error">⚠ {err}</p>}
-        <p className="mono auth-footer">QUEST DATA VIA TARKOV.DEV — COMMUNITY MAINTAINED</p>
+        {err && mode === 'home' && <p className="mono auth-error auth-home-error">! {err}</p>}
+        <p className="mono auth-footer">QUEST DATA VIA TARKOV.DEV - COMMUNITY MAINTAINED</p>
       </div>
     </div>
   )

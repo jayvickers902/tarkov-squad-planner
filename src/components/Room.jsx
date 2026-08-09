@@ -14,8 +14,8 @@ import RaidView from './RaidView'
 import MonitorLink from './MonitorLink'
 import RaidSettings from './RaidSettings'
 import useEphemeralSweep from '../useEphemeralSweep'
-import { getRaidSettings, hasRaidWork } from '../raidState'
 import { resolveSetting } from '../settings'
+import { normalizeMembers, findMember, memberIds, memberNames, progressOwnerId, progressQuestId } from '../partyMembers'
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
@@ -43,7 +43,11 @@ function MemberPill({ name, allMembers }) {
   )
 }
 
-export default function Room({ party, myName, isAdmin, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, onlineMembers = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid }) {
+function hasRaidWork(progress) {
+  return Object.keys(progress || {}).some(key => key !== '__raid_start__')
+}
+
+export default function Room({ party, myUserId, myName, isAdmin, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
@@ -60,7 +64,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  useEphemeralSweep({ party, myName, userSettings, onSweep: onSweepEphemeral })
+  useEphemeralSweep({ party, userId: myUserId, userSettings, onSweep: onSweepEphemeral })
 
   useEffect(() => {
     if (tab === 'map') setSidebarOpen(false)
@@ -90,39 +94,41 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
   const { maps, loading: loadingMaps } = useMaps()
   const { tasks, loading: loadingTasks } = useTasks(party.map_norm)
   const { tasks: allTasks } = useTasks(null)
-  const isLeader = party.leader === myName
-  const settingLayers = { raid: getRaidSettings(party.progress), unit: null, user: userSettings }
+  const isLeader = party.leader_id === myUserId
+  const settingLayers = { raid: party.settings || {}, unit: null, user: userSettings }
   const pingTtlMs = Number(resolveSetting('ping_ttl_ms', settingLayers))
   const replayEnabled = resolveSetting('replay_enabled', settingLayers)
   const canChangeMap = isLeader || resolveSetting('members_can_change_map', settingLayers) === true
-  const members  = Object.keys(party.members || {})
-  const mine     = party.members?.[myName] || []
+  const members  = normalizeMembers(party.members)
+  const memberNameList = memberNames(members)
+  const memberIdList = memberIds(members)
+  const mineMember = findMember(members, myUserId)
+  const mine = mineMember?.quests || []
 
   // Track if we ever had quests — used to show "syncing" instead of "no quests" on brief dips
   const mineWasNonEmpty = useRef(mine.length > 0)
   if (mine.length > 0) mineWasNonEmpty.current = true
 
-  // Completed quests — only my own entries (key format: __done__:questId::memberName)
+  // Completed quests — only my own entries, keyed by user_id.
   const completedQuests = Object.fromEntries(
     Object.entries(party.progress || {})
-      .filter(([k, v]) => k.startsWith('__done__:') && k.endsWith(`::${myName}`) && v)
-      .map(([k]) => [k.slice(9, k.lastIndexOf('::')), true])
+      .filter(([k, v]) => k.startsWith('__done__:') && progressOwnerId(k) === myUserId && v)
+      .map(([k]) => [progressQuestId(k), true])
   )
 
-  // Map recommendation: uses member_quests_all (full quest list per member, not map-filtered)
+  // Map recommendation: uses each party_members row's full quests_all list.
   const mapStats = useMemo(() => {
-    const mqAll = party.member_quests_all || {}
-    const activeMembers = Object.keys(mqAll).filter(n => (mqAll[n] || []).length > 0)
+    const activeMembers = members.filter(member => member.quests_all.length > 0)
     if (!allTasks.length || !maps.length || !activeMembers.length) return []
     return maps.map(m => {
       const perMember = {}
       const questIdSets = {}
-      activeMembers.forEach(name => {
-        const ids = (mqAll[name] || [])
+      activeMembers.forEach(member => {
+        const ids = member.quests_all
           .filter(q => allTasks.find(t => t.id === q.id)?.map?.normalizedName === m.normalizedName)
           .map(q => q.id)
-        perMember[name] = ids.length
-        if (ids.length) questIdSets[name] = new Set(ids)
+        perMember[member.callsign] = ids.length
+        if (ids.length) questIdSets[member.callsign] = new Set(ids)
       })
       const allIds = new Set(Object.values(questIdSets).flatMap(s => [...s]))
       let crossover = 0
@@ -134,7 +140,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
     })
     .filter(s => s.total > 0)
     .sort((a, b) => b.total - a.total || b.crossover - a.crossover)
-  }, [allTasks, maps, party.member_quests_all]) // eslint-disable-line
+  }, [allTasks, maps, members]) // eslint-disable-line
 
 
   function copy() {
@@ -148,6 +154,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
       {showRaidModal && (
         <StartRaidModal
           party={party}
+          myUserId={myUserId}
           myName={myName}
           tasks={allTasks}
           onClose={() => {
@@ -166,6 +173,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
       {raidView && party.map_id && (
         <RaidView
           party={party}
+          myUserId={myUserId}
           myName={myName}
           members={members}
           tasks={tasks}
@@ -250,7 +258,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
       {settingsOpen && (
         <RaidSettings
           party={party}
-          myName={myName}
+          userId={myUserId}
           userSettings={userSettings}
           onChange={onSetRaidSettings}
           onClose={() => setSettingsOpen(false)}
@@ -285,15 +293,15 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                 <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>NO FRIENDS ADDED YET</div>
               )}
               {friends.map(f => (
-                <div key={f.callsign} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div key={f.user_id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: f.partyCode ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }} />
                   <span className="mono" style={{ flex: 1, fontSize: 12, color: f.partyCode ? 'var(--tx)' : 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {f.callsign}
                   </span>
-                  {confirmUnfriend === f.callsign ? (
+                  {confirmUnfriend === f.user_id ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                       <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>REMOVE?</span>
-                      <button className="btn-danger btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => { onRemoveFriend(f.callsign); setConfirmUnfriend(null) }}>YES</button>
+                      <button className="btn-danger btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => { onRemoveFriend(f.user_id); setConfirmUnfriend(null) }}>YES</button>
                       <button className="btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => setConfirmUnfriend(null)}>NO</button>
                     </div>
                   ) : (
@@ -301,7 +309,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                       <span className="mono" style={{ fontSize: 10, color: f.partyCode ? 'var(--gold)' : 'var(--txd)' }}>
                         {f.partyCode ? 'IN PARTY' : 'OFFLINE'}
                       </span>
-                      <button className="btn-ghost btn-sm" style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '3px 6px' }} onClick={() => setConfirmUnfriend(f.callsign)} title="Unfriend">×</button>
+                      <button className="btn-ghost btn-sm" style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '3px 6px' }} onClick={() => setConfirmUnfriend(f.user_id)} title="Unfriend">×</button>
                     </>
                   )}
                 </div>
@@ -366,12 +374,13 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                 <button className="btn-ghost btn-sm" onClick={() => setSidebarOpen(false)} title="Collapse sidebar" style={{ fontSize: 11, padding: '2px 7px', color: 'var(--txd)' }}>◀</button>
               </div>
             </div>
-            {members.map(m => {
-              const isSelf    = m === myName
-              const isOnline  = !presenceReady || onlineMembers.includes(m)
-              const isFriend  = friends.some(f => f.callsign === m)
-              const isPending = [...(pendingIn || []), ...(pendingOut || [])].some(r => r.callsign === m)
-              const mQuests   = party.members[m] || []
+            {members.map(member => {
+              const m = member.callsign
+              const isSelf    = member.user_id === myUserId
+              const isOnline  = !presenceReady || onlineMemberIds.includes(member.user_id)
+              const isFriend  = friends.some(f => f.user_id === member.user_id)
+              const isPending = [...(pendingIn || []), ...(pendingOut || [])].some(r => r.user_id === member.user_id)
+              const mQuests   = member.quests
               const totalCount = mQuests.length
               const mapCount  = party.map_norm
                 ? mQuests.filter(q => {
@@ -380,7 +389,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                   }).length
                 : null
               return (
-                <div key={m} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '7px 0', borderBottom: '1px solid var(--brd)' }}>
+                <div key={member.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '7px 0', borderBottom: '1px solid var(--brd)' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13, color: isSelf ? 'var(--goldtx)' : 'var(--tx)' }}>
                       {m}{isSelf ? ' · you' : ''}
@@ -394,7 +403,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                    {party.leader === m && (
+                    {party.leader_id === member.user_id && (
                       <span className="mono" style={{ fontSize: 10, color: 'var(--gold)', border: '1px solid var(--golddim)', borderRadius: 3, padding: '1px 5px' }}>LDR</span>
                     )}
                     {!isSelf && !isFriend && !isPending && (
@@ -451,7 +460,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                                 const activeEntries = Object.entries(stat.perMember).filter(([, v]) => v > 0)
                                 const barTotal = activeEntries.reduce((s, [, v]) => s + v, 0)
                                 return activeEntries.map(([name, count], idx) => {
-                                  const c = memberColor(name, members)
+                                  const c = memberColor(name, memberNameList)
                                   const segPct = barTotal ? (count / barTotal) * pct : 0
                                   return (
                                     <div key={name} title={`${name}: ${count} quest${count !== 1 ? 's' : ''}`} style={{
@@ -469,7 +478,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                             )}
                             <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                               {Object.entries(stat.perMember).filter(([, v]) => v > 0).map(([name]) => {
-                                const c = memberColor(name, members)
+                                const c = memberColor(name, memberNameList)
                                 return (
                                   <span key={name} className="mono" title={`${name}: ${stat.perMember[name]} quest${stat.perMember[name] !== 1 ? 's' : ''}`} style={{
                                     fontSize: 9, width: 14, height: 14, borderRadius: 2,
@@ -524,6 +533,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
           <MonitorLink
             maps={maps}
             mapNorm={party.map_norm}
+            userId={myUserId}
             myName={myName}
             isLeader={isLeader}
             canChangeMap={canChangeMap}
@@ -580,13 +590,13 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                         <TodoList
                           key={party.map_norm}
                           tasks={tasks}
-                          memberQuests={party.members}
+                          memberQuests={members}
                           progress={party.progress || {}}
                           starredQuests={party.starred || {}}
                           onToggleStar={onToggleStar}
                           questOrder={party.quest_order}
                           initialSkipped={skippedQuestIds}
-                          myName={myName}
+                          myUserId={myUserId}
                           mapNorm={party.map_norm}
                         />
                       )
@@ -598,8 +608,9 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                       myQuests={mine}
                       tasks={tasks}
                       progress={party.progress || {}}
-                      userObjProgress={userObjProgress}
-                      myName={myName}
+                       userObjProgress={userObjProgress}
+                       myUserId={myUserId}
+                       myName={myName}
                       onSubmit={onSubmitProgress}
                       onQuestComplete={onQuestComplete}
                       onOpenQuestManager={onMyQuests}
@@ -616,7 +627,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                 <div className="card fade-in" style={{ padding: 16 }}>
                   {loadingTasks && !tasks.length
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
-                    : <RequiredItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} />
+                    : <RequiredItems tasks={tasks} memberQuests={members} mapNorm={party.map_norm} progress={party.progress} />
                   }
                 </div>
               )}
@@ -625,7 +636,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                 <div className="card fade-in" style={{ padding: 16 }}>
                   {loadingTasks && !tasks.length
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
-                    : <FindItems tasks={tasks} memberQuests={party.members} mapNorm={party.map_norm} progress={party.progress} myName={myName} userObjProgress={userObjProgress} />
+                    : <FindItems tasks={tasks} memberQuests={members} mapNorm={party.map_norm} progress={party.progress} myName={myName} myUserId={myUserId} userObjProgress={userObjProgress} />
                   }
                 </div>
               )}
@@ -648,10 +659,12 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                     pingLog={party.ping_log}
                     pingTtlMs={pingTtlMs}
                     replayEnabled={replayEnabled}
+                    myUserId={myUserId}
                     myName={myName}
-                    memberNames={members}
+                    memberNames={memberNameList}
+                    memberIds={memberIdList}
                     myQuests={mine}
-                    memberQuests={party.members || {}}
+                    memberQuests={members}
                     tasks={allTasks}
                     progress={party.progress || {}}
                     onAddStroke={onAddStroke}

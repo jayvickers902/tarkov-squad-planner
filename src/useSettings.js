@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { supabase } from './supabase'
 
 const CACHE_PREFIX = 'tsp.user-settings.'
 const RAIL_KEYS = ['tsp.raidview.rail', 'tsp.raid.rail.open']
@@ -30,7 +31,7 @@ function writeCachedSettings(userId, settings) {
   try { localStorage.setItem(`${CACHE_PREFIX}${userId}`, JSON.stringify(settings)) } catch { /* storage is optional */ }
 }
 
-function readLegacySettings(callsign) {
+function readLegacySettings(callsign, userId) {
   const migrated = {}
   const railKey = RAIL_KEYS.find(key => readString(key) !== null)
   if (railKey) migrated.raidview_rail_open = readString(railKey) !== '0'
@@ -44,12 +45,12 @@ function readLegacySettings(callsign) {
 
   if (callsign) {
     const order = readJson(`tarkov_quest_order_${callsign}`)
-    if (Array.isArray(order)) migrated.quest_order = { [callsign]: order }
+    if (Array.isArray(order)) migrated.quest_order = { [userId || callsign]: order }
   }
   return migrated
 }
 
-function writeLegacyCache(settings, callsign) {
+function writeLegacyCache(settings, userId, callsign) {
   if (!settings || typeof settings !== 'object') return
   if (settings.raidview_rail_open !== undefined) {
     const value = settings.raidview_rail_open ? '1' : '0'
@@ -66,30 +67,31 @@ function writeLegacyCache(settings, callsign) {
   if (settings.monitor_expanded !== undefined) {
     try { localStorage.setItem(MONITOR_EXPANDED_KEY, settings.monitor_expanded ? '1' : '0') } catch { /* storage is optional */ }
   }
-  const order = callsign && settings.quest_order?.[callsign]
-  if (Array.isArray(order)) {
+  const order = (userId && settings.quest_order?.[userId])
+    || (callsign && settings.quest_order?.[callsign])
+  if (Array.isArray(order) && callsign) {
     try { localStorage.setItem(`tarkov_quest_order_${callsign}`, JSON.stringify(order)) } catch { /* storage is optional */ }
   }
 }
 
-function mergeSettings(...layers) {
-  return layers.reduce((merged, layer) => ({ ...merged, ...(layer || {}) }), {})
-}
-
 function readLocalSettings(userId, callsign) {
   const cached = readCachedSettings(userId)
-  const legacy = readLegacySettings(callsign)
-  const merged = mergeSettings(legacy, cached)
+  const legacy = readLegacySettings(callsign, userId)
+  const merged = { ...legacy, ...cached }
   if (userId && Object.keys(merged).length > 0) {
     writeCachedSettings(userId, merged)
-    writeLegacyCache(merged, callsign)
+    writeLegacyCache(merged, userId, callsign)
   }
   return merged
 }
 
+function cleanSettings(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
 export function useSettings(userId, callsign) {
   const [settings, setSettings] = useState(() => readLocalSettings(userId, callsign))
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(Boolean(userId))
   const userIdRef = useRef(userId)
   const callsignRef = useRef(callsign)
   const settingsRef = useRef(settings)
@@ -99,27 +101,58 @@ export function useSettings(userId, callsign) {
   useEffect(() => { settingsRef.current = settings }, [settings])
 
   useEffect(() => {
-    if (!userId) {
-      setSettings({})
-      setLoading(false)
-      return undefined
-    }
-
+    let cancelled = false
     const local = readLocalSettings(userId, callsign)
     setSettings(local)
     settingsRef.current = local
-    setLoading(false)
-    return undefined
+
+    if (!userId) {
+      setLoading(false)
+      return () => { cancelled = true }
+    }
+
+    setLoading(true)
+    supabase
+      .from('user_settings')
+      .select('settings')
+      .eq('user_id', userId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          // The cache is still useful during a transient network failure.
+          setLoading(false)
+          return
+        }
+        const next = data ? { ...local, ...cleanSettings(data.settings) } : local
+        settingsRef.current = next
+        setSettings(next)
+        writeCachedSettings(userId, next)
+        writeLegacyCache(next, userId, callsign)
+        setLoading(false)
+      })
+
+    return () => { cancelled = true }
   }, [userId, callsign])
 
   const setSetting = useCallback(async (key, value) => {
     const currentUserId = userIdRef.current
-    if (!currentUserId) return
+    if (!currentUserId) return settingsRef.current
+
     const next = { ...settingsRef.current, [key]: value }
     settingsRef.current = next
     setSettings(next)
     writeCachedSettings(currentUserId, next)
-    writeLegacyCache(next, callsignRef.current)
+    writeLegacyCache(next, currentUserId, callsignRef.current)
+
+    const { error } = await supabase
+      .from('user_settings')
+      .upsert({
+        user_id: currentUserId,
+        settings: next,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+    if (error) console.warn('user_settings write failed; local cache retained', error)
     return next
   }, [])
 

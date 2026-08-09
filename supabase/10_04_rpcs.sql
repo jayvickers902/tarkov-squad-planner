@@ -1,6 +1,6 @@
--- Phase 10A migration 4 of 7.
--- Prerequisite: 10a_03_rls.sql and the truncated/new parties shape from
--- 10a_02_parties_columns.sql. Apply before 10a_05_lifecycle.sql.
+-- Phase 10 migration 4 of 7.
+-- Prerequisite: 10_03_rls.sql and the truncated/new parties shape from
+-- 10_02_parties_columns.sql. Apply before 10_05_lifecycle.sql.
 -- All party-code lookups below happen inside security-definer functions. The
 -- browser must never select public.parties by code.
 
@@ -10,6 +10,7 @@ drop function if exists public.force_join_party(text, jsonb, jsonb);
 drop function if exists public.force_join_party(text, jsonb, jsonb, jsonb);
 drop function if exists public.leave_party(text, text);
 drop function if exists public.select_map_party(text, text, jsonb, text, text, text);
+drop function if exists public.select_map_party(text, jsonb, text, text, text);
 
 create or replace function public._party_snapshot(p_party_id bigint)
 returns jsonb
@@ -301,7 +302,6 @@ $$;
 
 create or replace function public.select_map_party(
   p_code text,
-  p_leader text,
   p_leader_quests jsonb,
   p_map_id text,
   p_map_name text,
@@ -320,6 +320,13 @@ begin
   select * into v_party from public.parties where code = p_code for update;
   if not found then raise exception 'party not found'; end if;
 
+  if not exists (
+    select 1 from public.party_members
+    where party_id = v_party.id and user_id = auth.uid()
+  ) then
+    raise exception 'not a party member';
+  end if;
+
   v_can_change := v_party.leader_id = auth.uid()
     or coalesce((v_party.settings->>'members_can_change_map')::boolean, false);
   if not v_can_change then raise exception 'only the party leader can change the map'; end if;
@@ -335,7 +342,6 @@ begin
       markers = '[]'::jsonb,
       pings = '[]'::jsonb,
       ping_log = '[]'::jsonb,
-      raid_id = raid_id + 1,
       last_active_at = now()
   where id = v_party.id;
 
@@ -355,5 +361,4 @@ grant execute on function public.force_join_party(text, jsonb, jsonb, jsonb) to 
 grant execute on function public.leave_party(text) to authenticated;
 grant execute on function public.kick_member(text, uuid) to authenticated;
 grant execute on function public.heartbeat(text) to authenticated;
-grant execute on function public.select_map_party(text, text, jsonb, text, text, text) to authenticated;
-
+grant execute on function public.select_map_party(text, jsonb, text, text, text) to authenticated;

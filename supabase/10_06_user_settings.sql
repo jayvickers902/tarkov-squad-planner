@@ -1,5 +1,5 @@
--- Phase 10A migration 6 of 7.
--- Prerequisite: 10a_05_lifecycle.sql. Apply before 10a_07_schema_drift.sql.
+-- Phase 10 migration 6 of 7.
+-- Prerequisite: 10_05_lifecycle.sql. Apply before 10_07_schema_drift.sql.
 
 create table if not exists public.user_settings (
   user_id  uuid primary key references auth.users(id) on delete cascade,
@@ -23,4 +23,3 @@ create policy "User settings own update" on public.user_settings
   with check (auth.uid() = user_id);
 create policy "User settings own delete" on public.user_settings
   for delete using (auth.uid() = user_id);
-

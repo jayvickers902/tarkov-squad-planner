@@ -19,7 +19,7 @@ const POS_REJECT_TEXT = {
   bounds: 'a position outside the map’s bounds',
 }
 
-export default function MonitorLink({ maps, mapNorm, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, settings = {}, onSetSetting }) {
+export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, settings = {}, onSetSetting }) {
   const [copied, setCopied] = useState(false)
   const [confirmRegen, setConfirmRegen] = useState(false)
   const [lastAction, setLastAction] = useState(null)  // { value, at, ok, reason }
@@ -35,6 +35,7 @@ export default function MonitorLink({ maps, mapNorm, myName, isLeader, canChange
   const canChangeMapRef = useRef(canChangeMap); canChangeMapRef.current = canChangeMap
   const selectRef   = useRef(onSelectMap); selectRef.current = onSelectMap
   const hasPlanRef  = useRef(hasPlan);    hasPlanRef.current = hasPlan
+  const userIdRef   = useRef(userId);     userIdRef.current = userId
   const myNameRef   = useRef(myName);     myNameRef.current = myName
   const addPingRef  = useRef(onAddPing);  addPingRef.current = onAddPing
 
@@ -92,6 +93,7 @@ export default function MonitorLink({ maps, mapNorm, myName, isLeader, canChange
     if (!name) return
     const ping = {
       id: crypto.randomUUID(),
+      user_id: userIdRef.current,
       user: name,
       map: value.map,
       x: value.x, y: value.y, z: value.z,

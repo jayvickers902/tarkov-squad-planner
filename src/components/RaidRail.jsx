@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { bearingRange, staleness, ageLabel } from '../tarkovPings'
 import { CLUSTER_RADIUS_M, kindOf } from '../tarkovIntel'
 import { getUserColor } from '../tarkovObjectives'
+import { normalizeMembers, objectiveProgressKey, questDoneKey } from '../partyMembers'
 
 const OBJECTIVE_LABELS = {
   visit: 'locate',
@@ -37,8 +38,9 @@ function memberIndex(name, members) {
   return index === -1 ? Number.MAX_SAFE_INTEGER : index
 }
 
-function buildObjectiveRows({ tasks, memberQuests, memberNames, progress, starredQuests, mapNorm, pins, myPing }) {
+function buildObjectiveRows({ tasks, memberQuests, memberNames, memberIds, progress, starredQuests, mapNorm, pins, myPing }) {
   const taskById = new Map((tasks || []).map(task => [task.id, task]))
+  const memberRows = normalizeMembers(memberQuests)
   const pinsByObjective = new Map()
   for (const pin of pins || []) {
     const key = `${pin.memberName}::${pin.key}`
@@ -48,8 +50,9 @@ function buildObjectiveRows({ tasks, memberQuests, memberNames, progress, starre
   }
 
   const rows = []
-  for (const memberName of memberNames) {
-    const questEntries = memberQuests?.[memberName] || []
+  for (const member of memberRows) {
+    const memberName = member.callsign
+    const questEntries = member.quests
     const seen = new Set()
     for (const questEntry of questEntries) {
       const questId = questEntry?.id ?? questEntry
@@ -58,10 +61,10 @@ function buildObjectiveRows({ tasks, memberQuests, memberNames, progress, starre
 
       for (const objective of task.objectives || []) {
         if (objective.optional || !isObjectiveOnMap(objective, task, mapNorm)) continue
-        const rowKey = `${task.id}::${objective.id}::${memberName}`
+        const rowKey = objectiveProgressKey(task.id, objective.id, member.user_id)
         if (seen.has(rowKey)) continue
         seen.add(rowKey)
-        if (progress?.[`__done__:${task.id}::${memberName}`]) continue
+        if (progress?.[questDoneKey(task.id, member.user_id)]) continue
 
         const focusKey = `${task.id}::${objective.id}`
         const locationPins = pinsByObjective.get(`${memberName}::${focusKey}`) || []
@@ -76,7 +79,7 @@ function buildObjectiveRows({ tasks, memberQuests, memberNames, progress, starre
           key: rowKey,
           focusKey,
           memberName,
-          memberColor: getUserColor(memberName, memberNames),
+          memberColor: getUserColor(memberName, memberNames, member.user_id, memberIds),
           questName: task.name,
           description: objective.description || '',
           action: objectiveLabel(objective),
@@ -169,8 +172,9 @@ export default function RaidRail({
   onMobileHeight,
   pingCards = [],
   tasks = [],
-  memberQuests = {},
+  memberQuests = [],
   memberNames = [],
+  memberIds = [],
   progress = {},
   starredQuests = {},
   mapNorm,
@@ -183,8 +187,8 @@ export default function RaidRail({
 }) {
   const dragRef = useRef(null)
   const rows = useMemo(() => buildObjectiveRows({
-    tasks, memberQuests, memberNames, progress, starredQuests, mapNorm, pins: objectivePins, myPing,
-  }), [tasks, memberQuests, memberNames, progress, starredQuests, mapNorm, objectivePins, myPing])
+    tasks, memberQuests, memberNames, memberIds, progress, starredQuests, mapNorm, pins: objectivePins, myPing,
+  }), [tasks, memberQuests, memberNames, memberIds, progress, starredQuests, mapNorm, objectivePins, myPing])
 
   useEffect(() => {
     if (!isMobile || !onMobileHeight) return undefined

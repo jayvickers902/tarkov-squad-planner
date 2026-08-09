@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { SPAWNS, TERRAIN, TERRAIN_LABELS, MAP_IMAGES } from '../constants'
+import { normalizeMembers } from '../partyMembers'
 
 const COLS = ['#c9a84c', '#7aaa6a', '#6a9aaa', '#aa7a6a', '#9a7aaa', '#aa9a6a']
 
@@ -15,7 +16,7 @@ export default function MapOverlay({ mapNorm, mapName, tasks, memberQuests, spaw
   const svgRef = useRef()
   const spawns = SPAWNS[mapNorm] || []
 
-  const ids = [...new Set(Object.values(memberQuests).flat().map(q => q.id))]
+  const ids = [...new Set(normalizeMembers(memberQuests).flatMap(member => member.quests.map(q => q.id)))]
   const relevant = tasks.filter(t => ids.includes(t.id))
 
   const objs = relevant.flatMap(task =>

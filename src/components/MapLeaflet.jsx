@@ -265,8 +265,8 @@ export default function MapLeaflet({
   drawings = [], markers = [], pings = [],
   pingLog,              // party.ping_log — raw on purpose: undefined means the
                         // Phase 8 column is not applied, [] means no pings yet
-  myName, memberNames = [],
-  myQuests = [], memberQuests = {}, tasks = [],
+  myUserId, myName, memberNames = [], memberIds = [],
+  myQuests = [], memberQuests = [], tasks = [],
   progress = {},
   pingTtlMs,
   replayEnabled = true,
@@ -313,7 +313,7 @@ export default function MapLeaflet({
   const [internalMode, setInternalMode] = useState(defaultMode)
   const mode = modeProp !== undefined ? modeProp : internalMode
   const [selectedQuestId, setSelectedQuestId] = useState('')
-  const [myColor, setMyColor] = useState(() => getUserColor(myName, memberNames))
+  const [myColor, setMyColor] = useState(() => getUserColor(myName, memberNames, myUserId, memberIds))
   const [svgReady, setSvgReady] = useState(false)
   const [tileOnly, setTileOnly] = useState(false) // true when map has no SVG
 
@@ -378,8 +378,10 @@ export default function MapLeaflet({
     pings,
     pingLog,
     mapNorm,
+    myUserId,
     myName,
     memberNames,
+    memberIds,
     mapKeys,
     autoObjPins,
     allIntel,
@@ -570,7 +572,7 @@ export default function MapLeaflet({
     for (const stroke of drawings) {
       if (!stroke.pts || stroke.pts.length < 2) continue
       const latlngs = stroke.pts.map(pt => normToLatlng(pt, bounds))
-      const color = stroke.color ?? getUserColor(stroke.user, memberNames)
+      const color = stroke.color ?? getUserColor(stroke.user, memberNames, stroke.user_id, memberIds)
       const pl = L.polyline(latlngs, {
         color,
         weight: 3,
@@ -582,7 +584,7 @@ export default function MapLeaflet({
       pl.addTo(map)
       drawingLayersRef.current.push(pl)
     }
-  }, [drawings, memberNames, mapNorm])
+  }, [drawings, memberNames, memberIds, mapNorm])
 
   // ─── Sync quest markers ───────────────────────────────────────────────────
   useEffect(() => {
@@ -613,7 +615,7 @@ export default function MapLeaflet({
     for (const m of markers) {
       if (markerLayersRef.current[m.id]) continue
       const latlng = normToLatlng([m.x, m.y], bounds)
-      const color = getUserColor(m.user, memberNames)
+      const color = getUserColor(m.user, memberNames, m.user_id, memberIds)
       const icon = makeQuestIcon(color, m.user[0].toUpperCase())
       const task = tasks.find(t => t.id === m.questId)
       const objectives = task?.objectives?.filter(o => !o.optional) || []
@@ -630,7 +632,7 @@ export default function MapLeaflet({
       lm.addTo(map)
       markerLayersRef.current[m.id] = lm
     }
-  }, [markers, memberNames, tasks, mapNorm, showQuestPins])
+  }, [markers, memberNames, memberIds, tasks, mapNorm, showQuestPins])
 
   // ─── Sync key markers ─────────────────────────────────────────────────────
   // Rebuilt wholesale rather than diffed — keys change infrequently.
@@ -790,7 +792,7 @@ export default function MapLeaflet({
     return replayTrails.map(trail => L.polyline(
       trail.pts.map(p => L.latLng(p.z, p.x)),
       {
-        color: getUserColor(trail.user, memberNames),
+        color: getUserColor(trail.user, memberNames, trail.user_id, memberIds),
         weight: 2,
         opacity: 0.65,
         dashArray: '5 6',
@@ -799,7 +801,7 @@ export default function MapLeaflet({
         pane: 'ringsPane',
       },
     ))
-  }, [replayOn, showPings, replayTrails, memberNames, mapNorm])
+  }, [replayOn, showPings, replayTrails, memberNames, memberIds, mapNorm])
 
   // ─── Sync intel / document spawn markers ────────────────────────────────────
   // Rebuilt whenever the point set or a tick changes. Cheap: the largest map is
@@ -905,7 +907,7 @@ export default function MapLeaflet({
       isDrawing.current = false
       map.dragging.enable()
       if (currentPts.current.length >= 2) {
-        onAddStroke?.({ user: myName, color: myColor, pts: currentPts.current })
+        onAddStroke?.({ user_id: myUserId, user: myName, color: myColor, pts: currentPts.current })
       }
       // The polyline will be re-drawn via the drawings sync effect
       if (currentPolyline.current) {
@@ -922,7 +924,7 @@ export default function MapLeaflet({
       if (!selectedQuestId) return
       const quest = myQuests.find(q => q.id === selectedQuestId)
       if (!quest) return
-      onAddMarker?.({ id: crypto.randomUUID(), user: myName, questId: quest.id, questName: quest.name, x: pt[0], y: pt[1] })
+      onAddMarker?.({ id: crypto.randomUUID(), user_id: myUserId, user: myName, questId: quest.id, questName: quest.name, x: pt[0], y: pt[1] })
     }
 
     map.on('mousedown', onMouseDown)
@@ -936,7 +938,7 @@ export default function MapLeaflet({
       map.off('mouseup', onMouseUp)
       map.off('click', onClick)
     }
-  }, [mode, myColor, myName, selectedQuestId, myQuests, onAddStroke, onAddMarker, mapNorm])
+  }, [mode, myColor, myUserId, myName, selectedQuestId, myQuests, onAddStroke, onAddMarker, mapNorm])
 
   // Reset mode and layer toggles when map changes
   useEffect(() => {
@@ -992,11 +994,11 @@ export default function MapLeaflet({
     </>
   ) : null
 
-  const memberLegend = memberNames.map(m => (
-    <div key={m} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-      <div style={{ width: 8, height: 8, borderRadius: '50%', background: m === myName ? myColor : getUserColor(m, memberNames), flexShrink: 0 }} />
-      <span className="mono" style={{ fontSize: 10, color: m === myName ? 'var(--goldtx)' : 'var(--txm)' }}>
-        {m.toUpperCase()}
+  const memberLegend = memberNames.map((name, index) => (
+    <div key={memberIds[index] || name} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div style={{ width: 8, height: 8, borderRadius: '50%', background: name === myName ? myColor : getUserColor(name, memberNames, memberIds[index], memberIds), flexShrink: 0 }} />
+      <span className="mono" style={{ fontSize: 10, color: name === myName ? 'var(--goldtx)' : 'var(--txm)' }}>
+        {name.toUpperCase()}
       </span>
     </div>
   ))

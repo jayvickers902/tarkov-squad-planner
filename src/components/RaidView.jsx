@@ -9,11 +9,11 @@ import { useIntelChecklist } from '../useIntelChecklist'
 import { curatedLootPoints, mergeIntelSources } from '../tarkovIntel'
 import { objectivePins } from '../tarkovObjectives'
 import { useMapPings } from '../useMapPings'
-import { getRaidSettings } from '../raidState'
 import { resolveSetting } from '../settings'
+import { normalizeMembers, findMember, memberIds as getMemberIds, memberNames as getMemberNames } from '../partyMembers'
 
 export default function RaidView({
-  party, myName, members,
+  party, myUserId, myName, members,
   tasks, allTasks, loadingTasks,
   skippedQuestIds,
   onAddStroke, onClearMyStrokes,
@@ -25,10 +25,12 @@ export default function RaidView({
 }) {
   const isMobile = useIsMobile()
   const rootRef = useRef(null)
-  const memberNames = members || Object.keys(party.members || {})
-  const mine = party.members?.[myName] || []
+  const memberRows = normalizeMembers(members || party.members)
+  const memberNames = getMemberNames(memberRows)
+  const memberIds = getMemberIds(memberRows)
+  const mine = findMember(memberRows, myUserId)?.quests || []
   const raidKey = party.progress?.['__raid_start__'] ?? null
-  const layers = { raid: getRaidSettings(party.progress), unit: null, user: userSettings }
+  const layers = { raid: party.settings || {}, unit: null, user: userSettings }
   const pingTtlMs = Number(resolveSetting('ping_ttl_ms', layers))
   const replayEnabled = resolveSetting('replay_enabled', layers)
 
@@ -48,16 +50,18 @@ export default function RaidView({
     [intelPoints, lootRows, party.map_norm],
   )
   const pins = useMemo(
-    () => objectivePins(allTasks || tasks || [], party.members || {}, memberNames, party.progress || {}, party.map_norm),
-    [allTasks, tasks, party.members, memberNames, party.progress, party.map_norm],
+    () => objectivePins(allTasks || tasks || [], memberRows, memberNames, party.progress || {}, party.map_norm),
+    [allTasks, tasks, memberRows, memberNames, party.progress, party.map_norm],
   )
 
   const pingState = useMapPings({
     pings: party.pings || [],
     pingLog: party.ping_log,
     mapNorm: party.map_norm,
+    myUserId,
     myName,
     memberNames,
+    memberIds,
     mapKeys,
     autoObjPins: pins,
     allIntel,
@@ -66,7 +70,9 @@ export default function RaidView({
     replayEnabled,
     pingTtlMs,
   })
-  const myPing = pingState.pingList.find(ping => ping.user === myName) || null
+  const myPing = pingState.pingList.find(ping => ping.user_id === myUserId)
+    || pingState.pingList.find(ping => ping.user === myName)
+    || null
   const mapFocusKey = hoverFocusKey || focusKey
 
   const toggleRail = useCallback(() => {
@@ -168,10 +174,12 @@ export default function RaidView({
             pingLog={party.ping_log}
             pingTtlMs={pingTtlMs}
             replayEnabled={replayEnabled}
+            myUserId={myUserId}
             myName={myName}
             memberNames={memberNames}
+            memberIds={memberIds}
             myQuests={mine}
-            memberQuests={party.members || {}}
+            memberQuests={memberRows}
             tasks={allTasks || tasks || []}
             progress={party.progress || {}}
             onAddStroke={onAddStroke}
@@ -200,8 +208,9 @@ export default function RaidView({
             onMobileHeight={setMobileRailHeight}
             pingCards={pingState.pingCards}
             tasks={allTasks || tasks || []}
-            memberQuests={party.members || {}}
+            memberQuests={memberRows}
             memberNames={memberNames}
+            memberIds={memberIds}
             progress={party.progress || {}}
             starredQuests={party.starred || {}}
             mapNorm={party.map_norm}
