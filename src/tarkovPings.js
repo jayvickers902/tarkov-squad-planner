@@ -197,6 +197,26 @@ export function cadenceOf(taps) {
   return CADENCE[Math.min(Math.max(taps || 1, 1), MAX_TAPS)] || CADENCE[1]
 }
 
+// Child-table rows are the durable transport format. Keep this conversion at
+// the boundary so the map, replay and echo layers continue to consume the
+// compact legacy-shaped ping object.
+export function pingFromEvent(row) {
+  if (!row || typeof row !== 'object') return null
+  const at = Number(row.client_at)
+    || (row.server_at ? Date.parse(row.server_at) : 0)
+  const ping = {
+    id: String(row.source_event_id || row.id || ''),
+    user_id: String(row.user_id || ''),
+    user: String(row.user || row.callsign || ''),
+    map: normalizeMapName(row.map_norm || row.map),
+    x: Number(row.x), y: Number(row.y), z: Number(row.z),
+    yaw: Number(row.yaw) || 0,
+    at,
+    taps: Number(row.taps) || 1,
+  }
+  return validPing(ping) ? ping : null
+}
+
 function validPing(p) {
   return !!p && typeof p === 'object'
     && typeof p.id === 'string' && typeof p.user === 'string' && typeof p.user_id === 'string'

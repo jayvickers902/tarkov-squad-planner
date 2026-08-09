@@ -46,6 +46,7 @@ export function useMapPings({
   mapKeys = {},
   autoObjPins = [],
   allIntel = [],
+  extracts = [],
   isChecked = () => false,
   hideReplay = false,
   replayEnabled = true,
@@ -109,13 +110,20 @@ export function useMapPings({
       || pingList.find(p => p.user === myName)
       || null
 
-    return pingList.map((p, i) => {
+    const rawCards = pingList.map((p, i) => {
       const prev = pingList.slice(i + 1).find(other => p.user_id
         ? other.user_id === p.user_id
         : other.user === p.user) || null
       const age = pingAge(p, clock)
       let nearObj = null
-      for (const objective of autoObjPins) {
+      // A pinger's own objective is the highest-value context. Only fall back
+      // to the squad-wide nearest objective when they have no locatable quest
+      // zone on this map.
+      const ownObjectives = autoObjPins.filter(objective =>
+        p.user_id ? objective.memberId === p.user_id : objective.memberName === p.user,
+      )
+      const objectivePool = ownObjectives.length ? ownObjectives : autoObjPins
+      for (const objective of objectivePool) {
         const distance = Math.hypot(objective.lng - p.x, objective.lat - p.z)
         if (!nearObj || distance < nearObj.dist) {
           nearObj = {
@@ -133,6 +141,15 @@ export function useMapPings({
         if (!nearKey || distance < nearKey.dist) nearKey = { dist: distance, name: key.name }
       }
 
+      let nearExtract = null
+      for (const extract of extracts) {
+        const position = extract.position || extract
+        const distance = Math.hypot(position.x - p.x, position.z - p.z)
+        if (!nearExtract || distance < nearExtract.dist) {
+          nearExtract = { dist: distance, name: extract.name, faction: extract.faction }
+        }
+      }
+
       return {
         ping: p,
         age,
@@ -148,13 +165,46 @@ export function useMapPings({
         nearKey: nearKey && nearKey.dist < 120
           ? { ...nearKey, dist: Math.round(nearKey.dist) }
           : null,
+        nearExtract: nearExtract && nearExtract.dist < 350
+          ? { ...nearExtract, dist: Math.round(nearExtract.dist) }
+          : null,
         nearIntel: nearestIntel(p, allIntel, isChecked),
       }
     })
-  }, [enabled, pingList, autoObjPins, mapKeys, mapNorm, memberNames, memberIds, myUserId, myName, clock, allIntel, isChecked])
+
+    // Keep the nearby-team signal deliberately local and horizontal. A player
+    // on another floor is not "nearby" for tactical purposes even when x/z are
+    // close; floor labels are the only stable level vocabulary we have.
+    return rawCards.map(card => {
+      const nearby = rawCards
+        .filter(other => other !== card && other.ping.user_id !== card.ping.user_id
+          && other.floor === card.floor)
+        .map(other => {
+          const range = bearingRange(card.ping, other.ping)
+          return range && range.dist <= 120
+            ? { user: other.ping.user, dist: range.dist, dir: range.dir }
+            : null
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, 3)
+      return { ...card, nearby }
+    })
+  }, [enabled, pingList, autoObjPins, mapKeys, mapNorm, memberNames, memberIds, myUserId, myName, clock, allIntel, extracts, isChecked])
+
+  // The rail is an echo, not a packet inspector: one summary per teammate,
+  // newest position wins, while the map still receives every ping for replay.
+  const echoCards = useMemo(() => {
+    const byMember = new Map()
+    for (const card of pingCards) {
+      const key = card.ping.user_id || card.ping.user
+      if (!byMember.has(key)) byMember.set(key, card)
+    }
+    return [...byMember.values()]
+  }, [pingCards])
 
   const pingSig = pingCards
-    .map(card => `${card.ping.id}:${staleness(card.age).tier}:${Math.floor(card.age / 15000)}`)
+    .map(card => `${card.ping.id}:${staleness(card.age).tier}:${Math.floor(card.age / 15000)}:${card.nearObj?.questName || ''}:${card.nearIntel?.point?.id || ''}:${card.nearExtract?.name || ''}:${card.nearby?.map(teammate => teammate.user).join(',') || ''}`)
     .join('|')
 
   return {
@@ -168,6 +218,7 @@ export function useMapPings({
     pingList,
     replayTrails,
     pingCards,
+    echoCards,
     pingSig,
   }
 }

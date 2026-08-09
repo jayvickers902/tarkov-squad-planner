@@ -14,6 +14,7 @@ const LOADERS = {
   keys: () => import('./keys.json'),
   bosses: () => import('./bosses.json'),
   spawns: () => import('./spawns.json'),
+  extracts: () => import('./extracts.json'),
   intel: () => import('./intel.json'),
 }
 

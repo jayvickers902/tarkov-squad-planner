@@ -23,6 +23,7 @@ import {
   adaptMaps,
   adaptBosses,
   adaptSpawns,
+  adaptExtracts,
   adaptKeys,
   adaptTasks,
   adaptIntel,
@@ -143,6 +144,15 @@ async function main() {
     await emit('spawns.json', spawns, { maps: spawns.length, slots: slotCount })
   } else {
     await keepExisting('spawns.json', 'map bundle unavailable')
+  }
+
+  // extracts.json — map exits in the same raw world-coordinate space as pings.
+  if (bundle) {
+    const extracts = adaptExtracts(bundle).filter(map => FEATURED.includes(map.normalizedName))
+    const extractCount = extracts.reduce((total, map) => total + map.extracts.length, 0)
+    await emit('extracts.json', extracts, { maps: extracts.length, extracts: extractCount })
+  } else {
+    await keepExisting('extracts.json', 'map bundle unavailable')
   }
 
   // intel.json — loose-loot points for the older intel items (Phase 7 free layer).

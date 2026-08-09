@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from './supabase'
-import { prunePings, appendLog } from './tarkovPings'
+import { prunePings, appendLog, pingFromEvent } from './tarkovPings'
 import { resolveSetting } from './settings'
 import {
   normalizeMembers,
@@ -11,6 +11,10 @@ import {
 } from './partyMembers'
 
 let pingLogWritable = true
+// Older Supabase projects can run the app before 10_08 is applied. Disable the
+// child-table path after the first schema/function error and retain the JSONB
+// fallback until the migration is deployed.
+let pingEventsWritable = true
 
 function saveLastPartyCode(code) {
   try {
@@ -34,7 +38,38 @@ async function fetchPartyById(partyId) {
     supabase.from('party_members').select().eq('party_id', partyId).order('joined_at', { ascending: true }),
   ])
   if (partyResult.error || !partyResult.data || membersResult.error) return null
-  return normalizeParty(partyResult.data, membersResult.data || [])
+  const party = normalizeParty(partyResult.data, membersResult.data || [])
+
+  // This query is intentionally best-effort for the migration window. Once
+  // present, the child table becomes the source of truth for the current raid;
+  // a missing table simply leaves the legacy columns untouched.
+  try {
+    const { data: eventRows, error: eventError } = await supabase
+      .from('party_ping_events')
+      .select('id, party_id, raid_id, user_id, callsign, source_event_id, map_norm, x, y, z, yaw, taps, client_at, server_at')
+      .eq('party_id', party.id)
+      .eq('raid_id', party.raid_id ?? 0)
+      .order('server_at', { ascending: true })
+    if (!eventError && Array.isArray(eventRows)) {
+      const events = eventRows.map(pingFromEvent).filter(Boolean)
+      // Keep rows written by an older client during the migration window. The
+      // source id is stable, so the merge is cheap and does not duplicate a
+      // child-table event that was also mirrored into the legacy column.
+      const byId = new Map()
+      ;[...(party.pings || []), ...events].forEach(ping => {
+        if (ping?.id && !byId.has(ping.id)) byId.set(ping.id, ping)
+      })
+      party.pings = prunePings([...byId.values()])
+      party.ping_log = [...(Array.isArray(party.ping_log) ? party.ping_log : []), ...events]
+        .reduce((log, ping) => appendLog(log, ping), [])
+      pingEventsWritable = true
+    } else if (eventError && /does not exist|relation|schema cache/i.test(eventError.message || '')) {
+      pingEventsWritable = false
+    }
+  } catch {
+    // Keep the legacy snapshot when the child table is not deployed yet.
+  }
+  return party
 }
 
 function savedQuestEntry(quest) {
@@ -399,6 +434,12 @@ export function useParty(userId, userSettings = {}) {
     const optimisticMembers = normalizeMembers(current.members).map(member =>
       member.user_id === currentUserId ? { ...member, quests: merged } : member,
     )
+    if (pingEventsWritable) {
+      supabase.rpc('clear_party_ping_events', {
+        p_code: codeRef.current,
+        p_raid_id: Number(current.raid_id) || 0,
+      }).catch(() => {})
+    }
     applyParty({
       ...current,
       map_id: map.id,
@@ -578,7 +619,7 @@ export function useParty(userId, userSettings = {}) {
     }
   }, [])
 
-  const addPing = useCallback(ping => {
+  const addPing = useCallback(async ping => {
     const current = partyRef.current
     const currentUserId = userIdRef.current
     if (!current || !currentUserId) return
@@ -596,14 +637,59 @@ export function useParty(userId, userSettings = {}) {
       Number.isFinite(ttl) ? ttl : undefined,
     )
     applyParty({ ...current, pings })
+
+    // The append RPC locks identity to auth.uid() and deduplicates by the
+    // client event id. It is the important concurrency boundary: no teammate
+    // can erase another teammate's ping by writing a stale JSON array.
+    if (pingEventsWritable) {
+      const { data: stored, error: eventError } = await supabase.rpc('append_party_ping', {
+        p_code: current.code,
+        p_raid_id: Number(current.raid_id) || 0,
+        p_ping: enriched,
+      })
+      const storedPing = pingFromEvent(stored)
+      if (!eventError && storedPing) {
+        const latest = partyRef.current
+        if (latest?.id === current.id && Number(latest.raid_id || 0) === Number(current.raid_id || 0)) {
+          const latestTtl = Number(resolveSetting('ping_ttl_ms', {
+            raid: latest.settings || {}, unit: null, user: userSettingsRef.current,
+          }))
+          const mergedPings = prunePings(
+            [...(latest.pings || []), storedPing],
+            Date.now(),
+            Number.isFinite(latestTtl) ? latestTtl : undefined,
+          )
+          const mergedLog = latest.ping_log?.some(existing => existing.id === storedPing.id)
+            ? latest.ping_log
+            : appendLog(latest.ping_log, storedPing)
+          applyParty({ ...latest, pings: mergedPings, ping_log: mergedLog })
+        }
+        return
+      }
+      pingEventsWritable = false
+      if (eventError) console.warn('party_ping_events unavailable; using legacy JSON ping storage', eventError)
+    }
+
+    // Compatibility path for parties created before 10_08. This remains
+    // bounded, but is deliberately no longer the preferred write route.
     updatePartyDB({ pings })
     setPingLog(appendLog(current.ping_log, enriched))
   }, [setPingLog, updatePartyDB])
 
-  const clearPings = useCallback(() => {
+  const clearPings = useCallback(async () => {
     const current = partyRef.current
     if (!current) return
     applyParty({ ...current, pings: [] })
+    if (pingEventsWritable) {
+      const { error: clearError } = await supabase.rpc('clear_party_ping_events', {
+        p_code: current.code,
+        p_raid_id: Number(current.raid_id) || 0,
+      })
+      if (clearError) {
+        pingEventsWritable = false
+        console.warn('party_ping_events clear unavailable; using legacy JSON ping storage', clearError)
+      }
+    }
     updatePartyDB({ pings: [] })
   }, [updatePartyDB])
 

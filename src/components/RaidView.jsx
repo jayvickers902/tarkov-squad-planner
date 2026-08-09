@@ -4,6 +4,7 @@ import RaidRail from './RaidRail'
 import { useIsMobile } from '../useIsMobile'
 import { useMapKeys } from '../useMapKeys'
 import { useIntel } from '../useIntel'
+import { useExtracts } from '../useTarkov'
 import { useMapLoot } from '../useMapLoot'
 import { useIntelChecklist } from '../useIntelChecklist'
 import { curatedLootPoints, mergeIntelSources } from '../tarkovIntel'
@@ -43,6 +44,7 @@ export default function RaidView({
 
   const { mapKeys } = useMapKeys(party.map_norm)
   const { intelPoints } = useIntel(party.map_norm)
+  const { extracts } = useExtracts(party.map_norm)
   const { lootRows } = useMapLoot(party.map_norm)
   const { isChecked } = useIntelChecklist(party.map_norm, raidKey)
   const allIntel = useMemo(
@@ -65,6 +67,7 @@ export default function RaidView({
     mapKeys,
     autoObjPins: pins,
     allIntel,
+    extracts,
     isChecked,
     hideReplay: true,
     replayEnabled,
@@ -206,7 +209,7 @@ export default function RaidView({
             isMobile={isMobile}
             mobileHeight={mobileRailHeight}
             onMobileHeight={setMobileRailHeight}
-            pingCards={pingState.pingCards}
+            pingCards={pingState.echoCards}
             tasks={allTasks || tasks || []}
             memberQuests={memberRows}
             memberNames={memberNames}

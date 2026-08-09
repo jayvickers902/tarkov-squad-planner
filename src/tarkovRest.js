@@ -251,6 +251,17 @@ export function adaptMapBundle(raw, translations) {
         zoneName: spawn.zoneName,
       }
     }).filter(Boolean),
+    extracts: (map.extracts || []).map(extract => {
+      if (!extract?.position || !Number.isFinite(extract.position.x) || !Number.isFinite(extract.position.z)) return null
+      return {
+        id: extract.id || `${map.normalizedName}-${extract.name || 'extract'}-${extract.position.x}-${extract.position.z}`,
+        name: extract.name || 'Unknown extract',
+        faction: extract.faction || null,
+        position: extract.position,
+        top: Number.isFinite(extract.top) ? extract.top : null,
+        bottom: Number.isFinite(extract.bottom) ? extract.bottom : null,
+      }
+    }).filter(Boolean),
   }))
   const mobs = Object.values(mobsById).map(mob => ({
     id: mob.id,
@@ -283,6 +294,12 @@ export function adaptBosses(bundle) {
 
 export function adaptSpawns(bundle) {
   return bundle.maps.map(map => ({ normalizedName: map.normalizedName, spawns: map.spawns }))
+}
+
+export function adaptExtracts(bundle) {
+  return bundle.maps
+    .filter(map => Array.isArray(map.extracts) && map.extracts.length)
+    .map(map => ({ normalizedName: map.normalizedName, extracts: map.extracts }))
 }
 
 export function adaptKeys(rawItems, itemTranslations) {
@@ -378,6 +395,13 @@ export function getRestSpawns(signal) {
   return loadDataset('spawns', async internalSignal => {
     const bundle = await getMapBundle(internalSignal)
     return adaptSpawns(bundle.data)
+  }, signal)
+}
+
+export function getRestExtracts(signal) {
+  return loadDataset('extracts', async internalSignal => {
+    const bundle = await getMapBundle(internalSignal)
+    return adaptExtracts(bundle.data)
   }, signal)
 }
 

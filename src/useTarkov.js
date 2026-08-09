@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { TARKOV_API, FEATURED, GRAPHQL_ENABLED } from './constants'
-import { getRestMaps, getRestTasks, getRestKeys, getRestBosses } from './tarkovRest'
+import { getRestMaps, getRestTasks, getRestKeys, getRestBosses, getRestExtracts } from './tarkovRest'
 import { loadPrebaked } from './data/prebaked'
 
 const MAPS_QUERY = `{ maps { id name normalizedName } }`
@@ -54,6 +54,8 @@ let keysCacheAt = null
 let tasksCacheAt = null
 let mapBossCacheAt = null
 let bossPortraitsCacheAt = null
+let extractCache = null
+let extractCacheAt = null
 
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000
 const STORAGE_KEYS = {
@@ -62,6 +64,7 @@ const STORAGE_KEYS = {
   maps: 'tsp.cache.maps',
   bosses: 'tsp.cache.bosses',
   bossPortraits: 'tsp.cache.bossPortraits',
+  extracts: 'tsp.cache.extracts',
 }
 
 function readPersisted(key) {
@@ -243,6 +246,53 @@ export function useMaps() {
   }, [retryToken]) // eslint-disable-line
 
   return { maps, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
+}
+
+// Extracts are fetched from the REST map bundle because the GraphQL map query
+// intentionally stays small. The adapter preserves the same world coordinates
+// used by TarkovMonitor, so echo distance is calculated in one coordinate space.
+export function useExtracts(mapNorm = null) {
+  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.extracts, extractCache, extractCacheAt, [], Array.isArray))
+  const [extracts, setExtracts] = useState(seed.data)
+  const [cachedAt, setCachedAt] = useState(seed.savedAt)
+  const [loading, setLoading] = useState(seed.data.length === 0)
+  const [error, setError] = useState(null)
+  const [retryToken, setRetryToken] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    let active = true
+    setError(null)
+    setLoading(extracts.length === 0)
+    const markLive = extracts.length === 0
+      ? seedFromPrebaked('extracts', prebaked => {
+          if (!active) return
+          setExtracts(prebaked.data)
+          setLoading(false)
+        })
+      : () => {}
+
+    getRestExtracts(controller.signal)
+      .then(result => {
+        markLive()
+        if (!active) return
+        extractCache = result.data
+        extractCacheAt = result.cachedAt
+        setExtracts(result.data)
+        setCachedAt(result.cachedAt)
+      })
+      .catch(err => {
+        if (!active || isAbort(err)) return
+        console.warn('tarkov.dev extracts fetch failed', err)
+        setError(err)
+      })
+      .finally(() => { if (active) setLoading(false) })
+
+    return () => { active = false; controller.abort() }
+  }, [retryToken]) // eslint-disable-line
+
+  const current = mapNorm ? extracts.find(map => map.normalizedName === mapNorm)?.extracts || [] : []
+  return { extracts: current, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
 }
 
 // Pass mapNorm=null to get all tasks (used in MyQuests search)
