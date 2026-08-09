@@ -1154,25 +1154,48 @@ export default function MapLeaflet({
     })
   }, [showIntel, ringRadius, ringData, intelSig, mapNorm]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Drawing mouse handlers ────────────────────────────────────────────────
+  // ─── Drawing pointer handlers ──────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current
     const bounds = boundsRef.current
     if (!map || !bounds) return
-    // Ensure dragging is enabled whenever we're not in draw mode (safety net for mid-stroke mode switches)
-    if (mode !== 'draw') {
+    const container = map.getContainer()
+
+    function releaseDrawingPointer() {
+      const pointerId = drawingPointerId.current
+      if (pointerId == null) return
+      try {
+        if (container.hasPointerCapture?.(pointerId)) container.releasePointerCapture(pointerId)
+      } catch {
+        // The browser may have already revoked capture during cancellation.
+      }
+      drawingPointerId.current = null
+    }
+
+    function clearStroke() {
       isDrawing.current = false
+      releaseDrawingPointer()
       if (currentPolyline.current) { map.removeLayer(currentPolyline.current); currentPolyline.current = null }
       currentPts.current = []
       map.dragging.enable()
     }
 
-    function onMouseDown(e) {
+    // Ensure dragging is enabled whenever we're not in draw mode (safety net for mid-stroke mode switches)
+    if (mode !== 'draw') {
+      clearStroke()
+    }
+
+    function onPointerDown(e) {
+      if (isDrawing.current && e.pointerId !== drawingPointerId.current) {
+        clearStroke()
+        return
+      }
       if (mode !== 'draw') return
-      if (e.originalEvent.button !== 0) return
+      if (e.isPrimary === false || e.button !== 0) return
       isDrawing.current = true
+      drawingPointerId.current = e.pointerId
       currentPts.current = []
-      const latlng = e.latlng
+      const latlng = map.mouseEventToLatLng(e)
       currentPts.current.push(latlngToNorm(latlng, bounds))
       currentPolyline.current = L.polyline([latlng], {
         color: myColor,
@@ -1183,21 +1206,30 @@ export default function MapLeaflet({
         pane: 'drawingsPane',
       }).addTo(map)
       map.dragging.disable()
+      try {
+        container.setPointerCapture(e.pointerId)
+      } catch {
+        // Pointer capture is best effort if the browser revokes the pointer immediately.
+      }
     }
 
-    function onMouseMove(e) {
-      if (!isDrawing.current) return
-      const latlng = e.latlng
+    function onPointerMove(e) {
+      if (!isDrawing.current || e.pointerId !== drawingPointerId.current) return
+      const latlng = map.mouseEventToLatLng(e)
       currentPts.current.push(latlngToNorm(latlng, bounds))
       currentPolyline.current?.addLatLng(latlng)
     }
 
-    function onMouseUp() {
-      if (!isDrawing.current) return
+    function onPointerUp(e) {
+      if (!isDrawing.current || e.pointerId !== drawingPointerId.current) return
+      const shouldCommit = currentPts.current.length >= 2
+      const strokePts = currentPts.current
       isDrawing.current = false
+      releaseDrawingPointer()
       map.dragging.enable()
-      if (currentPts.current.length >= 2) {
-        onAddStroke?.({ user_id: myUserId, user: myName, color: myColor, pts: currentPts.current })
+      if (shouldCommit) {
+        suppressClickUntil.current = Date.now() + 500
+        onAddStroke?.({ user_id: myUserId, user: myName, color: myColor, pts: strokePts })
       }
       // The polyline will be re-drawn via the drawings sync effect
       if (currentPolyline.current) {
@@ -1207,25 +1239,39 @@ export default function MapLeaflet({
       currentPts.current = []
     }
 
+    function onPointerCancel(e) {
+      if (!isDrawing.current || e.pointerId !== drawingPointerId.current) return
+      clearStroke()
+    }
+
     function onClick(e) {
+      if (suppressClickUntil.current > Date.now()) {
+        suppressClickUntil.current = 0
+        return
+      }
       const pt = latlngToNorm(e.latlng, bounds)
       setDebugCoord({ x: pt[0].toFixed(3), y: pt[1].toFixed(3) })
       if (mode !== 'marker') return
       if (!selectedQuestId) return
       const quest = myQuests.find(q => q.id === selectedQuestId)
       if (!quest) return
-      onAddMarker?.({ id: crypto.randomUUID(), user_id: myUserId, user: myName, questId: quest.id, questName: quest.name, x: pt[0], y: pt[1] })
+      const markerId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${myUserId || 'user'}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      onAddMarker?.({ id: markerId, user_id: myUserId, user: myName, questId: quest.id, questName: quest.name, x: pt[0], y: pt[1] })
     }
 
-    map.on('mousedown', onMouseDown)
-    map.on('mousemove', onMouseMove)
-    map.on('mouseup', onMouseUp)
+    container.addEventListener('pointerdown', onPointerDown)
+    container.addEventListener('pointermove', onPointerMove)
+    container.addEventListener('pointerup', onPointerUp)
+    container.addEventListener('pointercancel', onPointerCancel)
     map.on('click', onClick)
 
     return () => {
-      map.off('mousedown', onMouseDown)
-      map.off('mousemove', onMouseMove)
-      map.off('mouseup', onMouseUp)
+      container.removeEventListener('pointerdown', onPointerDown)
+      container.removeEventListener('pointermove', onPointerMove)
+      container.removeEventListener('pointerup', onPointerUp)
+      container.removeEventListener('pointercancel', onPointerCancel)
       map.off('click', onClick)
     }
   }, [mode, myColor, myUserId, myName, selectedQuestId, myQuests, onAddStroke, onAddMarker, mapNorm])
@@ -1268,16 +1314,19 @@ export default function MapLeaflet({
     }
   }, [layersOpen])
 
-  // Update cursor style on map container
+  // Update cursor and touch handling on the map container
   useEffect(() => {
     const el = mapContainerRef.current
     if (!el) return
     if (mode === 'draw') {
       el.style.cursor = 'crosshair'
+      el.style.touchAction = 'none'
     } else if (mode === 'marker') {
       el.style.cursor = selectedQuestId ? 'crosshair' : 'default'
+      el.style.touchAction = ''
     } else {
       el.style.cursor = ''
+      el.style.touchAction = ''
     }
   }, [mode, selectedQuestId])
 
