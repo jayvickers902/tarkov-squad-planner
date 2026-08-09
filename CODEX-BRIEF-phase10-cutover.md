@@ -1,0 +1,215 @@
+# Codex Brief — Phase 10 cutover: identity, RLS, lifecycle, settings
+
+Owner: Opus (plan/review/commit) · Builder: Codex `gpt-5.6-luna` @ max effort.
+**Codex does not commit.** Leave every change in the working tree.
+
+Repo: `c:\projects\tarkov-squad-planner` · branch `main` · live at dudgy.net.
+
+Read `CLAUDE.md`, then `PHASE10-PLAN.md`. `CODEX-BRIEF-phase10a.md` is
+**superseded** — read it only to understand what is being removed.
+
+---
+
+## What changed, and why this brief exists
+
+The previous brief split the work into A1 (runs on the current schema, protects
+live users) and A2 (the schema cutover). The owner has since confirmed there are
+only **5–6 real accounts**, all of which will re-register from scratch. The 57
+rows in `profiles` are mostly junk.
+
+So there is nothing to protect, and A1's compatibility shims are pure cost.
+**Collapse both into a single clean cutover.** Build against the target schema
+directly. There is no fallback path and no dual-mode code.
+
+### Keep this A1 work — it is correct and carries over
+
+- `src/settings.js` — the resolution layer. Unchanged.
+- `src/tarkovPings.js` — the TTL parameterization. Unchanged.
+- `src/components/RaidSettings.jsx` — the settings popover. Repoint it at the
+  real `parties.settings` column; the UI itself stands.
+- `src/useEphemeralSweep.js` — the sweep logic and `sweepRows` raid-boundary
+  handling. Repoint at `parties.leader_id`, `parties.settings`, `parties.raid_id`.
+- `src/partyMembers.js` — written as A2 groundwork and currently unimported.
+  **Wire it up.** This is what it was for.
+- Presence, Lobby rejoin, size cap, code-collision retry — logic carries over,
+  rekeyed onto `user_id`.
+
+### Delete this A1 work — the shims
+
+- **`src/raidState.js` — delete the file.** `progress.__settings__` and
+  `progress.__raid_id__` become the real `parties.settings` and
+  `parties.raid_id` columns. The select-map re-application workaround goes with
+  it.
+- `src/useSettings.js` — stop being localStorage-only. Back it with the real
+  `user_settings` table, keeping localStorage as a write-through cache so the UI
+  does not flash on load. Keep the `{ settings, loading, setSetting }` shape.
+- The legacy-auth migration path — see "Auth" below. It is now dead weight.
+
+---
+
+## Constraints (from `CLAUDE.md`, all binding)
+
+- Plain React 18 hooks. **No** Redux/Zustand/React Query/context providers.
+- Plain JSX. **No** TypeScript.
+- **All** styles in `src/index.css`. No CSS modules, no styled-components.
+- **No new runtime dependencies.**
+- Components are `.jsx`; hooks are `use*.js`; pure helpers are bare `*.js`.
+- **Build with `npx vite build`, never `npm run build`** — `npm run build` fires
+  a `prebuild` that rewrites `src/data/prebaked/*.json` and dumps churn into the
+  review diff.
+- No test suite, no linter, no TypeScript. Build warnings are acceptable.
+
+## Still binding: do not touch the database
+
+You may **not** run `supabase`, `psql`, or any migration apply. You write SQL
+files; the owner applies them. You cannot test against live, so say so honestly
+in the handoff rather than implying you did.
+
+- Do **not** commit, amend, branch, stash, or `git clean`.
+- Do **not** run `git checkout --`, `git restore`, or `git reset` on any path.
+- Leave the untracked PNGs in `public/` and `supabase/.temp/` alone.
+
+---
+
+## Migration revisions
+
+The seven `supabase/10a2_*.sql` files are largely right. Revise them as follows.
+
+### R1 — Preserve the curated admin data
+
+`map_keys` has **44 rows, 38 priority-flagged, 2 with hand-placed coordinates**;
+that is real curated work and it has zero dependency on identity or parties.
+Neither `map_keys` nor `map_loot` may be truncated, dropped or recreated by any
+migration. Add an explicit comment saying so, so a later editor does not fold
+them into a reset.
+
+### R2 — Kill the hardcoded admin UUID
+
+Today the admin identity is a UUID hardcoded in two places that **disagree**:
+`App.jsx:13` says `ce64151c-c10b-45c4-9baa-9fbf794a5945`, while the `map_keys`
+and `map_loot` RLS policies in `supabase-schema.sql:104,127` say
+`8134ec3a-aff3-4610-b03e-9977bb841e57`. The owner is also about to re-register
+and get a third UUID.
+
+Replace the whole mechanism: add `profiles.is_admin boolean not null default
+false`. Every admin RLS policy becomes
+
+```sql
+exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin)
+```
+
+and the client reads `profile.is_admin` instead of comparing against a constant.
+Delete `ADMIN_USER_ID` from `App.jsx`. No UUID is hardcoded anywhere afterwards.
+
+### R3 — Rebuild `friendships` on `user_id`, do not reconstruct it
+
+`10a2_07_schema_drift.sql` currently reverse-engineers the live callsign-keyed
+`friendships` table from its call sites. With a full reset that guesswork is
+unnecessary and the callsign keying is the last mutable-identity holdout in the
+system.
+
+Drop and recreate it keyed on `user_id`:
+
+```sql
+create table public.friendships (
+  id           bigint generated by default as identity primary key,
+  requester_id uuid not null references auth.users(id) on delete cascade,
+  addressee_id uuid not null references auth.users(id) on delete cascade,
+  status       text not null default 'pending',   -- 'pending' | 'accepted'
+  created_at   timestamptz not null default now(),
+  check (requester_id <> addressee_id),
+  unique (requester_id, addressee_id)
+);
+```
+
+RLS: a user sees and mutates only rows where they are requester or addressee.
+Rewrite `get_friend_parties` to take and return `user_id`s, resolving callsigns
+through `profiles` for display. `useFriends.js` changes with it — it currently
+matches on `addressee_callsign.eq.{myCallsign}` and does two deletes to cover
+both directions; both become id comparisons.
+
+For reference, the live table's columns were probed read-only and are `id`,
+`requester_id`, `requester_callsign`, `addressee_callsign`, `status`,
+`created_at`. You are replacing that shape, not matching it.
+
+### R4 — Renumber
+
+The `10a2_` prefix meant "phase 10A part 2". There is no part 2 any more.
+Rename the series to `10_01_` … `10_07_` and update every cross-reference in the
+file headers. Keep the same apply order.
+
+---
+
+## Client rewrite
+
+Target schema is what the migrations create. Key everything on `user_id`.
+
+- **`useParty.js`** — the big one. `parties.members` / `member_quests_all` blobs
+  become `party_members` rows. Party state carries a `members` array of
+  `{ user_id, callsign, role, quests, quests_all, last_seen }`. All mutations
+  that need authorization go through the RPCs (`create_party`,
+  `join_party_secure`, `force_join_party`, `leave_party`, `kick_member`,
+  `select_map_party`, `heartbeat`). Realtime subscribes on `id=eq.{partyId}`
+  plus a second subscription on `party_members`; add that table to the
+  `supabase_realtime` publication.
+- **Progress keys** — `${questId}::${callsign}` and
+  `__done__:${questId}::${callsign}` become `user_id`-suffixed. `partyMembers.js`
+  already has `objectiveProgressKey`, `questDoneKey`, `progressOwnerId` and
+  `progressQuestId` — use them everywhere rather than rebuilding string
+  surgery inline. Audit every `'::'` occurrence in `useParty.js`, `App.jsx`,
+  `MyQuestPanel.jsx` and `TodoList.jsx`.
+- **Ping colour** — `getUserColor(p.user, memberNames)` in `useMapPings.js:132`
+  keys on callsign. Keep `user` as the display callsign in the ping payload but
+  add `user_id` and key colour on it, so colour survives a rename.
+- **Auth** — Google only. Delete `legacySignIn`, `linkIdentity` and the entire
+  migration flow from `useAuth.js`, and the *Existing password account?
+  Migrate it →* branch from `AuthScreen.jsx`. Sign in with Google, then pick a
+  callsign if no profile exists (`createProfile` already does this). No password
+  path exists anywhere afterwards.
+- **`App.jsx`** — `isAdmin` from `profile.is_admin`; delete `ADMIN_USER_ID`.
+- **`Lobby.jsx`** — rejoin resolves through `party_members` for the current user
+  rather than the jsonb `cs` filter. Drop the legacy-account banner; it has
+  nothing left to warn about.
+- **`useFriends.js`** — rekey onto `user_id` per R3.
+- **Delete `src/raidState.js`** and every import of it.
+
+## Out of scope
+
+- Units, `unit_members`, unit-scoped settings — Stage B. `parties.unit_id` is
+  created but stays null and unread; `settingSource`'s unit layer stays `null`.
+- Child tables for pings/markers/drawings; demoting the 5s poll — Stage C.
+- Quest logic, map rendering, intel, replay scrubber, `useTarkov.js`,
+  `tarkovRest.js`, the prebake pipeline.
+- `PRIORITY_KEYS`, `KEY_MAP_PATTERNS`, `BOSS_EXCLUDE`, `FEATURED`.
+
+---
+
+## Verification
+
+1. `npx vite build` must pass.
+2. Grep-audit and report each in your summary:
+   - `ADMIN_USER_ID` and both literal UUIDs — must not appear anywhere
+   - `raidState` — no remaining imports; the file is gone
+   - `__settings__`, `__raid_id__` — gone entirely
+   - `member_quests_all`, `party.members?.[` — no blob access patterns remain
+   - `using (true)` — must not appear in any policy
+   - `requester_callsign`, `addressee_callsign` — gone from client and SQL
+   - every `'::'` progress-key site goes through `partyMembers.js`
+3. Confirm no migration truncates, drops or recreates `map_keys` or `map_loot`.
+
+## Handoff
+
+Write `PHASE10-CUTOVER-HANDOFF.md`, replacing `PHASE10A-HANDOFF.md` (delete the
+old one — it documents a superseded plan). Match `PHASE9-HANDOFF.md`'s style:
+
+- What landed, **verified** versus **assumed**. You cannot reach the database,
+  so integration behaviour is assumed — say so plainly.
+- The result of every audit above.
+- **An owner runbook** as an ordered checklist: delete auth users in the
+  dashboard (cascades to `profiles`, `user_quests`, `friendships`), apply the
+  migrations in order, sign in with Google, choose a callsign, then flip
+  `is_admin` on their own profile row — include the exact one-line SQL for that
+  last step.
+- Anything you had to guess.
+
+An honest "assumed" list is worth more than a confident one.
