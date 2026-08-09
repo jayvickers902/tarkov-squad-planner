@@ -24,6 +24,11 @@ function nearestSpawns(spawns, ping) {
     .sort((a, b) => a.distance - b.distance)
 }
 
+export function nearestFocusedPmcSpawn(spawns, position, classification) {
+  if (!classification?.focused?.size) return null
+  return nearestSpawns(spawns, position).find(entry => classification.focused.has(entry.key)) || null
+}
+
 /**
  * Classify PMC spawn zones from pings made during the first 30 seconds.
  * The lower bound is intentionally omitted because the party ping log is reset

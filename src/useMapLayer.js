@@ -19,8 +19,10 @@
 // Forcing those into this shape would change verified behaviour to buy
 // symmetry, which is the trade `PHASE8-HANDOFF.md` declined for good reason.
 //
-// `build` is called on every dep change and must be cheap; the largest layer
-// here is 64 points.
+// `build` is called on every dep change and must be cheap. Phase 11 can reach
+// 344 hazard polygons and more than 1,300 loose-loot points; hazards are
+// non-interactive and off by default, while loot is item-filtered before it is
+// plotted.
 
 import { useEffect, useRef } from 'react'
 

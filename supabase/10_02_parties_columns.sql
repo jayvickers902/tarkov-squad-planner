@@ -7,6 +7,20 @@
 -- other Phase 10 migrations must never truncate, drop, or recreate either table.
 -- Their rows are independent of party identity and survive the cutover.
 
+-- Remove every pre-cutover party policy before dropping the callsign-keyed
+-- columns below. Some live projects use the older policy names (and their
+-- expressions reference `leader` or `members`), so dropping the columns first
+-- fails with a dependency error. 10_03 installs the membership-scoped policies.
+drop policy if exists "Parties public read" on public.parties;
+drop policy if exists "Parties public insert" on public.parties;
+drop policy if exists "Parties public update" on public.parties;
+drop policy if exists "Public read" on public.parties;
+drop policy if exists "Public insert" on public.parties;
+drop policy if exists "Public update" on public.parties;
+drop policy if exists "authenticated read" on public.parties;
+drop policy if exists "authenticated insert as self" on public.parties;
+drop policy if exists "members can update" on public.parties;
+
 truncate table public.parties restart identity cascade;
 
 alter table public.parties
@@ -14,6 +28,7 @@ alter table public.parties
   add column if not exists raid_id bigint not null default 0,
   add column if not exists last_active_at timestamptz not null default now(),
   add column if not exists settings jsonb not null default '{}'::jsonb,
+  add column if not exists quest_order jsonb not null default '[]'::jsonb,
   add column if not exists unit_id bigint;
 
 alter table public.profiles

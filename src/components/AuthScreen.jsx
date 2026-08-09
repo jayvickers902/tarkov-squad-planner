@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 function GoogleIcon() {
   return (
@@ -11,17 +11,19 @@ function GoogleIcon() {
   )
 }
 
-export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsign, error, setError }) {
+export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsign, error, profileError, setError }) {
   const [mode, setMode]         = useState(needsCallsign ? 'callsign' : 'home')
   const [callsign, setCallsign] = useState('')
   const [busy, setBusy]         = useState(false)
   const [local, setLocal]       = useState('')
+  const submitInFlight = useRef(false)
 
   useEffect(() => {
     if (needsCallsign) setMode('callsign')
   }, [needsCallsign])
 
-  const err = local || error
+  const err = local || error || profileError
+  const profileBlocked = Boolean(profileError)
 
   async function handleGoogle() {
     setBusy(true)
@@ -30,9 +32,15 @@ export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsi
   }
 
   async function handleCallsign() {
+    if (submitInFlight.current) return
+    submitInFlight.current = true
     setBusy(true); setLocal('')
-    const ok = await onCreateProfile(callsign)
-    if (!ok) setBusy(false)
+    try {
+      const ok = await onCreateProfile(callsign)
+      if (!ok) setBusy(false)
+    } finally {
+      submitInFlight.current = false
+    }
   }
 
   function reset() {
@@ -67,12 +75,12 @@ export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsi
           <div className="card auth-card fade-in">
             <h2>CHOOSE YOUR CALLSIGN</h2>
             <p className="mono auth-note">THIS IS YOUR IN-GAME NAME - CHOOSE WISELY</p>
-            <div><div className="lbl">CALLSIGN</div><input placeholder="Your in-game name" value={callsign} onChange={event => { setCallsign(event.target.value); setLocal(''); setError('') }} autoFocus onKeyDown={event => event.key === 'Enter' && handleCallsign()} /></div>
+            <div><div className="lbl">CALLSIGN</div><input placeholder="Your in-game name" value={callsign} onChange={event => { setCallsign(event.target.value); setLocal(''); setError('') }} disabled={busy || profileBlocked} autoFocus onKeyDown={event => event.key === 'Enter' && handleCallsign()} /></div>
             {err && <p className="mono auth-error">! {err}</p>}
             {busy && <p className="mono auth-busy">SAVING...</p>}
             <div className="auth-form-actions">
               {!needsCallsign && <button className="btn-ghost" onClick={reset} disabled={busy}>BACK</button>}
-              <button className="btn-gold" onClick={handleCallsign} disabled={busy}>CONFIRM CALLSIGN</button>
+              <button className="btn-gold" onClick={handleCallsign} disabled={busy || profileBlocked}>CONFIRM CALLSIGN</button>
             </div>
           </div>
         )}

@@ -1,11 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useBossSpawns, useKeys } from '../useTarkov'
+import { getRestGoonReports } from '../tarkovRest'
+import { loadPrebaked } from '../data/prebaked'
 import { RED_REBEL_MAPS } from '../constants'
 import { useIntel } from '../useIntel'
 import { useMapLoot } from '../useMapLoot'
 import { useIntelChecklist } from '../useIntelChecklist'
 import { curatedLootPoints, mergeIntelSources, countByKind, INTEL_KINDS, bestCluster, RING_RADII_M } from '../tarkovIntel'
 import { findMember, objectiveProgressKey, progressOwnerId, progressQuestId } from '../partyMembers'
+import BossCard from './BossCard'
 
 function toAntifandom(url) {
   if (!url) return null
@@ -30,21 +33,51 @@ function isDaytime(secs) {
   return h >= 6 && h < 21
 }
 
-function SpawnBar({ chance }) {
-  const pct = Math.round(chance * 100)
-  const color = pct >= 75 ? '#c94c4c' : pct >= 50 ? '#c9944c' : pct >= 25 ? '#c9c44c' : '#4caa6a'
+function summarizeExits(data, mapNorm) {
+  const map = Array.isArray(data) ? data.find(entry => entry?.normalizedName === mapNorm) : null
+  const extracts = Array.isArray(map?.extracts) ? map.extracts : []
+  if (!extracts.length) return null
+  const counts = extracts.reduce((result, extract) => {
+    if (extract.faction === 'pmc') result.pmc += 1
+    else if (extract.faction === 'scav') result.scav += 1
+    else result.shared += 1
+    const switchIds = Array.isArray(extract.switchIds)
+      ? extract.switchIds
+      : extract.switchIds ? [extract.switchIds] : []
+    if (switchIds.length > 0) result.gated += 1
+    return result
+  }, { pmc: 0, scav: 0, shared: 0, gated: 0 })
+  return { total: extracts.length, ...counts }
+}
+
+function formatGoonAge(timestamp) {
+  const ageMs = Date.now() - Number(timestamp)
+  if (!Number.isFinite(ageMs)) return null
+  const ageMinutes = Math.max(0, Math.floor(ageMs / 60000))
+  if (ageMinutes < 1) return 'LESS THAN 1 MIN AGO'
+  if (ageMinutes < 60) return `${ageMinutes} MIN AGO`
+  const ageHours = Math.floor(ageMinutes / 60)
+  if (ageHours < 24) return `${ageHours} H AGO`
+  return `${Math.floor(ageHours / 24)} D AGO`
+}
+
+function BossColumn({ label, bosses }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-      <div style={{ flex: 1, height: 3, background: 'var(--brd2)', borderRadius: 2, overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2 }} />
-      </div>
-      <span className="mono" style={{ fontSize: 10, color, minWidth: 28, textAlign: 'right', flexShrink: 0 }}>{pct}%</span>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      {label && <div className="mono" style={{ fontSize: 9, color: 'var(--txm)', letterSpacing: '.08em', marginBottom: 4 }}>{label}</div>}
+      {!bosses.length ? (
+        <div className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>NO BOSSES{label ? '' : ' ON THIS MAP'}</div>
+      ) : (
+        bosses.map((boss, index) => <BossCard key={`${boss.normalizedName || boss.name}-${index}`} boss={boss} compact />)
+      )}
     </div>
   )
 }
 
 export default function StartRaidModal({ party, myUserId, tasks, onClose }) {
   const [times, setTimes] = useState(getTarkovTimes)
+  const [exitSummary, setExitSummary] = useState(null)
+  const [goonReports, setGoonReports] = useState([])
   const { getBossesForMap, loading: bossLoading } = useBossSpawns()
 
   useEffect(() => {
@@ -53,6 +86,33 @@ export default function StartRaidModal({ party, myUserId, tasks, onClose }) {
   }, [])
 
   const mapNorm = party.map_norm
+
+  useEffect(() => {
+    let active = true
+    setExitSummary(null)
+    loadPrebaked('zones').then(prebaked => {
+      if (active) setExitSummary(summarizeExits(prebaked?.data, mapNorm))
+    })
+    return () => { active = false }
+  }, [mapNorm])
+
+  useEffect(() => {
+    let active = true
+    const controller = new AbortController()
+    getRestGoonReports(controller.signal)
+      .then(result => {
+        if (!active || result?.fromCache !== false || !Array.isArray(result?.data)) return
+        setGoonReports(result.data)
+      })
+      .catch(error => {
+        if (active && error?.name !== 'AbortError') console.warn('live Goons report unavailable', error)
+      })
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [])
+
   const mapName = party.map_name
   const isFactory = mapNorm === 'factory'
   const { allKeys } = useKeys(mapNorm)
@@ -60,6 +120,10 @@ export default function StartRaidModal({ party, myUserId, tasks, onClose }) {
   const dayBosses   = mapNorm ? getBossesForMap(isFactory ? 'factory' : mapNorm) : []
   const nightBosses = isFactory ? getBossesForMap('night-factory') : []
   const bosses = isFactory ? [...dayBosses, ...nightBosses] : dayBosses
+  const goonReport = goonReports
+    .filter(report => report?.normalizedName === mapNorm && Number.isFinite(Number(report.timestamp)))
+    .sort((a, b) => Number(b.timestamp) - Number(a.timestamp))[0]
+  const goonAge = goonReport ? formatGoonAge(goonReport.timestamp) : null
 
   // Pre-raid intel brief — "6 document spawns on Customs", known before you load
   // in, which is the one moment the count is actually actionable.
@@ -193,8 +257,8 @@ export default function StartRaidModal({ party, myUserId, tasks, onClose }) {
         {/* Body */}
         <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-          {/* Clocks + Bosses */}
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+          {/* Clocks */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
               {[
                 { label: 'LEFT',  secs: times.left,  day: leftDay  },
@@ -221,26 +285,28 @@ export default function StartRaidModal({ party, myUserId, tasks, onClose }) {
               ))}
             </div>
 
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div>
               <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 5 }}>◆ BOSS SPAWNS</div>
               {bossLoading ? (
                 <div className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>LOADING...</div>
-              ) : !bosses.length ? (
-                <div className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>NO BOSSES ON THIS MAP</div>
-              ) : bosses.map(b => (
-                <div key={b.name} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  {b.portrait
-                    ? <img src={b.portrait} alt={b.name} style={{ width: 26, height: 26, borderRadius: 2, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--brd2)' }} />
-                    : <div style={{ width: 26, height: 26, background: 'var(--sur3)', border: '1px solid var(--brd2)', borderRadius: 2, flexShrink: 0 }} />
-                  }
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {b.name}
-                    </div>
-                    <SpawnBar chance={b.spawnChance} />
-                  </div>
+              ) : isFactory ? (
+                <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                  <BossColumn label="FACTORY (DAY)" bosses={dayBosses} />
+                  <BossColumn label="NIGHT FACTORY" bosses={nightBosses} />
                 </div>
-              ))}
+              ) : (
+                <BossColumn bosses={bosses} />
+              )}
+              {exitSummary && (
+                <div className="mono" style={{ marginTop: 8, fontSize: 9, color: 'var(--txm)', lineHeight: 1.35 }}>
+                  ↳ {exitSummary.total} EXITS — {exitSummary.pmc} PMC · {exitSummary.scav} SCAV · {exitSummary.shared} BOTH · {exitSummary.gated} NEEDS A SWITCH
+                </div>
+              )}
+              {goonAge && (
+                <div className="mono" style={{ marginTop: 6, fontSize: 9, color: '#d69b5a', lineHeight: 1.35 }}>
+                  ⚠ GOONS REPORTED HERE — {goonAge} · COMMUNITY REPORT
+                </div>
+              )}
             </div>
           </div>
 

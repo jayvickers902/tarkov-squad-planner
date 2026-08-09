@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { TARKOV_MAP_CONFIGS } from './data/tarkovMapConfigs'
 import {
   activePings, staleness, pingAge,
-  floorLabel, elevationLabel, bearingRange, motionBetween, cadenceOf,
+  floorLabel, elevationLabel, bearingRange, motionBetween, cadenceOf, ageLabel,
   replayWindow, pingsAt, trailsAt,
 } from './tarkovPings'
 import { nearestIntel } from './tarkovIntel'
 import { getUserColor } from './tarkovObjectives'
+import { classifyPmcSpawns, nearestFocusedPmcSpawn } from './tarkovSpawns'
 
 function mapKeyPoints(mapKeys, mapNorm) {
   const cfg = TARKOV_MAP_CONFIGS[mapNorm]
@@ -51,6 +52,8 @@ export function useMapPings({
   hideReplay = false,
   replayEnabled = true,
   pingTtlMs,
+  raidStartAt = null,
+  pmcSpawns = [],
   enabled = true,
 }) {
   const [replay, setReplay] = useState(null)
@@ -67,6 +70,27 @@ export function useMapPings({
       : replayOn ? pingsAt(replayData.pings, replay.t) : activePings(pings, mapNorm, now, pingTtlMs)),
     [enabled, replayOn, replayData, replay?.t, pings, mapNorm, now, pingTtlMs],
   )
+  const spawnIntelPings = useMemo(() => {
+    const byId = new Map()
+    for (const ping of [...(Array.isArray(pingLog) ? pingLog : []), ...pings]) {
+      const key = ping?.id || `${ping?.user_id || ping?.user}:${ping?.at}`
+      if (key && !byId.has(key)) byId.set(key, ping)
+    }
+    return [...byId.values()]
+  }, [pingLog, pings])
+  const spawnIntel = useMemo(
+    () => classifyPmcSpawns(pmcSpawns, spawnIntelPings, raidStartAt, mapNorm),
+    [pmcSpawns, spawnIntelPings, raidStartAt, mapNorm],
+  )
+  const earlySpawnPingsByMember = useMemo(() => {
+    const byMember = new Map()
+    for (const ping of spawnIntel.pings) {
+      const key = ping.user_id || ping.user
+      const existing = byMember.get(key)
+      if (!existing || ping.at < existing.at) byMember.set(key, ping)
+    }
+    return byMember
+  }, [spawnIntel])
   const replayTrails = useMemo(
     () => (enabled && replayOn ? trailsAt(replayData.pings, replay.t) : []),
     [enabled, replayOn, replayData, replay?.t],
@@ -115,6 +139,13 @@ export function useMapPings({
         ? other.user_id === p.user_id
         : other.user === p.user) || null
       const age = pingAge(p, clock)
+      const earlySpawnPing = earlySpawnPingsByMember.get(p.user_id || p.user)
+      const likelySpawnEntry = earlySpawnPing
+        ? nearestFocusedPmcSpawn(pmcSpawns, p, spawnIntel)
+        : null
+      const likelySpawnAge = earlySpawnPing && clock >= earlySpawnPing.at
+        ? clock - earlySpawnPing.at
+        : null
       let nearObj = null
       // A pinger's own objective is the highest-value context. Only fall back
       // to the squad-wide nearest objective when they have no locatable quest
@@ -169,6 +200,14 @@ export function useMapPings({
           ? { ...nearExtract, dist: Math.round(nearExtract.dist) }
           : null,
         nearIntel: nearestIntel(p, allIntel, isChecked),
+        likelySpawn: likelySpawnEntry && likelySpawnAge != null
+          ? {
+              dist: Math.round(likelySpawnEntry.distance),
+              dir: bearingRange(p, likelySpawnEntry.spawn.position)?.dir || null,
+              age: likelySpawnAge,
+              ageLabel: ageLabel(likelySpawnAge),
+            }
+          : null,
       }
     })
 
@@ -190,7 +229,7 @@ export function useMapPings({
         .slice(0, 3)
       return { ...card, nearby }
     })
-  }, [enabled, pingList, autoObjPins, mapKeys, mapNorm, memberNames, memberIds, myUserId, myName, clock, allIntel, extracts, isChecked])
+  }, [enabled, pingList, autoObjPins, mapKeys, mapNorm, memberNames, memberIds, myUserId, myName, clock, allIntel, extracts, isChecked, earlySpawnPingsByMember, pmcSpawns, spawnIntel])
 
   // The rail is an echo, not a packet inspector: one summary per teammate,
   // newest position wins, while the map still receives every ping for replay.
@@ -204,7 +243,7 @@ export function useMapPings({
   }, [pingCards])
 
   const pingSig = pingCards
-    .map(card => `${card.ping.id}:${staleness(card.age).tier}:${Math.floor(card.age / 15000)}:${card.nearObj?.questName || ''}:${card.nearIntel?.point?.id || ''}:${card.nearExtract?.name || ''}:${card.nearby?.map(teammate => teammate.user).join(',') || ''}`)
+    .map(card => `${card.ping.id}:${staleness(card.age).tier}:${Math.floor(card.age / 15000)}:${card.nearObj?.questName || ''}:${card.nearIntel?.point?.id || ''}:${card.nearExtract?.name || ''}:${card.likelySpawn?.dist || ''}:${card.likelySpawn?.ageLabel || ''}:${card.nearby?.map(teammate => teammate.user).join(',') || ''}`)
     .join('|')
 
   return {

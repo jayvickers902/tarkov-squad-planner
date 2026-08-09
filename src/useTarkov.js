@@ -381,6 +381,55 @@ const BOSS_EXCLUDE = new Set([
   'af', 'black div.', 'basmach', 'gus', 'pillager',
 ])
 
+function bossMergeKey(value) {
+  if (!value) return ''
+  return value.normalizedName || String(value.name || '').trim().toLowerCase()
+}
+
+// Live boss data deliberately omits item-joined fields; keep the prebaked enrichment when refresh lands.
+function mergeBossEnrichment(fallbackData, liveData) {
+  const fallbackMaps = Array.isArray(fallbackData?.maps) ? fallbackData.maps : []
+  const liveMaps = Array.isArray(liveData?.maps) ? liveData.maps : []
+  const liveByMap = new Map(liveMaps.map(map => [bossMergeKey(map), map]))
+  const mergedMaps = []
+  const matchedMaps = new Set()
+
+  for (const fallbackMap of fallbackMaps) {
+    const key = bossMergeKey(fallbackMap)
+    const liveMap = key ? liveByMap.get(key) : null
+    if (!liveMap) {
+      mergedMaps.push(fallbackMap)
+      continue
+    }
+
+    const fallbackBosses = Array.isArray(fallbackMap.bosses) ? fallbackMap.bosses : []
+    const fallbackByBoss = new Map(fallbackBosses.map(boss => [bossMergeKey(boss), boss]))
+    const bosses = Array.isArray(liveMap.bosses)
+      ? liveMap.bosses.map(liveBoss => ({
+          ...(fallbackByBoss.get(bossMergeKey(liveBoss)) || {}),
+          ...liveBoss,
+        }))
+      : fallbackBosses
+    mergedMaps.push({ ...fallbackMap, ...liveMap, bosses })
+    matchedMaps.add(key)
+  }
+
+  for (const liveMap of liveMaps) {
+    const key = bossMergeKey(liveMap)
+    if (!key || !matchedMaps.has(key) && !fallbackMaps.some(map => bossMergeKey(map) === key)) {
+      mergedMaps.push(liveMap)
+    }
+  }
+
+  return {
+    maps: mergedMaps.length ? mergedMaps : liveMaps,
+    portraits: {
+      ...(fallbackData?.portraits && typeof fallbackData.portraits === 'object' ? fallbackData.portraits : {}),
+      ...(liveData?.portraits && typeof liveData.portraits === 'object' ? liveData.portraits : {}),
+    },
+  }
+}
+
 export function useBossSpawns() {
   const [mapSeed] = useState(() => cacheSeed(STORAGE_KEYS.bosses, mapBossCache, mapBossCacheAt, [], Array.isArray))
   const [portraitSeed] = useState(() => cacheSeed(STORAGE_KEYS.bossPortraits, bossPortraitsCache, bossPortraitsCacheAt, {}, value => value && !Array.isArray(value) && typeof value === 'object'))
@@ -397,14 +446,18 @@ export function useBossSpawns() {
     let active = true
     setError(null)
     setLoading(mapBosses.length === 0 || Object.keys(bossPortraits).length === 0)
-    const markLive = mapBosses.length === 0
-      ? seedFromPrebaked('bosses', prebaked => {
-          if (!active) return
-          setMapBosses(prebaked.data.maps || [])
-          setBossPortraits(prebaked.data.portraits || {})
-          setLoading(false)
-        })
-      : () => {}
+    // Always resolve the prebaked floor before merging the live response. A lean
+    // persisted cache can otherwise skip seeding, and a very fast REST response
+    // can supersede the dynamic import before its armour/drop enrichment paints.
+    const prebakedFloor = loadPrebaked('bosses').then(prebaked => {
+      const floor = prebaked?.data || { maps: [], portraits: {} }
+      if (active && mapBosses.length === 0) {
+        setMapBosses(floor.maps || [])
+        setBossPortraits(floor.portraits || {})
+        setLoading(false)
+      }
+      return floor
+    })
     loadData({
       label: 'boss data',
       signal: controller.signal,
@@ -419,10 +472,16 @@ export function useBossSpawns() {
       },
       rest: signal => getRestBosses(signal),
     })
-      .then(result => {
-        markLive()
+      .then(async result => {
+        const prebaked = await prebakedFloor
         if (!active) return
-        const { maps, portraits } = result.data
+        const { maps, portraits } = mergeBossEnrichment(
+          {
+            maps: Array.isArray(prebaked.maps) && prebaked.maps.length ? prebaked.maps : mapBosses,
+            portraits: Object.keys(prebaked.portraits || {}).length ? prebaked.portraits : bossPortraits,
+          },
+          result.data,
+        )
         mapBossCache = maps
         mapBossCacheAt = result.cachedAt
         bossPortraitsCache = portraits
@@ -448,9 +507,14 @@ export function useBossSpawns() {
   function getBossesForMap(normName) {
     const mapData = mapBosses.find(m => m.normalizedName === normName)
     if (!mapData) return []
-    return mapData.bosses
-      .filter(b => !BOSS_EXCLUDE.has(b.name.toLowerCase()))
-      .map(b => ({ name: b.name, spawnChance: b.spawnChance, portrait: bossPortraits[b.name] || null }))
+    return (Array.isArray(mapData.bosses) ? mapData.bosses : [])
+      .filter(b => b?.name && !BOSS_EXCLUDE.has(b.name.toLowerCase()) && b.spawnTime !== 9999)
+      .map(b => ({
+        ...b,
+        name: b.name,
+        spawnChance: b.spawnChance,
+        portrait: b.portrait || bossPortraits[b.name] || null,
+      }))
   }
 
   return { getBossesForMap, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }

@@ -10,6 +10,7 @@ import { useIntelChecklist } from '../useIntelChecklist'
 import { curatedLootPoints, mergeIntelSources } from '../tarkovIntel'
 import { objectivePins } from '../tarkovObjectives'
 import { useMapPings } from '../useMapPings'
+import { usePmcSpawns } from '../usePmcSpawns'
 import { resolveSetting } from '../settings'
 import { normalizeMembers, findMember, memberIds as getMemberIds, memberNames as getMemberNames } from '../partyMembers'
 
@@ -45,6 +46,7 @@ export default function RaidView({
   const { mapKeys } = useMapKeys(party.map_norm)
   const { intelPoints } = useIntel(party.map_norm)
   const { extracts } = useExtracts(party.map_norm)
+  const pmcSpawns = usePmcSpawns()
   const { lootRows } = useMapLoot(party.map_norm)
   const { isChecked } = useIntelChecklist(party.map_norm, raidKey)
   const allIntel = useMemo(
@@ -72,6 +74,8 @@ export default function RaidView({
     hideReplay: true,
     replayEnabled,
     pingTtlMs,
+    raidStartAt: raidKey,
+    pmcSpawns: pmcSpawns[party.map_norm] || [],
   })
   const myPing = pingState.pingList.find(ping => ping.user_id === myUserId)
     || pingState.pingList.find(ping => ping.user === myName)

@@ -128,6 +128,11 @@ function PingCard({ card }) {
             {card.nearIntel.more ? ` · ${card.nearIntel.more} more within ${CLUSTER_RADIUS_M} m` : ''}
           </span>
         )}
+        {card.likelySpawn && (
+          <span style={{ color: '#5de87a' }}>
+            likely spawn {card.likelySpawn.dist} m{card.likelySpawn.dir ? ` ${card.likelySpawn.dir}` : ''} · last there {card.likelySpawn.ageLabel} ago
+          </span>
+        )}
         {card.nearby?.length > 0 && (
           <span style={{ color: 'var(--txm)' }}>
             nearby {card.nearby.map(teammate => `${teammate.user} ${teammate.dist}m ${teammate.dir}`).join(' · ')}

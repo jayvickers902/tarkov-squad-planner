@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { TARKOV_MAP_CONFIGS } from '../data/tarkovMapConfigs'
-import { SPAWNS, GRAPHQL_ENABLED } from '../constants'
 import {
   pingAngle, staleness, ageLabel, floorLabel, elevationLabel, replayElapsed,
 } from '../tarkovPings'
@@ -10,9 +9,7 @@ import {
   curatedLootPoints, mergeIntelSources, kindOf, countByKind,
   CLUSTER_RADIUS_M, RING_RADII_M, ringPath, clusterCounts, bestCluster,
 } from '../tarkovIntel'
-import { gqlRetry } from '../useTarkov'
-import { getRestSpawns } from '../tarkovRest'
-import { loadPrebaked } from '../data/prebaked'
+import { usePmcSpawns } from '../usePmcSpawns'
 import { useMapKeys } from '../useMapKeys'
 import { useMapLoot } from '../useMapLoot'
 import { useIntel } from '../useIntel'
@@ -25,73 +22,7 @@ import {
 } from '../tarkovZones'
 import { objectivePins, getUserColor } from '../tarkovObjectives'
 import { useMapPings } from '../useMapPings'
-
-const SPAWNS_QUERY = `{ maps { normalizedName spawns { position { x y z } sides categories } } }`
-let spawnsCache = null
-
-async function fetchAllSpawns({ signal } = {}) {
-  if (spawnsCache !== null) return spawnsCache
-  if (GRAPHQL_ENABLED) {
-    try {
-      const data = await gqlRetry(SPAWNS_QUERY, { signal })
-      if (!Array.isArray(data?.maps)) throw new Error('tarkov.dev returned no spawn data')
-      spawnsCache = data.maps
-      return spawnsCache
-    } catch (graphqlError) {
-      if (graphqlError?.name === 'AbortError') throw graphqlError
-      console.warn('tarkov.dev GraphQL PMC spawns unavailable; using json.tarkov.dev', graphqlError)
-    }
-  }
-  const result = await getRestSpawns(signal)
-  spawnsCache = result.data
-  return spawnsCache
-}
-
-function fallbackSpawns(mapNorm) {
-  const cfg = TARKOV_MAP_CONFIGS[mapNorm]
-  const points = SPAWNS[mapNorm]
-  if (!cfg || !points) return []
-  const minX = Math.min(cfg.bounds[0][0], cfg.bounds[1][0])
-  const maxX = Math.max(cfg.bounds[0][0], cfg.bounds[1][0])
-  const minZ = Math.min(cfg.bounds[0][1], cfg.bounds[1][1])
-  const maxZ = Math.max(cfg.bounds[0][1], cfg.bounds[1][1])
-  return points.map(point => ({
-    position: {
-      x: minX + point.x * (maxX - minX),
-      z: minZ + (1 - point.y) * (maxZ - minZ),
-    },
-  }))
-}
-
-// Cluster individual PMC player slots into zone centers via greedy nearest-centroid
-function clusterPmcZones(spawns, threshold = 30) {
-  const pmcSlots = spawns.filter(s => s.sides.includes('pmc') && s.categories.includes('player'))
-  const clusters = []
-  for (const s of pmcSlots) {
-    const { x, z } = s.position
-    let best = null, bestDist = Infinity
-    for (const c of clusters) {
-      const d = Math.hypot(c.cx - x, c.cz - z)
-      if (d < threshold && d < bestDist) { best = c; bestDist = d }
-    }
-    if (best) {
-      best.pts.push(s)
-      best.cx = best.pts.reduce((a, p) => a + p.position.x, 0) / best.pts.length
-      best.cz = best.pts.reduce((a, p) => a + p.position.z, 0) / best.pts.length
-    } else {
-      clusters.push({ cx: x, cz: z, pts: [s] })
-    }
-  }
-  return clusters.map(c => ({ position: { x: c.cx, z: c.cz } }))
-}
-
-// Prebaked and live spawn payloads share the same shape, so they cluster the
-// same way.
-function clusterByMap(maps) {
-  const byMap = {}
-  for (const m of maps) byMap[m.normalizedName] = clusterPmcZones(m.spawns)
-  return byMap
-}
+import { classifyPmcSpawns } from '../tarkovSpawns'
 
 const PALETTE = ['#e85d5d', '#f5a623', '#e8e85d', '#5de87a', '#5de8d4', '#5db8e8', '#c45de8', '#e85da8', '#ffffff', '#b0b0b0']
 
@@ -270,23 +201,26 @@ function makeQuestIcon(color, initial) {
   })
 }
 
-function makeSpawnIcon() {
+function makeSpawnIcon(focus = false) {
+  const helmet = focus ? '#5de87a' : '#e8a030'
+  const brim = focus ? '#2fae58' : '#c87820'
+  const markerClass = focus ? 'pmc-spawn-icon pmc-spawn-icon-focus' : 'pmc-spawn-icon'
   return L.divIcon({
     className: '',
     iconSize: [18, 24],
     iconAnchor: [9, 24],
-    html: `<svg width="18" height="24" viewBox="0 0 18 24" xmlns="http://www.w3.org/2000/svg">
+    html: `<div class="${markerClass}"><svg width="18" height="24" viewBox="0 0 18 24" xmlns="http://www.w3.org/2000/svg">
       <!-- Black outline: head + body -->
       <circle cx="9" cy="6" r="6" fill="rgba(0,0,0,0.9)"/>
       <rect x="2" y="11" width="14" height="12" rx="2.5" fill="rgba(0,0,0,0.9)"/>
       <!-- Helmet -->
-      <circle cx="9" cy="6" r="5" fill="#e8a030"/>
+      <circle cx="9" cy="6" r="5" fill="${helmet}"/>
       <!-- Helmet brim -->
       <rect x="1" y="9.5" width="16" height="3" rx="1.5" fill="rgba(0,0,0,0.9)"/>
-      <rect x="1.5" y="10" width="15" height="2.5" rx="1.25" fill="#c87820"/>
+      <rect x="1.5" y="10" width="15" height="2.5" rx="1.25" fill="${brim}"/>
       <!-- Body / vest -->
-      <rect x="3.5" y="13" width="11" height="9" rx="1.5" fill="#e8a030"/>
-    </svg>`,
+      <rect x="3.5" y="13" width="11" height="9" rx="1.5" fill="${helmet}"/>
+    </svg></div>`,
   })
 }
 
@@ -419,7 +353,7 @@ export default function MapLeaflet({
   const [layersOpen, setLayersOpen] = useState(false)
   // Planning rings: 0 is off, otherwise a radius in metres from RING_RADII_M.
   const [ringRadius, setRingRadius] = useState(0)
-  const [apiSpawns, setApiSpawns] = useState({})
+  const apiSpawns = usePmcSpawns()
   const [debugCoord, setDebugCoord] = useState(null)
   const [internalMode, setInternalMode] = useState(defaultMode)
   const mode = modeProp !== undefined ? modeProp : internalMode
@@ -433,6 +367,7 @@ export default function MapLeaflet({
   const currentPts = useRef([])
   const drawingPointerId = useRef(null)
   const suppressClickUntil = useRef(0)
+  const layersMenuRef = useRef(null)
 
   function changeMode(m) {
     if (modeProp !== undefined) onModeChange?.(m)
@@ -458,6 +393,23 @@ export default function MapLeaflet({
 
   const cfg = TARKOV_MAP_CONFIGS[mapNorm]
 
+  // Prefer the durable raid log so an opening ping keeps its spawn triage for
+  // the whole raid. Merge the live array too for the short realtime window
+  // before a newly written event is reflected in the log.
+  const spawnIntelPings = useMemo(() => {
+    const byId = new Map()
+    for (const ping of [...(Array.isArray(pingLog) ? pingLog : []), ...pings]) {
+      const key = ping?.id || `${ping?.user_id || ping?.user}:${ping?.at}`
+      if (key && !byId.has(key)) byId.set(key, ping)
+    }
+    return [...byId.values()]
+  }, [pingLog, pings])
+
+  const pmcSpawnIntel = useMemo(
+    () => classifyPmcSpawns(apiSpawns[mapNorm] || [], spawnIntelPings, raidKey, mapNorm),
+    [apiSpawns, mapNorm, raidKey, spawnIntelPings],
+  )
+
   // ─── Intel and document spawns ───────────────────────────────────────────────
   // Prebaked loose-loot points plus the admin-curated Season 1 document points,
   // in one list because the reader does not care which table a spawn came from.
@@ -466,6 +418,20 @@ export default function MapLeaflet({
     [intelPoints, lootRows, mapNorm],
   )
   const intelCounts = useMemo(() => countByKind(allIntel), [allIntel])
+  const factionCounts = useMemo(() => countFactions(zoneExtracts), [zoneExtracts])
+  const hazardCounts = useMemo(() => hazards.reduce((counts, hazard) => {
+    const kind = HAZARD_STYLE[hazard?.hazardType] ? hazard.hazardType : 'other'
+    counts[kind] += 1
+    return counts
+  }, { minefield: 0, sniper: 0, other: 0 }), [hazards])
+  const sortedLootItems = useMemo(
+    () => [...lootItems].sort((a, b) => Number(b.value || 0) - Number(a.value || 0)),
+    [lootItems],
+  )
+  const selectedLootPoints = useMemo(
+    () => lootPointsFor(lootPoints, lootItemId),
+    [lootPoints, lootItemId],
+  )
 
   // ─── Planning rings ──────────────────────────────────────────────────────────
   // Overlapping rings read as coverage: where three of them merge, one detour
@@ -514,6 +480,8 @@ export default function MapLeaflet({
     hideReplay,
     replayEnabled,
     pingTtlMs,
+    raidStartAt: raidKey,
+    pmcSpawns: apiSpawns[mapNorm] || [],
     enabled: !sharedPingState,
   })
   const {
@@ -811,52 +779,214 @@ export default function MapLeaflet({
     return [...curated, ...upstream]
   }, [mapKeys, locks, mapNorm])
 
-  // ─── Spawn data: prebaked first, then a live refresh ─────────────────────────
-  useEffect(() => {
-    const controller = new AbortController()
-    let live = false
-    let painted = false
+  // ─── Map reference layers ─────────────────────────────────────────────────
+  // Vector geometry lives in zonesPane (410): below rings (420) and drawings
+  // (450), so a squad route always remains the top-most map annotation.
+  useMapLayer(mapRef, () => {
+    if (!showExits) return []
+    const layers = []
+    const visible = extractsFor(zoneExtracts, exitFaction)
+    const plottedSwitches = new Set()
 
-    // Bundled with the build, so spawn markers appear without waiting on the
-    // network. Superseded by the live fetch below the moment it lands.
-    loadPrebaked('spawns').then(prebaked => {
-      if (!prebaked || live || controller.signal.aborted) return
-      painted = true
-      setApiSpawns(clusterByMap(prebaked.data))
-    })
+    for (const extract of visible) {
+      if (!extract?.position) continue
+      const style = FACTION_STYLE[extract.faction] || FACTION_STYLE.shared
+      const extractSwitches = switchForExtract(extract, switches)
+      const switchNames = extractSwitches.map(record => record.name).filter(Boolean).join(' · ')
+      const tooltip = makeZoneTooltip(extract.name || 'Unknown extract', style.color, [
+        `${style.label} EXTRACT`,
+        extractSwitches.length
+          ? `⚡ SWITCH REQUIRED: ${switchNames || 'UNKNOWN SWITCH'}`
+          : 'NO SWITCH REQUIRED',
+        elevationLine(extract.position, mapNorm),
+      ])
+      const outline = outlineToLatLngs(extract.outline)
 
-    fetchAllSpawns({ signal: controller.signal }).then(maps => {
-      live = true
-      painted = true
-      setApiSpawns(clusterByMap(maps))
-    }).catch(error => {
-      if (error.name === 'AbortError') return
-      // Real game-world coordinates already on screen beat the built-in
-      // fractional approximations, so only fall back if nothing painted.
-      if (painted) {
-        console.warn('tarkov.dev PMC spawn refresh failed; keeping prebaked spawn coordinates', error)
-        return
+      if (outline.length >= 3) {
+        const polygon = L.polygon(outline, {
+          color: style.color,
+          weight: 1.5,
+          opacity: 0.9,
+          fillColor: style.color,
+          fillOpacity: 0.16,
+          interactive: true,
+          pane: 'zonesPane',
+        })
+        polygon.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+        layers.push(polygon)
+      } else {
+        const fallback = L.circleMarker(L.latLng(extract.position.z, extract.position.x), {
+          radius: 6,
+          color: style.color,
+          weight: 1.5,
+          opacity: 0.9,
+          fillColor: style.color,
+          fillOpacity: 0.25,
+          interactive: true,
+          pane: 'zonesPane',
+        })
+        fallback.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+        layers.push(fallback)
       }
-      console.warn('tarkov.dev PMC spawn fetch failed; using built-in spawn coordinates', error)
-      setApiSpawns(Object.fromEntries(Object.keys(SPAWNS).map(norm => [norm, fallbackSpawns(norm)])))
+
+      const labelPosition = centroid(extract.outline) || [extract.position.z, extract.position.x]
+      const label = L.marker(labelPosition, {
+        icon: makeZoneLabelIcon(extract.name || 'UNKNOWN', style.color, extractSwitches.length ? '⚡' : ''),
+        interactive: true,
+        zIndexOffset: 70,
+      })
+      label.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+      layers.push(label)
+
+      for (const switchRecord of extractSwitches) {
+        if (!switchRecord?.position) continue
+        const switchKey = switchRecord.id || `${switchRecord.position.x}:${switchRecord.position.z}`
+        if (plottedSwitches.has(switchKey)) continue
+        plottedSwitches.add(switchKey)
+        const openedExtracts = zoneExtracts
+          .filter(candidate => switchForExtract(candidate, switches).some(record => record.id === switchRecord.id))
+          .map(candidate => candidate.name)
+          .filter(Boolean)
+        const switchMarker = L.marker(L.latLng(switchRecord.position.z, switchRecord.position.x), {
+          icon: makeSwitchIcon(),
+          interactive: true,
+          zIndexOffset: 60,
+        })
+        switchMarker.bindTooltip(makeZoneTooltip(switchRecord.name || 'SWITCH', '#e8a030', [
+          'EXTRACT SWITCH',
+          openedExtracts.length ? `OPENS: ${openedExtracts.join(' · ')}` : null,
+          elevationLine(switchRecord.position, mapNorm),
+        ]), { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+        layers.push(switchMarker)
+      }
+    }
+    return layers
+  }, [showExits, exitFaction, zoneExtracts, switches, mapNorm])
+
+  useMapLayer(mapRef, () => {
+    if (!showTransits) return []
+    const layers = []
+    const color = '#c45de8'
+    for (const transit of transits) {
+      if (!transit?.position) continue
+      const destination = mapLabel(transit.destination?.normalizedName)
+      const tooltip = makeZoneTooltip(transit.description || `Transit to ${destination}`, color, [
+        transit.description || `Transit to ${destination}`,
+        elevationLine(transit.position, mapNorm),
+      ])
+      const outline = outlineToLatLngs(transit.outline)
+      if (outline.length >= 3) {
+        const polygon = L.polygon(outline, {
+          color,
+          weight: 1.5,
+          opacity: 0.9,
+          fillColor: color,
+          fillOpacity: 0.18,
+          interactive: true,
+          pane: 'zonesPane',
+        })
+        polygon.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+        layers.push(polygon)
+      } else {
+        const fallback = L.circleMarker(L.latLng(transit.position.z, transit.position.x), {
+          radius: 6,
+          color,
+          weight: 1.5,
+          opacity: 0.9,
+          fillColor: color,
+          fillOpacity: 0.25,
+          interactive: true,
+          pane: 'zonesPane',
+        })
+        fallback.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+        layers.push(fallback)
+      }
+      const labelPosition = centroid(transit.outline) || [transit.position.z, transit.position.x]
+      const label = L.marker(labelPosition, {
+        icon: makeZoneLabelIcon(`→ ${destination}`, color),
+        interactive: true,
+        zIndexOffset: 65,
+      })
+      label.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+      layers.push(label)
+    }
+    return layers
+  }, [showTransits, transits, mapNorm])
+
+  useMapLayer(mapRef, () => {
+    if (!showBtr) return []
+    return btrStops.filter(stop => stop?.position).map(stop => {
+      const marker = L.marker(L.latLng(stop.position.z, stop.position.x), {
+        icon: makeBtrIcon(),
+        interactive: true,
+        zIndexOffset: 50,
+      })
+      marker.bindTooltip(makeZoneTooltip(stop.name || 'BTR STOP', '#e8a030', [
+        'BTR STOP',
+        elevationLine(stop.position, mapNorm),
+      ]), { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+      return marker
     })
-    return () => controller.abort()
-  }, [])
+  }, [showBtr, btrStops, mapNorm])
+
+  useMapLayer(mapRef, () => {
+    if (!showHazards) return []
+    return hazards.map(hazard => {
+      const outline = outlineToLatLngs(hazard?.outline)
+      if (outline.length < 3) return null
+      const style = HAZARD_STYLE[hazard.hazardType] || HAZARD_STYLE.other
+      return L.polygon(outline, {
+        color: style.color,
+        weight: 1,
+        opacity: 0.68,
+        fillColor: style.color,
+        fillOpacity: 0.12,
+        dashArray: hazard.hazardType === 'minefield' ? '6 4' : '3 4',
+        interactive: false,
+        pane: 'zonesPane',
+      })
+    })
+  }, [showHazards, hazards, mapNorm])
+
+  useMapLayer(mapRef, () => {
+    if (!showLoot) return []
+    return selectedLootPoints.filter(point => point?.position).map(point => {
+      const matchedItems = Array.isArray(point.items) ? point.items : []
+      const dedicated = point.dedicated ?? Number(point.pool) <= 3
+      const poolSize = Number.isFinite(Number(point.pool)) ? Number(point.pool) : matchedItems.length
+      const tooltip = makeZoneTooltip(dedicated ? 'DEDICATED LOOT SPAWN' : 'POOLED LOOT SPAWN', dedicated ? '#c9a84c' : '#c45de8', [
+        ...matchedItems.map(item => `${item.name} — ${formatRoubles(item.value)}`),
+        `${matchedItems.length} of ${poolSize} possible items here`,
+        dedicated ? 'DEDICATED POOL (3 OR FEWER)' : 'GENERAL / MARKED-ROOM POOL',
+        elevationLine(point.position, mapNorm),
+      ])
+      const marker = L.marker(L.latLng(point.position.z, point.position.x), {
+        icon: makeLootIcon(dedicated),
+        interactive: true,
+        zIndexOffset: 40,
+      })
+      marker.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+      return marker
+    })
+  }, [showLoot, selectedLootPoints, mapNorm])
 
   // ─── Sync PMC spawn markers ───────────────────────────────────────────────
   useMapLayer(mapRef, () => {
     if (!showSpawns) return []
-    return (apiSpawns[mapNorm] || []).map(s => {
+    return (apiSpawns[mapNorm] || []).map((s, index) => {
+      const key = s.id || `${index}:${Number(s.position?.x).toFixed(2)}:${Number(s.position?.z).toFixed(2)}`
+      if (pmcSpawnIntel.excluded.has(String(key))) return null
+      const focused = pmcSpawnIntel.focused.has(String(key))
       const sm = L.marker(L.latLng(s.position.z, s.position.x), {
-        icon: makeSpawnIcon(), interactive: true, zIndexOffset: 50,
+        icon: makeSpawnIcon(focused), interactive: true, zIndexOffset: focused ? 90 : 50,
       })
       sm.bindTooltip(
-        `<div><div style="color:#e8a030;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">PMC SPAWN</div></div>`,
+        `<div><div style="color:${focused ? '#5de87a' : '#e8a030'};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${focused ? 'LIKELY PMC SPAWN' : 'PMC SPAWN'}</div></div>`,
         { direction: 'top', offset: [0, -10], opacity: 1, className: 'tac-tooltip' }
       )
       return sm
     })
-  }, [showSpawns, mapNorm, apiSpawns])
+  }, [showSpawns, mapNorm, apiSpawns, pmcSpawnIntel])
 
   // ─── Sync auto objective pins ────────────────────────────────────────────────
   useMapLayer(mapRef, () => {
@@ -1108,9 +1238,35 @@ export default function MapLeaflet({
     setShowQuestPins(true)
     setShowPings(true)
     setShowIntel(false)
+    setShowExits(true)
+    setShowTransits(false)
+    setShowBtr(false)
+    setShowHazards(false)
+    setShowLoot(false)
+    setExitFaction('all')
+    setLootItemId('')
+    setLayersOpen(false)
     setRingRadius(0)
     setReplay(null)
   }, [mapNorm]) // eslint-disable-line
+
+  useEffect(() => {
+    if (!layersOpen) return undefined
+    function onPointerDown(event) {
+      if (!layersMenuRef.current?.contains(event.target)) setLayersOpen(false)
+    }
+    function onKeyDown(event) {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setLayersOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [layersOpen])
 
   // Update cursor style on map container
   useEffect(() => {
@@ -1217,9 +1373,9 @@ export default function MapLeaflet({
           </select>
         )}
 
-        {/* Layer toggles — wraps, because this row is already at its limit on a
-            narrow viewport and the intel toggle is the seventh thing in it */}
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        {/* The three high-frequency layers stay in the toolbar. Everything else
+            is inside the compact layer popover so the toolbar remains usable. */}
+        <div className="map-layer-controls">
           <button
             className={showSpawns ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
             onClick={() => setShowSpawns(s => !s)}
@@ -1232,58 +1388,142 @@ export default function MapLeaflet({
             style={{ fontSize: 10 }}>
             ◆ QUEST PINS
           </button>
-          {allIntel.length > 0 && (
-            <button
-              className={showIntel ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-              onClick={() => setShowIntel(v => !v)}
-              title="Intelligence folder / Documents case loose-loot spawns, plus hand-placed document spawns"
-              style={{ fontSize: 10 }}>
-              ▤ INTEL ({allIntel.length})
-            </button>
-          )}
-          {/* Rings cycle through the radii and back off, so planning costs one
-              control rather than a toggle plus a select */}
-          {showIntel && allIntel.length > 0 && (
-            <button
-              className={ringRadius ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-              onClick={() => setRingRadius(r => {
-                const i = RING_RADII_M.indexOf(r)
-                return i < 0 ? RING_RADII_M[0] : (RING_RADII_M[i + 1] ?? 0)
-              })}
-              title="Draw a radius around every unchecked spawn — where rings overlap, one detour covers several"
-              style={{ fontSize: 10 }}>
-              ◎ RINGS{ringRadius ? ` ${ringRadius} M` : ''}
-            </button>
-          )}
-          {showIntel && checkedCount > 0 && (
-            <button className="btn-ghost btn-sm" onClick={clearChecked} style={{ fontSize: 10, color: 'var(--txd)' }}>
-              UNCHECK {checkedCount}
-            </button>
-          )}
           {pingList.length > 0 && (
-            <>
-              <button
-                className={showPings ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-                onClick={() => setShowPings(p => !p)}
-                style={{ fontSize: 10 }}>
-                ▲ PINGS ({pingList.length})
-              </button>
-              {onClearPings && !replayOn && (
-                <button className="btn-ghost btn-sm" onClick={onClearPings} style={{ fontSize: 10, color: 'var(--txd)' }}>
-                  CLEAR
-                </button>
-              )}
-            </>
-          )}
-          {canReplay && (
             <button
-              className={replayOn ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-              onClick={() => setReplay(r => (r ? null : { t: replayData.from, playing: false, speed: 4 }))}
-              title="Scrub back through this raid's pings"
+              className={showPings ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+              onClick={() => setShowPings(p => !p)}
               style={{ fontSize: 10 }}>
-              ⏱ REPLAY ({replayData.count})
+              ▲ PINGS ({pingList.length})
             </button>
           )}
+          <div className="map-layer-menu" ref={layersMenuRef}>
+            <button
+              className={layersOpen ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+              onClick={() => setLayersOpen(open => !open)}
+              aria-expanded={layersOpen}
+              aria-haspopup="true"
+              style={{ fontSize: 10 }}>
+              ◈ LAYERS
+            </button>
+            {layersOpen && (
+              <div className="map-layer-popover" role="dialog" aria-label="Map layers">
+                <div className="map-layer-popover-title">MAP LAYERS{zonesLoading ? ' · LOADING' : ''}</div>
+
+                <LayerToggleRow
+                  label="▤ INTEL"
+                  count={allIntel.length}
+                  checked={showIntel}
+                  onChange={() => setShowIntel(v => !v)}
+                  disabled={allIntel.length === 0}
+                />
+                {showIntel && allIntel.length > 0 && (
+                  <div className="map-layer-subcontrols">
+                    <button
+                      className={ringRadius ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+                      onClick={() => setRingRadius(r => {
+                        const i = RING_RADII_M.indexOf(r)
+                        return i < 0 ? RING_RADII_M[0] : (RING_RADII_M[i + 1] ?? 0)
+                      })}
+                      title="Draw a radius around every unchecked spawn — where rings overlap, one detour covers several"
+                      style={{ fontSize: 10 }}>
+                      ◎ RINGS{ringRadius ? ` ${ringRadius} M` : ''}
+                    </button>
+                    {checkedCount > 0 && (
+                      <button className="btn-ghost btn-sm" onClick={clearChecked} style={{ fontSize: 10, color: 'var(--txd)' }}>
+                        UNCHECK {checkedCount}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <LayerToggleRow
+                  label="◩ EXITS"
+                  count={zoneExtracts.length}
+                  checked={showExits}
+                  onChange={() => setShowExits(v => !v)}
+                  disabled={zoneExtracts.length === 0}
+                />
+                {showExits && zoneExtracts.length > 0 && (
+                  <div className="map-faction-filter" aria-label="Exit faction filter">
+                    {[
+                      ['all', 'ALL', zoneExtracts.length],
+                      ['pmc', 'PMC', factionCounts.pmc + factionCounts.shared],
+                      ['scav', 'SCAV', factionCounts.scav + factionCounts.shared],
+                    ].map(([value, label, count]) => (
+                      <button
+                        key={value}
+                        className={exitFaction === value ? 'map-faction-filter-active' : ''}
+                        onClick={() => setExitFaction(value)}
+                        title={`${label} exits: ${count}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <LayerToggleRow
+                  label="⇄ TRANSITS"
+                  count={transits.length}
+                  checked={showTransits}
+                  onChange={() => setShowTransits(v => !v)}
+                  disabled={transits.length === 0}
+                />
+                <LayerToggleRow
+                  label="▣ BTR"
+                  count={btrStops.length}
+                  checked={showBtr}
+                  onChange={() => setShowBtr(v => !v)}
+                  disabled={btrStops.length === 0}
+                />
+                <LayerToggleRow
+                  label="☢ HAZARDS"
+                  count={hazards.length}
+                  checked={showHazards}
+                  onChange={() => setShowHazards(v => !v)}
+                  disabled={hazards.length === 0}
+                />
+                <LayerToggleRow
+                  label="◈ LOOT"
+                  count={lootPoints.length}
+                  checked={showLoot}
+                  onChange={() => setShowLoot(v => !v)}
+                  disabled={lootPoints.length === 0}
+                />
+                {showLoot && lootItems.length > 0 && (
+                  <label className="map-loot-filter">
+                    <span>ITEM FILTER</span>
+                    <select value={lootItemId} onChange={event => setLootItemId(event.target.value)}>
+                      <option value="">ANY HIGH-VALUE ITEM · {lootPoints.length} SPOTS</option>
+                      {sortedLootItems.map(item => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} — {formatRoubles(item.value)} · {item.count} spots
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {(onClearPings && pingList.length > 0 && !replayOn) || canReplay ? (
+                  <div className="map-layer-secondary-controls">
+                    {onClearPings && pingList.length > 0 && !replayOn && (
+                      <button className="btn-ghost btn-sm" onClick={onClearPings} style={{ fontSize: 10, color: 'var(--txd)' }}>
+                        CLEAR
+                      </button>
+                    )}
+                    {canReplay && (
+                      <button
+                        className={replayOn ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+                        onClick={() => setReplay(r => (r ? null : { t: replayData.from, playing: false, speed: 4 }))}
+                        title="Scrub back through this raid's pings"
+                        style={{ fontSize: 10 }}>
+                        ⏱ REPLAY ({replayData.count})
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
         </div>
 
         {!overlayChrome && !hideStyleControls && canToggle && svgReady && (
@@ -1296,6 +1536,14 @@ export default function MapLeaflet({
           </div>
         )}
       </div>
+
+      {pmcSpawnIntel.active && showSpawns && (
+        <div className={overlayChrome ? 'mono map-chrome pmc-spawn-brief' : 'mono pmc-spawn-brief'}>
+          <span style={{ color: '#5de87a' }}>EARLY SPAWN ID</span>
+          <span>{pmcSpawnIntel.excluded.size} NEAREST HIDDEN</span>
+          <span style={{ color: '#5de87a' }}>{pmcSpawnIntel.focused.size} CLOSE CANDIDATE{pmcSpawnIntel.focused.size === 1 ? '' : 'S'} HIGHLIGHTED</span>
+        </div>
+      )}
 
       {overlayChrome && !hideStyleControls && canToggle && svgReady && (
         <div className="map-chrome map-chrome-style">{styleControls}</div>
@@ -1375,6 +1623,16 @@ export default function MapLeaflet({
           </div>
         )}
       </div>
+
+      {showHazards && hazards.length > 0 && (
+        <div className={overlayChrome
+          ? `mono map-zone-legend map-chrome${showIntel && allIntel.length > 0 ? ' map-zone-legend-above-intel' : ''}`
+          : 'mono map-zone-legend'}>
+          <span style={{ color: HAZARD_STYLE.minefield.color }}>☢ {hazardCounts.minefield} MINEFIELD</span>
+          <span style={{ color: HAZARD_STYLE.sniper.color }}>⚠ {hazardCounts.sniper} SNIPER</span>
+          <span style={{ color: HAZARD_STYLE.other.color }}>{hazardCounts.other} OTHER</span>
+        </div>
+      )}
 
       {/* Post-raid replay — scrub the raid's pings back. The map above shows the
           squad as it was at the scrubbed instant, decay and all. */}
@@ -1457,6 +1715,11 @@ export default function MapLeaflet({
                     <span style={{ color: kindOf(card.nearIntel.point).color }}>
                       nearest {kindOf(card.nearIntel.point).short.toLowerCase()} {card.nearIntel.dist} m {card.nearIntel.dir}
                       {card.nearIntel.more ? ` · ${card.nearIntel.more} more within ${CLUSTER_RADIUS_M} m` : ''}
+                    </span>
+                  )}
+                  {card.likelySpawn && (
+                    <span style={{ color: '#5de87a' }}>
+                      likely spawn {card.likelySpawn.dist} m{card.likelySpawn.dir ? ` ${card.likelySpawn.dir}` : ''} · last there {card.likelySpawn.ageLabel} ago
                     </span>
                   )}
                   {card.nearby?.length > 0 && <span style={{ color: 'var(--txm)' }}>nearby {card.nearby.map(teammate => `${teammate.user} ${teammate.dist}m ${teammate.dir}`).join(' · ')}</span>}

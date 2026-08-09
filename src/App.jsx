@@ -24,7 +24,7 @@ export default function App() {
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
 
   const {
-    user, profile, loading: authLoading,
+    user, profile, profileError: authProfileError, loading: authLoading,
     error: authError, setError: setAuthError,
     logout, loginWithGoogle, createProfile,
   } = useAuth()
@@ -201,6 +201,7 @@ export default function App() {
         onCreateProfile={createProfile}
         needsCallsign={!!user && !profile}
         error={authError}
+        profileError={authProfileError}
         setError={setAuthError}
       />
     )
