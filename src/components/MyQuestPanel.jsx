@@ -12,20 +12,20 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
-export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, loading }) {
+export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, loading, settings = {}, onSetSetting }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
 
-  const orderKey = myName ? `tarkov_quest_order_${myName}` : null
   const [questOrder, setQuestOrder] = useState(() => {
-    const saved = orderKey ? (() => { try { return JSON.parse(localStorage.getItem(orderKey)) } catch { return null } })() : null
+    const saved = myName ? settings.quest_order?.[myName] : null
     if (saved && Array.isArray(saved)) return saved
     return myQuests.map(q => q.id)
   })
 
-  // Persist order to localStorage whenever it changes
+  // Persist order through the user-settings abstraction whenever it changes.
   useEffect(() => {
-    if (orderKey) localStorage.setItem(orderKey, JSON.stringify(questOrder))
-  }, [questOrder, orderKey])
+    if (!myName || !onSetSetting) return
+    onSetSetting('quest_order', { ...(settings.quest_order || {}), [myName]: questOrder })
+  }, [questOrder, myName, onSetSetting]) // settings is read from the latest callback closure
 
   // Sync questOrder when myQuests changes — new quests bubble to front
   useEffect(() => {

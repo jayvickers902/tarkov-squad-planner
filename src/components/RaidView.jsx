@@ -9,16 +9,8 @@ import { useIntelChecklist } from '../useIntelChecklist'
 import { curatedLootPoints, mergeIntelSources } from '../tarkovIntel'
 import { objectivePins } from '../tarkovObjectives'
 import { useMapPings } from '../useMapPings'
-
-const RAIL_STORAGE_KEY = 'tsp.raid.rail.open'
-
-function readRailPreference() {
-  try { return localStorage.getItem(RAIL_STORAGE_KEY) !== '0' } catch { return true }
-}
-
-function writeRailPreference(value) {
-  try { localStorage.setItem(RAIL_STORAGE_KEY, value ? '1' : '0') } catch { /* storage is optional */ }
-}
+import { getRaidSettings } from '../raidState'
+import { resolveSetting } from '../settings'
 
 export default function RaidView({
   party, myName, members,
@@ -27,6 +19,8 @@ export default function RaidView({
   onAddStroke, onClearMyStrokes,
   onAddMarker, onClearMyMarkers,
   onClearPings,
+  userSettings = {},
+  onSetSetting,
   onClose,
 }) {
   const isMobile = useIsMobile()
@@ -34,8 +28,11 @@ export default function RaidView({
   const memberNames = members || Object.keys(party.members || {})
   const mine = party.members?.[myName] || []
   const raidKey = party.progress?.['__raid_start__'] ?? null
+  const layers = { raid: getRaidSettings(party.progress), unit: null, user: userSettings }
+  const pingTtlMs = Number(resolveSetting('ping_ttl_ms', layers))
+  const replayEnabled = resolveSetting('replay_enabled', layers)
 
-  const [railOpen, setRailOpen] = useState(readRailPreference)
+  const [railOpen, setRailOpen] = useState(() => userSettings.raidview_rail_open !== false)
   const [mobileRailHeight, setMobileRailHeight] = useState(35)
   const [drawMode, setDrawMode] = useState('pan')
   const [focusKey, setFocusKey] = useState(null)
@@ -66,6 +63,8 @@ export default function RaidView({
     allIntel,
     isChecked,
     hideReplay: true,
+    replayEnabled,
+    pingTtlMs,
   })
   const myPing = pingState.pingList.find(ping => ping.user === myName) || null
   const mapFocusKey = hoverFocusKey || focusKey
@@ -73,10 +72,10 @@ export default function RaidView({
   const toggleRail = useCallback(() => {
     setRailOpen(current => {
       const next = !current
-      writeRailPreference(next)
+      onSetSetting?.('raidview_rail_open', next)
       return next
     })
-  }, [])
+  }, [onSetSetting])
 
   const toggleDraw = useCallback(() => {
     setDrawMode(mode => mode === 'draw' ? 'pan' : 'draw')
@@ -167,6 +166,8 @@ export default function RaidView({
             markers={party.markers || []}
             pings={party.pings || []}
             pingLog={party.ping_log}
+            pingTtlMs={pingTtlMs}
+            replayEnabled={replayEnabled}
             myName={myName}
             memberNames={memberNames}
             myQuests={mine}

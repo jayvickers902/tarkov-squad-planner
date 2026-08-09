@@ -12,6 +12,10 @@ import TarkovClocks from './TarkovClocks'
 import StartRaidModal from './StartRaidModal'
 import RaidView from './RaidView'
 import MonitorLink from './MonitorLink'
+import RaidSettings from './RaidSettings'
+import useEphemeralSweep from '../useEphemeralSweep'
+import { getRaidSettings, hasRaidWork } from '../raidState'
+import { resolveSetting } from '../settings'
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
@@ -39,7 +43,7 @@ function MemberPill({ name, allMembers }) {
   )
 }
 
-export default function Room({ party, myName, isAdmin, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid }) {
+export default function Room({ party, myName, isAdmin, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, onlineMembers = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
@@ -54,6 +58,9 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
   const [startRaidPending, setStartRaidPending] = useState(false)
   const [raidView, setRaidView] = useState(false)
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  useEphemeralSweep({ party, myName, userSettings, onSweep: onSweepEphemeral })
 
   useEffect(() => {
     if (tab === 'map') setSidebarOpen(false)
@@ -68,7 +75,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
   const hasPlan = (party.drawings?.length || 0) > 0
     || (party.markers?.length || 0) > 0
     || Object.keys(party.starred || {}).length > 0
-    || Object.keys(party.progress || {}).some(k => k !== '__raid_start__')
+    || hasRaidWork(party.progress)
 
 
   async function handleSendRequest() {
@@ -84,6 +91,10 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
   const { tasks, loading: loadingTasks } = useTasks(party.map_norm)
   const { tasks: allTasks } = useTasks(null)
   const isLeader = party.leader === myName
+  const settingLayers = { raid: getRaidSettings(party.progress), unit: null, user: userSettings }
+  const pingTtlMs = Number(resolveSetting('ping_ttl_ms', settingLayers))
+  const replayEnabled = resolveSetting('replay_enabled', settingLayers)
+  const canChangeMap = isLeader || resolveSetting('members_can_change_map', settingLayers) === true
   const members  = Object.keys(party.members || {})
   const mine     = party.members?.[myName] || []
 
@@ -167,6 +178,8 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
           onAddMarker={onAddMarker}
           onClearMyMarkers={onClearMyMarkers}
           onClearPings={onClearPings}
+          userSettings={userSettings}
+          onSetSetting={onSetUserSetting}
           onClose={() => setRaidView(false)}
         />
       )}
@@ -196,6 +209,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                   {pendingIn.length > 0 && <span className="mono" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)', color: 'var(--gold)' }}>{pendingIn.length}</span>}
                 </button>
                 {isAdmin && <button className="btn-ghost btn-sm" onClick={onAdmin} style={{ color: 'var(--txm)' }}>⚙</button>}
+                <button className={settingsOpen ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => setSettingsOpen(value => !value)} aria-label="Raid settings">⚙ SETTINGS</button>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, padding: '5px 10px' }}>
                   <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>PARTY</span>
                   <span className="mono" style={{ fontSize: 17, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
@@ -221,6 +235,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
               FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
             </button>
             {isAdmin && <button className="btn-ghost btn-sm" onClick={onAdmin} style={{ color: 'var(--txm)' }}>⚙</button>}
+            <button className={settingsOpen ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => setSettingsOpen(value => !value)} aria-label="Raid settings">⚙</button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, padding: '4px 8px' }}>
               <span className="mono" style={{ fontSize: 15, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
               <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
@@ -231,6 +246,16 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
           </div>
         )}
       </div>
+
+      {settingsOpen && (
+        <RaidSettings
+          party={party}
+          myName={myName}
+          userSettings={userSettings}
+          onChange={onSetRaidSettings}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
 
       {/* Friends panel */}
       {showFriends && (
@@ -343,6 +368,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
             </div>
             {members.map(m => {
               const isSelf    = m === myName
+              const isOnline  = !presenceReady || onlineMembers.includes(m)
               const isFriend  = friends.some(f => f.callsign === m)
               const isPending = [...(pendingIn || []), ...(pendingOut || [])].some(r => r.callsign === m)
               const mQuests   = party.members[m] || []
@@ -364,6 +390,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                       {mapCount !== null && (
                         <span style={{ color: 'var(--txd)' }}> · {mapCount} ON MAP</span>
                       )}
+                      <span style={{ color: isOnline ? 'var(--grn)' : 'var(--txd)' }}> · {isOnline ? 'ONLINE' : 'OFFLINE'}</span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
@@ -472,7 +499,7 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
 
           {/* Map selector */}
           <div className="room-map-selector-card card" style={{ padding: 16, display: raidStart && !mapSelectorOpen ? 'none' : undefined }}>
-            <div className="lbl">{isLeader ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
+            <div className="lbl">{canChangeMap ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
             {loadingMaps && !maps.length
               ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAPS...</span></div>
               : (
@@ -480,12 +507,12 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                   {maps.map(m => (
                     <button key={m.id}
                       onClick={() => {
-                        if (!isLeader) return
+                        if (!canChangeMap) return
                         onSelectMap(m)
                         if (raidStart) setMapSelectorOpen(false)
                       }}
                       className={party.map_id === m.id ? 'btn-gold' : 'btn-ghost'}
-                      style={{ padding: '7px 12px', fontSize: 13, opacity: isLeader ? 1 : .7, cursor: isLeader ? 'pointer' : 'default' }}>
+                      style={{ padding: '7px 12px', fontSize: 13, opacity: canChangeMap ? 1 : .7, cursor: canChangeMap ? 'pointer' : 'default' }}>
                       {m.name.toUpperCase()}
                     </button>
                   ))}
@@ -499,9 +526,12 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
             mapNorm={party.map_norm}
             myName={myName}
             isLeader={isLeader}
+            canChangeMap={canChangeMap}
             hasPlan={hasPlan}
             onSelectMap={onSelectMap}
             onAddPing={onAddPing}
+            settings={userSettings}
+            onSetSetting={onSetUserSetting}
           />
 
           {party.map_id && (
@@ -575,6 +605,8 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                       onOpenQuestManager={onMyQuests}
                       mapNorm={party.map_norm}
                       loading={questsLoading}
+                      settings={userSettings}
+                      onSetSetting={onSetUserSetting}
                     />
                   </div>
                 </div>
@@ -614,6 +646,8 @@ export default function Room({ party, myName, isAdmin, questsLoading, onLeave, o
                     markers={party.markers || []}
                     pings={party.pings || []}
                     pingLog={party.ping_log}
+                    pingTtlMs={pingTtlMs}
+                    replayEnabled={replayEnabled}
                     myName={myName}
                     memberNames={members}
                     myQuests={mine}

@@ -46,12 +46,14 @@ export function useMapPings({
   allIntel = [],
   isChecked = () => false,
   hideReplay = false,
+  replayEnabled = true,
+  pingTtlMs,
   enabled = true,
 }) {
   const [replay, setReplay] = useState(null)
   const [now, setNow] = useState(() => Date.now())
 
-  const replayData = useMemo(() => (enabled ? replayWindow(pingLog, mapNorm) : null), [enabled, pingLog, mapNorm])
+  const replayData = useMemo(() => (enabled && replayEnabled ? replayWindow(pingLog, mapNorm) : null), [enabled, replayEnabled, pingLog, mapNorm])
   const canReplay = enabled && !!replayData && !hideReplay
   const replayOn = !!replay && canReplay
   const clock = replayOn ? replay.t : now
@@ -59,8 +61,8 @@ export function useMapPings({
   const pingList = useMemo(
     () => (!enabled
       ? []
-      : replayOn ? pingsAt(replayData.pings, replay.t) : activePings(pings, mapNorm, now)),
-    [enabled, replayOn, replayData, replay?.t, pings, mapNorm, now],
+      : replayOn ? pingsAt(replayData.pings, replay.t) : activePings(pings, mapNorm, now, pingTtlMs)),
+    [enabled, replayOn, replayData, replay?.t, pings, mapNorm, now, pingTtlMs],
   )
   const replayTrails = useMemo(
     () => (enabled && replayOn ? trailsAt(replayData.pings, replay.t) : []),

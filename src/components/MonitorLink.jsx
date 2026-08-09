@@ -13,23 +13,13 @@ const STATUS_TEXT = {
 // GameWatcher.cs returns early when raid.Map is null, so a monitor started mid-raid
 // sends absolutely nothing — the silence is the only symptom.
 const QUIET_MS = 90000
-const MONITOR_EXPANDED_KEY = 'tsp.monitor.expanded'
-
-function readExpandedPreference() {
-  try { return localStorage.getItem(MONITOR_EXPANDED_KEY) === '1' } catch { return false }
-}
-
-function writeExpandedPreference(value) {
-  try { localStorage.setItem(MONITOR_EXPANDED_KEY, value ? '1' : '0') } catch { /* storage is optional */ }
-}
-
 const POS_REJECT_TEXT = {
   shape:  'a position with missing or non-numeric coordinates',
   map:    'a position for a map that is not one of the 10 supported maps',
   bounds: 'a position outside the map’s bounds',
 }
 
-export default function MonitorLink({ maps, mapNorm, myName, isLeader, hasPlan, onSelectMap, onAddPing }) {
+export default function MonitorLink({ maps, mapNorm, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, settings = {}, onSetSetting }) {
   const [copied, setCopied] = useState(false)
   const [confirmRegen, setConfirmRegen] = useState(false)
   const [lastAction, setLastAction] = useState(null)  // { value, at, ok, reason }
@@ -37,12 +27,12 @@ export default function MonitorLink({ maps, mapNorm, myName, isLeader, hasPlan, 
   const [lastPing, setLastPing] = useState(null)      // { taps, floor, elev, at }
   const [pending, setPending] = useState(0)           // taps buffered in the current window
   const [, setTick] = useState(0)
-  const [detailsExpanded, setDetailsExpanded] = useState(readExpandedPreference)
+  const [detailsExpanded, setDetailsExpanded] = useState(() => settings.monitor_expanded === true)
 
   // Refs so the socket handler never has to be re-created (and never captures a stale map).
   const mapsRef     = useRef(maps);       mapsRef.current = maps
   const mapNormRef  = useRef(mapNorm);    mapNormRef.current = mapNorm
-  const isLeaderRef = useRef(isLeader);   isLeaderRef.current = isLeader
+  const canChangeMapRef = useRef(canChangeMap); canChangeMapRef.current = canChangeMap
   const selectRef   = useRef(onSelectMap); selectRef.current = onSelectMap
   const hasPlanRef  = useRef(hasPlan);    hasPlanRef.current = hasPlan
   const myNameRef   = useRef(myName);     myNameRef.current = myName
@@ -63,7 +53,7 @@ export default function MonitorLink({ maps, mapNorm, myName, isLeader, hasPlan, 
   // a raid on a fresh party and the map is just right.
   const handleMapCommand = useCallback(value => {
     const at = Date.now()
-    if (!isLeaderRef.current) {
+    if (!canChangeMapRef.current) {
       setLastAction({ value, at, ok: false, reason: 'not-leader' })
       return
     }
@@ -134,7 +124,7 @@ export default function MonitorLink({ maps, mapNorm, myName, isLeader, hasPlan, 
     code, enabled, status, connectedAt, lastCommandAt, rejected,
     posRejected, throttled,
     connect, disconnect, regenerate,
-  } = useTarkovMonitor({ onMap: handleMapCommand, onPosition: handlePosition })
+  } = useTarkovMonitor({ onMap: handleMapCommand, onPosition: handlePosition, settings, onSetSetting })
 
   // Re-render so the "gone quiet" notice appears without needing another event.
   const waitingForFirstEvent = status === 'connected' && !lastCommandAt
@@ -155,12 +145,12 @@ export default function MonitorLink({ maps, mapNorm, myName, isLeader, hasPlan, 
   const showRejected = !!rejected && (!lastAction || rejected.at >= lastAction.at)
   const cadence = lastPing ? cadenceOf(lastPing.taps) : null
   const showPosRejected = !!posRejected && (!lastPing || posRejected.at >= lastPing.at)
-  const forceOpen = !!pendingMap || !!throttled || !!quiet || showPosRejected || showRejected || !isLeader
+  const forceOpen = !!pendingMap || !!throttled || !!quiet || showPosRejected || showRejected || !canChangeMap
   const collapsed = status === 'connected' && !detailsExpanded && !forceOpen
 
   function changeExpanded(next) {
     setDetailsExpanded(next)
-    writeExpandedPreference(next)
+    onSetSetting?.('monitor_expanded', next)
   }
 
   return (
@@ -322,9 +312,9 @@ export default function MonitorLink({ maps, mapNorm, myName, isLeader, hasPlan, 
           )}
 
           {/* Only the leader drives the map — say so before the user wonders why nothing happened */}
-          {!isLeader && (
+          {!canChangeMap && (
             <div className="mon-note">
-              You are linked, but only the party leader can change the map. Your raids will not switch it.
+              You are linked, but this raid does not allow members to change the map. Your raids will not switch it.
             </div>
           )}
 

@@ -23,8 +23,6 @@ import { parsePlayerPosition } from './tarkovPings'
 // available, which is why POS_LIMIT exists below.
 
 const SOCKET_URL   = 'wss://socket.tarkov.dev'
-const CODE_KEY     = 'tsp.monitor.code'
-const ENABLED_KEY  = 'tsp.monitor.enabled'
 
 // 4 chars, because TarkovMonitor's Remote ID field will not take more — the same
 // 4-character format tarkov.dev's own remote control uses. This was 16 until it was
@@ -60,18 +58,13 @@ export function generateMonitorCode() {
   return out
 }
 
-function readStoredCode() {
-  let stored = null
-  try { stored = localStorage.getItem(CODE_KEY) } catch { /* private mode */ }
+function readStoredCode(settings = {}) {
+  const stored = settings.monitor_code
   if (stored && CODE_RE.test(stored)) return stored
-  const fresh = generateMonitorCode()
-  try { localStorage.setItem(CODE_KEY, fresh) } catch { /* private mode */ }
-  return fresh
+  return generateMonitorCode()
 }
 
-function readStoredEnabled() {
-  try { return localStorage.getItem(ENABLED_KEY) === '1' } catch { return false }
-}
+function readStoredEnabled(settings = {}) { return settings.monitor_enabled === true }
 
 /**
  * @param {object}   handlers
@@ -83,9 +76,9 @@ function readStoredEnabled() {
  * Both callbacks receive validated data — validation lives in here so no consumer
  * ever handles raw socket input.
  */
-export function useTarkovMonitor({ onMap, onPosition } = {}) {
-  const [code,          setCode]          = useState(readStoredCode)
-  const [enabled,       setEnabled]       = useState(readStoredEnabled)
+export function useTarkovMonitor({ onMap, onPosition, settings = {}, onSetSetting } = {}) {
+  const [code,          setCode]          = useState(() => readStoredCode(settings))
+  const [enabled,       setEnabled]       = useState(() => readStoredEnabled(settings))
   const [status,        setStatus]        = useState('idle')   // idle|connecting|connected|reconnecting
   const [connectedAt,   setConnectedAt]   = useState(null)
   const [lastCommandAt, setLastCommandAt] = useState(null)
@@ -99,6 +92,12 @@ export function useTarkovMonitor({ onMap, onPosition } = {}) {
   mapRef.current = onMap
   const posRef = useRef(onPosition)
   posRef.current = onPosition
+  const setSettingRef = useRef(onSetSetting)
+  setSettingRef.current = onSetSetting
+
+  useEffect(() => {
+    if (settings.monitor_code !== code) setSettingRef.current?.('monitor_code', code)
+  }, [code, settings.monitor_code])
 
   // The last map the monitor reported, used when a position payload carries none.
   // A ref as well as state: the message handler must not be re-created per map.
@@ -236,7 +235,7 @@ export function useTarkovMonitor({ onMap, onPosition } = {}) {
   }, [enabled, code])
 
   const connect = useCallback(() => {
-    try { localStorage.setItem(ENABLED_KEY, '1') } catch { /* private mode */ }
+    setSettingRef.current?.('monitor_enabled', true)
     setEnabled(true)
   }, [])
 
@@ -252,7 +251,7 @@ export function useTarkovMonitor({ onMap, onPosition } = {}) {
   }, [])
 
   const disconnect = useCallback(() => {
-    try { localStorage.setItem(ENABLED_KEY, '0') } catch { /* private mode */ }
+    setSettingRef.current?.('monitor_enabled', false)
     setEnabled(false)
     reset()
   }, [reset])
@@ -260,7 +259,7 @@ export function useTarkovMonitor({ onMap, onPosition } = {}) {
   // Invalidates the old code immediately — the socket effect tears down and reopens.
   const regenerate = useCallback(() => {
     const fresh = generateMonitorCode()
-    try { localStorage.setItem(CODE_KEY, fresh) } catch { /* private mode */ }
+    setSettingRef.current?.('monitor_code', fresh)
     setCode(fresh)
     reset()
   }, [reset])

@@ -15,8 +15,8 @@
 import { FEATURED } from './constants'
 import { TARKOV_MAP_CONFIGS } from './data/tarkovMapConfigs'
 import { MAP_FLOORS } from './data/mapFloors'
+import { SYSTEM_DEFAULTS } from './settings'
 
-export const PING_TTL_MS   = 10 * 60 * 1000  // hard prune — past the ghost tier
 export const PING_MAX      = 24              // cap on the stored array
 // The replay log is a *second* store and is deliberately not age-pruned: the
 // live array exists to be small and current, and a record that forgot the first
@@ -211,17 +211,18 @@ function validPing(p) {
  * grow without bound, and again on read so another client's stale rows do not
  * paint.
  */
-export function prunePings(pings, now = Date.now()) {
+export function prunePings(pings, now = Date.now(), ttl = SYSTEM_DEFAULTS.ping_ttl_ms) {
   if (!Array.isArray(pings)) return []
+  const effectiveTtl = Number.isFinite(ttl) ? ttl : SYSTEM_DEFAULTS.ping_ttl_ms
   return pings
-    .filter(p => validPing(p) && now - p.at < PING_TTL_MS)
+    .filter(p => validPing(p) && now - p.at < effectiveTtl)
     .sort((a, b) => a.at - b.at)
     .slice(-PING_MAX)
 }
 
 // Newest-first, current map only. What the map layer and the ping strip render.
-export function activePings(pings, mapNorm, now = Date.now()) {
-  return prunePings(pings, now).filter(p => p.map === mapNorm).reverse()
+export function activePings(pings, mapNorm, now = Date.now(), ttl = SYSTEM_DEFAULTS.ping_ttl_ms) {
+  return prunePings(pings, now, ttl).filter(p => p.map === mapNorm).reverse()
 }
 
 // ─── Post-raid replay — Phase 8 ──────────────────────────────────────────────

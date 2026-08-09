@@ -1,6 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from './supabase'
 import { prunePings, appendLog } from './tarkovPings'
+import { resolveSetting } from './settings'
+import {
+  beginRaid,
+  getRaidId,
+  getRaidSettings,
+  preserveRaidState,
+  raidIdChanged,
+  withRaidSettings,
+} from './raidState'
 
 // One failed `ping_log` write disables the rest for the session. The column is a
 // Phase 8 migration that may not be applied yet, and a per-ping write that
@@ -18,23 +27,57 @@ async function fetchParty(code) {
   return data
 }
 
-export function useParty() {
+function isUniqueViolation(error) {
+  return error?.code === '23505' || /duplicate|unique/i.test(error?.message || '')
+}
+
+function memberCount(party) {
+  return Object.keys(party?.members || {}).length
+}
+
+function maxMembersFor(party, userSettings) {
+  const value = Number(resolveSetting('max_members', {
+    raid: getRaidSettings(party?.progress),
+    unit: null,
+    user: userSettings,
+  }))
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 8
+}
+
+export function useParty(userSettings = {}) {
   const [party, setParty]     = useState(null)
   const [myName, setMyName]   = useState('')
   const [error, setError]     = useState('')
   const [loading, setLoading] = useState(false)
   const [partyCode, setPartyCode] = useState(null)
+  const [onlineMembers, setOnlineMembers] = useState([])
+  const [presenceReady, setPresenceReady] = useState(false)
   const codeRef         = useRef(null)
   const partyRef        = useRef(null)   // always mirrors party state — safe to read in callbacks
   const savedQuestsRef  = useRef([])
   const prevMapNormRef  = useRef(null)
   const myNameRef       = useRef('')
   const pendingFieldsRef = useRef(new Set())  // fields currently being written to DB
+  const userSettingsRef = useRef(userSettings)
+  const onlineMembersRef = useRef([])
+  const presenceReadyRef = useRef(false)
 
   // Keep refs in sync
+  useEffect(() => { userSettingsRef.current = userSettings || {} }, [userSettings])
+
   function applyParty(data) {
-    partyRef.current = data
-    setParty(data)
+    if (!data) {
+      partyRef.current = data
+      setParty(data)
+      return
+    }
+    const current = partyRef.current
+    const sameParty = current?.code && data.code && current.code === data.code
+    const next = sameParty
+      ? { ...data, progress: preserveRaidState(data.progress, current.progress) }
+      : data
+    partyRef.current = next
+    setParty(next)
   }
 
   useEffect(() => { myNameRef.current = myName }, [myName])
@@ -56,8 +99,37 @@ export function useParty() {
       applyParty(merged)
     }, 5000)
 
+    function namesFromPresence(channel) {
+      const names = new Set()
+      const state = channel.presenceState() || {}
+      Object.values(state).flat().forEach(meta => {
+        const name = meta?.callsign || meta?.name
+        if (typeof name === 'string' && name) names.add(name)
+      })
+      return [...names]
+    }
+
+    // Presence drives the online indicator and nothing else. It deliberately
+    // does not evict: a presence `leave` fires on any transient disconnect — a
+    // backgrounded tab, a wifi blip, a suspended laptop — and a 40-minute raid
+    // produces plenty of those. Removing the member would delete their quest
+    // list from the party row, so a dropped packet would cost a squadmate their
+    // state mid-raid. A ghost name in the member list is the cheaper failure.
+    // Real eviction needs a server-side `last_seen` with a grace window; that is
+    // `cleanup_stale()` in supabase/10a2_05_lifecycle.sql, and it lands with A2.
+    function updatePresence(channel) {
+      const next = namesFromPresence(channel)
+      onlineMembersRef.current = next
+      setOnlineMembers(next)
+      presenceReadyRef.current = true
+      setPresenceReady(true)
+    }
+
     const channel = supabase
-      .channel(`party-${code}`)
+      .channel(`party-${code}`, { config: { presence: { key: myNameRef.current || code } } })
+      .on('presence', { event: 'sync' }, () => updatePresence(channel))
+      .on('presence', { event: 'join' }, () => updatePresence(channel))
+      .on('presence', { event: 'leave' }, () => updatePresence(channel))
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'parties', filter: `code=eq.${code}` },
         payload => {
           if (!payload.new) return
@@ -75,9 +147,23 @@ export function useParty() {
           })
           applyParty(merged)
         })
-      .subscribe()
+      .subscribe(async status => {
+        if (status !== 'SUBSCRIBED') return
+        try {
+          await channel.track({ callsign: myNameRef.current })
+        } catch {
+          // Realtime presence is best-effort; the party row remains usable.
+        }
+      })
 
-    return () => { clearInterval(poll); supabase.removeChannel(channel) }
+    return () => {
+      clearInterval(poll)
+      presenceReadyRef.current = false
+      onlineMembersRef.current = []
+      setPresenceReady(false)
+      setOnlineMembers([])
+      supabase.removeChannel(channel)
+    }
   }, [partyCode]) // eslint-disable-line
 
   // When the leader switches maps, non-leaders refresh their own quest list for the new map
@@ -134,7 +220,6 @@ export function useParty() {
   const createParty = useCallback(async (name, savedQuests = []) => {
     setLoading(true); setError('')
     savedQuestsRef.current = savedQuests
-    const code = mkCode()
 
     const myQuests = savedQuests
       .filter(q => !q.map_norm)
@@ -145,18 +230,29 @@ export function useParty() {
     const starred = {}
     savedQuests.filter(q => q.important).forEach(q => { starred[q.quest_id] = true })
 
-    const newParty = {
-      code, leader: name,
-      map_id: null, map_name: null, map_norm: null,
-      members: { [name]: myQuests },
-      member_quests_all: { [name]: allQuests },
-      spawn: null,
-      progress: {},
-      starred,
-      drawings: [],
+    let data = null
+    let err = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const code = mkCode()
+      const newParty = {
+        code, leader: name,
+        map_id: null, map_name: null, map_norm: null,
+        members: { [name]: myQuests },
+        member_quests_all: { [name]: allQuests },
+        spawn: null,
+        progress: {},
+        starred,
+        drawings: [],
+      }
+      const result = await supabase.from('parties').insert(newParty).select().single()
+      if (!result.error) {
+        data = result.data
+        break
+      }
+      err = result.error
+      if (!isUniqueViolation(err)) break
     }
-    const { data, error: err } = await supabase.from('parties').insert(newParty).select().single()
-    if (err) { setError('Failed to create party. Check your Supabase setup.'); setLoading(false); return false }
+    if (err && !data) { setError('Failed to create party. Check your Supabase setup.'); setLoading(false); return false }
     codeRef.current = data.code
     setPartyCode(data.code)
     myNameRef.current = name
@@ -171,6 +267,13 @@ export function useParty() {
 
     const { data: existing, error: fetchErr } = await supabase.from('parties').select().eq('code', code).single()
     if (fetchErr || !existing) { setError('Party not found — check the code.'); setLoading(false); return false }
+
+    if (!existing.members?.[name] && memberCount(existing) >= maxMembersFor(existing, userSettingsRef.current)) {
+      const max = maxMembersFor(existing, userSettingsRef.current)
+      setError(`Party is full (max ${max} members).`)
+      setLoading(false)
+      return false
+    }
 
     const existingMine = existing.members?.[name] || []
     const saved = savedQuests
@@ -207,6 +310,13 @@ export function useParty() {
     // Fetch the party first so we know the current map for quest filtering
     const { data: existing, error: fetchErr } = await supabase.from('parties').select().eq('code', code).single()
     if (fetchErr || !existing) { setError('Party not found — check the code.'); setLoading(false); return false }
+
+    if (!existing.members?.[name] && memberCount(existing) >= maxMembersFor(existing, userSettingsRef.current)) {
+      const max = maxMembersFor(existing, userSettingsRef.current)
+      setError(`Party is full (max ${max} members).`)
+      setLoading(false)
+      return false
+    }
 
     // Compute only this user's quests — server function will set just this key
     const existingMine = existing.members?.[name] || []
@@ -286,7 +396,8 @@ export function useParty() {
 
     // Optimistic update — only patch leader's own entry, preserve other members
     const optimisticMembers = { ...prev.members, [name]: merged }
-    const optimisticChanges = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: {}, starred: {}, drawings: [], markers: [], pings: [], ping_log: [] }
+    const optimisticProgress = preserveRaidState({}, prev.progress)
+    const optimisticChanges = { map_id: map.id, map_name: map.name, map_norm: map.normalizedName, spawn: null, progress: optimisticProgress, starred: {}, drawings: [], markers: [], pings: [] }
     applyParty({ ...prev, ...optimisticChanges, members: optimisticMembers })
 
     // RPC updates only the leader's members entry via jsonb_set — other members' entries untouched
@@ -303,12 +414,17 @@ export function useParty() {
       // updated their quests since then. Preserve their current in-memory entries and
       // only take the leader's own entry from the authoritative RPC result.
       const current = partyRef.current || {}
+      const progress = preserveRaidState(data[0].progress, prev.progress)
       applyParty({
         ...data[0],
+        progress,
         members: { ...(current.members || {}), [name]: (data[0].members || {})[name] || [] },
       })
+      if (JSON.stringify(progress) !== JSON.stringify(data[0].progress || {})) {
+        updatePartyDB({ progress })
+      }
     }
-  }, [])
+  }, [updatePartyDB])
 
   const addQuest = useCallback((quest) => {
     const prev = partyRef.current
@@ -389,10 +505,23 @@ export function useParty() {
     updatePartyDB({ progress })
   }, [updatePartyDB])
 
+  const setRaidSettings = useCallback((changes) => {
+    const prev = partyRef.current
+    if (!prev || prev.leader !== myNameRef.current) return
+    const settings = { ...getRaidSettings(prev.progress), ...(changes || {}) }
+    const progress = withRaidSettings(prev.progress, settings)
+    applyParty({ ...prev, progress })
+    updatePartyDB({ progress })
+  }, [updatePartyDB])
+
   const addStroke = useCallback((stroke) => {
     const prev = partyRef.current
     if (!prev) return
-    const drawings = [...(prev.drawings || []), stroke]
+    const drawings = [...(prev.drawings || []), {
+      ...stroke,
+      created_at: stroke?.created_at ?? Date.now(),
+      raid_id: stroke?.raid_id ?? getRaidId(prev.progress),
+    }]
     applyParty({ ...prev, drawings })
     updatePartyDB({ drawings })
   }, [updatePartyDB])
@@ -409,7 +538,11 @@ export function useParty() {
   const addMarker = useCallback((marker) => {
     const prev = partyRef.current
     if (!prev) return
-    const markers = [...(prev.markers || []), marker]
+    const markers = [...(prev.markers || []), {
+      ...marker,
+      created_at: marker?.created_at ?? Date.now(),
+      raid_id: marker?.raid_id ?? getRaidId(prev.progress),
+    }]
     applyParty({ ...prev, markers })
     updatePartyDB({ markers })
   }, [updatePartyDB])
@@ -448,7 +581,12 @@ export function useParty() {
   const addPing = useCallback((ping) => {
     const prev = partyRef.current
     if (!prev) return
-    const pings = prunePings([...(prev.pings || []), ping])
+    const ttl = Number(resolveSetting('ping_ttl_ms', {
+      raid: getRaidSettings(prev.progress),
+      unit: null,
+      user: userSettingsRef.current,
+    }))
+    const pings = prunePings([...(prev.pings || []), ping], Date.now(), Number.isFinite(ttl) ? ttl : undefined)
     applyParty({ ...prev, pings })
     updatePartyDB({ pings })
     setPingLog(appendLog(prev.ping_log, ping))
@@ -472,14 +610,28 @@ export function useParty() {
 
   const startRaid = useCallback((ts = Date.now()) => {
     const prev = partyRef.current
-    if (!prev) return
-    const progress = { ...(prev.progress || {}), '__raid_start__': ts }
-    applyParty({ ...prev, progress })
-    updatePartyDB({ progress })
-    // A new raid is a new replay. Last raid's track scrubbing over this raid's
-    // map would be worse than having no replay at all.
-    setPingLog([])
-  }, [updatePartyDB, setPingLog])
+    if (!prev || prev.leader !== myNameRef.current) return
+    const progress = beginRaid(prev.progress, ts)
+    const settings = getRaidSettings(prev.progress)
+    const markerScope = resolveSetting('marker_scope', { raid: settings, unit: null, user: userSettingsRef.current })
+    const drawingScope = resolveSetting('drawing_scope', { raid: settings, unit: null, user: userSettingsRef.current })
+    const changes = {
+      progress,
+      pings: [],
+      ...(raidIdChanged(prev.progress, progress) ? { ping_log: [] } : {}),
+      ...(markerScope === 'raid' ? { markers: [] } : {}),
+      ...(drawingScope === 'raid' ? { drawings: [] } : {}),
+    }
+    applyParty({ ...prev, ...changes })
+    updatePartyDB(changes)
+  }, [updatePartyDB])
+
+  const sweepEphemeral = useCallback((changes) => {
+    const prev = partyRef.current
+    if (!prev || prev.leader !== myNameRef.current || !changes) return
+    applyParty({ ...prev, ...changes })
+    updatePartyDB(changes)
+  }, [updatePartyDB])
 
   const refreshParty = useCallback(async () => {
     if (!codeRef.current) return
@@ -554,7 +706,7 @@ export function useParty() {
   }, [updatePartyDB])
 
   return {
-    party, myName, error, loading,
+    party, myName, error, loading, onlineMembers, presenceReady,
     createParty, joinParty, forceJoinParty,
     selectMap, addQuest, removeQuest, setSpawn,
     toggleObjective, toggleStar, toggleComplete, submitMyProgress,
@@ -563,6 +715,6 @@ export function useParty() {
     addMarker, clearMyMarkers,
     addPing, clearPings,
     leaveParty, setError,
-    syncSavedQuests, refreshParty, startRaid,
+    syncSavedQuests, refreshParty, startRaid, setRaidSettings, sweepEphemeral,
   }
 }

@@ -268,6 +268,8 @@ export default function MapLeaflet({
   myName, memberNames = [],
   myQuests = [], memberQuests = {}, tasks = [],
   progress = {},
+  pingTtlMs,
+  replayEnabled = true,
   onAddStroke, onClearMyStrokes,
   onAddMarker, onClearMyMarkers,
   onClearPings,
@@ -383,6 +385,8 @@ export default function MapLeaflet({
     allIntel,
     isChecked,
     hideReplay,
+    replayEnabled,
+    pingTtlMs,
     enabled: !sharedPingState,
   })
   const {

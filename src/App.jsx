@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useAuth } from './useAuth'
+import { hasGoogleIdentity, useAuth } from './useAuth'
 import { useParty } from './useParty'
+import { useSettings } from './useSettings'
 import { useUserQuests } from './useUserQuests'
 import { useFriends } from './useFriends'
 import AuthScreen from './components/AuthScreen'
@@ -15,8 +16,10 @@ export default function App() {
   const {
     user, profile, loading: authLoading,
     error: authError, setError: setAuthError,
-    register, login, logout, loginWithGoogle, createProfile,
+    migrateLegacy, logout, loginWithGoogle, createProfile,
   } = useAuth()
+
+  const { settings: userSettings, setSetting: setUserSetting } = useSettings(user?.id, profile?.callsign)
 
   const {
     quests: userQuests, loading: questsLoading,
@@ -37,7 +40,9 @@ export default function App() {
     addPing, clearPings,
     leaveParty, setError: setPartyError,
     syncSavedQuests, refreshParty, startRaid,
-  } = useParty()
+    onlineMembers, presenceReady,
+    setRaidSettings, sweepEphemeral,
+  } = useParty(userSettings)
 
   // Keep the party hook's savedQuestsRef in sync — quests may load after joining
   useEffect(() => {
@@ -129,14 +134,10 @@ export default function App() {
   }
 
   if (!user || !profile) {
-    async function handleAuth(mode, callsign, password) {
-      if (mode === 'register') return await register(callsign, password)
-      return await login(callsign, password)
-    }
     return (
       <AuthScreen
-        onAuth={handleAuth}
         onGoogleLogin={loginWithGoogle}
+        onMigrate={migrateLegacy}
         onCreateProfile={createProfile}
         needsCallsign={!!user && !profile}
         error={authError}
@@ -226,6 +227,12 @@ export default function App() {
         onSubmitProgress={handleSubmitProgress}
         onQuestComplete={handleQuestComplete}
         userObjProgress={userObjProgress}
+        userSettings={userSettings}
+        onSetUserSetting={setUserSetting}
+        onlineMembers={onlineMembers}
+        presenceReady={presenceReady}
+        onSetRaidSettings={setRaidSettings}
+        onSweepEphemeral={sweepEphemeral}
         skippedQuestIds={new Set(userQuests.filter(q => q.skipped).map(q => q.quest_id))}
         onAddStroke={addStroke}
         onClearMyStrokes={clearMyStrokes}
@@ -282,6 +289,7 @@ export default function App() {
   return (
     <Lobby
       callsign={profile.callsign}
+      googleLinked={hasGoogleIdentity(user)}
       onEnter={handleEnter}
       onForceJoin={handleForceJoin}
       onManageQuests={() => setScreen('myquests')}

@@ -1,11 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { supabase } from '../supabase'
 
-export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, onLogout, onAdmin, isAdmin, error, loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
+export default function Lobby({ callsign, googleLinked = true, onEnter, onForceJoin, onManageQuests, onLogout, onAdmin, isAdmin, error, loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const [mode, setMode]         = useState('home')
   const [code, setCode]         = useState('')
   const [local, setLocal]       = useState('')
-  const [lastCode, setLastCode] = useState(() => localStorage.getItem('lastPartyCode'))
-  const [forceCode, setForceCode] = useState(null)  // code to offer force-join on "already in party" error
+  const [lastCode, setLastCode] = useState(() => {
+    try { return localStorage.getItem('lastPartyCode') } catch { return null }
+  })
+  const [rejoinLookup, setRejoinLookup] = useState('loading')
   const [friendJoinCode, setFriendJoinCode] = useState(null)  // tracks which friend party was attempted
   const [confirmUnfriend, setConfirmUnfriend] = useState(null)
   const [showFriends, setShowFriends] = useState(false)
@@ -13,6 +16,39 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
   const [addError, setAddError] = useState('')
   const [addBusy, setAddBusy]   = useState(false)
   const [addSuccess, setAddSuccess] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    let hint = null
+    try { hint = localStorage.getItem('lastPartyCode') } catch { /* offline hint is optional */ }
+    if (hint) setLastCode(hint)
+
+    async function findCurrentParty() {
+      // The JSONB key lookup is supported by the current parties schema. The
+      // local value remains only as an offline hint while this query runs.
+      const { data, error: lookupError } = await supabase
+        .from('parties')
+        .select('code')
+        .filter('members', 'cs', JSON.stringify({ [callsign]: [] }))
+        .order('created_at', { ascending: false })
+        .limit(1)
+      if (cancelled) return
+      if (lookupError) {
+        setRejoinLookup('offline')
+        return
+      }
+      const currentCode = data?.[0]?.code || null
+      setLastCode(currentCode)
+      setRejoinLookup('ready')
+      try {
+        if (currentCode) localStorage.setItem('lastPartyCode', currentCode)
+        else localStorage.removeItem('lastPartyCode')
+      } catch { /* offline hint is optional */ }
+    }
+
+    findCurrentParty()
+    return () => { cancelled = true }
+  }, [callsign])
 
   async function handleSendRequest() {
     if (!addInput.trim()) return
@@ -34,7 +70,7 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
   function join() {
     const c = code.trim().toUpperCase()
     if (!c) { setLocal('Enter a party code'); return }
-    setLocal(''); setForceCode(null); setFriendJoinCode(null); onEnter('join', c)
+    setLocal(''); setFriendJoinCode(null); onEnter('join', c)
   }
 
   const err = local || error
@@ -75,6 +111,13 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
           </div>
         </div>
 
+        {!googleLinked && (
+          <div className="card legacy-auth-banner fade-in">
+            <div className="mono legacy-auth-title">LEGACY PASSWORD ACCOUNT</div>
+            <div className="mono legacy-auth-copy">GOOGLE SIGN-IN IS RECOMMENDED. LOG OUT TO MIGRATE THIS ACCOUNT WITHOUT LOSING YOUR PROFILE, QUESTS OR FRIENDSHIPS.</div>
+          </div>
+        )}
+
         {autoJoinCode && (
           <div className="card fade-in" style={{ padding: 20, textAlign: 'center', marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
@@ -92,7 +135,7 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
 
         {lastCode && !autoJoinCode && (
           <div className="card fade-in" style={{ padding: '14px 16px', marginBottom: 12, borderColor: 'var(--golddim)' }}>
-            <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginBottom: 6 }}>LAST PARTY</div>
+            <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginBottom: 6 }}>{rejoinLookup === 'offline' ? 'OFFLINE REJOIN HINT' : 'ACTIVE PARTY'}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="mono" style={{ fontSize: 20, color: 'var(--gold)', letterSpacing: '0.2em', flex: 1 }}>{lastCode}</span>
               <button className="btn-gold btn-sm" disabled={loading}
@@ -100,7 +143,7 @@ export default function Lobby({ callsign, onEnter, onForceJoin, onManageQuests, 
                 REJOIN
               </button>
               <button className="btn-danger btn-sm"
-                onClick={() => { localStorage.removeItem('lastPartyCode'); setLastCode(null) }}>
+                onClick={() => { try { localStorage.removeItem('lastPartyCode') } catch {} setLastCode(null) }}>
                 LEAVE
               </button>
             </div>
