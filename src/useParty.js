@@ -444,7 +444,13 @@ export function useParty(userId, userSettings = {}, {
       if (atomicRpcWritable[rpcName]) {
         const result = await supabase.rpc(rpcName, params)
         if (!result.error) {
-          if (result.data) applyParty(result.data)
+          if (result.data) {
+            const current = partyRef.current
+            const preservesChildPings = pingEventsWritable && !fieldNames.includes('pings')
+            applyParty(preservesChildPings && current
+              ? { ...result.data, pings: current.pings, ping_log: current.ping_log }
+              : result.data)
+          }
           else console.warn(`${rpcName} returned no authoritative party snapshot`)
           return result
         }
@@ -856,9 +862,42 @@ export function useParty(userId, userSettings = {}, {
       Date.now(),
       Number.isFinite(ttl) ? ttl : undefined,
     )
-    const pingLog = appendLog(current.ping_log, enriched)
-    applyParty({ ...current, pings, ping_log: pingLog })
+    applyParty({ ...current, pings })
 
+    // Prefer the normalized child-table path from 10_08_party_ping_events: it
+    // deduplicates monitor events and avoids broadcasting the whole JSON array.
+    // The JSON atomic RPC remains the compatibility path when that migration is
+    // unavailable, and its own legacy fallback covers either deploy order.
+    if (pingEventsWritable) {
+      const { data: stored, error: eventError } = await supabase.rpc('append_party_ping', {
+        p_code: current.code,
+        p_raid_id: Number(current.raid_id) || 0,
+        p_ping: enriched,
+      })
+      const storedPing = pingFromEvent(stored)
+      if (!eventError && storedPing) {
+        const latest = partyRef.current
+        if (latest?.id === current.id && Number(latest.raid_id || 0) === Number(current.raid_id || 0)) {
+          const latestTtl = Number(resolveSetting('ping_ttl_ms', {
+            raid: latest.settings || {}, unit: null, user: userSettingsRef.current,
+          }))
+          const mergedPings = prunePings(
+            [...(latest.pings || []), storedPing],
+            Date.now(),
+            Number.isFinite(latestTtl) ? latestTtl : undefined,
+          )
+          const mergedLog = latest.ping_log?.some(existing => existing.id === storedPing.id)
+            ? latest.ping_log
+            : appendLog(latest.ping_log, storedPing)
+          applyParty({ ...latest, pings: mergedPings, ping_log: mergedLog })
+        }
+        return
+      }
+      pingEventsWritable = false
+      if (eventError) console.warn('party_ping_events unavailable; using atomic JSON ping storage', eventError)
+    }
+
+    const pingLog = appendLog(current.ping_log, enriched)
     return runAtomicPartyWrite(
       'append_ping',
       { p_code: codeRef.current, p_ping: enriched },
