@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&family=Noto+Sans:wght@300;400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -68,6 +67,29 @@ button {
 .btn-active { background: var(--golddim) !important; color: var(--gold) !important; border-color: var(--golddim) !important; }
 
 .card { background: var(--sur); border: 1px solid var(--brd); border-radius: 6px; }
+
+.app-route-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.app-route-overlay-hidden { display: none; }
+.app-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, .72);
+}
+.app-confirm-dialog { width: min(100%, 360px); padding: 20px; }
+.app-confirm-dialog h2 { color: var(--goldtx); font-size: 22px; }
+.app-confirm-dialog p { margin-top: 6px; color: var(--txm); }
+.app-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 
 select {
   background: var(--sur2);

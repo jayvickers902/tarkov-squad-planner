@@ -22,6 +22,9 @@ import {
   adaptMapBundle,
   adaptMaps,
   adaptBosses,
+  adaptZones,
+  adaptLoot,
+  buildItemIndex,
   adaptSpawns,
   adaptExtracts,
   adaptKeys,
@@ -115,6 +118,7 @@ async function main() {
   const raw = await fetchAll(['maps', 'maps_en', 'items', 'items_en', 'tasks', 'tasks_en', 'traders', 'traders_en'])
 
   const bundle = raw.maps && raw.maps_en ? adaptMapBundle(raw.maps, raw.maps_en) : null
+  const itemIndex = raw.items && raw.items_en ? buildItemIndex(raw.items, raw.items_en) : null
   if (!bundle) warn('map bundle unavailable — maps, bosses, spawns and intel will keep their committed copies')
 
   console.log('prebake: writing src/data/prebaked/')
@@ -128,9 +132,54 @@ async function main() {
     await keepExisting('maps.json', 'map bundle unavailable')
   }
 
-  // bosses.json — resolved boss names + numeric spawnChance + portraits.
+  // zones.json — all map geometry that can be rendered without item prices.
+  const zones = bundle
+    ? adaptZones(bundle).filter(map => FEATURED.includes(map.normalizedName))
+    : null
+  if (zones) {
+    const zoneCounts = {
+      maps: zones.length,
+      records: 0,
+      extracts: 0,
+      transits: 0,
+      btrStops: 0,
+      switches: 0,
+      hazards: 0,
+      locks: 0,
+    }
+    for (const map of zones) {
+      for (const key of ['extracts', 'transits', 'btrStops', 'switches', 'hazards', 'locks']) {
+        zoneCounts[key] += map[key].length
+        zoneCounts.records += map[key].length
+      }
+    }
+    await emit('zones.json', zones, zoneCounts)
+  } else {
+    await keepExisting('zones.json', 'map bundle unavailable')
+  }
+
+  // loot.json — high-value loose-loot index; the full item pool stays out.
+  const loot = bundle && itemIndex
+    ? adaptLoot(raw.maps, raw.items, raw.items_en, itemIndex)
+      .filter(map => FEATURED.includes(map.normalizedName))
+    : null
+  if (loot) {
+    const pointCount = loot.reduce((total, map) => total + map.points.length, 0)
+    const itemCount = new Set(loot.flatMap(map => map.items.map(item => item.id))).size
+    await emit('loot.json', loot, { maps: loot.length, points: pointCount, items: itemCount })
+  } else {
+    await keepExisting('loot.json', 'map or item data unavailable')
+  }
+
+  // bosses.json — resolved boss data, with item joins when the item payload exists.
   if (bundle) {
-    const bosses = adaptBosses(bundle)
+    let bosses
+    if (itemIndex) {
+      bosses = adaptBosses(bundle, itemIndex)
+    } else {
+      warn('bosses.json: items or item translations unavailable — writing bundle-only boss data')
+      bosses = adaptBosses(bundle)
+    }
     const bossCount = bosses.maps.reduce((total, map) => total + map.bosses.length, 0)
     await emit('bosses.json', bosses, { maps: bosses.maps.length, bosses: bossCount, portraits: Object.keys(bosses.portraits).length })
   } else {

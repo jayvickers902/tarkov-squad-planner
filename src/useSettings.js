@@ -92,6 +92,7 @@ function cleanSettings(value) {
 export function useSettings(userId, callsign) {
   const [settings, setSettings] = useState(() => readLocalSettings(userId, callsign))
   const [loading, setLoading] = useState(Boolean(userId))
+  const [loadedUserId, setLoadedUserId] = useState(null)
   const userIdRef = useRef(userId)
   const callsignRef = useRef(callsign)
   const settingsRef = useRef(settings)
@@ -107,6 +108,7 @@ export function useSettings(userId, callsign) {
     settingsRef.current = local
 
     if (!userId) {
+      setLoadedUserId(null)
       setLoading(false)
       return () => { cancelled = true }
     }
@@ -121,6 +123,7 @@ export function useSettings(userId, callsign) {
         if (cancelled) return
         if (error) {
           // The cache is still useful during a transient network failure.
+          setLoadedUserId(userId)
           setLoading(false)
           return
         }
@@ -129,6 +132,7 @@ export function useSettings(userId, callsign) {
         setSettings(next)
         writeCachedSettings(userId, next)
         writeLegacyCache(next, userId, callsign)
+        setLoadedUserId(userId)
         setLoading(false)
       })
 
@@ -156,5 +160,9 @@ export function useSettings(userId, callsign) {
     return next
   }, [])
 
-  return { settings, loading, setSetting }
+  return {
+    settings,
+    loading: Boolean(userId) && (loading || loadedUserId !== userId),
+    setSetting,
+  }
 }

@@ -156,6 +156,52 @@ function itemReference(id, itemTranslations, itemMetadata = {}) {
   }
 }
 
+function referenceId(value) {
+  return typeof value === 'object' ? value?.id : value
+}
+
+function roundCoordinate(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return null
+  const rounded = Number(number.toFixed(2))
+  return Object.is(rounded, -0) ? 0 : rounded
+}
+
+function normalizePosition(position) {
+  if (!position || typeof position !== 'object') return null
+  const x = roundCoordinate(position.x)
+  const y = roundCoordinate(position.y)
+  const z = roundCoordinate(position.z)
+  if (x == null || y == null || z == null) return null
+  return { x, y, z }
+}
+
+function normalizeOutline(outline) {
+  return values(outline)
+    .map(normalizePosition)
+    .filter(Boolean)
+}
+
+// Ground Zero has a level-capped and a 21+ map record upstream. The featured
+// name is fixed at `ground-zero`, so every projection must prefer the 21+
+// record and alias it to that name when both variants are present.
+function aliasGroundZeroMaps(maps) {
+  const selected = new Map()
+  for (const map of maps) {
+    if (!map?.normalizedName) continue
+    const normalizedName = map.normalizedName === 'ground-zero-21'
+      ? 'ground-zero'
+      : map.normalizedName
+    const candidate = normalizedName === map.normalizedName
+      ? map
+      : { ...map, normalizedName }
+    if (!selected.has(normalizedName) || map.normalizedName === 'ground-zero-21') {
+      selected.set(normalizedName, candidate)
+    }
+  }
+  return [...selected.values()]
+}
+
 function normalizeIds(value) {
   if (Array.isArray(value)) return value
   if (value == null) return []
@@ -230,14 +276,30 @@ function adaptObjective(objective, mapsById, taskTranslations, itemTranslations)
 
 export function adaptMapBundle(raw, translations) {
   const mapsById = byId(raw, 'maps')
-  const mobsById = byId(raw, 'mobs')
   const maps = Object.values(mapsById).map(map => ({
     id: map.id,
     name: translated(translations, map.name) || map.name || map.id,
     normalizedName: map.normalizedName,
-    bosses: (map.bosses || []).map(boss => ({
+    bosses: values(map.bosses).map(boss => ({
       spawnChance: Number(boss.spawnChance) || 0,
-      mob: boss.mob,
+      mob: referenceId(boss.mob),
+      spawnLocations: values(boss.spawnLocations).map(location => ({
+        name: translated(translations, location.name) || location.name || '',
+        chance: location.chance,
+        positions: values(location.positions)
+          .map(normalizePosition)
+          .filter(Boolean),
+      })),
+      escorts: values(boss.escorts).map(escort => ({
+        mob: referenceId(escort.mob),
+        amount: values(escort.amount).map(amount => ({
+          chance: amount.chance,
+          count: amount.count,
+        })),
+      })),
+      spawnTime: boss.spawnTime ?? null,
+      spawnTimeRandom: boss.spawnTimeRandom ?? false,
+      spawnTrigger: boss.spawnTrigger ?? null,
     })),
     spawns: (map.spawns || []).map(spawn => {
       const sides = Array.isArray(spawn.sides) ? spawn.sides : []
@@ -251,22 +313,104 @@ export function adaptMapBundle(raw, translations) {
         zoneName: spawn.zoneName,
       }
     }).filter(Boolean),
-    extracts: (map.extracts || []).map(extract => {
-      if (!extract?.position || !Number.isFinite(extract.position.x) || !Number.isFinite(extract.position.z)) return null
+    extracts: values(map.extracts).map(extract => {
+      const position = normalizePosition(extract.position)
+      if (!position) return null
+      const switchIds = [...new Set([
+        typeof extract.switch === 'string' ? extract.switch : null,
+        ...values(extract.switches),
+      ].filter(value => typeof value === 'string' && value))]
       return {
         id: extract.id || `${map.normalizedName}-${extract.name || 'extract'}-${extract.position.x}-${extract.position.z}`,
-        name: extract.name || 'Unknown extract',
-        faction: extract.faction || null,
-        position: extract.position,
-        top: Number.isFinite(extract.top) ? extract.top : null,
-        bottom: Number.isFinite(extract.bottom) ? extract.bottom : null,
+        name: translated(translations, extract.name) || extract.name || 'Unknown extract',
+        faction: extract.faction || 'shared',
+        position,
+        outline: normalizeOutline(extract.outline),
+        switchIds,
+      }
+    }).filter(Boolean),
+    transits: values(map.transits).map(transit => {
+      const position = normalizePosition(transit.position)
+      if (!position) return null
+      return {
+        id: transit.id,
+        description: translated(translations, transit.description) || transit.description,
+        destination: mapReference(transit.map, mapsById),
+        position,
+        outline: normalizeOutline(transit.outline),
+      }
+    }).filter(Boolean),
+    btrStops: values(map.btrStops).map(stop => {
+      const position = normalizePosition({ x: stop.x, y: stop.y, z: stop.z })
+      if (!position) return null
+      return {
+        name: translated(translations, stop.name) || stop.name,
+        position,
+      }
+    }).filter(Boolean),
+    switches: values(map.switches).map(switchRecord => {
+      const position = normalizePosition(switchRecord.position)
+      if (!position) return null
+      return {
+        id: switchRecord.id,
+        name: translated(translations, switchRecord.name) || switchRecord.name,
+        switchType: switchRecord.switchType,
+        position,
+        activates: values(switchRecord.activates).map(activation => ({
+          operation: activation.operation,
+          extract: activation.extract,
+        })),
+      }
+    }).filter(Boolean),
+    hazards: values(map.hazards).map(hazard => {
+      const position = normalizePosition(hazard.position)
+      if (!position) return null
+      return {
+        id: hazard.id,
+        name: translated(translations, hazard.name) || hazard.name,
+        hazardType: hazard.hazardType,
+        position,
+        outline: normalizeOutline(hazard.outline),
+      }
+    }).filter(Boolean),
+    locks: values(map.locks).map(lock => {
+      const position = normalizePosition(lock.position)
+      if (!position) return null
+      return {
+        id: lock.id,
+        lockType: lock.lockType,
+        key: lock.key,
+        needsPower: lock.needsPower ?? false,
+        position,
       }
     }).filter(Boolean),
   }))
-  const mobs = Object.values(mobsById).map(mob => ({
+
+  const mobs = values(raw.mobs).map(mob => ({
     id: mob.id,
     name: translated(translations, mob.name) || mob.name || mob.id,
+    normalizedName: mob.normalizedName || mob.id,
     imagePortraitLink: mob.imagePortraitLink || null,
+    imagePosterLink: mob.imagePosterLink || null,
+    equipment: values(mob.equipment).map(entry => {
+      const item = referenceId(entry.item)
+      return item ? { item } : null
+    }).filter(Boolean),
+    items: values(mob.items).map(entry => {
+      const id = referenceId(entry.id ?? entry.item)
+      if (!id) return null
+      return {
+        id,
+        attributes: {
+          prevalence: entry.attributes?.prevalence,
+        },
+      }
+    }).filter(Boolean),
+    health: values(mob.health).map(part => ({
+      id: part.id,
+      bodyPart: part.bodyPart,
+      max: part.max,
+    })),
   }))
   return { maps, mobs }
 }
@@ -275,18 +419,88 @@ export function adaptMaps(bundle) {
   return bundle.maps.map(({ id, name, normalizedName }) => ({ id, name, normalizedName }))
 }
 
-export function adaptBosses(bundle) {
-  const mobsById = Object.fromEntries(bundle.mobs.map(mob => [mob.id, mob]))
+export function adaptBosses(bundle, itemIndex) {
+  const mobsById = Object.fromEntries(values(bundle?.mobs).map(mob => [mob.id, mob]))
   const portraits = {}
-  const maps = bundle.maps.map(map => ({
+  const maps = aliasGroundZeroMaps(values(bundle?.maps)).map(map => ({
     id: map.id,
     name: map.name,
     normalizedName: map.normalizedName,
-    bosses: map.bosses.map(boss => {
+    bosses: values(map.bosses).map(boss => {
       const mob = mobsById[boss.mob]
       const name = mob?.name || boss.mob
       if (mob?.imagePortraitLink) portraits[name] = mob.imagePortraitLink
-      return { name, spawnChance: boss.spawnChance }
+
+      const healthParts = values(mob?.health)
+      let totalHealth = 0
+      let headHealth = 0
+      for (const part of healthParts) {
+        const max = Number(part?.max)
+        if (!Number.isFinite(max)) continue
+        totalHealth += max
+        if (part.id === 'Head') headHealth = max
+      }
+
+      const adapted = {
+        name,
+        normalizedName: mob?.normalizedName || boss.mob,
+        spawnChance: boss.spawnChance,
+        portrait: mob?.imagePortraitLink || null,
+        poster: mob?.imagePosterLink || null,
+        spawnLocations: values(boss.spawnLocations).map(location => ({
+          name: location.name,
+          chance: location.chance,
+          positions: values(location.positions).map(normalizePosition).filter(Boolean),
+        })),
+        escorts: values(boss.escorts).map(escort => {
+          const escortMob = mobsById[escort.mob]
+          const amount = values(escort.amount)
+            .filter(entry => entry && Number.isFinite(Number(entry.chance)))
+            .reduce((best, entry) => {
+              if (!best || Number(entry.chance) > Number(best.chance)) return entry
+              return best
+            }, null)
+          if (!amount) return null
+          return {
+            name: escortMob?.name || escort.mob,
+            portrait: escortMob?.imagePortraitLink || null,
+            count: amount.count,
+            chance: amount.chance,
+          }
+        }).filter(Boolean),
+        spawnTime: boss.spawnTime ?? null,
+        spawnTimeRandom: boss.spawnTimeRandom ?? false,
+        spawnTrigger: boss.spawnTrigger ?? null,
+        health: { total: totalHealth, head: headHealth },
+      }
+
+      if (itemIndex !== undefined && itemIndex !== null) {
+        let armorClass = null
+        for (const equipment of values(mob?.equipment)) {
+          const item = itemIndex[referenceId(equipment?.item)]
+          if (!Number.isInteger(item?.armorClass)) continue
+          if (armorClass == null || item.armorClass > armorClass) armorClass = item.armorClass
+        }
+        adapted.armorClass = armorClass
+        adapted.drops = values(mob?.items)
+          .map(drop => {
+            const id = referenceId(drop?.id ?? drop?.item)
+            const item = itemIndex[id]
+            const prevalence = Number(drop?.attributes?.prevalence)
+            if (!item || !Number.isFinite(prevalence)) return null
+            return {
+              id,
+              name: item.name,
+              iconLink: item.iconLink,
+              prevalence,
+            }
+          })
+          .filter(Boolean)
+          .sort((a, b) => b.prevalence - a.prevalence)
+          .slice(0, 6)
+      }
+
+      return adapted
     }),
   }))
   return { maps, portraits }
@@ -294,6 +508,27 @@ export function adaptBosses(bundle) {
 
 export function adaptSpawns(bundle) {
   return bundle.maps.map(map => ({ normalizedName: map.normalizedName, spawns: map.spawns }))
+}
+
+export function adaptZones(bundle) {
+  return aliasGroundZeroMaps(values(bundle?.maps)).map(map => {
+    const extracts = values(map.extracts)
+    const transits = values(map.transits)
+    const btrStops = values(map.btrStops)
+    const switches = values(map.switches)
+    const hazards = values(map.hazards)
+    const locks = values(map.locks)
+    if (![extracts, transits, btrStops, switches, hazards, locks].some(collection => collection.length)) return null
+    return {
+      normalizedName: map.normalizedName,
+      extracts,
+      transits,
+      btrStops,
+      switches,
+      hazards,
+      locks,
+    }
+  }).filter(Boolean)
 }
 
 export function adaptExtracts(bundle) {
@@ -323,6 +558,20 @@ export function adaptTasks({ rawTasks, taskTranslations, rawTraders, traderTrans
     const trader = traderId ? tradersById[traderId] : null
     const traderName = translated(traderTranslations, trader?.name || `${traderId} Nickname`) || traderId
     const map = mapReference(task.map, mapsById)
+    const taskRequirements = Array.isArray(task.taskRequirements)
+      ? task.taskRequirements
+        .map(requirement => {
+          const taskId = typeof requirement?.task === 'string' ? requirement.task : null
+          if (!taskId) return null
+          return {
+            taskId,
+            status: Array.isArray(requirement.status)
+              ? requirement.status.filter(status => typeof status === 'string')
+              : [],
+          }
+        })
+        .filter(Boolean)
+      : []
     return {
       id: task.id,
       name: translated(taskTranslations, task.name) || task.name || task.id,
@@ -331,6 +580,7 @@ export function adaptTasks({ rawTasks, taskTranslations, rawTraders, traderTrans
       wikiLink: task.wikiLink || null,
       trader: traderId ? { name: traderName, imageLink: trader?.imageLink || null } : null,
       map,
+      taskRequirements,
       objectives: (task.objectives || []).map(objective => adaptObjective(objective, mapsById, taskTranslations, itemTranslations)),
     }
   })
@@ -364,6 +614,84 @@ export function adaptIntel(rawMaps, itemTranslations) {
   return result
 }
 
+export function buildItemIndex(rawItems, itemTranslations) {
+  const index = {}
+  for (const item of values(rawItems, 'items')) {
+    if (!item?.id) continue
+    const value = Number(item.avg24hPrice || item.lastLowPrice || item.basePrice || 0)
+    const armorClass = Number(item.properties?.class)
+    index[item.id] = {
+      name: translated(itemTranslations, item.name) || item.name || item.id,
+      iconLink: item.iconLink || `https://assets.tarkov.dev/${item.id}-icon.webp`,
+      value: Number.isFinite(value) ? value : 0,
+      armorClass: Number.isInteger(armorClass) ? armorClass : null,
+    }
+  }
+  return index
+}
+
+const HIGH_VALUE_LOOT_THRESHOLD = 150000
+
+export function adaptLoot(rawMaps, rawItems, itemTranslations, ...options) {
+  const itemIndex = options[0] || buildItemIndex(rawItems, itemTranslations)
+  const result = []
+  for (const map of aliasGroundZeroMaps(values(rawMaps, 'maps'))) {
+    const points = []
+    const catalogue = new Map()
+    for (const entry of values(map.lootLoose)) {
+      const position = normalizePosition(entry?.position)
+      const pool = values(entry?.items)
+      const poolIds = pool.map(referenceId).filter(Boolean)
+      if (!position || !poolIds.length) continue
+
+      const hits = [...new Set(poolIds)]
+        .map(id => ({ id, item: itemIndex[id] }))
+        .filter(({ item }) => item && item.value >= HIGH_VALUE_LOOT_THRESHOLD)
+        .map(({ id, item }) => ({ id, name: item.name, value: item.value }))
+        .sort((a, b) => b.value - a.value)
+      if (!hits.length) continue
+
+      points.push({
+        position,
+        items: hits,
+        pool: pool.length,
+        dedicated: pool.length <= 3,
+      })
+      for (const item of hits) {
+        const current = catalogue.get(item.id)
+        catalogue.set(item.id, {
+          id: item.id,
+          name: item.name,
+          value: item.value,
+          count: (current?.count || 0) + 1,
+        })
+      }
+    }
+    if (points.length) {
+      result.push({
+        normalizedName: map.normalizedName,
+        points,
+        items: [...catalogue.values()].sort((a, b) => b.value - a.value),
+      })
+    }
+  }
+  return result
+}
+
+export function adaptGoonReports(rawMaps, bundle) {
+  const mapsById = Object.fromEntries(values(bundle?.maps).map(map => [map.id, map]))
+  return values(rawMaps?.goonReports)
+    .map(report => {
+      const map = mapReference(report.map, mapsById)
+      if (!map) return null
+      return {
+        normalizedName: map.normalizedName,
+        timestamp: Number(report.timestamp),
+      }
+    })
+    .filter(Boolean)
+}
+
 // ─── Runtime loaders ───────────────────────────────────────────────────────
 
 async function getMapBundle(signal) {
@@ -395,6 +723,23 @@ export function getRestSpawns(signal) {
   return loadDataset('spawns', async internalSignal => {
     const bundle = await getMapBundle(internalSignal)
     return adaptSpawns(bundle.data)
+  }, signal)
+}
+
+export function getRestZones(signal) {
+  return loadDataset('zones', async internalSignal => {
+    const bundle = await getMapBundle(internalSignal)
+    return adaptZones(bundle.data)
+  }, signal)
+}
+
+export function getRestGoonReports(signal) {
+  return loadDataset('goon-reports', async internalSignal => {
+    const [rawMaps, bundle] = await Promise.all([
+      loadJson('maps', internalSignal),
+      getMapBundle(internalSignal),
+    ])
+    return adaptGoonReports(rawMaps, bundle.data)
   }, signal)
 }
 

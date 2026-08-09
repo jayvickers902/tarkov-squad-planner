@@ -1,93 +1,30 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { supabase } from '../supabase'
+import { scanImage, warmUpOcr } from '../questOcr'
+import { matchQuestLines } from '../questMatch'
 
-// Compress + encode image to base64 JPEG (max 1920px wide, quality 0.85)
-// Keeps costs down and stays well under Claude's 5MB image limit
-async function compressImage(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    const url = URL.createObjectURL(file)
-    img.onload = () => {
-      URL.revokeObjectURL(url)
-      const MAX = 1280
-      let w = img.naturalWidth, h = img.naturalHeight
-      if (w > MAX || h > MAX) {
-        if (w >= h) { h = Math.round(h * MAX / w); w = MAX }
-        else        { w = Math.round(w * MAX / h); h = MAX }
-      }
-      const canvas = document.createElement('canvas')
-      canvas.width = w; canvas.height = h
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h)
-      canvas.toBlob(blob => {
-        if (!blob) { reject(new Error('Image compression failed')); return }
-        const reader = new FileReader()
-        reader.onload = e => resolve({
-          base64:    e.target.result.split(',')[1],
-          mediaType: 'image/jpeg',
-          previewUrl: URL.createObjectURL(blob),
-        })
-        reader.onerror = reject
-        reader.readAsDataURL(blob)
-      }, 'image/jpeg', 0.75)
-    }
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Invalid image')) }
-    img.src = url
-  })
-}
-
-function normalize(str) {
-  return str.toLowerCase().trim()
-    .replace(/['']/g, "'")
-    .replace(/[–—]/g, '-')   // em dash / en dash → hyphen
-    .replace(/\s+/g, ' ')
-}
-
-// Map display name → normalizedName used in the DB
-const MAP_NORM = {
-  'woods': 'woods', 'customs': 'customs', 'interchange': 'interchange',
-  'shoreline': 'shoreline', 'factory': 'factory', 'lighthouse': 'lighthouse',
-  'streets of tarkov': 'streets-of-tarkov', 'streets': 'streets-of-tarkov',
-  'reserve': 'reserve', 'ground zero': 'ground-zero', 'the lab': 'the-lab', 'labs': 'the-lab',
-}
-
-function normalizeMap(mapStr) {
-  if (!mapStr) return null
-  return MAP_NORM[mapStr.toLowerCase().trim()] ?? null
-}
-
-// Match Claude's returned entries ({name, map}) against the full task list
-function matchTasks(detectedEntries, allTasks) {
-  const results = []
-  const seen = new Set()
-  for (const entry of detectedEntries) {
-    const name = typeof entry === 'string' ? entry : entry?.name
-    const mapNorm = typeof entry === 'string' ? null : normalizeMap(entry?.map)
-    if (!name || typeof name !== 'string') continue
-    const nd = normalize(name)
-    const match =
-      allTasks.find(t => normalize(t.name) === nd) ||
-      allTasks.find(t => normalize(t.name).includes(nd) && nd.length > 4) ||
-      allTasks.find(t => nd.includes(normalize(t.name)) && normalize(t.name).length > 4)
-    if (match && !seen.has(match.id)) {
-      seen.add(match.id)
-      results.push({ ...match, detectedMap: mapNorm })
-    }
-  }
-  return results
+const STAGE_LABEL = {
+  loading:   'DOWNLOADING TEXT ENGINE (ONE TIME)...',
+  preparing: 'PREPARING IMAGE...',
+  reading:   'READING SCREENSHOT...',
 }
 
 export default function QuestScanner({ allTasks, userQuests, onAdd }) {
-  const [open,       setOpen]      = useState(false)
-  const [scanning,   setScanning]  = useState(false)
-  const [error,      setError]     = useState(null)
-  const [results,    setResults]   = useState(null)   // accumulated matched task objects
-  const [selected,   setSelected]  = useState(new Set())
-  const [preview,    setPreview]   = useState(null)
-  const [remaining,  setRemaining] = useState(null)   // scans left this hour
-  const [unmatched,  setUnmatched] = useState([])     // detected but not in tarkov.dev data
-  const [showUpload, setShowUpload] = useState(true)  // controls upload zone visibility
+  const [open,       setOpen]       = useState(false)
+  const [scanning,   setScanning]   = useState(false)
+  const [stage,      setStage]      = useState('preparing')
+  const [progress,   setProgress]   = useState(0)
+  const [error,      setError]      = useState(null)
+  const [results,    setResults]    = useState(null)  // accumulated matched task objects
+  const [selected,   setSelected]   = useState(new Set())
+  const [preview,    setPreview]    = useState(null)
+  const [rawText,    setRawText]    = useState('')    // shown when a scan finds nothing
+  const [showRaw,    setShowRaw]    = useState(false)
+  const [showUpload, setShowUpload] = useState(true)
   const fileRef = useRef()
-  const zoneRef = useRef()
+
+  // Start fetching the wasm core + language model while the user hunts for
+  // their screenshot, so the first scan isn't waiting on a 5MB download.
+  useEffect(() => { if (open) warmUpOcr() }, [open])
 
   // Global paste listener while the scanner is open
   useEffect(() => {
@@ -111,48 +48,41 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
     }
     setError(null)
     setPreview(null)
+    setRawText('')
+    setShowRaw(false)
     setShowUpload(false)
+    setStage('preparing')
+    setProgress(0)
     setScanning(true)
     try {
-      const { base64, mediaType, previewUrl } = await compressImage(file)
-      setPreview(previewUrl)
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Not logged in')
-
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-      const res = await fetch(`${supabaseUrl}/functions/v1/scan-quests`, {
-        method:  'POST',
-        headers: {
-          Authorization:  `Bearer ${session.access_token}`,
-          apikey:         anonKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image: base64, mediaType }),
+      const { lines, text, preview: thumb } = await scanImage(file, (s, p) => {
+        setStage(s)
+        setProgress(p || 0)
       })
+      setPreview(thumb)
+      setRawText(text)
 
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || `Error ${res.status}`)
+      const { matches, lowConfidence } = matchQuestLines(lines, allTasks)
+      const isNew = t => !userQuests.find(q => q.quest_id === t.id)
 
-      if (typeof data.remaining === 'number') setRemaining(data.remaining)
+      const confident = matches.filter(isNew)
+      const maybe     = lowConfidence.filter(isNew).map(t => ({ ...t, uncertain: true }))
 
-      const matched   = matchTasks(data.quests || [], allTasks)
-      const fresh     = matched.filter(t => !userQuests.find(q => q.quest_id === t.id))
-      const matchedNames = new Set(matched.map(t => normalize(t.name)))
-      const unmatched = (data.quests || [])
-        .map(e => (typeof e === 'string' ? e : e?.name))
-        .filter(n => n && !matchedNames.has(normalize(n)))
       // Merge into existing results, deduplicating by task ID
       setResults(prev => {
-        if (!prev) return fresh
-        const existingIds = new Set(prev.map(t => t.id))
-        return [...prev, ...fresh.filter(t => !existingIds.has(t.id))]
+        const base = prev ?? []
+        const seen = new Set(base.map(t => t.id))
+        return [...base, ...[...confident, ...maybe].filter(t => {
+          if (seen.has(t.id)) return false
+          seen.add(t.id)
+          return true
+        })]
       })
-      setUnmatched(unmatched)
-      // Auto-select newly found quests, keep existing selections
-      setSelected(prev => new Set([...prev, ...fresh.map(t => t.id)]))
+      // Auto-select confident hits only; uncertain ones are opt-in.
+      setSelected(prev => new Set([...prev, ...confident.map(t => t.id)]))
     } catch (err) {
-      setError(err.message)
+      setError(err?.message || 'Could not read that screenshot')
+      setShowUpload(true)
     } finally {
       setScanning(false)
     }
@@ -187,14 +117,16 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
     setPreview(null)
     setError(null)
     setScanning(false)
-    setUnmatched([])
+    setRawText('')
+    setShowRaw(false)
     setShowUpload(true)
   }
 
   function scanAnother() {
     setPreview(null)
     setError(null)
-    setUnmatched([])
+    setRawText('')
+    setShowRaw(false)
     setShowUpload(true)
   }
 
@@ -216,6 +148,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
   }
 
   const selectedCount = selected.size
+  const uncertainCount = (results ?? []).filter(t => t.uncertain).length
 
   return (
     <div className="card" style={{ padding: 16, marginBottom: 16, border: '1px solid var(--golddim)' }}>
@@ -235,7 +168,6 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
       {/* Drop / paste zone */}
       {!scanning && showUpload && (
         <div
-          ref={zoneRef}
           onClick={() => fileRef.current?.click()}
           onDrop={handleDrop}
           onDragOver={e => e.preventDefault()}
@@ -251,6 +183,9 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
           <div className="mono" style={{ fontSize: 11, color: 'var(--txm)' }}>
             PASTE IMAGE (CTRL+V) · DRAG & DROP · OR CLICK TO UPLOAD
           </div>
+          <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 6 }}>
+            READ ON YOUR OWN DEVICE — NOTHING IS UPLOADED
+          </div>
           <input
             ref={fileRef}
             type="file"
@@ -264,14 +199,17 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
       {/* Scanning state */}
       {scanning && (
         <div style={{ padding: '28px 0', textAlign: 'center' }}>
-          {preview && (
-            <img src={preview} alt="" style={{
-              maxWidth: '100%', maxHeight: 140, borderRadius: 4, marginBottom: 14,
-              objectFit: 'contain', opacity: .7,
-            }} />
-          )}
           <div className="mono" style={{ fontSize: 11, color: 'var(--gold)', letterSpacing: '.08em' }}>
-            SCANNING FOR QUESTS...
+            {STAGE_LABEL[stage] ?? 'SCANNING...'}
+          </div>
+          <div style={{
+            marginTop: 12, height: 3, borderRadius: 2, background: 'var(--sur2)',
+            overflow: 'hidden', maxWidth: 260, marginLeft: 'auto', marginRight: 'auto',
+          }}>
+            <div style={{
+              width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%`, height: '100%',
+              background: 'var(--gold)', transition: 'width .2s linear',
+            }} />
           </div>
         </div>
       )}
@@ -287,16 +225,36 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
           )}
 
           {results.length === 0 ? (
-            <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', textAlign: 'center', padding: '12px 0' }}>
-              {unmatched.length > 0 ? 'QUESTS DETECTED BUT NOT FOUND IN TARKOV.DEV:' : 'NO UNTRACKED QUESTS DETECTED — TRY A CLEARER SCREENSHOT'}
-              {unmatched.map((n, i) => (
-                <div key={i} style={{ marginTop: 4, color: 'var(--txd)' }}>— {n}</div>
-              ))}
+            <div style={{ textAlign: 'center', padding: '12px 0' }}>
+              <div className="mono" style={{ fontSize: 11, color: 'var(--txm)' }}>
+                NO UNTRACKED QUESTS DETECTED
+              </div>
+              <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 6 }}>
+                TRY A LARGER, UNSCALED SCREENSHOT OF THE QUEST LIST
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 12 }}>
+                <button className="btn-ghost btn-sm" onClick={scanAnother} style={{ fontSize: 12 }}>
+                  TRY ANOTHER
+                </button>
+                {rawText.trim() && (
+                  <button className="btn-ghost btn-sm" onClick={() => setShowRaw(v => !v)} style={{ fontSize: 12 }}>
+                    {showRaw ? 'HIDE' : 'SHOW'} WHAT WE READ
+                  </button>
+                )}
+              </div>
+              {showRaw && (
+                <pre className="mono" style={{
+                  textAlign: 'left', marginTop: 10, padding: '8px 10px', borderRadius: 4,
+                  background: 'var(--sur2)', border: '1px solid var(--brd)', maxHeight: 160,
+                  overflow: 'auto', fontSize: 10, color: 'var(--txd)', whiteSpace: 'pre-wrap',
+                }}>{rawText.trim()}</pre>
+              )}
             </div>
           ) : (
             <>
               <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginBottom: 8 }}>
-                {results.length} QUEST{results.length !== 1 ? 'S' : ''} DETECTED — SELECT WHICH TO ADD:
+                {results.length} QUEST{results.length !== 1 ? 'S' : ''} DETECTED — SELECT WHICH TO ADD
+                {uncertainCount > 0 && ` · ${uncertainCount} UNCERTAIN`}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
                 {results.map(t => (
@@ -306,6 +264,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
                     border: `1px solid ${selected.has(t.id) ? 'var(--golddim)' : 'var(--brd)'}`,
                     borderLeft: `3px solid ${selected.has(t.id) ? 'var(--gold)' : 'var(--brd)'}`,
                     borderRadius: 4, cursor: 'pointer', boxSizing: 'border-box', width: '100%',
+                    opacity: t.uncertain && !selected.has(t.id) ? .65 : 1,
                   }}>
                     <input
                       type="checkbox"
@@ -314,7 +273,12 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
                       style={{ accentColor: 'var(--gold)', cursor: 'pointer', flexShrink: 0, width: 14, height: 14 }}
                     />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <span style={{ fontSize: 13, color: '#e8e0cc' }}>{t.name}</span>
+                      <span style={{ fontSize: 13, color: '#e8e0cc' }}>
+                        {t.name}
+                        {t.uncertain && (
+                          <span className="mono" style={{ marginLeft: 8, fontSize: 9, color: '#c08a4a' }}>UNCERTAIN</span>
+                        )}
+                      </span>
                       <span className="mono" style={{ fontSize: 10, color: '#7a8070' }}>
                         {t.trader?.name}{t.trader?.name && ' · '}Lv.{t.minPlayerLevel || 1}
                         {' · '}{t.detectedMap ? t.detectedMap.replace(/-/g, ' ').toUpperCase() : 'ANY MAP'}
@@ -337,14 +301,6 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
                   SCAN ANOTHER
                 </button>
               </div>
-              {unmatched.length > 0 && (
-                <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 4, background: 'rgba(255,255,255,.04)', border: '1px solid var(--brd)' }}>
-                  <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginBottom: 4 }}>DETECTED BUT NOT FOUND IN TARKOV.DEV DATA:</div>
-                  {unmatched.map((n, i) => (
-                    <div key={i} className="mono" style={{ fontSize: 11, color: 'var(--txm)', padding: '2px 0' }}>— {n}</div>
-                  ))}
-                </div>
-              )}
             </>
           )}
         </>
@@ -358,13 +314,6 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
           fontSize: 11, color: '#e07070',
         }}>
           {error}
-        </div>
-      )}
-
-      {/* Rate limit hint */}
-      {remaining !== null && remaining >= 0 && !scanning && (
-        <div className="mono" style={{ marginTop: 10, fontSize: 10, color: 'var(--txd)', textAlign: 'right' }}>
-          {remaining} SCAN{remaining !== 1 ? 'S' : ''} REMAINING THIS HOUR
         </div>
       )}
     </div>

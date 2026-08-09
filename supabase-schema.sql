@@ -135,24 +135,9 @@ create policy "map_loot admin write" on public.map_loot for all
   using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin))
   with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
 
--- Quest scan rate-limit log (used by the scan-quests edge function)
-create table if not exists public.quest_scan_log (
-  id         uuid default gen_random_uuid() primary key,
-  user_id    uuid references auth.users(id) on delete cascade not null,
-  created_at timestamptz default now() not null
-);
-
-alter table public.quest_scan_log enable row level security;
-
-drop policy if exists "Scan log own insert" on public.quest_scan_log;
-drop policy if exists "Scan log own select" on public.quest_scan_log;
-create policy "Scan log own insert" on public.quest_scan_log for insert
-  to authenticated with check (auth.uid() = user_id);
-create policy "Scan log own select" on public.quest_scan_log for select
-  to authenticated using (auth.uid() = user_id);
-
-create index if not exists quest_scan_log_user_time_idx
-  on public.quest_scan_log (user_id, created_at desc);
+-- Quest scanning runs entirely in the browser (Tesseract WASM), so there is no
+-- server call to rate-limit and no quest_scan_log table. See
+-- supabase/10_09_drop_quest_scan_log.sql to retire it on existing projects.
 
 -- Real-time on parties (skip if already a member)
 do $$

@@ -18,6 +18,11 @@ import { useMapLoot } from '../useMapLoot'
 import { useIntel } from '../useIntel'
 import { useIntelChecklist } from '../useIntelChecklist'
 import { useMapLayer } from '../useMapLayer'
+import { useMapZones } from '../useMapZones'
+import {
+  FACTION_STYLE, HAZARD_STYLE, switchForExtract, extractsFor, countFactions,
+  lootPointsFor, outlineToLatLngs, centroid,
+} from '../tarkovZones'
 import { objectivePins, getUserColor } from '../tarkovObjectives'
 import { useMapPings } from '../useMapPings'
 
@@ -154,6 +159,103 @@ function makeKeyIcon(priority) {
   })
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[character]))
+}
+
+const MAP_LABELS = {
+  customs: 'CUSTOMS',
+  woods: 'WOODS',
+  interchange: 'INTERCHANGE',
+  shoreline: 'SHORELINE',
+  factory: 'FACTORY',
+  lighthouse: 'LIGHTHOUSE',
+  'streets-of-tarkov': 'STREETS',
+  reserve: 'RESERVE',
+  'ground-zero': 'GROUND ZERO',
+  'ground-zero-21': 'GROUND ZERO',
+  'the-lab': 'THE LAB',
+  'the-lab-dark': 'THE LAB',
+  'night-factory': 'FACTORY',
+}
+
+function mapLabel(normalizedName) {
+  return MAP_LABELS[normalizedName]
+    || String(normalizedName || 'UNKNOWN').replace(/-/g, ' ').toUpperCase()
+}
+
+function formatRoubles(value) {
+  return `₽${Math.round(Number(value) || 0).toLocaleString('en-US')}`
+}
+
+function makeZoneLabelIcon(text, color, badge = '') {
+  return L.divIcon({
+    className: '',
+    iconSize: [1, 1],
+    iconAnchor: [0, 0],
+    html: `<div class="map-zone-label" style="--zone-color:${color}">${badge ? `<span class="map-zone-label-badge">${escapeHtml(badge)}</span>` : ''}${escapeHtml(text)}</div>`,
+  })
+}
+
+function makeSwitchIcon() {
+  return L.divIcon({
+    className: '',
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+    html: '<div class="map-switch-marker">⚡</div>',
+  })
+}
+
+function makeBtrIcon() {
+  return L.divIcon({
+    className: '',
+    iconSize: [26, 18],
+    iconAnchor: [13, 9],
+    html: '<div class="map-btr-marker">BTR</div>',
+  })
+}
+
+function makeLootIcon(dedicated) {
+  return L.divIcon({
+    className: '',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+    html: `<div class="map-loot-marker${dedicated ? ' map-loot-marker-dedicated' : ''}"></div>`,
+  })
+}
+
+function elevationLine(position, mapNorm) {
+  if (!position || typeof position.y !== 'number') return null
+  const floor = floorLabel(position.y, mapNorm)
+  const elevation = elevationLabel(position.y)
+  return floor ? `${floor} · ${elevation}` : `ELEVATION ${elevation}`
+}
+
+function makeZoneTooltip(title, color, lines) {
+  return `<div style="min-width:155px;max-width:270px">
+    <div style="color:${color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;line-height:1.2;letter-spacing:.05em">${escapeHtml(title)}</div>
+    <div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;display:flex;flex-direction:column;gap:3px">
+      ${lines.filter(Boolean).map(line => `<div style="color:#9aaa98;font-size:10px;line-height:1.35">· ${escapeHtml(line)}</div>`).join('')}
+    </div>
+  </div>`
+}
+
+function LayerToggleRow({ label, count, checked, onChange, disabled = false }) {
+  return (
+    <label className={`map-layer-row${disabled ? ' map-layer-row-disabled' : ''}`}>
+      <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} />
+      <span className="map-layer-row-label">{label}</span>
+      <span className="map-layer-row-count">({count})</span>
+    </label>
+  )
+}
+
 function makeQuestIcon(color, initial) {
   return L.divIcon({
     className: '',
@@ -262,7 +364,7 @@ function makePingIcon(color, initial, angle, opacity, taps) {
 
 export default function MapLeaflet({
   mapNorm, mapName,
-  drawings = [], markers = [], pings = [],
+  drawings = [], markers = [], pings = [], extracts = [],
   pingLog,              // party.ping_log — raw on purpose: undefined means the
                         // Phase 8 column is not applied, [] means no pings yet
   myUserId, myName, memberNames = [], memberIds = [],
@@ -282,6 +384,7 @@ export default function MapLeaflet({
   mode: modeProp,       // optional controlled mode from parent
   onModeChange,         // called when mode changes (controlled mode)
   hideDrawButton = false, // hide draw toggle + palette (parent controls it)
+  hideStyleControls = false,
   hidePingStrip = false,  // RaidView is full-bleed; the strip would fall off-screen
   hideReplay = false,
   pingStripMode = 'inline',
@@ -306,6 +409,14 @@ export default function MapLeaflet({
   // Off by default: Reserve alone carries 64 points, and a map that opens under
   // a blanket of loot icons is worse than one you have to ask for them on.
   const [showIntel, setShowIntel] = useState(false)
+  const [showExits, setShowExits] = useState(true)
+  const [showTransits, setShowTransits] = useState(false)
+  const [showBtr, setShowBtr] = useState(false)
+  const [showHazards, setShowHazards] = useState(false)
+  const [showLoot, setShowLoot] = useState(false)
+  const [exitFaction, setExitFaction] = useState('all')
+  const [lootItemId, setLootItemId] = useState('')
+  const [layersOpen, setLayersOpen] = useState(false)
   // Planning rings: 0 is off, otherwise a radius in metres from RING_RADII_M.
   const [ringRadius, setRingRadius] = useState(0)
   const [apiSpawns, setApiSpawns] = useState({})
@@ -320,6 +431,8 @@ export default function MapLeaflet({
   const isDrawing = useRef(false)
   const currentPolyline = useRef(null)
   const currentPts = useRef([])
+  const drawingPointerId = useRef(null)
+  const suppressClickUntil = useRef(0)
 
   function changeMode(m) {
     if (modeProp !== undefined) onModeChange?.(m)
@@ -329,6 +442,17 @@ export default function MapLeaflet({
   const { mapKeys } = useMapKeys(mapNorm)
   const { intelPoints } = useIntel(mapNorm)
   const { lootRows } = useMapLoot(mapNorm)
+  const {
+    extracts: zoneExtracts,
+    transits,
+    btrStops,
+    switches,
+    hazards,
+    locks,
+    lootPoints,
+    lootItems,
+    loading: zonesLoading,
+  } = useMapZones(mapNorm)
   const { isChecked, toggle: toggleChecked, clear: clearChecked, checkedCount, foundToday } =
     useIntelChecklist(mapNorm, raidKey)
 
@@ -385,6 +509,7 @@ export default function MapLeaflet({
     mapKeys,
     autoObjPins,
     allIntel,
+    extracts,
     isChecked,
     hideReplay,
     replayEnabled,
@@ -449,6 +574,11 @@ export default function MapLeaflet({
     // squad's own drawings, so turning rings on never buries a hand-drawn route.
     map.createPane('ringsPane').style.zIndex = 420
     map.getPane('ringsPane').style.pointerEvents = 'none'
+
+    // Map reference polygons stay below planning rings and squad drawings.
+    // Markers still use Leaflet's default marker pane so labels can sit above
+    // the vector geometry with explicit, bounded z-index offsets.
+    map.createPane('zonesPane').style.zIndex = 410
 
     // ── Tile layer ──────────────────────────────────────────────────────────
     if (cfg.tilePath) {
@@ -562,6 +692,7 @@ export default function MapLeaflet({
     const map = mapRef.current
     const bounds = boundsRef.current
     if (!map || !bounds) return
+    const container = map.getContainer()
 
     // Remove old polylines
     for (const pl of drawingLayersRef.current) {
@@ -639,11 +770,14 @@ export default function MapLeaflet({
   useMapLayer(mapRef, () => {
     const bounds = boundsRef.current
     if (!bounds) return []
-    return Object.entries(mapKeys).map(([keyName, v]) => {
+    const curated = Object.entries(mapKeys).map(([keyName, v]) => {
       if (v.loc_x == null || v.loc_y == null) return null
       const latlng = normToLatlng([v.loc_x, v.loc_y], bounds)
       const km = L.marker(latlng, { icon: makeKeyIcon(v.priority), interactive: true, zIndexOffset: 100 })
-      km.bindTooltip(`<div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em">🔑 ${keyName}</div>`, {
+      km.bindTooltip(`<div style="min-width:150px">
+        <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em">🔑 ${escapeHtml(keyName)}</div>
+        <div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;color:#9aaa98;font-size:10px">SOURCE: CURATED MAP KEY${v.priority ? ' · PRIORITY' : ''}</div>
+      </div>`, {
         direction: 'top',
         offset: [0, -10],
         opacity: 1,
@@ -651,7 +785,31 @@ export default function MapLeaflet({
       })
       return km
     })
-  }, [mapKeys, mapNorm])
+    const upstream = locks.map(lock => {
+      if (!lock?.position) return null
+      const km = L.marker(L.latLng(lock.position.z, lock.position.x), {
+        icon: makeKeyIcon(false),
+        interactive: true,
+        zIndexOffset: 80,
+      })
+      km.bindTooltip(`<div style="min-width:165px">
+        <div style="color:#6a9aaa;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em">🔑 UPSTREAM LOCK</div>
+        <div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;display:flex;flex-direction:column;gap:3px;color:#9aaa98;font-size:10px">
+          <div>TYPE: ${escapeHtml(lock.lockType || 'unknown').toUpperCase()}</div>
+          <div>NEEDS POWER: ${lock.needsPower ? 'YES' : 'NO'}</div>
+          <div>KEY ID: ${escapeHtml(lock.key || 'unknown')}</div>
+          <div style="color:#5c6b61">SOURCE: UPSTREAM MAP LOCK</div>
+        </div>
+      </div>`, {
+        direction: 'top',
+        offset: [0, -10],
+        opacity: 1,
+        className: 'tac-tooltip',
+      })
+      return km
+    })
+    return [...curated, ...upstream]
+  }, [mapKeys, locks, mapNorm])
 
   // ─── Spawn data: prebaked first, then a live refresh ─────────────────────────
   useEffect(() => {
@@ -759,10 +917,12 @@ export default function MapLeaflet({
         card.fromMe ? `${card.fromMe.dist} m ${card.fromMe.dir} OF YOU` : null,
         card.nearObj ? `${card.nearObj.dist} m FROM ${card.nearObj.questName.toUpperCase()}` : null,
         card.nearKey ? `${card.nearKey.dist} m FROM ${card.nearKey.name.toUpperCase()}` : null,
+        card.nearExtract ? `${card.nearExtract.dist} m FROM ${card.nearExtract.name.toUpperCase()} EXTRACT` : null,
         card.nearIntel
           ? `NEAREST ${kindOf(card.nearIntel.point).short}: ${card.nearIntel.dist} m ${card.nearIntel.dir}`
             + (card.nearIntel.more ? ` · ${card.nearIntel.more} MORE WITHIN ${CLUSTER_RADIUS_M} M` : '')
           : null,
+        card.nearby?.length ? `NEARBY: ${card.nearby.map(teammate => `${teammate.user} ${teammate.dist} M ${teammate.dir}`).join(' · ')}` : null,
       ].filter(Boolean)
       const tooltipHtml = `
         <div style="min-width:170px;max-width:280px">
@@ -977,7 +1137,7 @@ export default function MapLeaflet({
 
   const overlayChrome = chrome === 'overlay'
 
-  const styleControls = canToggle && svgReady ? (
+  const styleControls = !hideStyleControls && canToggle && svgReady ? (
     <>
       <button
         className={mapStyle === 'svg' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
@@ -1126,7 +1286,7 @@ export default function MapLeaflet({
           )}
         </div>
 
-        {!overlayChrome && canToggle && svgReady && (
+        {!overlayChrome && !hideStyleControls && canToggle && svgReady && (
           <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>{styleControls}</div>
         )}
 
@@ -1137,7 +1297,7 @@ export default function MapLeaflet({
         )}
       </div>
 
-      {overlayChrome && canToggle && svgReady && (
+      {overlayChrome && !hideStyleControls && canToggle && svgReady && (
         <div className="map-chrome map-chrome-style">{styleControls}</div>
       )}
       {overlayChrome && (
@@ -1292,12 +1452,14 @@ export default function MapLeaflet({
                   {card.motion && <span>moving {card.motion.dir} {card.motion.speed} m/s</span>}
                   {card.nearObj && <span>{card.nearObj.dist} m from {card.nearObj.questName}</span>}
                   {card.nearKey && <span>{card.nearKey.dist} m from {card.nearKey.name}</span>}
+                  {card.nearExtract && <span style={{ color: 'var(--goldtx)' }}>{card.nearExtract.dist} m from {card.nearExtract.name} extract</span>}
                   {card.nearIntel && (
                     <span style={{ color: kindOf(card.nearIntel.point).color }}>
                       nearest {kindOf(card.nearIntel.point).short.toLowerCase()} {card.nearIntel.dist} m {card.nearIntel.dir}
                       {card.nearIntel.more ? ` · ${card.nearIntel.more} more within ${CLUSTER_RADIUS_M} m` : ''}
                     </span>
                   )}
+                  {card.nearby?.length > 0 && <span style={{ color: 'var(--txm)' }}>nearby {card.nearby.map(teammate => `${teammate.user} ${teammate.dist}m ${teammate.dir}`).join(' · ')}</span>}
                 </div>
               </div>
             )

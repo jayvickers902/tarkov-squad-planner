@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useTasks } from '../useTarkov'
 import { FEATURED } from '../constants'
 import QuestScanner from './QuestScanner'
+import CatchUp from './CatchUp'
 
 // Small Kappa badge — reused in search results and saved list
 function KappaBadge() {
@@ -21,7 +22,7 @@ const MAP_NAMES = {
   'ground-zero': 'Ground Zero', 'the-lab': 'The Lab',
 }
 
-export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onRestore, onDone, inParty }) {
+export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onRestore, onDone, inParty }) {
   const [mapFilter, setMapFilter]     = useState('all')
   const [searchMap, setSearchMap]     = useState('any')
   const [searchQ, setSearchQ]         = useState('')
@@ -208,8 +209,11 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
         </div>
       )}
 
-      {/* Screenshot scanner */}
-      <QuestScanner allTasks={allTasks} userQuests={userQuests} onAdd={onAdd} />
+      {/* Quest import routes */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
+        <QuestScanner allTasks={allTasks} userQuests={userQuests} onAdd={onAdd} />
+        <CatchUp allTasks={allTasks} userQuests={userQuests} onBulkAdd={onBulkAdd} userId={userId} />
+      </div>
 
       {/* Add quest section */}
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>

@@ -197,7 +197,7 @@ async function loadData({ label, signal, gql, rest }) {
   return { ...result, source: 'rest', fallback: false }
 }
 
-const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink trader { name imageLink } map { id normalizedName } objectives { id description type optional maps { normalizedName } ... on TaskObjectiveItem { item { id name iconLink } count foundInRaid requiredKeys { id name iconLink } } ... on TaskObjectiveMark { markerItem { id name iconLink } requiredKeys { id name iconLink } } ... on TaskObjectiveBasic { zones { id position { x y z } map { normalizedName } } requiredKeys { id name iconLink } } ... on TaskObjectiveShoot { zones { id position { x y z } map { normalizedName } } } } } }`
+const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink trader { name imageLink } map { id normalizedName } taskRequirements { task { id } status } objectives { id description type optional maps { normalizedName } ... on TaskObjectiveItem { item { id name iconLink } count foundInRaid requiredKeys { id name iconLink } } ... on TaskObjectiveMark { markerItem { id name iconLink } requiredKeys { id name iconLink } } ... on TaskObjectiveBasic { zones { id position { x y z } map { normalizedName } } requiredKeys { id name iconLink } } ... on TaskObjectiveShoot { zones { id position { x y z } map { normalizedName } } } } } }`
 
 export function useMaps() {
   const [seed] = useState(() => cacheSeed(STORAGE_KEYS.maps, null, null, [], Array.isArray))
@@ -321,7 +321,23 @@ export function useTasks(mapNorm) {
     loadData({
       label: 'tasks',
       signal: controller.signal,
-      gql: async signal => requireArray(await gqlRetry(TASKS_QUERY, { signal }), 'tasks'),
+      gql: async signal => requireArray(await gqlRetry(TASKS_QUERY, { signal }), 'tasks').map(task => ({
+        ...task,
+        taskRequirements: Array.isArray(task.taskRequirements)
+          ? task.taskRequirements
+            .map(requirement => {
+              const taskId = typeof requirement?.task?.id === 'string' ? requirement.task.id : null
+              if (!taskId) return null
+              return {
+                taskId,
+                status: Array.isArray(requirement.status)
+                  ? requirement.status.filter(status => typeof status === 'string')
+                  : [],
+              }
+            })
+            .filter(Boolean)
+          : [],
+      })),
       rest: signal => getRestTasks(signal),
     })
       .then(result => {

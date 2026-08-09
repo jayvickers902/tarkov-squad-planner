@@ -31,6 +31,17 @@ function normalizeParty(data, fallbackMembers = []) {
   }
 }
 
+function comparableParty(data) {
+  if (!data) return data
+  const { last_active_at, members, ...rest } = data
+  return {
+    ...rest,
+    members: Array.isArray(members)
+      ? members.map(({ last_seen, ...member }) => member)
+      : members,
+  }
+}
+
 async function fetchPartyById(partyId) {
   if (!partyId) return null
   const [partyResult, membersResult] = await Promise.all([
@@ -116,7 +127,13 @@ function isPartyFullMessage(message) {
   return /party is full|full \(max/i.test(message || '')
 }
 
-export function useParty(userId, userSettings = {}) {
+export function useParty(userId, userSettings = {}, {
+  callsign = '',
+  savedQuests = [],
+  questsLoading = true,
+  settingsLoading = false,
+  pendingJoinCode = null,
+} = {}) {
   const [party, setParty] = useState(null)
   const [myName, setMyName] = useState('')
   const [error, setError] = useState('')
@@ -136,8 +153,18 @@ export function useParty(userId, userSettings = {}) {
   const pendingFieldsRef = useRef(new Set())
   const onlineMemberIdsRef = useRef([])
   const presenceReadyRef = useRef(false)
+  const autoRejoinAttemptedRef = useRef(null)
+  const autoRejoinBlockedRef = useRef(false)
 
-  useEffect(() => { userIdRef.current = userId }, [userId])
+  useEffect(() => {
+    const previousUserId = userIdRef.current
+    if (previousUserId !== userId) {
+      autoRejoinAttemptedRef.current = null
+      autoRejoinBlockedRef.current = false
+      if (previousUserId && previousUserId !== userId) clearPartyState(false)
+    }
+    userIdRef.current = userId
+  }, [userId])
   useEffect(() => { userSettingsRef.current = userSettings || {} }, [userSettings])
   useEffect(() => { myNameRef.current = myName }, [myName])
 
@@ -196,16 +223,13 @@ export function useParty(userId, userSettings = {}) {
       const fresh = await fetchPartyById(partyId)
       if (cancelled || !fresh) return
       const pending = pendingFieldsRef.current
-      if (pending.size === 0) {
-        applyParty(fresh)
-        return
-      }
       const merged = { ...(partyRef.current || {}), ...fresh }
       for (const key of pending) {
         if (partyRef.current && Object.prototype.hasOwnProperty.call(partyRef.current, key)) {
           merged[key] = partyRef.current[key]
         }
       }
+      if (JSON.stringify(comparableParty(merged)) === JSON.stringify(comparableParty(partyRef.current))) return
       applyParty(merged)
     }
 
@@ -252,20 +276,72 @@ export function useParty(userId, userSettings = {}) {
         }
       })
 
-    const poll = setInterval(refreshFromDatabase, 5000)
-    const heartbeat = setInterval(() => {
-      supabase.rpc('heartbeat', { p_code: code }).catch(() => {})
-    }, 30000)
+    // Keep the optional child-table subscription isolated from the presence and
+    // party-row channel. During rollout an older project may not have the table
+    // in its realtime publication; that must not take the core party channel
+    // down with it.
+    const pingChannel = supabase
+      .channel(`party-pings-${partyId}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'party_ping_events', filter: `party_id=eq.${partyId}`,
+      }, payload => {
+        const event = payload?.new
+        const current = partyRef.current
+        if (!event || !current || Number(event.raid_id) !== Number(current.raid_id ?? 0)) return
+        const ping = pingFromEvent(event)
+        if (!ping || current.pings?.some(existing => existing.id === ping.id)) return
+        const ttl = Number(resolveSetting('ping_ttl_ms', {
+          raid: current.settings || {}, unit: null, user: userSettingsRef.current,
+        }))
+        const pings = prunePings([...(current.pings || []), ping], Date.now(), Number.isFinite(ttl) ? ttl : undefined)
+        const pingLog = current.ping_log?.some(existing => existing.id === ping.id)
+          ? current.ping_log
+          : appendLog(current.ping_log, ping)
+        applyParty({ ...current, pings, ping_log: pingLog })
+      })
+      .subscribe()
+
+    let poll = null
+    let heartbeat = null
+
+    function stopTimers() {
+      if (poll) clearInterval(poll)
+      if (heartbeat) clearInterval(heartbeat)
+      poll = null
+      heartbeat = null
+    }
+
+    function startTimers() {
+      if (document.hidden || cancelled) return
+      stopTimers()
+      poll = setInterval(refreshFromDatabase, 15000)
+      heartbeat = setInterval(() => {
+        supabase.rpc('heartbeat', { p_code: code }).catch(() => {})
+      }, 30000)
+    }
+
+    function onVisibilityChange() {
+      if (document.hidden) {
+        stopTimers()
+        return
+      }
+      refreshFromDatabase()
+      startTimers()
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    startTimers()
 
     return () => {
       cancelled = true
-      clearInterval(poll)
-      clearInterval(heartbeat)
+      stopTimers()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       presenceReadyRef.current = false
       onlineMemberIdsRef.current = []
       setPresenceReady(false)
       setOnlineMemberIds([])
       supabase.removeChannel(channel)
+      supabase.removeChannel(pingChannel)
     }
   }, [partyCode]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -338,6 +414,7 @@ export function useParty(userId, userSettings = {}) {
   }, [updateMemberDB])
 
   const createParty = useCallback(async (name, savedQuests = []) => {
+    autoRejoinBlockedRef.current = true
     setLoading(true); setError('')
     savedQuestsRef.current = savedQuests
     const { data, error: rpcError } = await supabase.rpc('create_party', {
@@ -352,10 +429,11 @@ export function useParty(userId, userSettings = {}) {
     }
     enterParty(data, name)
     setLoading(false)
-    return true
+    return data
   }, [])
 
-  const forceJoinParty = useCallback(async (code, name, savedQuests = []) => {
+  const forceJoinParty = useCallback(async (code, name, savedQuests = [], { autoRejoin = false } = {}) => {
+    if (!autoRejoin) autoRejoinBlockedRef.current = true
     setLoading(true); setError('')
     savedQuestsRef.current = savedQuests
     const allQuests = allQuestEntries(savedQuests)
@@ -378,10 +456,11 @@ export function useParty(userId, userSettings = {}) {
       await updateMemberDB({ quests: filtered })
     }
     setLoading(false)
-    return true
+    return data
   }, [patchOwnMember, updateMemberDB])
 
   const joinParty = useCallback(async (code, name, savedQuests = []) => {
+    autoRejoinBlockedRef.current = true
     setLoading(true); setError('')
     savedQuestsRef.current = savedQuests
     const allQuests = allQuestEntries(savedQuests)
@@ -418,8 +497,45 @@ export function useParty(userId, userSettings = {}) {
       await updateMemberDB({ quests: filtered })
     }
     setLoading(false)
-    return true
+    return data
   }, [forceJoinParty, patchOwnMember, updateMemberDB])
+
+  useEffect(() => {
+    if (!userId || !callsign || questsLoading || settingsLoading || pendingJoinCode || partyRef.current) return undefined
+    if (autoRejoinBlockedRef.current) return undefined
+    if (resolveSetting('auto_rejoin', { user: userSettings }) !== true) return undefined
+    if (autoRejoinAttemptedRef.current === userId) return undefined
+
+    autoRejoinAttemptedRef.current = userId
+    let cancelled = false
+
+    async function autoRejoin() {
+      const { data: membership, error: membershipError } = await supabase
+        .from('party_members')
+        .select('party_id, joined_at')
+        .eq('user_id', userId)
+        .order('joined_at', { ascending: false })
+        .limit(1)
+
+      if (cancelled || membershipError) return
+      const partyId = membership?.[0]?.party_id
+      if (!partyId) return
+
+      const { data: partyRow, error: partyError } = await supabase
+        .from('parties')
+        .select('code')
+        .eq('id', partyId)
+        .maybeSingle()
+
+      if (cancelled || partyError || !partyRow?.code) return
+      if (partyRef.current || autoRejoinBlockedRef.current) return
+
+      await forceJoinParty(partyRow.code, callsign, savedQuests, { autoRejoin: true })
+    }
+
+    autoRejoin()
+    return () => { cancelled = true }
+  }, [userId, callsign, savedQuests, questsLoading, settingsLoading, pendingJoinCode, userSettings, forceJoinParty])
 
   const selectMap = useCallback(async map => {
     const current = partyRef.current
@@ -727,9 +843,14 @@ export function useParty(userId, userSettings = {}) {
 
   const leaveParty = useCallback(async () => {
     const code = codeRef.current
+    autoRejoinBlockedRef.current = true
     clearPartyState()
     setError('')
-    if (code) await supabase.rpc('leave_party', { p_code: code })
+    if (code) {
+      const { error: rpcError } = await supabase.rpc('leave_party', { p_code: code })
+      return !rpcError
+    }
+    return true
   }, [])
 
   const kickMember = useCallback(async memberUserId => {

@@ -1,21 +1,22 @@
-import { useState, useRef, useMemo, useEffect } from 'react'
-import { useMaps, useTasks } from '../useTarkov'
+import { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react'
+import { useMaps, useTasks, useExtracts } from '../useTarkov'
 import { useIsMobile } from '../useIsMobile'
 import QuestSearch from './QuestSearch'
 import TodoList from './TodoList'
 import MyQuestPanel from './MyQuestPanel'
-import MapLeaflet from './MapLeaflet'
 import RequiredItems from './RequiredItems'
 import FindItems from './FindItems'
 import BossPanel from './BossPanel'
 import TarkovClocks from './TarkovClocks'
 import StartRaidModal from './StartRaidModal'
-import RaidView from './RaidView'
 import MonitorLink from './MonitorLink'
 import RaidSettings from './RaidSettings'
 import useEphemeralSweep from '../useEphemeralSweep'
 import { resolveSetting } from '../settings'
 import { normalizeMembers, findMember, memberIds, memberNames, progressOwnerId, progressQuestId } from '../partyMembers'
+
+const MapLeaflet = lazy(() => import('./MapLeaflet'))
+const RaidView = lazy(() => import('./RaidView'))
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
@@ -47,7 +48,7 @@ function hasRaidWork(progress) {
   return Object.keys(progress || {}).some(key => key !== '__raid_start__')
 }
 
-export default function Room({ party, myUserId, myName, isAdmin, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid }) {
+export default function Room({ party, raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid, onOpenRaid, onCloseRaid }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
@@ -60,7 +61,6 @@ export default function Room({ party, myUserId, myName, isAdmin, questsLoading, 
   const [chipTooltip, setChipTooltip] = useState(null)  // { task, anchor }
   const [dismissedRaidStart, setDismissedRaidStart] = useState(null)
   const [startRaidPending, setStartRaidPending] = useState(false)
-  const [raidView, setRaidView] = useState(false)
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -69,6 +69,20 @@ export default function Room({ party, myUserId, myName, isAdmin, questsLoading, 
   useEffect(() => {
     if (tab === 'map') setSidebarOpen(false)
   }, [tab])
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      if (!settingsOpen || hasRouteOverlay || raidView) return
+      const target = event.target
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT') return
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setSettingsOpen(false)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [settingsOpen, hasRouteOverlay, raidView])
 
   const raidStart = party.progress?.['__raid_start__'] || null
   const showRaidModal = startRaidPending || (!!party.map_id && raidStart !== null && raidStart !== dismissedRaidStart)
@@ -94,16 +108,19 @@ export default function Room({ party, myUserId, myName, isAdmin, questsLoading, 
   const { maps, loading: loadingMaps } = useMaps()
   const { tasks, loading: loadingTasks } = useTasks(party.map_norm)
   const { tasks: allTasks } = useTasks(null)
+  const { extracts: mapExtracts } = useExtracts(party.map_norm)
   const isLeader = party.leader_id === myUserId
   const settingLayers = { raid: party.settings || {}, unit: null, user: userSettings }
   const pingTtlMs = Number(resolveSetting('ping_ttl_ms', settingLayers))
   const replayEnabled = resolveSetting('replay_enabled', settingLayers)
   const canChangeMap = isLeader || resolveSetting('members_can_change_map', settingLayers) === true
-  const members  = normalizeMembers(party.members)
-  const memberNameList = memberNames(members)
-  const memberIdList = memberIds(members)
+  const members  = useMemo(() => normalizeMembers(party.members), [party.members])
+  const memberNameList = useMemo(() => memberNames(members), [members])
+  const memberIdList = useMemo(() => memberIds(members), [members])
   const mineMember = findMember(members, myUserId)
   const mine = mineMember?.quests || []
+  const allTasksById = useMemo(() => new Map(allTasks.map(task => [task.id, task])), [allTasks])
+  const tasksById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks])
 
   // Track if we ever had quests — used to show "syncing" instead of "no quests" on brief dips
   const mineWasNonEmpty = useRef(mine.length > 0)
@@ -125,7 +142,7 @@ export default function Room({ party, myUserId, myName, isAdmin, questsLoading, 
       const questIdSets = {}
       activeMembers.forEach(member => {
         const ids = member.quests_all
-          .filter(q => allTasks.find(t => t.id === q.id)?.map?.normalizedName === m.normalizedName)
+          .filter(q => allTasksById.get(q.id)?.map?.normalizedName === m.normalizedName)
           .map(q => q.id)
         perMember[member.callsign] = ids.length
         if (ids.length) questIdSets[member.callsign] = new Set(ids)
@@ -140,7 +157,7 @@ export default function Room({ party, myUserId, myName, isAdmin, questsLoading, 
     })
     .filter(s => s.total > 0)
     .sort((a, b) => b.total - a.total || b.crossover - a.crossover)
-  }, [allTasks, maps, members]) // eslint-disable-line
+  }, [allTasks, allTasksById, maps, members]) // eslint-disable-line
 
 
   function copy() {
@@ -171,25 +188,27 @@ export default function Room({ party, myUserId, myName, isAdmin, questsLoading, 
       )}
 
       {raidView && party.map_id && (
-        <RaidView
-          party={party}
-          myUserId={myUserId}
-          myName={myName}
-          members={members}
-          tasks={tasks}
-          allTasks={allTasks}
-          loadingTasks={loadingTasks}
-          skippedQuestIds={skippedQuestIds}
-          onToggleStar={onToggleStar}
-          onAddStroke={onAddStroke}
-          onClearMyStrokes={onClearMyStrokes}
-          onAddMarker={onAddMarker}
-          onClearMyMarkers={onClearMyMarkers}
-          onClearPings={onClearPings}
-          userSettings={userSettings}
-          onSetSetting={onSetUserSetting}
-          onClose={() => setRaidView(false)}
-        />
+        <Suspense fallback={<Spin />}>
+          <RaidView
+            party={party}
+            myUserId={myUserId}
+            myName={myName}
+            members={members}
+            tasks={tasks}
+            allTasks={allTasks}
+            loadingTasks={loadingTasks}
+            skippedQuestIds={skippedQuestIds}
+            onToggleStar={onToggleStar}
+            onAddStroke={onAddStroke}
+            onClearMyStrokes={onClearMyStrokes}
+            onAddMarker={onAddMarker}
+            onClearMyMarkers={onClearMyMarkers}
+            onClearPings={onClearPings}
+            userSettings={userSettings}
+            onSetSetting={onSetUserSetting}
+            onClose={onCloseRaid}
+          />
+        </Suspense>
       )}
 
       {/* Header */}
@@ -210,7 +229,7 @@ export default function Room({ party, myUserId, myName, isAdmin, questsLoading, 
               <>
                 <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>
                 {party.map_id && (
-                  <button className="btn-ghost btn-sm" onClick={() => setRaidView(true)} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}>⛺ RAID VIEW</button>
+                  <button className="btn-ghost btn-sm" onClick={onOpenRaid} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}>⛺ RAID VIEW</button>
                 )}
                 <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
@@ -237,7 +256,7 @@ export default function Room({ party, myUserId, myName, isAdmin, questsLoading, 
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
             <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>
             {party.map_id && (
-              <button className="btn-ghost btn-sm" onClick={() => setRaidView(true)} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}>⛺ RAID VIEW</button>
+              <button className="btn-ghost btn-sm" onClick={onOpenRaid} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}>⛺ RAID VIEW</button>
             )}
             <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}>
               FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
@@ -384,7 +403,7 @@ export default function Room({ party, myUserId, myName, isAdmin, questsLoading, 
               const totalCount = mQuests.length
               const mapCount  = party.map_norm
                 ? mQuests.filter(q => {
-                    const task = tasks.find(t => t.id === q.id)
+                    const task = tasksById.get(q.id)
                     return task?.map?.normalizedName === party.map_norm
                   }).length
                 : null
@@ -650,32 +669,36 @@ export default function Room({ party, myUserId, myName, isAdmin, questsLoading, 
               {tab === 'map' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
                   <div className="room-map-surface">
-                  <MapLeaflet
-                    mapNorm={party.map_norm}
-                    mapName={party.map_name}
-                    drawings={party.drawings || []}
-                    markers={party.markers || []}
-                    pings={party.pings || []}
-                    pingLog={party.ping_log}
-                    pingTtlMs={pingTtlMs}
-                    replayEnabled={replayEnabled}
-                    myUserId={myUserId}
-                    myName={myName}
-                    memberNames={memberNameList}
-                    memberIds={memberIdList}
-                    myQuests={mine}
-                    memberQuests={members}
-                    tasks={allTasks}
-                    progress={party.progress || {}}
-                    onAddStroke={onAddStroke}
-                    onClearMyStrokes={onClearMyStrokes}
-                    onAddMarker={onAddMarker}
-                    onClearMyMarkers={onClearMyMarkers}
-                    onClearPings={onClearPings}
-                    raidKey={raidStart}
-                    fill
-                    chrome="overlay"
-                  />
+                    <Suspense fallback={<Spin />}>
+                      <MapLeaflet
+                        mapNorm={party.map_norm}
+                        mapName={party.map_name}
+                        drawings={party.drawings || []}
+                        markers={party.markers || []}
+                        pings={party.pings || []}
+                        extracts={mapExtracts}
+                        pingLog={party.ping_log}
+                        pingTtlMs={pingTtlMs}
+                        replayEnabled={replayEnabled}
+                        myUserId={myUserId}
+                        myName={myName}
+                        memberNames={memberNameList}
+                        memberIds={memberIdList}
+                        myQuests={mine}
+                        memberQuests={members}
+                        tasks={allTasks}
+                        progress={party.progress || {}}
+                        onAddStroke={onAddStroke}
+                        onClearMyStrokes={onClearMyStrokes}
+                        onAddMarker={onAddMarker}
+                        onClearMyMarkers={onClearMyMarkers}
+                        onClearPings={onClearPings}
+                        raidKey={raidStart}
+                        fill
+                        chrome="overlay"
+                        hideStyleControls={raidView}
+                      />
+                    </Suspense>
                   </div>
                 </div>
               )}

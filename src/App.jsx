@@ -1,28 +1,40 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { useAuth } from './useAuth'
 import { useParty } from './useParty'
 import { useSettings } from './useSettings'
 import { useUserQuests } from './useUserQuests'
 import { useFriends } from './useFriends'
+import { parseJoinCode, useAppRoute } from './useAppRoute'
 import AuthScreen from './components/AuthScreen'
 import Lobby from './components/Lobby'
-import MyQuests from './components/MyQuests'
 import Room from './components/Room'
-import AdminKeyManager from './components/AdminKeyManager'
 import { findMember, objectiveProgressKey, progressParts } from './partyMembers'
 
+const MyQuests = lazy(() => import('./components/MyQuests'))
+const AdminKeyManager = lazy(() => import('./components/AdminKeyManager'))
+
+function AppSpinner() {
+  return <div style={{ width: 28, height: 28, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', margin: '0 auto' }} />
+}
+
 export default function App() {
+  const { route, navigate, lastPop } = useAppRoute()
+  const [pendingJoinCode] = useState(() => parseJoinCode(window.location.pathname))
+  const [autoJoinFired, setAutoJoinFired] = useState(false)
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
+
   const {
     user, profile, loading: authLoading,
     error: authError, setError: setAuthError,
     logout, loginWithGoogle, createProfile,
   } = useAuth()
 
-  const { settings: userSettings, setSetting: setUserSetting } = useSettings(user?.id, profile?.callsign)
+  const { settings: userSettings, loading: settingsLoading, setSetting: setUserSetting } = useSettings(user?.id, profile?.callsign)
 
   const {
     quests: userQuests, loading: questsLoading,
     addQuest: saveQuest, removeQuest: removeSavedQuest,
+    bulkAddQuests,
     toggleImportant, toggleSkipped, clearAllQuests, restoreSnapshot, markCompleted: markQuestCompleted,
     saveObjectiveProgress,
   } = useUserQuests(user?.id)
@@ -41,7 +53,13 @@ export default function App() {
     syncSavedQuests, refreshParty, startRaid,
     onlineMemberIds, presenceReady,
     setRaidSettings, sweepEphemeral,
-  } = useParty(user?.id, userSettings)
+  } = useParty(user?.id, userSettings, {
+    callsign: profile?.callsign,
+    savedQuests: userQuests,
+    questsLoading,
+    settingsLoading,
+    pendingJoinCode,
+  })
 
   // Keep the party hook's savedQuestsRef in sync — quests may load after joining
   useEffect(() => {
@@ -83,25 +101,74 @@ export default function App() {
     return out
   }, [userQuests, user?.id]) // eslint-disable-line
 
-  const [screen, setScreen] = useState('lobby')       // 'lobby' | 'myquests' | 'admin'
-  const [partyScreen, setPartyScreen] = useState('room') // 'room' | 'myquests' | 'admin'
-
   // Deep link: dudgy.net/join/XXXXXX → auto-join after login + quests load
-  const [pendingJoinCode] = useState(() => {
-    const m = window.location.pathname.match(/^\/join\/([A-Z0-9]{6})$/i)
-    return m ? m[1].toUpperCase() : null
-  })
-  const [autoJoinFired, setAutoJoinFired] = useState(false)
-
   useEffect(() => {
     if (!pendingJoinCode || autoJoinFired) return
     if (!user || !profile || authLoading || questsLoading || partyLoading || party) return
     setAutoJoinFired(true)
-    window.history.replaceState(null, '', '/')
-    joinParty(pendingJoinCode, profile.callsign, userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id)))
-  }, [user, profile, authLoading, questsLoading, partyLoading, party, pendingJoinCode, autoJoinFired]) // eslint-disable-line
+    navigate({ screen: 'lobby' }, { replace: true })
+    joinParty(
+      pendingJoinCode,
+      profile.callsign,
+      userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id)),
+    ).then(joined => {
+      if (joined?.code) navigate({ screen: 'room', code: joined.code }, { replace: true })
+    })
+  }, [user, profile, authLoading, questsLoading, partyLoading, party, pendingJoinCode, autoJoinFired, navigate, joinParty]) // eslint-disable-line
+
+  // A party entry consumes the lobby entry. Preserve an existing party overlay
+  // on hard refresh, but normalize every new entry to the party room.
+  useEffect(() => {
+    if (!party?.code || route.code === party.code) return
+    if (lastPop?.route && !lastPop.route.code) return
+    navigate({ screen: 'room', code: party.code }, { replace: true })
+  }, [party?.code, route.code, lastPop, navigate])
+
+  // Browser Back must be explicit about leaving a live party. The route hook
+  // marks each pop, so this pushes exactly once for that pop and then lets the
+  // dialog absorb any repeated gesture until the user decides.
+  useEffect(() => {
+    if (!party?.code || !lastPop || lastPop.route.code) return
+    navigate({ screen: 'room', code: party.code })
+    setLeaveConfirmOpen(true)
+  }, [party?.code, lastPop, navigate])
+
+  useEffect(() => {
+    if (!party) setLeaveConfirmOpen(false)
+  }, [party])
+
+  useEffect(() => {
+    if (!leaveConfirmOpen) return undefined
+    function onKeyDown(event) {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setLeaveConfirmOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [leaveConfirmOpen])
 
   const isAdmin = profile?.is_admin === true
+
+  useEffect(() => {
+    const inPartyOverlay = party?.code === route.code
+      && (route.screen === 'quests' || (route.screen === 'admin' && isAdmin))
+    const publicOverlay = !route.code
+      && (route.screen === 'quests' || (route.screen === 'admin' && isAdmin))
+    if (!inPartyOverlay && !publicOverlay) return undefined
+
+    function onKeyDown(event) {
+      const target = event.target
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT') return
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      if (inPartyOverlay) navigate({ screen: 'room', code: party.code }, { replace: true })
+      else navigate({ screen: 'lobby' }, { replace: true })
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [party?.code, route.code, route.screen, isAdmin, navigate])
 
   if (authLoading) {
     return (
@@ -121,7 +188,7 @@ export default function App() {
           <p className="mono" style={{ fontSize: 11, color: 'var(--txm)', letterSpacing: '0.1em', marginBottom: 32 }}>
             ESCAPE FROM TARKOV // RAID COORDINATOR
           </p>
-          <div style={{ width: 28, height: 28, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', margin: '0 auto' }} />
+          <AppSpinner />
         </div>
       </div>
     )
@@ -181,36 +248,27 @@ export default function App() {
       removePartyQuest(questId)
     }
 
+    async function handleLeave() {
+      setLeaveConfirmOpen(false)
+      try {
+        await leaveParty()
+      } finally {
+        navigate({ screen: 'lobby' }, { replace: true })
+      }
+    }
+
     // My Quests while in party — back button returns to room
-    if (partyScreen === 'myquests') {
-      return (
-        <MyQuests
-          userId={user?.id}
-          userQuests={userQuests}
-          onAdd={saveQuest}
-          onRemove={removeSavedQuest}
-          onToggleImportant={toggleImportant}
-          onToggleSkipped={toggleSkipped}
-          onClearAll={clearAllQuests}
-          onRestore={restoreSnapshot}
-          onDone={() => setPartyScreen('room')}
-          inParty
-        />
-      )
-    }
-
-    if (partyScreen === 'admin' && isAdmin) {
-      return <AdminKeyManager onBack={() => setPartyScreen('room')} />
-    }
-
     return (
-      <Room
+      <>
+        <Room
         party={party}
+        raidView={route.code === party.code && route.screen === 'raid'}
         myUserId={user.id}
         myName={myName}
         isAdmin={isAdmin}
         questsLoading={questsLoading}
-        onLeave={leaveParty}
+        hasRouteOverlay={leaveConfirmOpen || (route.code === party.code && (route.screen === 'quests' || (route.screen === 'admin' && isAdmin)))}
+        onLeave={handleLeave}
         onSelectMap={selectMap}
         onAddQuest={handleAddPartyQuest}
         onRemoveQuest={handleRemovePartyQuest}
@@ -232,8 +290,8 @@ export default function App() {
         onClearMyMarkers={clearMyMarkers}
         onAddPing={addPing}
         onClearPings={clearPings}
-        onMyQuests={() => setPartyScreen('myquests')}
-        onAdmin={() => setPartyScreen('admin')}
+        onMyQuests={() => navigate({ screen: 'quests', code: party.code })}
+        onAdmin={() => navigate({ screen: 'admin', code: party.code })}
         friends={friends}
         pendingIn={pendingIn}
         pendingOut={pendingOut}
@@ -244,28 +302,83 @@ export default function App() {
         onRefreshFriends={refreshFriends}
         onRefresh={refreshParty}
         onStartRaid={startRaid}
-      />
+        onOpenRaid={() => navigate({ screen: 'raid', code: party.code })}
+        onCloseRaid={() => navigate({ screen: 'room', code: party.code }, { replace: true })}
+        />
+
+        <div
+          className={`app-route-overlay ${route.code === party.code && route.screen === 'quests' ? '' : 'app-route-overlay-hidden'}`}
+          aria-hidden={!(route.code === party.code && route.screen === 'quests')}
+        >
+          <Suspense fallback={<AppSpinner />}>
+            <MyQuests
+              userId={user?.id}
+              userQuests={userQuests}
+              onAdd={saveQuest}
+              onBulkAdd={bulkAddQuests}
+              onRemove={removeSavedQuest}
+              onToggleImportant={toggleImportant}
+              onToggleSkipped={toggleSkipped}
+              onClearAll={clearAllQuests}
+              onRestore={restoreSnapshot}
+              onDone={() => navigate({ screen: 'room', code: party.code }, { replace: true })}
+              inParty={route.code === party.code}
+            />
+          </Suspense>
+        </div>
+
+        {isAdmin && (
+          <div
+            className={`app-route-overlay ${route.code === party.code && route.screen === 'admin' ? '' : 'app-route-overlay-hidden'}`}
+            aria-hidden={!(route.code === party.code && route.screen === 'admin')}
+          >
+            <Suspense fallback={<AppSpinner />}>
+              <AdminKeyManager onBack={() => navigate({ screen: 'room', code: party.code }, { replace: true })} />
+            </Suspense>
+          </div>
+        )}
+
+        {leaveConfirmOpen && (
+          <div className="app-confirm-backdrop">
+            <div className="app-confirm-dialog card" role="dialog" aria-modal="true" aria-labelledby="leave-party-title">
+              <h2 id="leave-party-title">LEAVE PARTY?</h2>
+              <p>You'll return to the lobby.</p>
+              <div className="app-confirm-actions">
+                <button className="btn-ghost" onClick={() => setLeaveConfirmOpen(false)}>CANCEL</button>
+                <button className="btn-danger" onClick={handleLeave}>LEAVE PARTY</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     )
   }
 
-  if (screen === 'myquests') {
+  if (route.screen === 'quests' && !route.code) {
     return (
-      <MyQuests
-        userId={user?.id}
-        userQuests={userQuests}
-        onAdd={saveQuest}
-        onRemove={removeSavedQuest}
-        onToggleImportant={toggleImportant}
-        onToggleSkipped={toggleSkipped}
-        onClearAll={clearAllQuests}
-        onRestore={restoreSnapshot}
-        onDone={() => setScreen('lobby')}
-      />
+      <Suspense fallback={<AppSpinner />}>
+        <MyQuests
+          userId={user?.id}
+          userQuests={userQuests}
+          onAdd={saveQuest}
+          onBulkAdd={bulkAddQuests}
+          onRemove={removeSavedQuest}
+          onToggleImportant={toggleImportant}
+          onToggleSkipped={toggleSkipped}
+          onClearAll={clearAllQuests}
+          onRestore={restoreSnapshot}
+          onDone={() => navigate({ screen: 'lobby' }, { replace: true })}
+        />
+      </Suspense>
     )
   }
 
-  if (screen === 'admin' && isAdmin) {
-    return <AdminKeyManager onBack={() => setScreen('lobby')} />
+  if (route.screen === 'admin' && !route.code && isAdmin) {
+    return (
+      <Suspense fallback={<AppSpinner />}>
+        <AdminKeyManager onBack={() => navigate({ screen: 'lobby' }, { replace: true })} />
+      </Suspense>
+    )
   }
 
   async function handleEnter(mode, code) {
@@ -284,9 +397,9 @@ export default function App() {
       callsign={profile.callsign}
       onEnter={handleEnter}
       onForceJoin={handleForceJoin}
-      onManageQuests={() => setScreen('myquests')}
+      onManageQuests={() => navigate({ screen: 'quests' })}
       onLogout={logout}
-      onAdmin={() => setScreen('admin')}
+      onAdmin={() => navigate({ screen: 'admin' })}
       isAdmin={isAdmin}
       error={partyError}
       loading={partyLoading}

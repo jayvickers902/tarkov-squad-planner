@@ -92,10 +92,9 @@ src/
 - **user_quests** — per-user saved quests and objective progress
 - **profiles** — callsign display names and the `is_admin` authorization flag
 - **map_keys** / **map_loot** — admin-curated reference data; preserve their rows during cutovers
-- **quest_scan_log** — rate-limit tracking for quest scanning
 
 Schema definition: `supabase-schema.sql` and ordered cutover files in `supabase/`.
-Edge functions: `supabase/functions/`.
+There are currently no edge functions.
 
 ## Auth Pattern
 
@@ -126,10 +125,20 @@ terrain labels. Leaflet bounds and zoom settings live in
 `src/data/tarkovMapConfigs.js`. `MapLeaflet.jsx` is the active renderer;
 `MapCanvas.jsx` is legacy.
 
-## Edge Functions
+## Quest Screenshot Scanning
 
-`supabase/functions/scan-quests/index.ts` uses Claude Haiku vision for quest
-screenshot scanning. Deployed with `--no-verify-jwt` (auth handled manually).
-It rate-limits to `RATE_LIMIT` scans per hour per user (currently 100); admins
-are exempt, identified through `profiles.is_admin`. The Anthropic key is the
-Supabase secret `ANTHROPIC_API_KEY`.
+Entirely client-side — no API key, no quota, no server call, so it costs nothing
+per scan and needs no rate limiting.
+
+- `src/questOcr.js` — preprocesses the image (upscale, grayscale, invert the
+  dark UI, contrast-stretch) and runs Tesseract in a WASM worker. The worker is
+  a page-lifetime singleton; the ~5MB core + English model come from the
+  tesseract.js CDN on first use and are browser-cached after.
+- `src/questMatch.js` — fuzzy-matches OCR lines against the prebaked task list.
+  This is what makes imperfect OCR workable: the vocabulary is closed (~700
+  known quest names), so approximate substring matching plus OCR-confusable
+  folding resolves a garbled line to one quest. Matches below the accept
+  threshold surface as `UNCERTAIN` and are opt-in rather than discarded.
+
+Accuracy lives in the preprocessing and the thresholds in `acceptThreshold()`,
+not in a smarter model. Tune there first.

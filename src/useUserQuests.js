@@ -4,13 +4,27 @@ import { supabase } from './supabase'
 export function useUserQuests(userId) {
   const [quests, setQuests]   = useState([])
   const [loading, setLoading] = useState(false)
+  const [loadedUserId, setLoadedUserId] = useState(null)
 
   useEffect(() => {
-    if (!userId) { setQuests([]); return }
+    let cancelled = false
+    if (!userId) {
+      setQuests([])
+      setLoadedUserId(null)
+      setLoading(false)
+      return () => { cancelled = true }
+    }
     setLoading(true)
     supabase.from('user_quests').select().eq('user_id', userId).eq('completed', false).order('created_at')
-      .then(({ data }) => { setQuests(data || []) })
-      .finally(() => setLoading(false))
+      .then(({ data }) => {
+        if (cancelled) return
+        setQuests(data || [])
+        setLoadedUserId(userId)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
   }, [userId])
 
   // Add a quest to the user's saved list
@@ -27,6 +41,48 @@ export function useUserQuests(userId) {
     const { data, error } = await supabase.from('user_quests').upsert(row, { onConflict: 'user_id,quest_id' }).select().single()
     if (!error && data) setQuests(prev => prev.find(q => q.quest_id === quest.id) ? prev : [...prev, data])
   }, [userId])
+
+  // Add a catch-up batch with one request per 200 rows at most.
+  const bulkAddQuests = useCallback(async (entries) => {
+    if (!userId || !Array.isArray(entries) || entries.length === 0) return
+
+    const seenIds = new Set(quests.map(q => q.quest_id))
+    const rows = entries
+      .filter(entry => entry?.id && !seenIds.has(entry.id))
+      .map(entry => {
+        seenIds.add(entry.id)
+        return {
+          user_id:    userId,
+          quest_id:   entry.id,
+          quest_name: entry.name,
+          map_norm:   entry.mapNorm || null,
+          important:  false,
+          completed:  false,
+        }
+      })
+
+    if (rows.length === 0) return
+
+    const inserted = []
+    for (let offset = 0; offset < rows.length; offset += 200) {
+      const chunk = rows.slice(offset, offset + 200)
+      const { data, error } = await supabase
+        .from('user_quests')
+        .upsert(chunk, { onConflict: 'user_id,quest_id' })
+        .select()
+      if (!error && Array.isArray(data)) inserted.push(...data)
+    }
+
+    if (inserted.length) {
+      setQuests(prev => {
+        const byId = new Map(prev.map(q => [q.quest_id, q]))
+        for (const quest of inserted) {
+          if (!byId.has(quest.quest_id)) byId.set(quest.quest_id, quest)
+        }
+        return [...byId.values()]
+      })
+    }
+  }, [userId, quests])
 
   // Remove a quest from saved list
   const removeQuest = useCallback(async (questId) => {
@@ -97,5 +153,18 @@ export function useUserQuests(userId) {
     return quests.filter(q => !q.map_norm || q.map_norm === mapNorm)
   }, [quests])
 
-  return { quests, loading, addQuest, removeQuest, toggleImportant, toggleSkipped, questsForMap, clearAllQuests, restoreSnapshot, markCompleted, saveObjectiveProgress }
+  return {
+    quests,
+    loading: Boolean(userId) && (loading || loadedUserId !== userId),
+    addQuest,
+    bulkAddQuests,
+    removeQuest,
+    toggleImportant,
+    toggleSkipped,
+    questsForMap,
+    clearAllQuests,
+    restoreSnapshot,
+    markCompleted,
+    saveObjectiveProgress,
+  }
 }
