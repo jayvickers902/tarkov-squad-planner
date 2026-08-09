@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const PARTY_CODE_RE = /^[A-Z0-9]{6}$/i
+const PARTY_SENTINEL_KEY = '__tarkovSquadPlannerPartySentinel'
+
+export const PARTY_ENTRY_SENTINEL_STATE = Object.freeze({
+  [PARTY_SENTINEL_KEY]: true,
+})
+
+export function isPartyEntrySentinel(state) {
+  return state?.[PARTY_SENTINEL_KEY] === true
+}
 
 function normalizePartyCode(value) {
   const code = String(value || '').toUpperCase()
@@ -50,20 +59,20 @@ export function useAppRoute() {
   const popIdRef = useRef(0)
 
   useEffect(() => {
-    function onPopState() {
+    function onPopState(event) {
       const next = parseAppPath(window.location.pathname)
       setRoute(next)
-      setLastPop({ id: ++popIdRef.current, route: next })
+      setLastPop({ id: ++popIdRef.current, route: next, state: event.state })
     }
 
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
-  const navigate = useCallback((nextRoute, { replace = false } = {}) => {
+  const navigate = useCallback((nextRoute, { replace = false, historyState = null } = {}) => {
     const path = appRoutePath(nextRoute)
     const method = replace ? 'replaceState' : 'pushState'
-    window.history[method](null, '', path)
+    window.history[method](historyState, '', path)
     setRoute(parseAppPath(path))
     setLastPop(null)
   }, [])

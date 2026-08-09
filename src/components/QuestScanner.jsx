@@ -21,6 +21,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
   const [showRaw,    setShowRaw]    = useState(false)
   const [showUpload, setShowUpload] = useState(true)
   const fileRef = useRef()
+  const busyRef = useRef(false)   // the paste listener stays live during a scan
 
   // Start fetching the wasm core + language model while the user hunts for
   // their screenshot, so the first scan isn't waiting on a 5MB download.
@@ -42,10 +43,12 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
   }, [open]) // eslint-disable-line
 
   const processFile = useCallback(async (file) => {
+    if (busyRef.current) return
     if (!file?.type.startsWith('image/')) {
       setError('Please provide an image file.')
       return
     }
+    busyRef.current = true
     setError(null)
     setPreview(null)
     setRawText('')
@@ -84,6 +87,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
       setError(err?.message || 'Could not read that screenshot')
       setShowUpload(true)
     } finally {
+      busyRef.current = false
       setScanning(false)
     }
   }, [allTasks, userQuests])

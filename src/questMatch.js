@@ -76,14 +76,33 @@ function similarity(hay, needle) {
   return { score: 1 - dist / needle.length, end }
 }
 
+// Where the matched name sits in the row. substringDistance only reports where
+// the match ended, so the start is inferred from the name length with a little
+// slack for insertions and deletions.
+function rowStart(end, nameLen) {
+  return Math.max(0, end - nameLen - 2)
+}
+
+function rowRegion(norm, end, nameLen) {
+  return norm.slice(rowStart(end, nameLen), Math.min(norm.length, end + 3))
+}
+
 // Longer names carry more signal, so they can tolerate a worse score. A 5-char
 // name has to be near-perfect or it will collide with unrelated row text.
 function acceptThreshold(len) {
-  if (len >= 20) return 0.66
-  if (len >= 14) return 0.72
-  if (len >= 9)  return 0.78
+  if (len >= 20) return 0.70
+  if (len >= 14) return 0.76
+  if (len >= 9)  return 0.80
   if (len >= 6)  return 0.85
   return 0.93
+}
+
+// Trailing sequence number, as in "Gunsmith - Part 12". Tarkov has long numbered
+// series, and the digit is worth one edit while being the only thing separating
+// six otherwise identical names — so it gets checked separately from the score.
+function tailNumber(norm) {
+  const runs = norm.match(/\d+/g)
+  return runs ? runs[runs.length - 1] : null
 }
 
 function trigrams(str) {
@@ -104,7 +123,7 @@ function taskIndex(allTasks) {
     const norm = normalize(task.name)
     if (norm.length < 3) continue
     const folded = fold(norm)
-    entries.push({ task, norm, folded, tri: trigrams(folded) })
+    entries.push({ task, norm, folded, tri: trigrams(folded), tail: tailNumber(norm) })
   }
   indexCache = { ref: allTasks, entries }
   return entries
@@ -155,10 +174,26 @@ export function matchQuestLines(lines, allTasks) {
 
         const { score, end } = similarity(foldedStack, entry.folded)
         const accept = acceptThreshold(entry.norm.length)
-        const floor  = Math.max(0.52, accept - 0.16)
+        // Short names get no uncertain tier — a near-miss on six characters is
+        // usually a coincidence in the surrounding row text, not a bad read.
+        const floor  = entry.norm.length < 10 ? accept : Math.max(0.52, accept - 0.16)
         if (score < floor) continue
 
-        candidates.push({ stack, entry, score, end, confident: score >= accept })
+        let confident = score >= accept
+
+        // Guard the sequence number. Read it off the unfolded row, since fold()
+        // maps digits onto letters and would happily accept "Part l" for
+        // "Part 1". A row carrying a *different* number is a sibling quest, not
+        // this one; a row carrying none is ambiguous, so it goes to the
+        // uncertain tier for the user to confirm rather than being auto-added.
+        if (entry.tail) {
+          const region = rowRegion(stack.norm, end, entry.norm.length)
+          const found  = region.match(/\d+/g)
+          if (found) { if (!found.includes(entry.tail)) continue }
+          else confident = false
+        }
+
+        candidates.push({ stack, entry, score, end, confident })
       }
     }
 
@@ -173,7 +208,7 @@ export function matchQuestLines(lines, allTasks) {
 
       // Cut the matched name out of the row before looking for a map, so
       // "Woods Keeper · Woods" doesn't read its map off the quest title.
-      const start     = Math.max(0, end - entry.norm.length - 2)
+      const start     = rowStart(end, entry.norm.length)
       const remainder = `${stack.norm.slice(0, start)} ${stack.norm.slice(end)}`.replace(/\s+/g, ' ').trim()
 
       const result = {

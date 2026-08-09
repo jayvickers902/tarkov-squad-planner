@@ -161,6 +161,7 @@ export function useParty(userId, userSettings = {}, {
   const [myName, setMyName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [autoRejoinSettled, setAutoRejoinSettled] = useState(false)
   const [partyCode, setPartyCode] = useState(null)
   const [onlineMemberIds, setOnlineMemberIds] = useState([])
   const [presenceReady, setPresenceReady] = useState(false)
@@ -184,6 +185,7 @@ export function useParty(userId, userSettings = {}, {
     if (previousUserId !== userId) {
       autoRejoinAttemptedRef.current = null
       autoRejoinBlockedRef.current = false
+      setAutoRejoinSettled(false)
       if (previousUserId && previousUserId !== userId) clearPartyState(false)
     }
     userIdRef.current = userId
@@ -565,40 +567,72 @@ export function useParty(userId, userSettings = {}, {
   }, [forceJoinParty, patchOwnMember, updateMemberDB])
 
   useEffect(() => {
-    if (!userId || !callsign || questsLoading || settingsLoading || pendingJoinCode || partyRef.current) return undefined
-    if (autoRejoinBlockedRef.current) return undefined
-    if (resolveSetting('auto_rejoin', { user: userSettings }) !== true) return undefined
+    if (!userId || !callsign || questsLoading || settingsLoading) return undefined
+
+    const settle = () => {
+      if (userIdRef.current === userId) setAutoRejoinSettled(true)
+    }
+
+    if (
+      pendingJoinCode
+      || partyRef.current
+      || autoRejoinBlockedRef.current
+      || resolveSetting('auto_rejoin', { user: userSettings }) !== true
+    ) {
+      settle()
+      return undefined
+    }
     if (autoRejoinAttemptedRef.current === userId) return undefined
 
     autoRejoinAttemptedRef.current = userId
-    let cancelled = false
+    setAutoRejoinSettled(false)
 
     async function autoRejoin() {
-      const { data: membership, error: membershipError } = await supabase
-        .from('party_members')
-        .select('party_id, joined_at')
-        .eq('user_id', userId)
-        .order('joined_at', { ascending: false })
-        .limit(1)
+      try {
+        const { data: membership, error: membershipError } = await supabase
+          .from('party_members')
+          .select('party_id, joined_at')
+          .eq('user_id', userId)
+          .order('joined_at', { ascending: false })
+          .limit(1)
 
-      if (cancelled || membershipError) return
-      const partyId = membership?.[0]?.party_id
-      if (!partyId) return
+        if (userIdRef.current !== userId) return
+        if (membershipError) {
+          settle()
+          return
+        }
+        const partyId = membership?.[0]?.party_id
+        if (!partyId) {
+          settle()
+          return
+        }
 
-      const { data: partyRow, error: partyError } = await supabase
-        .from('parties')
-        .select('code')
-        .eq('id', partyId)
-        .maybeSingle()
+        const { data: partyRow, error: partyError } = await supabase
+          .from('parties')
+          .select('code')
+          .eq('id', partyId)
+          .maybeSingle()
 
-      if (cancelled || partyError || !partyRow?.code) return
-      if (partyRef.current || autoRejoinBlockedRef.current) return
+        if (userIdRef.current !== userId) return
+        if (partyError || !partyRow?.code) {
+          settle()
+          return
+        }
+        if (partyRef.current || autoRejoinBlockedRef.current) {
+          settle()
+          return
+        }
 
-      await forceJoinParty(partyRow.code, callsign, savedQuests, { autoRejoin: true })
+        await forceJoinParty(partyRow.code, callsign, savedQuests, { autoRejoin: true })
+        settle()
+      } catch {
+        // A failed lookup or join still resolves the route bootstrap.
+        settle()
+      }
     }
 
     autoRejoin()
-    return () => { cancelled = true }
+    return undefined
   }, [userId, callsign, savedQuests, questsLoading, settingsLoading, pendingJoinCode, userSettings, forceJoinParty])
 
   const selectMap = useCallback(async map => {
@@ -1028,6 +1062,7 @@ export function useParty(userId, userSettings = {}, {
     myName,
     error,
     loading,
+    autoRejoinSettled,
     onlineMemberIds,
     presenceReady,
     createParty,

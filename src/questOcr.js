@@ -147,13 +147,14 @@ export async function scanImage(file, report) {
 
   report?.('preparing', 1)
 
-  const worker = await getWorker()
-
+  // Registered before getWorker() so the one-time core + model download reports
+  // progress too — on a cold cache that is most of the wait.
   onProgress = m => {
     if (m.status === 'recognizing text') report?.('reading', m.progress)
     else if (typeof m.status === 'string' && m.status.startsWith('loading')) report?.('loading', m.progress)
   }
   try {
+    const worker = await getWorker()
     const { data } = await worker.recognize(canvas)
     const text  = data?.text ?? ''
     const lines = text

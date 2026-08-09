@@ -4,7 +4,7 @@ import { useParty } from './useParty'
 import { useSettings } from './useSettings'
 import { useUserQuests } from './useUserQuests'
 import { useFriends } from './useFriends'
-import { parseJoinCode, useAppRoute } from './useAppRoute'
+import { isPartyEntrySentinel, parseJoinCode, PARTY_ENTRY_SENTINEL_STATE, useAppRoute } from './useAppRoute'
 import AuthScreen from './components/AuthScreen'
 import Lobby from './components/Lobby'
 import Room from './components/Room'
@@ -22,6 +22,8 @@ export default function App() {
   const [pendingJoinCode] = useState(() => parseJoinCode(window.location.pathname))
   const [autoJoinFired, setAutoJoinFired] = useState(false)
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
+  const [openedPartyOverlays, setOpenedPartyOverlays] = useState({ code: null, quests: false, admin: false })
+  const partyHistoryCodeRef = useRef(null)
 
   const {
     user, profile, profileError: authProfileError, loading: authLoading,
@@ -43,6 +45,7 @@ export default function App() {
 
   const {
     party, myName, error: partyError, loading: partyLoading,
+    autoRejoinSettled,
     createParty, joinParty, forceJoinParty,
     selectMap, addQuest: addPartyQuest, removeQuest: removePartyQuest, setSpawn,
     toggleStar, submitMyProgress,
@@ -60,6 +63,8 @@ export default function App() {
     settingsLoading,
     pendingJoinCode,
   })
+
+  const isAdmin = profile?.is_admin === true
 
   // Keep the party hook's savedQuestsRef in sync — quests may load after joining
   useEffect(() => {
@@ -116,19 +121,31 @@ export default function App() {
     })
   }, [user, profile, authLoading, questsLoading, partyLoading, party, pendingJoinCode, autoJoinFired, navigate, joinParty]) // eslint-disable-line
 
-  // A party entry consumes the lobby entry. Preserve an existing party overlay
-  // on hard refresh, but normalize every new entry to the party room.
+  // A party owns a pair of same-document entries: the replaced entry is a
+  // marked sentinel and the pushed entry is the visible room. A hard refresh
+  // on an overlay gets that pair first, then restores the overlay above it.
   useEffect(() => {
-    if (!party?.code || route.code === party.code) return
-    if (lastPop?.route && !lastPop.route.code) return
-    navigate({ screen: 'room', code: party.code }, { replace: true })
-  }, [party?.code, route.code, lastPop, navigate])
+    const code = party?.code
+    if (!code) {
+      partyHistoryCodeRef.current = null
+      return
+    }
+    if (partyHistoryCodeRef.current === code) return
+
+    partyHistoryCodeRef.current = code
+    const roomRoute = { screen: 'room', code }
+    const preserveRoute = route.code === code && route.screen !== 'room'
+    navigate(roomRoute, { replace: true, historyState: PARTY_ENTRY_SENTINEL_STATE })
+    navigate(roomRoute)
+    if (preserveRoute) navigate(route)
+  }, [party?.code, route.code, route.screen, navigate])
 
   // Browser Back must be explicit about leaving a live party. The route hook
-  // marks each pop, so this pushes exactly once for that pop and then lets the
-  // dialog absorb any repeated gesture until the user decides.
+  // marks the replaced room entry, so a pop to that same-path entry is still
+  // distinguishable from Back within the party.
   useEffect(() => {
-    if (!party?.code || !lastPop || lastPop.route.code) return
+    if (!party?.code || !lastPop) return
+    if (lastPop.route.code && !isPartyEntrySentinel(lastPop.state)) return
     navigate({ screen: 'room', code: party.code })
     setLeaveConfirmOpen(true)
   }, [party?.code, lastPop, navigate])
@@ -136,6 +153,36 @@ export default function App() {
   useEffect(() => {
     if (!party) setLeaveConfirmOpen(false)
   }, [party])
+
+  // A party-scoped URL with no live party is only valid while the bootstrap
+  // gates are still resolving. Once they settle, show the matching public
+  // screen and consume the stale party code from the address bar.
+  useEffect(() => {
+    if (!user || !profile || authLoading || party || !route.code) return
+    if (questsLoading || settingsLoading || partyLoading || !autoRejoinSettled) return
+
+    const publicRoute = route.screen === 'quests'
+      ? { screen: 'quests' }
+      : route.screen === 'admin'
+        ? { screen: 'admin' }
+        : { screen: 'lobby' }
+    navigate(publicRoute, { replace: true })
+  }, [user, profile, authLoading, party, route.code, route.screen, questsLoading, settingsLoading, partyLoading, autoRejoinSettled, navigate])
+
+  // Keep the expensive overlays out of the initial party render, but preserve
+  // their internal state after the first time each one is opened.
+  useEffect(() => {
+    const code = party?.code || null
+    setOpenedPartyOverlays(previous => {
+      const next = previous.code === code
+        ? { ...previous }
+        : { code, quests: false, admin: false }
+      if (code && route.code === code && route.screen === 'quests') next.quests = true
+      if (code && route.code === code && route.screen === 'admin' && isAdmin) next.admin = true
+      if (next.code === previous.code && next.quests === previous.quests && next.admin === previous.admin) return previous
+      return next
+    })
+  }, [party?.code, route.code, route.screen, isAdmin])
 
   useEffect(() => {
     if (!leaveConfirmOpen) return undefined
@@ -148,14 +195,13 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [leaveConfirmOpen])
 
-  const isAdmin = profile?.is_admin === true
-
   useEffect(() => {
     const inPartyOverlay = party?.code === route.code
       && (route.screen === 'quests' || (route.screen === 'admin' && isAdmin))
     const publicOverlay = !route.code
       && (route.screen === 'quests' || (route.screen === 'admin' && isAdmin))
     if (!inPartyOverlay && !publicOverlay) return undefined
+    if (leaveConfirmOpen) return undefined
 
     function onKeyDown(event) {
       const target = event.target
@@ -168,7 +214,7 @@ export default function App() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [party?.code, route.code, route.screen, isAdmin, navigate])
+  }, [party?.code, route.code, route.screen, isAdmin, leaveConfirmOpen, navigate])
 
   if (authLoading) {
     return (
@@ -208,6 +254,11 @@ export default function App() {
   }
 
   if (party) {
+    const showPartyQuests = route.code === party.code && route.screen === 'quests'
+    const showPartyAdmin = route.code === party.code && route.screen === 'admin' && isAdmin
+    const mountPartyQuests = openedPartyOverlays.code === party.code && openedPartyOverlays.quests
+    const mountPartyAdmin = openedPartyOverlays.code === party.code && openedPartyOverlays.admin
+
     async function handleAddPartyQuest(quest) {
       addPartyQuest(quest)
       await saveQuest({ id: quest.id, name: quest.name }, party.map_norm || null)
@@ -307,31 +358,33 @@ export default function App() {
         onCloseRaid={() => navigate({ screen: 'room', code: party.code }, { replace: true })}
         />
 
-        <div
-          className={`app-route-overlay ${route.code === party.code && route.screen === 'quests' ? '' : 'app-route-overlay-hidden'}`}
-          aria-hidden={!(route.code === party.code && route.screen === 'quests')}
-        >
-          <Suspense fallback={<AppSpinner />}>
-            <MyQuests
-              userId={user?.id}
-              userQuests={userQuests}
-              onAdd={saveQuest}
-              onBulkAdd={bulkAddQuests}
-              onRemove={removeSavedQuest}
-              onToggleImportant={toggleImportant}
-              onToggleSkipped={toggleSkipped}
-              onClearAll={clearAllQuests}
-              onRestore={restoreSnapshot}
-              onDone={() => navigate({ screen: 'room', code: party.code }, { replace: true })}
-              inParty={route.code === party.code}
-            />
-          </Suspense>
-        </div>
-
-        {isAdmin && (
+        {mountPartyQuests && (
           <div
-            className={`app-route-overlay ${route.code === party.code && route.screen === 'admin' ? '' : 'app-route-overlay-hidden'}`}
-            aria-hidden={!(route.code === party.code && route.screen === 'admin')}
+            className={`app-route-overlay ${showPartyQuests ? '' : 'app-route-overlay-hidden'}`}
+            aria-hidden={!showPartyQuests}
+          >
+            <Suspense fallback={<AppSpinner />}>
+              <MyQuests
+                userId={user?.id}
+                userQuests={userQuests}
+                onAdd={saveQuest}
+                onBulkAdd={bulkAddQuests}
+                onRemove={removeSavedQuest}
+                onToggleImportant={toggleImportant}
+                onToggleSkipped={toggleSkipped}
+                onClearAll={clearAllQuests}
+                onRestore={restoreSnapshot}
+                onDone={() => navigate({ screen: 'room', code: party.code }, { replace: true })}
+                inParty={showPartyQuests}
+              />
+            </Suspense>
+          </div>
+        )}
+
+        {isAdmin && mountPartyAdmin && (
+          <div
+            className={`app-route-overlay ${showPartyAdmin ? '' : 'app-route-overlay-hidden'}`}
+            aria-hidden={!showPartyAdmin}
           >
             <Suspense fallback={<AppSpinner />}>
               <AdminKeyManager onBack={() => navigate({ screen: 'room', code: party.code }, { replace: true })} />
