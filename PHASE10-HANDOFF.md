@@ -1,14 +1,18 @@
 # Phase 10 Handoff — read this first
 
-**Status:** A1 is complete, verified and **committed** on branch
-`phase10-foundation`. The schema cutover is fully specified but **not started**.
-Nothing has been applied to the database.
+**Status:** the cutover is **built and committed**, and **nothing has been
+applied to the database.** The next action is the owner runbook in
+`PHASE10-CUTOVER-HANDOFF.md` — it is destructive and starts by deleting every
+auth user.
 
 **Live site:** unaffected. dudgy.net runs `main` at `54ca5b6`. The branch has
-not been merged or deployed.
+not been merged, pushed or deployed.
 
-**Branch:** `phase10-foundation`, two commits ahead of `main`. Nothing was
-pushed. To get back to the deployed state: `git checkout main`.
+**Branch:** `phase10-foundation`, three commits ahead of `main`. To get back to
+the deployed state: `git checkout main`.
+
+Read `PHASE10-CUTOVER-HANDOFF.md` next. This file is the session-level history —
+why the plan changed shape halfway through, and what bit us along the way.
 
 ---
 
@@ -16,18 +20,23 @@ pushed. To get back to the deployed state: `git checkout main`.
 
 | File | What it is |
 |---|---|
-| **`PHASE10-HANDOFF.md`** | ← you are here. Session-level state, decisions, runbook |
+| **`PHASE10-CUTOVER-HANDOFF.md`** | **Start here.** What landed, verified vs assumed, and the owner runbook |
+| `PHASE10-HANDOFF.md` | ← you are here. Session history: why the plan changed, what bit us |
 | `PHASE10-PLAN.md` | Architecture plan: the four problems, settings model, stages A/B/C |
-| `CODEX-BRIEF-phase10-cutover.md` | **The active build spec.** Implement this next |
-| `PHASE10A-HANDOFF.md` | Codex's technical handoff for the A1 work now in the tree |
-| `CODEX-BRIEF-phase10a.md` | **Superseded.** Read only to understand what is being removed |
-| `supabase/10a2_01..07_*.sql` | Cutover migrations. Written, revised spec pending, **not applied** |
+| `CODEX-BRIEF-phase10-cutover.md` | The build spec. **Implemented** — kept as the record of intent |
+| `CODEX-BRIEF-phase10a.md` | **Superseded.** Read only to understand what was removed |
+| `supabase/10_01..07_*.sql` | Cutover migrations. Written, reviewed, **not applied** |
+
+`PHASE10A-HANDOFF.md` is deleted; it documented the A1 stage that the cutover
+replaced. Its content survives as Part 1 below and in git history at `06f6986`.
 
 ---
 
-## Part 1 — What is in the working tree right now (A1)
+## Part 1 — What A1 was (commit `d1f1174`, now superseded)
 
-14 modified files, 6 new source files, 7 SQL files. `npx vite build` passes.
+Kept because the verification below was done against the *live* database and is
+still the only live-schema evidence anyone has. The code it describes has since
+been replaced by the cutover.
 
 ### Verified
 
@@ -92,29 +101,49 @@ presence · Lobby rejoin · size cap · code retry.
 
 ---
 
-## Part 3 — What to build next
+## Part 3 — What was built (commit `b665280`)
 
-**Implement `CODEX-BRIEF-phase10-cutover.md`.** It is prescriptive and complete.
-Four migration revisions matter most:
+`CODEX-BRIEF-phase10-cutover.md` is implemented in full. The four migration
+revisions, and why each one mattered:
 
 - **R1 — Do not truncate `map_keys` or `map_loot`.** `map_keys` has 44 rows,
   38 priority-flagged, 2 with hand-placed coordinates. That is curated admin
   work with zero dependency on identity or parties. Losing it costs real effort
-  and buys nothing.
-- **R2 — Kill the hardcoded admin UUID.** There are currently *two, and they
-  disagree*: the old client and policy each used a different hardcoded UUID;
-  `map_keys`/`map_loot` RLS policies in `supabase-schema.sql:104,127` say
-  re-registering produces another one.
-  Replace the mechanism with `profiles.is_admin boolean`; RLS policies check it,
-  the client reads `profile.is_admin`, and the old constant is deleted.
-- **R3 — Rebuild `friendships` on `user_id`.** Do not reverse-engineer the live
-  callsign-keyed table. Callsign is the last mutable-identity holdout; a reset
-  is the cheapest moment to remove it. `useFriends.js` changes with it.
+  and buys nothing. The migrations now carry an explicit comment saying so, so a
+  later editor does not fold them into a reset.
+- **R2 — Kill the hardcoded admin UUID.** There were *two, and they disagreed* —
+  one in the client, a different one in the `map_keys`/`map_loot` RLS policies —
+  and re-registering would have produced a third. Replaced with
+  `profiles.is_admin`: policies check the flag, the client reads
+  `profile.is_admin`, and no UUID is hardcoded anywhere, including the
+  `scan-quests` edge function.
+- **R3 — Rebuild `friendships` on `user_id`.** The live table is callsign-keyed
+  and had no SQL file; rather than reverse-engineer it, a full reset is the
+  cheapest moment to drop the last mutable-identity holdout. `useFriends.js`
+  changed with it.
 - **R4 — Renumber `10a2_*` → `10_*`.** There is no "part 2" any more.
 
 Then the client rewrite: `party_members` rows instead of the `members` blob,
 progress keys suffixed with `user_id`, all authorized mutations through RPCs,
 realtime on both tables, Google-only auth with no password path.
+
+### Two defects caught in review, not in the spec
+
+Both were in the migrations as first drafted, and both would have surfaced only
+after apply — one immediately, one never, which is worse.
+
+- **RLS recursion.** A policy on `party_members` whose `using` clause subqueries
+  `party_members` recurses: Postgres raises `42P17` on the first read. Fixed with
+  `is_party_member()`, a `security definer` helper the policies call instead.
+  **Any future policy that needs to test membership must go through it.**
+- **RLS gates rows; it does not gate columns.** "You may update your own member
+  row" also permitted `set party_id = <any party id>` — self-service entry into
+  any room, no code needed, which is precisely what this phase exists to
+  prevent. "You may update your party" permitted `set leader_id = me`. Only
+  `GRANT` narrows columns, so `10_03` now revokes blanket UPDATE and re-grants
+  exactly the columns the client writes; `10_07` does the same for
+  `friendships.status`. **If a new column needs client writes, it needs a grant —
+  otherwise it fails silently at runtime, not at build.**
 
 ---
 
@@ -128,19 +157,28 @@ Run in this order. Steps 1–2 are destructive and irreversible.
    `map_loot`.
 2. **Apply the migrations in order** — `_01` through `_07`. `_02` truncates
    `parties` (already empty) and drops the callsign-keyed columns.
-3. **Sign in with Google** on dudgy.net and choose your callsign.
-4. **Grant yourself admin** — one line, replacing the callsign:
+3. **Merge and deploy `phase10-foundation`.** dudgy.net builds from `main`, and
+   `main` is still the pre-cutover client — it reads `parties.members` and
+   `parties.leader`, which step 2 just dropped. **Between steps 2 and 3 the live
+   site is broken**, so keep the gap short and do not send anyone to it until
+   the deploy is up.
+4. **Sign in with Google** on dudgy.net and choose your callsign.
+5. **Grant yourself admin** — one line, replacing the callsign:
 
    ```sql
    update public.profiles set is_admin = true where callsign = 'YOUR_CALLSIGN';
    ```
 
-5. **Tell the other 4–5 users to re-register** with Google.
+6. **Tell the other 4–5 users to re-register** with Google.
 
-**Before step 3, confirm Google OAuth is production-ready in Supabase** —
+**Before you start, confirm Google OAuth is production-ready in Supabase** —
 provider enabled, `dudgy.net` plus any preview domains in the authorized
 redirect URIs. After the cutover this is the *only* way anyone signs in,
-including you. If it is misconfigured, nobody can get in.
+including you. If it is misconfigured, nobody can get in — and step 1 has
+already deleted the password accounts. Check it while you can still log in.
+
+Nothing here has been rehearsed against a database. Everything after step 1 is
+first-run.
 
 ---
 
@@ -174,11 +212,15 @@ project `vggbwjboeryxddmxmcjn`, but neither of those files exists yet.
   suspended laptop — so a dropped packet would have cost a squadmate their state
   mid-raid. Presence now drives the online indicator only. Real eviction needs
   server-side `last_seen` plus a grace window; that is `cleanup_stale()` in
-  `10a2_05_lifecycle.sql`. **Do not reintroduce client-side eviction.**
+  `10_05_lifecycle.sql`, which drops members idle for 10 minutes. The client
+  heartbeats every 30s, so the margin is wide — but **if the heartbeat ever
+  stops firing, `cleanup_stale()` will quietly evict active players.**
+  **Do not reintroduce client-side eviction.**
 - **Schema drift is real.** `join_party_secure`, `force_join_party`,
-  `get_friend_parties` and `friendships` exist in the live database with no SQL
-  file in this repo — `supabase-schema.sql` cannot currently rebuild it. The
-  cutover fixes this; keep it fixed.
+  `get_friend_parties` and `friendships` existed in the live database with no
+  SQL file in this repo, so `supabase-schema.sql` could not rebuild it. The
+  cutover brings all four back under version control; **keep it that way** — if
+  you write a function in the dashboard, it does not exist.
 - **You can verify live schema without dashboard access.** Source `.env`, then
   probe PostgREST read-only: a missing column returns SQLSTATE 42703, an
   existing-but-RLS-blocked one returns `200 []`. Always include a negative
@@ -196,10 +238,12 @@ Branch `phase10-foundation`, branched from `main` at `54ca5b6`. **Not pushed.**
 | Commit | Contents |
 |---|---|
 | `d1f1174` | A1 implementation — 20 files, ephemerality, settings, auth, presence |
-| *(second)* | Phase 10 docs, cutover spec, migrations |
+| `06f6986` | Phase 10 docs, cutover spec, first-draft migrations |
+| `b665280` | **The cutover** — 42 files, `user_id` identity, RLS, grants, Google-only auth |
 
-A1 is committed separately and deliberately, so the cutover lands as its own
-reviewable diff on top rather than tangled with the work it replaces.
+A1 was committed separately and deliberately, so the cutover lands as its own
+reviewable diff on top rather than tangled with the work it replaces. `b665280`
+is therefore best read as a diff against `06f6986`, not against `main`.
 
 Left untracked on purpose, both pre-existing and unrelated to Phase 10:
 

@@ -163,9 +163,11 @@ scope. The five-second poll intentionally remains.
    `10_02` truncates session parties; `10_03` also carries the explicit
    column-level client `UPDATE` grants; `10_07` replaces the friendship table
    and grants client updates only to its `status` column.
-3. Configure and verify the Google OAuth provider and its redirect URIs, then
-   sign in with Google.
-4. Choose a callsign when prompted.
+3. Merge `phase10-foundation` into `main` and let Vercel deploy it. dudgy.net
+   builds from `main`, and the pre-cutover client still reads `parties.members`
+   and `parties.leader` — columns step 2 drops. **The live site is broken
+   between steps 2 and 3.** Keep the gap short; do not send users to it.
+4. Sign in with Google, then choose a callsign when prompted.
 5. Promote the owner's new profile with this exact SQL:
 
    ```sql
@@ -174,6 +176,10 @@ scope. The five-second poll intentionally remains.
 
 6. Register the remaining users again and recreate any parties. Verify the
    preserved curated map data before using the admin editor.
+
+**Verify the Google OAuth provider and its redirect URIs before step 1**, while
+the password accounts still exist. After step 1 they are gone, and Google is the
+only way anyone signs in, including the owner.
 
 Codex did not perform steps 1-6 and makes no claim that live integration works
 until the owner runs them.
