@@ -374,6 +374,24 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .raid-rail-heading { display: flex; align-items: center; gap: 7px; margin: 0 2px 6px; color: var(--gold); font-size: 9px; letter-spacing: .12em; }
 .raid-rail-heading .raid-rail-count { margin-left: auto; }
 .raid-rail-empty { padding: 9px 4px; color: var(--txd); font-size: 10px; letter-spacing: .05em; }
+.raid-rail-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: .07em;
+  cursor: help;
+}
+.raid-rail-link-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: currentColor; }
+.raid-rail-link-live { color: var(--grn); }
+.raid-rail-link-wait { color: var(--goldtx); }
+.raid-rail-link-off  { color: var(--txd); }
+.raid-rail-link-down { color: var(--red); }
+/* Only the failure state animates — a steady green light should not compete with
+   the map for attention, but a dropped relay is the whole reason this exists. */
+.raid-rail-link-down .raid-rail-link-dot { animation: rail-link-pulse 1.4s ease-in-out infinite; }
+@keyframes rail-link-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
 .raid-ping-list { display: flex; flex-direction: column; gap: 5px; }
 .raid-ping-card { flex: none; min-width: 0; padding: 6px 8px; }
 .raid-ping-body { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; color: var(--txm); font-size: 10px; line-height: 1.4; }

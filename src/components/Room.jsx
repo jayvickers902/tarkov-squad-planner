@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react'
+import { useState, useRef, useMemo, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useMaps, useTasks, useExtracts } from '../useTarkov'
 import { useIsMobile } from '../useIsMobile'
 import QuestSearch from './QuestSearch'
@@ -63,6 +63,11 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
   const [startRaidPending, setStartRaidPending] = useState(false)
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [monitorStatus, setMonitorStatus] = useState(null)
+
+  // Stable identity: MonitorLink reports through a ref, but a new function every
+  // render would still re-run its effect on each Room render.
+  const handleMonitorStatus = useCallback(next => setMonitorStatus(next), [])
 
   useEphemeralSweep({ party, userId: myUserId, userSettings, onSweep: onSweepEphemeral })
 
@@ -204,6 +209,7 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
             onAddMarker={onAddMarker}
             onClearMyMarkers={onClearMyMarkers}
             onClearPings={onClearPings}
+            monitorStatus={monitorStatus}
             userSettings={userSettings}
             onSetSetting={onSetUserSetting}
             onClose={onCloseRaid}
@@ -559,6 +565,7 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
             hasPlan={hasPlan}
             onSelectMap={onSelectMap}
             onAddPing={onAddPing}
+            onStatus={handleMonitorStatus}
             settings={userSettings}
             onSetSetting={onSetUserSetting}
           />

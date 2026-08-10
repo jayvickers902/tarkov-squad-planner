@@ -19,7 +19,7 @@ const POS_REJECT_TEXT = {
   bounds: 'a position outside the map’s bounds',
 }
 
-export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, settings = {}, onSetSetting }) {
+export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, onStatus, settings = {}, onSetSetting }) {
   const [copied, setCopied] = useState(false)
   const [confirmRegen, setConfirmRegen] = useState(false)
   const [lastAction, setLastAction] = useState(null)  // { value, at, ok, reason }
@@ -38,6 +38,7 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
   const userIdRef   = useRef(userId);     userIdRef.current = userId
   const myNameRef   = useRef(myName);     myNameRef.current = myName
   const addPingRef  = useRef(onAddPing);  addPingRef.current = onAddPing
+  const statusRef   = useRef(onStatus);   statusRef.current = onStatus
 
   // Cadence buffer. Taps arrive ~1s apart as separate messages, so a ping is only
   // committed once the window closes — 1 tap "I'm here", 2 "contact", 3 "need help".
@@ -127,6 +128,14 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
     posRejected, throttled,
     connect, disconnect, regenerate,
   } = useTarkovMonitor({ onMap: handleMapCommand, onPosition: handlePosition, settings, onSetSetting })
+
+  // The Raid View overlay covers this panel, which is exactly when the link state
+  // matters most: a dropped relay and a silent monitor both look like an empty
+  // squad rail. Report upward so the rail can say which it is. Primitive deps only,
+  // so a parent that stores this in state cannot loop back into here.
+  useEffect(() => {
+    statusRef.current?.({ status, enabled, connectedAt, lastCommandAt })
+  }, [status, enabled, connectedAt, lastCommandAt])
 
   // Re-render so the "gone quiet" notice appears without needing another event.
   const waitingForFirstEvent = status === 'connected' && !lastCommandAt
