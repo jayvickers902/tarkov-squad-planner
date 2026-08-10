@@ -10,11 +10,13 @@ export function useFriends(userId, myCallsign) {
   const [pendingIn, setPendingIn]   = useState([]) // [{ id, user_id, callsign }]
   const [pendingOut, setPendingOut] = useState([]) // [{ id, user_id, callsign }]
   const [loading, setLoading]       = useState(false)
+  const [error, setError]           = useState('')
   const requestsInFlightRef         = useRef(new Set())
 
   const refresh = useCallback(async () => {
     if (!userId) return
     setLoading(true)
+    setError('')
 
     const { data: rows, error: rowsError } = await supabase
       .from('friendships')
@@ -22,12 +24,17 @@ export function useFriends(userId, myCallsign) {
       .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
       .order('created_at', { ascending: true })
 
-    if (rowsError || !rows) { setLoading(false); return }
+    if (rowsError || !rows) {
+      setError(rowsError?.message || 'Could not refresh friends. Try again.')
+      setLoading(false)
+      return
+    }
 
     const otherIds = [...new Set(rows.map(row => otherUserId(row, userId)).filter(Boolean))]
-    const { data: profiles } = otherIds.length
+    const { data: profiles, error: profilesError } = otherIds.length
       ? await supabase.from('profiles').select('id, callsign').in('id', otherIds)
-      : { data: [] }
+      : { data: [], error: null }
+    if (profilesError) setError('Friend names could not be refreshed. Try again.')
     const callsignById = Object.fromEntries((profiles || []).map(profile => [profile.id, profile.callsign]))
     const displayName = id => callsignById[id] || id
 
@@ -52,7 +59,8 @@ export function useFriends(userId, myCallsign) {
       return
     }
 
-    const { data: partyData } = await supabase.rpc('get_friend_parties', { p_user_ids: acceptedIds })
+    const { data: partyData, error: partyError } = await supabase.rpc('get_friend_parties', { p_user_ids: acceptedIds })
+    if (partyError) setError('Friend party status could not be refreshed. Try again.')
     setFriends(acceptedIds.map(friendId => {
       const party = partyData?.find(row => row.user_id === friendId)
       return {
@@ -112,27 +120,37 @@ export function useFriends(userId, myCallsign) {
 
   const acceptRequest = useCallback(async (id) => {
     const { error } = await supabase.from('friendships').update({ status: 'accepted' }).eq('id', id)
-    if (!error) await refresh()
+    if (error) { setError(error.message); return error.message }
+    await refresh()
+    return null
   }, [refresh])
 
   const removeRequest = useCallback(async (id) => {
-    await supabase.from('friendships').delete().eq('id', id)
+    const { error } = await supabase.from('friendships').delete().eq('id', id)
+    if (error) { setError(error.message); return error.message }
     await refresh()
+    return null
   }, [refresh])
 
   const removeFriend = useCallback(async (friendUserId) => {
-    await supabase
+    const first = await supabase
       .from('friendships')
       .delete()
       .eq('requester_id', userId)
       .eq('addressee_id', friendUserId)
-    await supabase
+    const second = await supabase
       .from('friendships')
       .delete()
       .eq('requester_id', friendUserId)
       .eq('addressee_id', userId)
+    if (first.error || second.error) {
+      const message = first.error?.message || second.error?.message || 'Could not remove friend.'
+      setError(message)
+      return message
+    }
     await refresh()
+    return null
   }, [userId, refresh])
 
-  return { friends, pendingIn, pendingOut, loading, sendRequest, acceptRequest, removeRequest, removeFriend, refresh }
+  return { friends, pendingIn, pendingOut, loading, error, sendRequest, acceptRequest, removeRequest, removeFriend, refresh }
 }

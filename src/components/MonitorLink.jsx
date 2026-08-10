@@ -57,6 +57,7 @@ const POS_REJECT_TEXT = {
 
 export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, onCharacterSnapshot, currentCharacterSnapshot = null, onStatus, settings = {}, onSetSetting, detailsOpen = false }) {
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState('')
   const [confirmRegen, setConfirmRegen] = useState(false)
   const [lastAction, setLastAction] = useState(null)  // { value, at, ok, reason }
   const [pendingMap, setPendingMap] = useState(null)  // { map, value, at } — a switch that would destroy work
@@ -256,9 +257,17 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
     return () => clearInterval(t)
   }, [waitingForFirstEvent])
 
-  function copy() {
-    navigator.clipboard?.writeText(code).catch(() => {})
-    setCopied(true); setTimeout(() => setCopied(false), 2000)
+  async function copy() {
+    setCopyError('')
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable')
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setCopied(false)
+      setCopyError('Could not copy the Remote ID. Select it and copy manually.')
+    }
   }
 
   const [statusLabel, statusColor] = STATUS_TEXT[status] || STATUS_TEXT.idle
@@ -287,6 +296,8 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
 
   return (
     <div className={`card monitor-link-shell ${collapsed ? 'monitor-link-shell-compact' : 'monitor-link-shell-open'}`}>
+      <div className="sr-status" aria-live="polite">{copied ? 'Remote ID copied.' : ''}</div>
+      {copyError && <div className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 11, marginBottom: 8 }}>{copyError}</div>}
       {collapsed ? (
         <div className="monitor-collapsed">
           <div className="monitor-collapsed-status">

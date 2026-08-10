@@ -11,31 +11,6 @@ import {
 } from './partyMembers'
 import { normalizeCharacterSnapshot } from './tarkovCharacters'
 
-let pingLogWritable = true
-// Older Supabase projects can run the app before 10_08 is applied. Disable the
-// child-table path after the first schema/function error and retain the JSONB
-// fallback until the migration is deployed.
-let pingEventsWritable = true
-// The atomic-write migration is applied by hand. Latch a missing RPC after
-// PostgREST's one capability probe so older deployments use the legacy path
-// without probing again for every click.
-const atomicRpcWritable = {
-  append_drawing: true,
-  append_marker: true,
-  append_ping: true,
-  merge_progress: true,
-  merge_starred: true,
-  clear_my_drawings: true,
-  clear_my_markers: true,
-  clear_pings: true,
-}
-
-function isMissingAtomicRpcError(error) {
-  if (!error || error.code !== 'PGRST202') return false
-  const status = error.status ?? error.statusCode
-  return status == null || Number(status) === 404
-}
-
 function ignoreAsyncError(value) {
   Promise.resolve(value).catch(() => {})
 }
@@ -75,9 +50,8 @@ async function fetchPartyById(partyId) {
   if (partyResult.error || !partyResult.data || membersResult.error) return null
   const party = normalizeParty(partyResult.data, membersResult.data || [])
 
-  // This query is intentionally best-effort for the migration window. Once
-  // present, the child table becomes the source of truth for the current raid;
-  // a missing table simply leaves the legacy columns untouched.
+  // Position events are the source of truth for the current raid. Keep this
+  // read best-effort so a transient event-query failure does not hide the room.
   try {
     const { data: eventRows, error: eventError } = await supabase
       .from('party_ping_events')
@@ -87,9 +61,6 @@ async function fetchPartyById(partyId) {
       .order('server_at', { ascending: true })
     if (!eventError && Array.isArray(eventRows)) {
       const events = eventRows.map(pingFromEvent).filter(Boolean)
-      // Keep rows written by an older client during the migration window. The
-      // source id is stable, so the merge is cheap and does not duplicate a
-      // child-table event that was also mirrored into the legacy column.
       const byId = new Map()
       ;[...(party.pings || []), ...events].forEach(ping => {
         if (ping?.id && !byId.has(ping.id)) byId.set(ping.id, ping)
@@ -97,12 +68,9 @@ async function fetchPartyById(partyId) {
       party.pings = prunePings([...byId.values()])
       party.ping_log = [...(Array.isArray(party.ping_log) ? party.ping_log : []), ...events]
         .reduce((log, ping) => appendLog(log, ping), [])
-      pingEventsWritable = true
-    } else if (eventError && /does not exist|relation|schema cache/i.test(eventError.message || '')) {
-      pingEventsWritable = false
     }
   } catch {
-    // Keep the legacy snapshot when the child table is not deployed yet.
+    // Keep the last snapshot; the next poll can recover.
   }
   return party
 }
@@ -293,7 +261,7 @@ export function useParty(userId, userSettings = {}, {
         // carries empty legacy arrays. append_party_ping bumps last_active_at
         // itself, so without this every screenshot ping wiped itself the moment
         // its own write echoed back. Same guard as runAtomicPartyWrite.
-        if (pingEventsWritable && partyRef.current) {
+        if (partyRef.current) {
           merged.pings = partyRef.current.pings
           merged.ping_log = partyRef.current.ping_log
         }
@@ -397,26 +365,6 @@ export function useParty(userId, userSettings = {}, {
     if (changed) updateMemberDB({ quests: merged })
   }, [party?.map_norm, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const updatePartyDB = useCallback(async changes => {
-    const partyId = partyIdRef.current
-    if (!partyId || !changes || Object.keys(changes).length === 0) return null
-    const keys = Object.keys(changes)
-    keys.forEach(key => pendingFieldsRef.current.add(key))
-    const result = await supabase
-      .from('parties')
-      .update({ ...changes, last_active_at: new Date().toISOString() })
-      .eq('id', partyId)
-      .select()
-      .single()
-    keys.forEach(key => pendingFieldsRef.current.delete(key))
-    if (!result.error && result.data) {
-      const merged = { ...(partyRef.current || {}), ...result.data }
-      if (partyRef.current?.members) merged.members = partyRef.current.members
-      applyParty(merged)
-    }
-    return result
-  }, [])
-
   const updateMemberDB = useCallback(async changes => {
     const partyId = partyIdRef.current
     const currentUserId = userIdRef.current
@@ -459,41 +407,30 @@ export function useParty(userId, userSettings = {}, {
     return safe
   }, [patchOwnMember])
 
-  const runAtomicPartyWrite = useCallback(async (rpcName, params, fields, fallback) => {
+  const runAtomicPartyWrite = useCallback(async (rpcName, params, fields) => {
     const fieldNames = Array.isArray(fields) ? fields : [fields]
     fieldNames.forEach(field => pendingFieldsRef.current.add(field))
 
     try {
-      if (atomicRpcWritable[rpcName]) {
-        const result = await supabase.rpc(rpcName, params)
-        if (!result.error) {
-          if (result.data) {
-            const current = partyRef.current
-            const preservesChildPings = pingEventsWritable && !fieldNames.includes('pings')
-            applyParty(preservesChildPings && current
-              ? { ...result.data, pings: current.pings, ping_log: current.ping_log }
-              : result.data)
-          }
-          else console.warn(`${rpcName} returned no authoritative party snapshot`)
-          return result
+      const result = await supabase.rpc(rpcName, params)
+      if (!result.error) {
+        if (result.data) {
+          const current = partyRef.current
+          applyParty(!fieldNames.includes('pings') && current
+            ? { ...result.data, pings: current.pings, ping_log: current.ping_log }
+            : result.data)
         }
-
-        if (!isMissingAtomicRpcError(result.error)) {
-          console.warn(`${rpcName} failed; optimistic party state will reconcile on the next refresh`, result.error)
-          return result
-        }
-
-        atomicRpcWritable[rpcName] = false
-        console.warn(`${rpcName} is unavailable; using the legacy party write path`, result.error)
+        setError('')
+        return result
       }
-
-      const fallbackResult = fallback ? await fallback() : null
-      if (fallbackResult?.error) {
-        console.warn(`${rpcName} legacy party write failed; optimistic state will reconcile on the next refresh`, fallbackResult.error)
-      }
-      return fallbackResult
+      setError(result.error.message || 'Party sync failed. Refresh and try again.')
+      const fresh = await fetchPartyById(partyIdRef.current)
+      if (fresh) applyParty(fresh)
+      return result
     } catch (writeError) {
-      console.warn(`${rpcName} failed; optimistic party state will reconcile on the next refresh`, writeError)
+      setError('Party sync failed. Check your connection and try again.')
+      const fresh = await fetchPartyById(partyIdRef.current)
+      if (fresh) applyParty(fresh)
       return { data: null, error: writeError }
     } finally {
       fieldNames.forEach(field => pendingFieldsRef.current.delete(field))
@@ -669,12 +606,6 @@ export function useParty(userId, userSettings = {}, {
     const optimisticMembers = normalizeMembers(current.members).map(member =>
       member.user_id === currentUserId ? { ...member, quests: merged } : member,
     )
-    if (pingEventsWritable) {
-      ignoreAsyncError(supabase.rpc('clear_party_ping_events', {
-        p_code: codeRef.current,
-        p_raid_id: Number(current.raid_id) || 0,
-      }))
-    }
     applyParty({
       ...current,
       map_id: map.id,
@@ -733,8 +664,13 @@ export function useParty(userId, userSettings = {}, {
 
   const setSpawn = useCallback(spawnId => {
     if (partyRef.current?.leader_id !== userIdRef.current) return
-    updatePartyDB({ spawn: spawnId })
-  }, [updatePartyDB])
+    const current = partyRef.current
+    applyParty({ ...current, spawn: spawnId })
+    runAtomicPartyWrite('set_party_spawn', {
+      p_code: codeRef.current,
+      p_spawn: spawnId,
+    }, 'spawn')
+  }, [runAtomicPartyWrite])
 
   const toggleObjective = useCallback(key => {
     const current = partyRef.current
@@ -746,9 +682,8 @@ export function useParty(userId, userSettings = {}, {
       'merge_progress',
       { p_code: codeRef.current, p_changes: changes },
       'progress',
-      () => updatePartyDB({ progress }),
     )
-  }, [runAtomicPartyWrite, updatePartyDB])
+  }, [runAtomicPartyWrite])
 
   const toggleStar = useCallback(taskId => {
     const current = partyRef.current
@@ -760,16 +695,18 @@ export function useParty(userId, userSettings = {}, {
       'merge_starred',
       { p_code: codeRef.current, p_changes: changes },
       'starred',
-      () => updatePartyDB({ starred }),
     )
-  }, [runAtomicPartyWrite, updatePartyDB])
+  }, [runAtomicPartyWrite])
 
   const reorderQuests = useCallback(orderedIds => {
     const current = partyRef.current
     if (!current) return
     applyParty({ ...current, quest_order: orderedIds })
-    updatePartyDB({ quest_order: orderedIds })
-  }, [updatePartyDB])
+    runAtomicPartyWrite('set_party_quest_order', {
+      p_code: codeRef.current,
+      p_order: orderedIds,
+    }, 'quest_order')
+  }, [runAtomicPartyWrite])
 
   const toggleComplete = useCallback(questId => {
     const current = partyRef.current
@@ -783,9 +720,8 @@ export function useParty(userId, userSettings = {}, {
       'merge_progress',
       { p_code: codeRef.current, p_changes: changes },
       'progress',
-      () => updatePartyDB({ progress }),
     )
-  }, [runAtomicPartyWrite, updatePartyDB])
+  }, [runAtomicPartyWrite])
 
   const submitMyProgress = useCallback(changes => {
     const current = partyRef.current
@@ -797,17 +733,19 @@ export function useParty(userId, userSettings = {}, {
       'merge_progress',
       { p_code: codeRef.current, p_changes: progressChanges },
       'progress',
-      () => updatePartyDB({ progress }),
     )
-  }, [runAtomicPartyWrite, updatePartyDB])
+  }, [runAtomicPartyWrite])
 
   const setRaidSettings = useCallback(changes => {
     const current = partyRef.current
     if (!current || current.leader_id !== userIdRef.current) return
     const settings = { ...(current.settings || {}), ...(changes || {}) }
     applyParty({ ...current, settings })
-    updatePartyDB({ settings })
-  }, [updatePartyDB])
+    runAtomicPartyWrite('set_party_settings', {
+      p_code: codeRef.current,
+      p_changes: changes,
+    }, 'settings')
+  }, [runAtomicPartyWrite])
 
   const addStroke = useCallback(stroke => {
     const current = partyRef.current
@@ -826,9 +764,8 @@ export function useParty(userId, userSettings = {}, {
       'append_drawing',
       { p_code: codeRef.current, p_stroke: optimisticStroke },
       'drawings',
-      () => updatePartyDB({ drawings }),
     )
-  }, [runAtomicPartyWrite, updatePartyDB])
+  }, [runAtomicPartyWrite])
 
   const clearMyStrokes = useCallback(() => {
     const current = partyRef.current
@@ -842,9 +779,8 @@ export function useParty(userId, userSettings = {}, {
       'clear_my_drawings',
       { p_code: codeRef.current },
       'drawings',
-      () => updatePartyDB({ drawings }),
     )
-  }, [runAtomicPartyWrite, updatePartyDB])
+  }, [runAtomicPartyWrite])
 
   const addMarker = useCallback(marker => {
     const current = partyRef.current
@@ -863,9 +799,8 @@ export function useParty(userId, userSettings = {}, {
       'append_marker',
       { p_code: codeRef.current, p_marker: optimisticMarker },
       'markers',
-      () => updatePartyDB({ markers }),
     )
-  }, [runAtomicPartyWrite, updatePartyDB])
+  }, [runAtomicPartyWrite])
 
   const clearMyMarkers = useCallback(() => {
     const current = partyRef.current
@@ -879,26 +814,8 @@ export function useParty(userId, userSettings = {}, {
       'clear_my_markers',
       { p_code: codeRef.current },
       'markers',
-      () => updatePartyDB({ markers }),
     )
-  }, [runAtomicPartyWrite, updatePartyDB])
-
-  const setPingLog = useCallback(async pingLog => {
-    const current = partyRef.current
-    const partyId = partyIdRef.current
-    if (!current || !partyId || !pingLogWritable) return
-    applyParty({ ...current, ping_log: pingLog })
-    pendingFieldsRef.current.add('ping_log')
-    const { error: writeError } = await supabase
-      .from('parties')
-      .update({ ping_log, last_active_at: new Date().toISOString() })
-      .eq('id', partyId)
-    pendingFieldsRef.current.delete('ping_log')
-    if (writeError) {
-      pingLogWritable = false
-      console.warn('parties.ping_log write failed; replay is unavailable for this session', writeError)
-    }
-  }, [])
+  }, [runAtomicPartyWrite])
 
   const addPing = useCallback(async ping => {
     const current = partyRef.current
@@ -919,81 +836,57 @@ export function useParty(userId, userSettings = {}, {
     )
     applyParty({ ...current, pings })
 
-    // Prefer the normalized child-table path from 10_08_party_ping_events: it
-    // deduplicates monitor events and avoids broadcasting the whole JSON array.
-    // The JSON atomic RPC remains the compatibility path when that migration is
-    // unavailable, and its own legacy fallback covers either deploy order.
-    if (pingEventsWritable) {
-      const { data: stored, error: eventError } = await supabase.rpc('append_party_ping', {
-        p_code: current.code,
-        p_raid_id: Number(current.raid_id) || 0,
-        p_ping: enriched,
-      })
-      const storedPing = pingFromEvent(stored)
-      if (!eventError && storedPing) {
-        const latest = partyRef.current
-        if (latest?.id === current.id && Number(latest.raid_id || 0) === Number(current.raid_id || 0)) {
-          const latestTtl = Number(resolveSetting('ping_ttl_ms', {
-            raid: latest.settings || {}, unit: null, user: userSettingsRef.current,
-          }))
-          const mergedPings = prunePings(
-            [...(latest.pings || []), storedPing],
-            Date.now(),
-            Number.isFinite(latestTtl) ? latestTtl : undefined,
-          )
-          const mergedLog = latest.ping_log?.some(existing => existing.id === storedPing.id)
-            ? latest.ping_log
-            : appendLog(latest.ping_log, storedPing)
-          applyParty({ ...latest, pings: mergedPings, ping_log: mergedLog })
-        }
-        return
-      }
-      pingEventsWritable = false
-      if (eventError) console.warn('party_ping_events unavailable; using atomic JSON ping storage', eventError)
+    const { data: stored, error: eventError } = await supabase.rpc('append_party_ping', {
+      p_code: current.code,
+      p_raid_id: Number(current.raid_id) || 0,
+      p_ping: enriched,
+    })
+    const storedPing = pingFromEvent(stored)
+    if (eventError || !storedPing) {
+      setError(eventError?.message || 'Position sync failed. Try again.')
+      const fresh = await fetchPartyById(partyIdRef.current)
+      if (fresh) applyParty(fresh)
+      return { data: null, error: eventError }
     }
-
-    const pingLog = appendLog(current.ping_log, enriched)
-    return runAtomicPartyWrite(
-      'append_ping',
-      { p_code: codeRef.current, p_ping: enriched },
-      ['pings', 'ping_log'],
-      async () => {
-        const [pingsResult] = await Promise.all([
-          updatePartyDB({ pings }),
-          setPingLog(pingLog),
-        ])
-        return pingsResult
-      },
-    )
-  }, [runAtomicPartyWrite, setPingLog, updatePartyDB])
+    const latest = partyRef.current
+    if (latest?.id === current.id && Number(latest.raid_id || 0) === Number(current.raid_id || 0)) {
+      const latestTtl = Number(resolveSetting('ping_ttl_ms', {
+        raid: latest.settings || {}, unit: null, user: userSettingsRef.current,
+      }))
+      const mergedPings = prunePings(
+        [...(latest.pings || []), storedPing],
+        Date.now(),
+        Number.isFinite(latestTtl) ? latestTtl : undefined,
+      )
+      const mergedLog = latest.ping_log?.some(existing => existing.id === storedPing.id)
+        ? latest.ping_log
+        : appendLog(latest.ping_log, storedPing)
+      applyParty({ ...latest, pings: mergedPings, ping_log: mergedLog })
+    }
+    setError('')
+    return { data: stored, error: null }
+  }, [])
 
   const clearPings = useCallback(async () => {
     const current = partyRef.current
     if (!current) return
-    applyParty({ ...current, pings: [] })
-    if (pingEventsWritable) {
-      const { error: clearError } = await supabase.rpc('clear_party_ping_events', {
-        p_code: current.code,
-        p_raid_id: Number(current.raid_id) || 0,
-      })
-      if (clearError) {
-        pingEventsWritable = false
-        console.warn('party_ping_events clear unavailable; using legacy JSON ping storage', clearError)
-      }
-    }
+    const currentUserId = userIdRef.current
+    const pings = current.leader_id === currentUserId
+      ? []
+      : (current.pings || []).filter(ping => ping.user_id !== currentUserId)
+    applyParty({ ...current, pings })
     return runAtomicPartyWrite(
       'clear_pings',
       { p_code: codeRef.current },
       'pings',
-      () => updatePartyDB({ pings: [] }),
     )
-  }, [runAtomicPartyWrite, updatePartyDB])
+  }, [runAtomicPartyWrite])
 
-  const startRaid = useCallback((timestamp = Date.now()) => {
+  const startRaid = useCallback(() => {
     const current = partyRef.current
     if (!current || current.leader_id !== userIdRef.current) return
     const raidId = (Number.isInteger(current.raid_id) ? current.raid_id : 0) + 1
-    const progress = { ...(current.progress || {}), __raid_start__: timestamp }
+    const progress = { ...(current.progress || {}), __raid_start__: Date.now() }
     const settings = current.settings || {}
     const markerScope = resolveSetting('marker_scope', { raid: settings, unit: null, user: userSettingsRef.current })
     const drawingScope = resolveSetting('drawing_scope', { raid: settings, unit: null, user: userSettingsRef.current })
@@ -1006,15 +899,18 @@ export function useParty(userId, userSettings = {}, {
       ...(drawingScope === 'raid' ? { drawings: [] } : {}),
     }
     applyParty({ ...current, ...changes })
-    updatePartyDB(changes)
-  }, [updatePartyDB])
+    runAtomicPartyWrite('start_party_raid', { p_code: codeRef.current }, Object.keys(changes))
+  }, [runAtomicPartyWrite])
 
   const sweepEphemeral = useCallback(changes => {
     const current = partyRef.current
     if (!current || current.leader_id !== userIdRef.current || !changes) return
     applyParty({ ...current, ...changes })
-    updatePartyDB(changes)
-  }, [updatePartyDB])
+    runAtomicPartyWrite('sweep_party_ephemeral', {
+      p_code: codeRef.current,
+      p_raid_id: Number(current.raid_id) || 0,
+    }, ['markers', 'drawings'])
+  }, [runAtomicPartyWrite])
 
   const refreshParty = useCallback(async () => {
     const fresh = await fetchPartyById(partyIdRef.current)

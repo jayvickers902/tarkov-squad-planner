@@ -324,7 +324,26 @@ export default function RaidRail({
   return (
     <aside className={`raid-rail${isMobile ? ' raid-rail-mobile' : ''}`} style={isMobile ? { height: `${mobileHeight}%` } : undefined}>
       {isMobile && (
-        <div className="raid-rail-drag-handle" onPointerDown={startDrag} aria-label="Drag squad rail">
+        <div
+          className="raid-rail-drag-handle"
+          onPointerDown={startDrag}
+          role="separator"
+          tabIndex={0}
+          aria-label="Resize squad rail"
+          aria-orientation="horizontal"
+          aria-valuemin={22}
+          aria-valuemax={78}
+          aria-valuenow={Math.round(mobileHeight)}
+          onKeyDown={event => {
+            if (event.key === 'ArrowUp') {
+              event.preventDefault()
+              onMobileHeight?.(Math.min(78, mobileHeight + 5))
+            } else if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              onMobileHeight?.(Math.max(22, mobileHeight - 5))
+            }
+          }}
+        >
           <span />
         </div>
       )}

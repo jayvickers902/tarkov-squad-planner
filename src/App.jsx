@@ -9,6 +9,7 @@ import AuthScreen from './components/AuthScreen'
 import Lobby from './components/Lobby'
 import Room from './components/Room'
 import { findMember, objectiveProgressKey, progressParts } from './partyMembers'
+import useDialogFocus from './useDialogFocus'
 
 const MyQuests = lazy(() => import('./components/MyQuests'))
 const AdminKeyManager = lazy(() => import('./components/AdminKeyManager'))
@@ -24,6 +25,7 @@ export default function App() {
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
   const [openedPartyOverlays, setOpenedPartyOverlays] = useState({ code: null, quests: false, admin: false })
   const partyHistoryCodeRef = useRef(null)
+  const leaveDialogRef = useDialogFocus(leaveConfirmOpen, () => setLeaveConfirmOpen(false))
 
   const {
     user, profile, profileError: authProfileError, loading: authLoading,
@@ -41,7 +43,7 @@ export default function App() {
     saveObjectiveProgress,
   } = useUserQuests(user?.id)
 
-  const { friends, pendingIn, pendingOut, sendRequest, acceptRequest, removeRequest, removeFriend, refresh: refreshFriends } = useFriends(user?.id, profile?.callsign)
+  const { friends, pendingIn, pendingOut, error: friendsError, sendRequest, acceptRequest, removeRequest, removeFriend, refresh: refreshFriends } = useFriends(user?.id, profile?.callsign)
 
   const {
     party, myName, error: partyError, loading: partyLoading,
@@ -185,17 +187,6 @@ export default function App() {
   }, [party?.code, route.code, route.screen, isAdmin])
 
   useEffect(() => {
-    if (!leaveConfirmOpen) return undefined
-    function onKeyDown(event) {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      setLeaveConfirmOpen(false)
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [leaveConfirmOpen])
-
-  useEffect(() => {
     const inPartyOverlay = party?.code === route.code
       && (route.screen === 'quests' || (route.screen === 'admin' && isAdmin))
     const publicOverlay = !route.code
@@ -314,6 +305,8 @@ export default function App() {
       <>
         <Room
         party={party}
+        partyError={partyError}
+        friendsError={friendsError}
         raidView={route.code === party.code && route.screen === 'raid'}
         myUserId={user.id}
         myName={myName}
@@ -395,11 +388,11 @@ export default function App() {
 
         {leaveConfirmOpen && (
           <div className="app-confirm-backdrop">
-            <div className="app-confirm-dialog card" role="dialog" aria-modal="true" aria-labelledby="leave-party-title">
+            <div ref={leaveDialogRef} className="app-confirm-dialog card" role="dialog" aria-modal="true" aria-labelledby="leave-party-title" aria-describedby="leave-party-description" tabIndex={-1}>
               <h2 id="leave-party-title">LEAVE PARTY?</h2>
-              <p>You'll return to the lobby.</p>
+              <p id="leave-party-description">You'll return to the lobby.</p>
               <div className="app-confirm-actions">
-                <button className="btn-ghost" onClick={() => setLeaveConfirmOpen(false)}>CANCEL</button>
+                <button data-autofocus className="btn-ghost" onClick={() => setLeaveConfirmOpen(false)}>CANCEL</button>
                 <button className="btn-danger" onClick={handleLeave}>LEAVE PARTY</button>
               </div>
             </div>
@@ -457,6 +450,7 @@ export default function App() {
       onAdmin={() => navigate({ screen: 'admin' })}
       isAdmin={isAdmin}
       error={partyError}
+      friendsError={friendsError}
       loading={partyLoading}
       autoJoinCode={!autoJoinFired ? pendingJoinCode : null}
       friends={friends}

@@ -1,4 +1,5 @@
 import { resolveSetting, settingSource, SYSTEM_DEFAULTS } from '../settings'
+import useDialogFocus from '../useDialogFocus'
 
 const TTL_OPTIONS = [
   { value: 2 * 60 * 1000, label: '2 MIN' },
@@ -35,6 +36,7 @@ function YesNo({ value, disabled, onChange }) {
 }
 
 export default function RaidSettings({ party, userId, userSettings = {}, onChange, onClose }) {
+  const dialogRef = useDialogFocus(true, onClose)
   const raid = party.settings || {}
   const layers = { raid, unit: null, user: userSettings }
   const isLeader = party.leader_id === userId
@@ -53,15 +55,15 @@ export default function RaidSettings({ party, userId, userSettings = {}, onChang
   const capOptions = CAP_OPTIONS.includes(effectiveCap) ? CAP_OPTIONS : [effectiveCap, ...CAP_OPTIONS]
 
   return (
-    <div className="raid-settings-popover card fade-in" role="dialog" aria-label="Raid settings">
+    <div ref={dialogRef} className="raid-settings-popover card fade-in" role="dialog" aria-modal="true" aria-labelledby="raid-settings-title" tabIndex={-1}>
       <div className="raid-settings-head">
         <div>
-          <div className="lbl">RAID SETTINGS</div>
+          <div className="lbl" id="raid-settings-title">RAID SETTINGS</div>
           <div className="mono raid-settings-note">
             {isLeader ? 'LEADER CONTROLS · CHANGES APPLY TO THIS RAID' : 'READ ONLY · THE LEADER CONTROLS THIS RAID'}
           </div>
         </div>
-        <button className="btn-ghost btn-sm" onClick={onClose} aria-label="Close raid settings">×</button>
+        <button data-autofocus className="btn-ghost btn-sm" onClick={onClose} aria-label="Close raid settings">×</button>
       </div>
 
       <div className="raid-settings-list">
