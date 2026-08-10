@@ -179,6 +179,12 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .mon-character-current { margin-left: auto; color: var(--txm); font-size: 9px; letter-spacing: .06em; }
 .mon-character-modes { display: flex; gap: 5px; flex-wrap: wrap; }
 .mon-character-modes button { font-size: 10px; padding: 4px 8px; }
+.mon-character-confirm { display: flex; flex-direction: column; gap: 5px; }
+.mon-character-confirm-title { color: var(--goldtx); font-size: 10px; letter-spacing: .08em; }
+.mon-character-confirm-copy { font-size: 12px; line-height: 1.6; }
+.mon-character-confirm-copy strong { color: var(--goldtx); }
+.mon-character-confirm-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.mon-character-confirm-actions button { font-size: 10px; padding: 4px 8px; }
 
 .monitor-collapsed { display: flex; align-items: center; gap: 8px; min-height: 26px; }
 .monitor-collapsed-status { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTarkovMonitor } from '../useTarkovMonitor'
 import { TAP_WINDOW_MS, MAX_TAPS, cadenceOf, floorLabel, elevationLabel } from '../tarkovPings'
+import { displayCharacterSide } from '../tarkovCharacters'
 
 const STATUS_TEXT = {
   idle:         ['NOT LINKED',   'var(--txd)'],
@@ -33,19 +34,35 @@ function characterSnapshotForShare(snapshot, mode) {
   return snapshot
 }
 
+function characterIdentityKeys(snapshot) {
+  if (!snapshot) return []
+  const fallback = [
+    snapshot.nickname,
+    snapshot.side,
+    snapshot.gameMode,
+    snapshot.level,
+  ].filter(value => value !== undefined && value !== null && value !== '').join('|')
+  return [
+    snapshot.accountId && `account:${snapshot.accountId}`,
+    snapshot.profileId && `profile:${snapshot.profileId}`,
+    fallback && `fallback:${fallback}`,
+  ].filter(Boolean)
+}
+
 const POS_REJECT_TEXT = {
   shape:  'a position with missing or non-numeric coordinates',
   map:    'a position for a map that is not one of the 10 supported maps',
   bounds: 'a position outside the map’s bounds',
 }
 
-export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, onCharacterSnapshot, onStatus, settings = {}, onSetSetting }) {
+export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, onCharacterSnapshot, currentCharacterSnapshot = null, onStatus, settings = {}, onSetSetting }) {
   const [copied, setCopied] = useState(false)
   const [confirmRegen, setConfirmRegen] = useState(false)
   const [lastAction, setLastAction] = useState(null)  // { value, at, ok, reason }
   const [pendingMap, setPendingMap] = useState(null)  // { map, value, at } — a switch that would destroy work
   const [lastPing, setLastPing] = useState(null)      // { taps, floor, elev, at }
   const [pending, setPending] = useState(0)           // taps buffered in the current window
+  const [pendingCharacter, setPendingCharacter] = useState(null)
   const [, setTick] = useState(0)
   const [detailsExpanded, setDetailsExpanded] = useState(() => settings.monitor_expanded === true)
   const characterShareMode = CHARACTER_SHARE_MODES.some(([mode]) => mode === settings.character_share_mode)
@@ -64,7 +81,9 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
   const characterRef = useRef(onCharacterSnapshot); characterRef.current = onCharacterSnapshot
   const statusRef   = useRef(onStatus);   statusRef.current = onStatus
   const shareModeRef = useRef(characterShareMode); shareModeRef.current = characterShareMode
-  const lastCharacterRef = useRef(null)
+  const lastCharacterRef = useRef(currentCharacterSnapshot)
+  const acceptedCharacterKeysRef = useRef(new Set(characterIdentityKeys(currentCharacterSnapshot)))
+  const dismissedCharacterKeysRef = useRef(new Set())
   const previousShareModeRef = useRef(null)
 
   const publishCharacter = useCallback(snapshot => {
@@ -73,8 +92,14 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
       characterRef.current?.(null)
       return
     }
-    lastCharacterRef.current = snapshot
-    characterRef.current?.(characterSnapshotForShare(snapshot, shareModeRef.current))
+    const keys = characterIdentityKeys(snapshot)
+    if (keys.some(key => acceptedCharacterKeysRef.current.has(key))) {
+      lastCharacterRef.current = snapshot
+      characterRef.current?.(characterSnapshotForShare(snapshot, shareModeRef.current))
+      return
+    }
+    if (keys.some(key => dismissedCharacterKeysRef.current.has(key))) return
+    setPendingCharacter(snapshot)
   }, [])
 
   // Cadence buffer. Taps arrive ~1s apart as separate messages, so a ping is only
@@ -161,20 +186,48 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
   }, [mapNorm, pendingMap])
 
   useEffect(() => {
+    if (!currentCharacterSnapshot || pendingCharacter) return
+    acceptedCharacterKeysRef.current = new Set(characterIdentityKeys(currentCharacterSnapshot))
+    lastCharacterRef.current = currentCharacterSnapshot
+  }, [currentCharacterSnapshot, pendingCharacter])
+
+  useEffect(() => {
     if (previousShareModeRef.current === null) {
       previousShareModeRef.current = characterShareMode
-      if (characterShareMode === 'off') characterRef.current?.(null)
+      if (characterShareMode === 'off') {
+        acceptedCharacterKeysRef.current = new Set()
+        dismissedCharacterKeysRef.current = new Set()
+        characterRef.current?.(null)
+      }
       return
     }
     if (previousShareModeRef.current === characterShareMode) return
     previousShareModeRef.current = characterShareMode
     if (characterShareMode === 'off') {
       lastCharacterRef.current = null
+      acceptedCharacterKeysRef.current = new Set()
+      dismissedCharacterKeysRef.current = new Set()
+      setPendingCharacter(null)
       characterRef.current?.(null)
       return
     }
     characterRef.current?.(characterSnapshotForShare(lastCharacterRef.current, characterShareMode))
   }, [characterShareMode])
+
+  const confirmCharacter = useCallback(() => {
+    const snapshot = pendingCharacter
+    if (!snapshot) return
+    acceptedCharacterKeysRef.current = new Set(characterIdentityKeys(snapshot))
+    dismissedCharacterKeysRef.current = new Set()
+    lastCharacterRef.current = snapshot
+    characterRef.current?.(characterSnapshotForShare(snapshot, shareModeRef.current))
+    setPendingCharacter(null)
+  }, [pendingCharacter])
+
+  const dismissCharacter = useCallback(() => {
+    dismissedCharacterKeysRef.current = new Set(characterIdentityKeys(pendingCharacter))
+    setPendingCharacter(null)
+  }, [pendingCharacter])
 
   const {
     code, enabled, status, connectedAt, lastCommandAt, rejected,
@@ -215,7 +268,7 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
   const showRejected = !!rejected && (!lastAction || rejected.at >= lastAction.at)
   const cadence = lastPing ? cadenceOf(lastPing.taps) : null
   const showPosRejected = !!posRejected && (!lastPing || posRejected.at >= lastPing.at)
-  const forceOpen = !!pendingMap || !!throttled || !!quiet || showPosRejected || showRejected || !canChangeMap
+  const forceOpen = !!pendingMap || !!pendingCharacter || !!throttled || !!quiet || showPosRejected || showRejected || !canChangeMap
   const collapsed = status === 'connected' && !detailsExpanded && !forceOpen
 
   function changeExpanded(next) {
@@ -252,7 +305,7 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
           ? <button className="btn-ghost btn-sm" onClick={() => {
               clearTimeout(tapRef.current.timer)
               tapRef.current = { timer: null, taps: 0, value: null }
-              disconnect(); setLastAction(null); setLastPing(null); setPending(0); setConfirmRegen(false); setPendingMap(null)
+              disconnect(); setLastAction(null); setLastPing(null); setPending(0); setPendingCharacter(null); setConfirmRegen(false); setPendingMap(null)
             }}>UNLINK</button>
           : <button className="btn-ghost btn-sm" onClick={connect} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>LINK MONITOR</button>
           }
@@ -314,6 +367,22 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
               ))}
             </div>
           </div>
+
+          {pendingCharacter && (
+            <div className="mon-character-confirm mon-note-warn">
+              <div className="mono mon-character-confirm-title">CHARACTER FOUND</div>
+              <div className="mon-character-confirm-copy">
+                Found <strong>{pendingCharacter.nickname || 'UNKNOWN OPERATOR'}</strong>
+                {' / '}{displayCharacterSide(pendingCharacter) || 'UNKNOWN SIDE'}
+                {pendingCharacter.level ? ` / LEVEL ${pendingCharacter.level}` : ''}
+                {' — use this character?'}
+              </div>
+              <div className="mon-character-confirm-actions">
+                <button className="btn-gold btn-sm" onClick={confirmCharacter}>USE THIS CHARACTER</button>
+                <button className="btn-ghost btn-sm" onClick={dismissCharacter}>IGNORE</button>
+              </div>
+            </div>
+          )}
 
           <div className="mon-ping-help">
             <div className="mon-ping-row">

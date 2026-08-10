@@ -46,4 +46,6 @@ The party member’s Character Sync control has three modes:
 - `IDENTITY`: nickname, faction, level, and game mode only.
 - `OFF`: clears the stored snapshot and ignores future profile events.
 
+The first profile seen for a linked monitor is held locally and shown as a confirmation prompt (`Found DUDGY / USEC / LEVEL 42 — use this character?`). Nothing is written to the party until the user accepts it. Once accepted, later loadout refreshes for the same account/profile update automatically; a different identity requires confirmation again.
+
 Run `node scripts/fake-monitor.mjs <REMOTE_ID> --profile` to exercise the complete relay-to-party path. The real TarkovMonitor emitter should publish the same event after it has loaded the profile and `PlayerVisualRepresentation` from the raid-ready log event.

@@ -668,6 +668,7 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
             onSelectMap={onSelectMap}
             onAddPing={onAddPing}
             onCharacterSnapshot={onCharacterSnapshot}
+            currentCharacterSnapshot={mineMember?.character_snapshot}
             onStatus={handleMonitorStatus}
             settings={userSettings}
             onSetSetting={onSetUserSetting}
