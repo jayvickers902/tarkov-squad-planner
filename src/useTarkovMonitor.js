@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FEATURED } from './constants'
 import { parsePlayerPosition } from './tarkovPings'
+import { normalizeCharacterSnapshot } from './tarkovCharacters'
 
 // TarkovMonitor link — Phase 5.
 //
@@ -72,11 +73,13 @@ function readStoredEnabled(settings = {}) { return settings.monitor_enabled === 
  *        validated against FEATURED. Never called with raw socket input.
  * @param {(pos: {x,y,z,yaw,map,at}) => void} [handlers.onPosition]  called only with finite
  *        coordinates inside a FEATURED map's bounds, and only within the rate limit.
+ * @param {(snapshot: object) => void} [handlers.onCharacter] called only with a normalized
+ *        character/loadout snapshot.
  *
  * Both callbacks receive validated data — validation lives in here so no consumer
  * ever handles raw socket input.
  */
-export function useTarkovMonitor({ onMap, onPosition, settings = {}, onSetSetting } = {}) {
+export function useTarkovMonitor({ onMap, onPosition, onCharacter, settings = {}, onSetSetting } = {}) {
   const [code,          setCode]          = useState(() => readStoredCode(settings))
   const [enabled,       setEnabled]       = useState(() => readStoredEnabled(settings))
   const [status,        setStatus]        = useState('idle')   // idle|connecting|connected|reconnecting
@@ -87,11 +90,14 @@ export function useTarkovMonitor({ onMap, onPosition, settings = {}, onSetSettin
   const [lastPositionAt, setLastPositionAt] = useState(null)
   const [posRejected,   setPosRejected]   = useState(null)     // { reason, at } — bad coords / unknown map
   const [throttled,     setThrottled]     = useState(null)     // { at } — flood dropped
+  const [lastCharacterAt, setLastCharacterAt] = useState(null)
 
   const mapRef = useRef(onMap)
   mapRef.current = onMap
   const posRef = useRef(onPosition)
   posRef.current = onPosition
+  const characterRef = useRef(onCharacter)
+  characterRef.current = onCharacter
   const setSettingRef = useRef(onSetSetting)
   setSettingRef.current = onSetSetting
 
@@ -141,6 +147,7 @@ export function useTarkovMonitor({ onMap, onPosition, settings = {}, onSetSettin
       const data = msg.data
       if (!data || typeof data !== 'object') return
       if (data.type === 'playerPosition') { handlePosition(data); return }
+      if (data.type === 'characterProfile') { handleCharacter(data); return }
       // Anything that is neither a map nor a position is ignored outright.
       if (data.type !== 'map') return
 
@@ -185,6 +192,15 @@ export function useTarkovMonitor({ onMap, onPosition, settings = {}, onSetSettin
         setLastMap(parsed.value.map)
       }
       posRef.current?.({ ...parsed.value, at })
+    }
+
+    function handleCharacter(data) {
+      const snapshot = normalizeCharacterSnapshot(data, Date.now())
+      if (!snapshot) return
+      const at = snapshot.syncedAt || Date.now()
+      setLastCommandAt(at)
+      setLastCharacterAt(at)
+      characterRef.current?.(snapshot)
     }
 
     function open() {
@@ -246,6 +262,7 @@ export function useTarkovMonitor({ onMap, onPosition, settings = {}, onSetSettin
     setLastPositionAt(null)
     setPosRejected(null)
     setThrottled(null)
+    setLastCharacterAt(null)
     lastMapRef.current = null
     posTimesRef.current = []
   }, [])
@@ -267,7 +284,7 @@ export function useTarkovMonitor({ onMap, onPosition, settings = {}, onSetSettin
   return {
     code, enabled, status, connectedAt,
     lastCommandAt, lastMap, rejected,
-    lastPositionAt, posRejected, throttled,
+    lastPositionAt, posRejected, throttled, lastCharacterAt,
     connect, disconnect, regenerate,
   }
 }

@@ -1,3 +1,5 @@
+import { normalizeCharacterSnapshot } from './tarkovCharacters'
+
 export function normalizeMember(member = {}) {
   return {
     user_id: member.user_id || '',
@@ -7,6 +9,7 @@ export function normalizeMember(member = {}) {
     quests_all: Array.isArray(member.quests_all) ? member.quests_all : [],
     joined_at: member.joined_at || null,
     last_seen: member.last_seen || null,
+    character_snapshot: normalizeCharacterSnapshot(member.character_snapshot),
   }
 }
 

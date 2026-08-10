@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabase'
 
-const PROFILE_SCHEMA_MESSAGE = 'Database schema is out of date. Apply Supabase migrations 10_01 through 10_08, then reload.'
+const PROFILE_SCHEMA_MESSAGE = 'Database schema is out of date. Apply Supabase migrations 10_01 through 10_10, then reload.'
 
 function profileLoadMessage(error) {
   if (error?.code === 'PGRST204' || error?.code === 'PGRST205' || error?.code === '42703' || error?.code === '42P01') {

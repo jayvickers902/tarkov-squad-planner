@@ -175,6 +175,10 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .mon-ping-pending { font-size: 10px; color: var(--gold); letter-spacing: .08em; animation: monPulse 1.2s ease-in-out infinite; }
 .mon-cadence { display: flex; gap: 14px; flex-wrap: wrap; }
 .mon-cadence-item { display: flex; align-items: center; gap: 5px; font-size: 10px; letter-spacing: .06em; }
+.mon-character-help { border: 1px solid var(--brd2); border-radius: 4px; background: var(--sur2); padding: 9px 11px; display: flex; flex-direction: column; gap: 7px; }
+.mon-character-current { margin-left: auto; color: var(--txm); font-size: 9px; letter-spacing: .06em; }
+.mon-character-modes { display: flex; gap: 5px; flex-wrap: wrap; }
+.mon-character-modes button { font-size: 10px; padding: 4px 8px; }
 
 .monitor-collapsed { display: flex; align-items: center; gap: 8px; min-height: 26px; }
 .monitor-collapsed-status { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }
@@ -187,6 +191,64 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   padding: 3px 7px;
   letter-spacing: .14em;
 }
+
+/* Synced Tarkov identity/loadout preview in the party rail */
+.member-character-snapshot {
+  margin-top: 7px;
+  padding: 7px;
+  border: 1px solid var(--brd2);
+  border-left: 2px solid var(--golddim);
+  border-radius: 4px;
+  background: var(--sur2);
+}
+.member-character-head,
+.member-character-identity,
+.member-character-item {
+  display: flex;
+  align-items: center;
+}
+.member-character-head { justify-content: space-between; gap: 6px; }
+.member-character-identity { min-width: 0; gap: 6px; }
+.member-character-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  flex-shrink: 0;
+  border: 1px solid var(--golddim);
+  border-radius: 3px;
+  color: var(--goldtx);
+  background: rgba(201,168,76,.08);
+  font: 10px 'Share Tech Mono', monospace;
+}
+.member-character-name,
+.member-character-meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-character-name { color: var(--goldtx); font: 11px 'Share Tech Mono', monospace; letter-spacing: .04em; }
+.member-character-meta { color: var(--txm); font: 9px 'Share Tech Mono', monospace; margin-top: 1px; }
+.member-character-toggle { padding: 3px 5px; font-size: 9px; flex-shrink: 0; }
+.member-character-details { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--brd); }
+.member-character-appearance { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.member-character-chip { min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 3px 4px; background: var(--sur3); }
+.member-character-chip span,
+.member-character-section-label,
+.member-character-more,
+.member-character-empty,
+.member-character-sync { color: var(--txd); font-size: 8px; letter-spacing: .05em; }
+.member-character-chip-value { min-width: 0; display: flex; align-items: center; gap: 4px; }
+.member-character-chip-value img,
+.member-character-item-main img { width: 20px; height: 20px; object-fit: contain; flex-shrink: 0; image-rendering: pixelated; border-radius: 2px; background: var(--sur); border: 1px solid var(--brd2); }
+.member-character-chip strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txm); font-size: 9px; font-weight: 400; }
+.member-character-items { margin-top: 7px; }
+.member-character-section-label { margin-bottom: 3px; color: var(--goldtx); }
+.member-character-item { justify-content: space-between; gap: 7px; padding: 3px 0; border-bottom: 1px solid var(--brd); color: var(--txm); font-size: 10px; }
+.member-character-item-main { min-width: 0; display: flex; align-items: center; gap: 5px; overflow: hidden; }
+.member-character-item-main img { width: 22px; height: 22px; }
+.member-character-item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-character-item > span:last-child { flex-shrink: 0; color: var(--txd); font-size: 8px; }
+.member-character-more { margin-top: 4px; }
+.member-character-empty { color: var(--txm); }
+.member-character-sync { margin-top: 6px; text-align: right; }
 
 .ping-strip {
   margin-top: 10px;

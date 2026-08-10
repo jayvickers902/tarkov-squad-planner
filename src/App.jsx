@@ -55,7 +55,7 @@ export default function App() {
     leaveParty, setError: setPartyError,
     syncSavedQuests, refreshParty, startRaid,
     onlineMemberIds, presenceReady,
-    setRaidSettings, sweepEphemeral,
+    setRaidSettings, sweepEphemeral, syncCharacterSnapshot,
   } = useParty(user?.id, userSettings, {
     callsign: profile?.callsign,
     savedQuests: userQuests,
@@ -341,6 +341,7 @@ export default function App() {
         onAddMarker={addMarker}
         onClearMyMarkers={clearMyMarkers}
         onAddPing={addPing}
+        onCharacterSnapshot={syncCharacterSnapshot}
         onClearPings={clearPings}
         onMyQuests={() => navigate({ screen: 'quests', code: party.code })}
         onAdmin={() => navigate({ screen: 'admin', code: party.code })}

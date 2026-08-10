@@ -13,13 +13,33 @@ const STATUS_TEXT = {
 // GameWatcher.cs returns early when raid.Map is null, so a monitor started mid-raid
 // sends absolutely nothing — the silence is the only symptom.
 const QUIET_MS = 90000
+const CHARACTER_SHARE_MODES = [
+  ['full', 'FULL'],
+  ['identity', 'IDENTITY'],
+  ['off', 'OFF'],
+]
+
+function characterSnapshotForShare(snapshot, mode) {
+  if (!snapshot || mode === 'off') return null
+  if (mode === 'identity') {
+    return {
+      ...snapshot,
+      accountId: null,
+      profileId: null,
+      appearance: null,
+      equipment: [],
+    }
+  }
+  return snapshot
+}
+
 const POS_REJECT_TEXT = {
   shape:  'a position with missing or non-numeric coordinates',
   map:    'a position for a map that is not one of the 10 supported maps',
   bounds: 'a position outside the map’s bounds',
 }
 
-export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, onStatus, settings = {}, onSetSetting }) {
+export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, onCharacterSnapshot, onStatus, settings = {}, onSetSetting }) {
   const [copied, setCopied] = useState(false)
   const [confirmRegen, setConfirmRegen] = useState(false)
   const [lastAction, setLastAction] = useState(null)  // { value, at, ok, reason }
@@ -28,6 +48,9 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
   const [pending, setPending] = useState(0)           // taps buffered in the current window
   const [, setTick] = useState(0)
   const [detailsExpanded, setDetailsExpanded] = useState(() => settings.monitor_expanded === true)
+  const characterShareMode = CHARACTER_SHARE_MODES.some(([mode]) => mode === settings.character_share_mode)
+    ? settings.character_share_mode
+    : 'full'
 
   // Refs so the socket handler never has to be re-created (and never captures a stale map).
   const mapsRef     = useRef(maps);       mapsRef.current = maps
@@ -38,7 +61,21 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
   const userIdRef   = useRef(userId);     userIdRef.current = userId
   const myNameRef   = useRef(myName);     myNameRef.current = myName
   const addPingRef  = useRef(onAddPing);  addPingRef.current = onAddPing
+  const characterRef = useRef(onCharacterSnapshot); characterRef.current = onCharacterSnapshot
   const statusRef   = useRef(onStatus);   statusRef.current = onStatus
+  const shareModeRef = useRef(characterShareMode); shareModeRef.current = characterShareMode
+  const lastCharacterRef = useRef(null)
+  const previousShareModeRef = useRef(null)
+
+  const publishCharacter = useCallback(snapshot => {
+    if (shareModeRef.current === 'off') {
+      lastCharacterRef.current = null
+      characterRef.current?.(null)
+      return
+    }
+    lastCharacterRef.current = snapshot
+    characterRef.current?.(characterSnapshotForShare(snapshot, shareModeRef.current))
+  }, [])
 
   // Cadence buffer. Taps arrive ~1s apart as separate messages, so a ping is only
   // committed once the window closes — 1 tap "I'm here", 2 "contact", 3 "need help".
@@ -123,19 +160,41 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
     if (pendingMap && mapNorm === pendingMap.value) setPendingMap(null)
   }, [mapNorm, pendingMap])
 
+  useEffect(() => {
+    if (previousShareModeRef.current === null) {
+      previousShareModeRef.current = characterShareMode
+      if (characterShareMode === 'off') characterRef.current?.(null)
+      return
+    }
+    if (previousShareModeRef.current === characterShareMode) return
+    previousShareModeRef.current = characterShareMode
+    if (characterShareMode === 'off') {
+      lastCharacterRef.current = null
+      characterRef.current?.(null)
+      return
+    }
+    characterRef.current?.(characterSnapshotForShare(lastCharacterRef.current, characterShareMode))
+  }, [characterShareMode])
+
   const {
     code, enabled, status, connectedAt, lastCommandAt, rejected,
-    posRejected, throttled,
+    posRejected, throttled, lastCharacterAt: monitorCharacterAt,
     connect, disconnect, regenerate,
-  } = useTarkovMonitor({ onMap: handleMapCommand, onPosition: handlePosition, settings, onSetSetting })
+  } = useTarkovMonitor({
+    onMap: handleMapCommand,
+    onPosition: handlePosition,
+    onCharacter: publishCharacter,
+    settings,
+    onSetSetting,
+  })
 
   // The Raid View overlay covers this panel, which is exactly when the link state
   // matters most: a dropped relay and a silent monitor both look like an empty
   // squad rail. Report upward so the rail can say which it is. Primitive deps only,
   // so a parent that stores this in state cannot loop back into here.
   useEffect(() => {
-    statusRef.current?.({ status, enabled, connectedAt, lastCommandAt })
-  }, [status, enabled, connectedAt, lastCommandAt])
+    statusRef.current?.({ status, enabled, connectedAt, lastCommandAt, lastCharacterAt: monitorCharacterAt })
+  }, [status, enabled, connectedAt, lastCommandAt, monitorCharacterAt])
 
   // Re-render so the "gone quiet" notice appears without needing another event.
   const waitingForFirstEvent = status === 'connected' && !lastCommandAt
@@ -234,6 +293,28 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
           </p>
 
           {/* Position pings — how to fire one, and what each cadence means */}
+          <div className="mon-character-help">
+            <div className="mon-ping-row">
+              <span className="mono mon-ping-title">CHARACTER SYNC</span>
+              <span className="mono mon-character-current">{characterShareMode === 'full' ? 'PROFILE + LOADOUT' : characterShareMode === 'identity' ? 'IDENTITY ONLY' : 'DISABLED'}</span>
+            </div>
+            <p className="mono" style={{ fontSize: 11, color: 'var(--txm)', lineHeight: 1.7, margin: 0 }}>
+              SHARE YOUR TARKOV NICKNAME AND OPERATOR DETAILS WITH THE PARTY RAIL. FULL INCLUDES APPEARANCE AND LOADOUT ICONS; IDENTITY KEEPS ONLY NICKNAME, FACTION AND LEVEL; OFF CLEARS THE SYNCED SNAPSHOT.
+            </p>
+            <div className="mon-character-modes">
+              {CHARACTER_SHARE_MODES.map(([mode, label]) => (
+                <button
+                  key={mode}
+                  className={characterShareMode === mode ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+                  onClick={() => onSetSetting?.('character_share_mode', mode)}
+                  aria-pressed={characterShareMode === mode}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="mon-ping-help">
             <div className="mon-ping-row">
               <span className="mono mon-ping-title">POSITION PINGS</span>

@@ -14,6 +14,7 @@ import RaidSettings from './RaidSettings'
 import useEphemeralSweep from '../useEphemeralSweep'
 import { resolveSetting } from '../settings'
 import { normalizeMembers, findMember, memberIds, memberNames, progressOwnerId, progressQuestId } from '../partyMembers'
+import { characterAssetIconUrl, characterItemLabel, characterModeLabel, displayCharacterSide } from '../tarkovCharacters'
 
 const MapLeaflet = lazy(() => import('./MapLeaflet'))
 const RaidView = lazy(() => import('./RaidView'))
@@ -44,11 +45,106 @@ function MemberPill({ name, allMembers }) {
   )
 }
 
+const APPEARANCE_LABELS = [
+  ['head', 'HEAD'],
+  ['body', 'BODY'],
+  ['feet', 'FEET'],
+  ['hands', 'HANDS'],
+]
+
+function CharacterSnapshotCard({ snapshot }) {
+  const [expanded, setExpanded] = useState(false)
+  const appearance = snapshot?.appearance || {}
+  const equipment = snapshot?.equipment || []
+  const previewItems = useMemo(() => {
+    const parentIds = new Set(equipment.map(item => item.parentId).filter(Boolean))
+    return equipment
+      .filter(item => item.name || item.templateId)
+      .filter(item => !parentIds.has(item.id))
+      .slice(0, 4)
+  }, [equipment])
+  const side = displayCharacterSide(snapshot)
+  const mode = characterModeLabel(snapshot)
+  const identity = snapshot?.nickname || 'UNKNOWN OPERATOR'
+  const synced = snapshot?.syncedAt
+    ? new Date(snapshot.syncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : 'RECENTLY'
+
+  return (
+    <div className="member-character-snapshot">
+      <div className="member-character-head">
+        <div className="member-character-identity">
+          <span className="member-character-avatar">{(side || 'OP').slice(0, 2)}</span>
+          <span style={{ minWidth: 0 }}>
+            <span className="member-character-name">{identity}</span>
+            <span className="member-character-meta">
+              {[side, mode, snapshot?.level ? `LVL ${snapshot.level}` : null].filter(Boolean).join(' · ')}
+            </span>
+          </span>
+        </div>
+        <button
+          className="btn-ghost btn-sm member-character-toggle"
+          onClick={() => setExpanded(value => !value)}
+          aria-expanded={expanded}
+        >
+          {expanded ? 'HIDE' : 'LOADOUT'}
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="member-character-details">
+          {Object.keys(appearance).length > 0 && (
+            <div className="member-character-appearance">
+              {APPEARANCE_LABELS.filter(([key]) => appearance[key]).map(([key, label]) => (
+                <span key={key} className="member-character-chip">
+                  <span>{label}</span>
+                  <span className="member-character-chip-value">
+                    {characterAssetIconUrl(appearance[key]) && (
+                      <img
+                        src={characterAssetIconUrl(appearance[key])}
+                        alt=""
+                        loading="lazy"
+                        onError={event => { event.currentTarget.style.display = 'none' }}
+                      />
+                    )}
+                    <strong title={appearance[key]}>{appearance[key]}</strong>
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
+          {equipment.length > 0 ? (
+            <div className="member-character-items">
+              <div className="member-character-section-label">LOADOUT · {equipment.length} ITEMS</div>
+              {previewItems.map(item => (
+                <div key={item.id || item.templateId || item.name} className="member-character-item">
+                  <span className="member-character-item-main">
+                    {item.iconLink && <img src={item.iconLink} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none' }} />}
+                    <span className="member-character-item-name">{characterItemLabel(item)}</span>
+                  </span>
+                  <span className="mono">{item.slotId || (item.stackCount > 1 ? `×${item.stackCount}` : 'EQUIPPED')}</span>
+                </div>
+              ))}
+              {equipment.length > previewItems.length && (
+                <div className="mono member-character-more">+ {equipment.length - previewItems.length} MORE ITEMS</div>
+              )}
+            </div>
+          ) : (
+            <div className="mono member-character-empty">NO LOADOUT ITEMS REPORTED</div>
+          )}
+        </div>
+      )}
+
+      <div className="mono member-character-sync">SYNCED {synced}</div>
+    </div>
+  )
+}
+
 function hasRaidWork(progress) {
   return Object.keys(progress || {}).some(key => key !== '__raid_start__')
 }
 
-export default function Room({ party, raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid, onOpenRaid, onCloseRaid }) {
+export default function Room({ party, raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onCharacterSnapshot, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid, onOpenRaid, onCloseRaid }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
@@ -406,6 +502,8 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
               const isFriend  = friends.some(f => f.user_id === member.user_id)
               const isPending = [...(pendingIn || []), ...(pendingOut || [])].some(r => r.user_id === member.user_id)
               const mQuests   = member.quests
+              const character = member.character_snapshot
+              const displayName = character?.nickname || m
               const totalCount = mQuests.length
               const mapCount  = party.map_norm
                 ? mQuests.filter(q => {
@@ -417,8 +515,11 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
                 <div key={member.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '7px 0', borderBottom: '1px solid var(--brd)' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13, color: isSelf ? 'var(--goldtx)' : 'var(--tx)' }}>
-                      {m}{isSelf ? ' · you' : ''}
+                      {displayName}{isSelf ? ' · you' : ''}
                     </div>
+                    {character?.nickname && character.nickname !== m && (
+                      <div className="mono" style={{ fontSize: 9, color: 'var(--txd)' }}>CALLSIGN · {m}</div>
+                    )}
                     <div className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>
                       {totalCount} QUEST{totalCount !== 1 ? 'S' : ''}
                       {mapCount !== null && (
@@ -426,6 +527,7 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
                       )}
                       <span style={{ color: isOnline ? 'var(--grn)' : 'var(--txd)' }}> · {isOnline ? 'ONLINE' : 'OFFLINE'}</span>
                     </div>
+                    {character && <CharacterSnapshotCard snapshot={character} />}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
                     {party.leader_id === member.user_id && (
@@ -565,6 +667,7 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
             hasPlan={hasPlan}
             onSelectMap={onSelectMap}
             onAddPing={onAddPing}
+            onCharacterSnapshot={onCharacterSnapshot}
             onStatus={handleMonitorStatus}
             settings={userSettings}
             onSetSetting={onSetUserSetting}

@@ -6,6 +6,7 @@
 //   node scripts/fake-monitor.mjs <REMOTE_ID> [map] [--repeat]
 //   node scripts/fake-monitor.mjs <REMOTE_ID> --pos [map] [--taps N] [--yaw D]
 //                                             [--at x,y,z] [--walk] [--nomap] [--flood]
+//   node scripts/fake-monitor.mjs <REMOTE_ID> --profile
 //   node scripts/fake-monitor.mjs <REMOTE_ID> [map] --track N [--step S]
 //
 // The Remote ID is the one shown in the app's TARKOV MONITOR LINK panel.
@@ -27,6 +28,7 @@
 //                 the only mode that produces a scrubbable ping_log.
 //   --oob         a position far outside the map bounds (rejection check)
 //   --bad         non-numeric coordinates (rejection check)
+//   --profile     send a fake Tarkov identity, appearance and equipment snapshot
 //
 // Node 21+ only — uses the global WebSocket. No dependencies.
 
@@ -68,6 +70,7 @@ const [code, mapArg] = positional
 const repeat = flag('repeat')
 const track  = Math.max(0, parseInt(optOf('track') || '0', 10))
 const step   = Math.max(2, parseFloat(optOf('step') || '6'))
+const profile = flag('profile')
 const pos    = flag('pos') || flag('walk') || flag('flood') || flag('oob') || flag('nomap') || flag('bad') || track > 0
 const map    = mapArg || 'customs'
 const taps   = Math.max(1, parseInt(optOf('taps') || '1', 10))
@@ -93,6 +96,34 @@ function send(data) {
 let cycle = 0
 function sendMap(value) {
   send({ type: 'map', value })
+}
+
+function sendProfile() {
+  send({
+    type: 'characterProfile',
+    profile: {
+      accountId: 'demo-account-4402',
+      profileId: 'demo-profile-regular',
+      gameMode: 'regular',
+      nickname: 'DUDGY',
+      side: 'Usec',
+      raidSide: 'PMC',
+      level: 42,
+      experience: 987654,
+    },
+    customization: {
+      Head: 'Customs BEAR cap',
+      Body: 'USEC Tactical jacket',
+      Feet: 'USEC boots',
+      Hands: 'USEC gloves',
+    },
+    equipment: [
+      { id: 'demo-weapon', templateId: 'demo-m4a1', name: 'M4A1', slotId: 'FirstPrimaryWeapon' },
+      { id: 'demo-rig', templateId: 'demo-rig', name: 'Tactical rig', slotId: 'TacticalVest' },
+      { id: 'demo-armor', templateId: 'demo-armor', name: 'Body armor', slotId: 'ArmorVest', upd: { Repairable: { Durability: 42, MaxDurability: 50 } } },
+      { id: 'demo-med', templateId: 'demo-med', name: 'IFAK', slotId: 'Pockets', upd: { StackObjectsCount: 2 } },
+    ],
+  })
 }
 
 function basePoint() {
@@ -162,6 +193,10 @@ ws.addEventListener('open', () => {
     sendMap(FEATURED[cycle++ % FEATURED.length])
     setInterval(() => sendMap(FEATURED[cycle++ % FEATURED.length]), 10000)
     return
+  }
+  if (profile) {
+    sendProfile()
+    return finish(1500)
   }
   if (pos) {
     // A real monitor reports the map before any position, so send one unless
