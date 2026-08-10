@@ -48,7 +48,7 @@ function hasRaidWork(progress) {
   return Object.keys(progress || {}).some(key => key !== '__raid_start__')
 }
 
-export default function Room({ party, raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid, onOpenRaid, onCloseRaid }) {
+export default function Room({ party, raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid, onOpenRaid, onCloseRaid }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
