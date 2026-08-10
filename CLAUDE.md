@@ -125,6 +125,8 @@ terrain labels. Leaflet bounds and zoom settings live in
 `src/data/tarkovMapConfigs.js`. `MapLeaflet.jsx` is the active renderer;
 `MapCanvas.jsx` is legacy.
 
+Ping focus has three per-device auto-focus modes: OFF, ALERTS (CONTACT and NEED HELP), and ALL. The selected mode is stored in localStorage under `tsp.ping_autofocus`. Any user map interaction suppresses auto-focus for six seconds so camera control stays with the reader.
+
 ## Quest Screenshot Scanning
 
 Entirely client-side — no API key, no quota, no server call, so it costs nothing

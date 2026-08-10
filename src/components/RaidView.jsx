@@ -42,6 +42,9 @@ export default function RaidView({
   const [drawMode, setDrawMode] = useState('pan')
   const [focusKey, setFocusKey] = useState(null)
   const [hoverFocusKey, setHoverFocusKey] = useState(null)
+  const [focusPingId, setFocusPingId] = useState(null)
+  const [hoverPingId, setHoverPingId] = useState(null)
+  const [overviewNonce, setOverviewNonce] = useState(0)
   const [, setFullscreen] = useState(false)
 
   const { mapKeys } = useMapKeys(party.map_norm)
@@ -82,6 +85,7 @@ export default function RaidView({
     || pingState.pingList.find(ping => ping.user === myName)
     || null
   const mapFocusKey = hoverFocusKey || focusKey
+  const mapFocusPingId = hoverPingId || focusPingId
 
   const toggleRail = useCallback(() => {
     setRailOpen(current => {
@@ -141,6 +145,9 @@ export default function RaidView({
       } else if (event.key.toLowerCase() === 'f') {
         event.preventDefault()
         toggleFullscreen()
+      } else if (event.key.toLowerCase() === 'o') {
+        event.preventDefault()
+        setOverviewNonce(nonce => nonce + 1)
       }
     }
 
@@ -199,6 +206,10 @@ export default function RaidView({
             fill
             chrome="overlay"
             focusKey={mapFocusKey}
+            focusPingId={focusPingId}
+            hoverPingId={hoverPingId}
+            onFocusPing={setFocusPingId}
+            overviewNonce={overviewNonce}
             defaultMode="pan"
             mode={drawMode}
             onModeChange={setDrawMode}
@@ -228,8 +239,11 @@ export default function RaidView({
             myPing={myPing}
             loadingTasks={loadingTasks}
             focusKey={mapFocusKey}
+            focusPingId={mapFocusPingId}
             onHoverFocus={setHoverFocusKey}
             onToggleFocus={key => setFocusKey(current => current === key ? null : key)}
+            onFocusPing={id => setFocusPingId(current => current === id ? null : id)}
+            onHoverPing={setHoverPingId}
           />
         )}
       </div>

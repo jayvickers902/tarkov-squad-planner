@@ -21,7 +21,7 @@ import {
   lootPointsFor, outlineToLatLngs, centroid,
 } from '../tarkovZones'
 import { objectivePins, getUserColor } from '../tarkovObjectives'
-import { useMapPings } from '../useMapPings'
+import { bearingRange, useMapPings } from '../useMapPings'
 import { classifyPmcSpawns } from '../tarkovSpawns'
 
 const PALETTE = ['#e85d5d', '#f5a623', '#e8e85d', '#5de87a', '#5de8d4', '#5db8e8', '#c45de8', '#e85da8', '#ffffff', '#b0b0b0']
@@ -368,17 +368,24 @@ function makeIntelIcon(kind, checked) {
 
 // Position ping — a view cone, not a bare dot: "here, watching that way".
 // `angle` is already in screen space (see pingAngle); 0 points up.
-function makePingIcon(color, initial, angle, opacity, taps) {
+function makePingIcon(color, initial, angle, opacity, taps, focusState = 'normal') {
   const dots = taps > 1
     ? `<g>${Array.from({ length: taps }, (_, i) =>
         `<circle cx="${22 + (i - (taps - 1) / 2) * 6}" cy="37" r="2.1" fill="${color}" stroke="rgba(0,0,0,0.85)" stroke-width="0.8"/>`).join('')}</g>`
     : ''
   const intensity = Math.min(Math.max(Number(taps) || 1, 1), 3)
+  const markerClass = [
+    'map-ping-marker',
+    `map-ping-marker-taps-${intensity}`,
+    focusState === 'focus' ? 'map-ping-marker-focus' : '',
+    focusState === 'dim' ? 'map-ping-marker-dim' : '',
+  ].filter(Boolean).join(' ')
+  const displayOpacity = focusState === 'dim' ? Math.min(opacity, 0.42) : opacity
   return L.divIcon({
     className: '',
     iconSize: [44, 44],
     iconAnchor: [22, 22],
-    html: `<div class="map-ping-marker map-ping-marker-taps-${intensity}" style="--ping-color:${color};opacity:${opacity}" data-taps="${intensity}">
+    html: `<div class="${markerClass}" style="--ping-color:${color};opacity:${displayOpacity}" data-taps="${intensity}">
       <span class="map-ping-pulse" aria-hidden="true"></span>
       <svg width="44" height="44" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
       <g transform="rotate(${angle.toFixed(1)} 22 22)">
@@ -391,6 +398,17 @@ function makePingIcon(color, initial, angle, opacity, taps) {
       </svg>
     </div>`,
   })
+}
+
+function pingCompanionCards(target, cards) {
+  if (!target) return []
+  return cards.filter(other =>
+    other.ping.id !== target.ping.id
+    && other.ping.user_id !== target.ping.user_id
+    && other.age <= 90000
+    && other.floor === target.floor
+    && bearingRange(target.ping, other.ping)?.dist <= 150
+  )
 }
 
 export default function MapLeaflet({
@@ -420,6 +438,10 @@ export default function MapLeaflet({
   hideReplay = false,
   pingStripMode = 'inline',
   sharedPingState = null,
+  focusPingId,
+  hoverPingId,
+  onFocusPing,
+  overviewNonce = 0,
 }) {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
@@ -437,6 +459,18 @@ export default function MapLeaflet({
   const [showSpawns, setShowSpawns] = useState(true)
   const [showQuestPins, setShowQuestPins] = useState(true)
   const [showPings, setShowPings] = useState(true)
+  const [internalFocusPingId, setInternalFocusPingId] = useState(null)
+  const [internalHoverPingId, setInternalHoverPingId] = useState(null)
+  const [pingAutofocus, setPingAutofocus] = useState(() => {
+    if (typeof window === 'undefined') return 'alerts'
+    try {
+      const stored = window.localStorage.getItem('tsp.ping_autofocus')
+      return ['off', 'alerts', 'all'].includes(stored) ? stored : 'alerts'
+    } catch {
+      return 'alerts'
+    }
+  })
+  const [offscreenChevrons, setOffscreenChevrons] = useState([])
   // Off by default: Reserve alone carries 64 points, and a map that opens under
   // a blanket of loot icons is worse than one you have to ask for them on.
   const [showIntel, setShowIntel] = useState(false)
@@ -465,6 +499,12 @@ export default function MapLeaflet({
   const drawingPointerId = useRef(null)
   const suppressClickUntil = useRef(0)
   const layersMenuRef = useRef(null)
+  const lastUserInteractionRef = useRef(0)
+  const lastAppliedFocusPingRef = useRef(null)
+  const lastAutoFocusAnnouncementRef = useRef(null)
+  const lastOverviewNonceRef = useRef(overviewNonce)
+  const announcementHoverRef = useRef(false)
+  const announcementFocusRef = useRef(false)
 
   function changeMode(m) {
     if (modeProp !== undefined) onModeChange?.(m)
@@ -583,8 +623,23 @@ export default function MapLeaflet({
   })
   const {
     replay, setReplay, replayData, canReplay, replayOn,
-    pingList, replayTrails, pingCards, pingAnnouncement, pingSig,
+    pingList, replayTrails, pingCards, echoCards, pingAnnouncement,
+    dismissPingAnnouncement, pausePingAnnouncement, pingSig,
   } = sharedPingState || localPingState
+  const hasExternalFocusPing = focusPingId !== undefined
+  const resolvedFocusPingId = hasExternalFocusPing ? focusPingId : internalFocusPingId
+  const hasExternalHoverPing = hoverPingId !== undefined
+  const resolvedHoverPingId = hasExternalHoverPing ? hoverPingId : internalHoverPingId
+  const visualFocusPingId = resolvedHoverPingId || resolvedFocusPingId
+  const focusedPingCard = pingCards.find(card => card.ping.id === visualFocusPingId) || null
+  const focusedPingIds = useMemo(() => {
+    if (!focusedPingCard) return new Set()
+    return new Set([
+      focusedPingCard.ping.id,
+      ...pingCompanionCards(focusedPingCard, pingCards).map(card => card.ping.id),
+    ])
+  }, [focusedPingCard, pingCards])
+  const pingFocusActive = showPings && !!focusedPingCard
   // In-raid full-bleed view hides the strip for space; replay is a post-raid
   // tool and does not belong there either.
   // Playback. A fixed 200 ms tick scaled by speed, so 16× advances 3.2 s of raid
@@ -644,6 +699,11 @@ export default function MapLeaflet({
     // Markers still use Leaflet's default marker pane so labels can sit above
     // the vector geometry with explicit, bounded z-index offsets.
     map.createPane('zonesPane').style.zIndex = 410
+    map.createPane('pingsPane').style.zIndex = 620
+    for (const paneName of ['markerPane', 'zonesPane', 'ringsPane']) {
+      map.getPane(paneName)?.classList.add('map-focus-dim-layer')
+    }
+    map.getPane('pingsPane')?.classList.add('map-ping-focus-layer')
 
     // ── Tile layer ──────────────────────────────────────────────────────────
     if (cfg.tilePath) {
@@ -735,6 +795,43 @@ export default function MapLeaflet({
     return () => {
       observer.disconnect()
       if (frame !== null) cancelAnimationFrame(frame)
+    }
+  }, [mapNorm])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('tsp.ping_autofocus', pingAutofocus)
+    } catch {
+      // A private window or a blocked storage policy should not affect the map.
+    }
+  }, [pingAutofocus])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const container = map?.getContainer()
+    if (!container) return undefined
+    container.classList.toggle('map-ping-focus-active', pingFocusActive)
+    return () => container.classList.remove('map-ping-focus-active')
+  }, [mapNorm, pingFocusActive])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const container = map?.getContainer()
+    if (!map || !container) return undefined
+
+    const markUserInteraction = () => {
+      lastUserInteractionRef.current = Date.now()
+    }
+    map.on('dragstart', markUserInteraction)
+    container.addEventListener('wheel', markUserInteraction, { passive: true })
+    container.addEventListener('touchstart', markUserInteraction, { passive: true })
+    container.addEventListener('dblclick', markUserInteraction)
+
+    return () => {
+      map.off('dragstart', markUserInteraction)
+      container.removeEventListener('wheel', markUserInteraction)
+      container.removeEventListener('touchstart', markUserInteraction)
+      container.removeEventListener('dblclick', markUserInteraction)
     }
   }, [mapNorm])
 
@@ -1080,7 +1177,9 @@ export default function MapLeaflet({
     if (!showQuestPins) return []
     return autoObjPins.map(pin => {
       const latlng = L.latLng(pin.lat, pin.lng)
-      const focusState = focusKey
+      const focusState = pingFocusActive
+        ? 'dim'
+        : focusKey
         ? (pin.key === focusKey ? 'focus' : 'dim')
         : 'normal'
       const icon = makeObjIcon(pin.color, pin.initial, focusState)
@@ -1098,7 +1197,7 @@ export default function MapLeaflet({
       bindTacticalTooltip(lm, tooltipHtml, { offset: [0, -12] })
       return lm
     })
-  }, [autoObjPins, focusKey, mapNorm, showQuestPins])
+  }, [autoObjPins, focusKey, mapNorm, pingFocusActive, showQuestPins])
 
   // Rail focus is a map action, not just a visual state. One zone gets a fly-to;
   // several zones get a bounded view so find-item objectives stay honest.
@@ -1116,6 +1215,71 @@ export default function MapLeaflet({
     }
   }, [autoObjPins, cfg, focusKey, mapNorm])
 
+  const clearPingFocus = useCallback(() => {
+    setInternalFocusPingId(null)
+    onFocusPing?.(null)
+  }, [onFocusPing])
+
+  const focusPing = useCallback((pingId) => {
+    const map = mapRef.current
+    const target = pingCards.find(card => card.ping.id === pingId)
+    if (!map || !target || !cfg) return false
+
+    const companions = pingCompanionCards(target, pingCards)
+    const points = [target, ...companions].map(card => L.latLng(card.ping.z, card.ping.x))
+    lastAppliedFocusPingRef.current = `${mapNorm}:${target.ping.id}`
+    setInternalFocusPingId(target.ping.id)
+    onFocusPing?.(target.ping.id)
+
+    if (points.length === 1) {
+      const zoom = Math.min(cfg.maxZoom, Math.max(map.getZoom(), cfg.minZoom + 2))
+      map.flyTo(points[0], zoom, { duration: 0.55 })
+    } else {
+      map.fitBounds(L.latLngBounds(points), {
+        padding: [90, 90],
+        maxZoom: cfg.maxZoom - 0.5,
+        animate: true,
+      })
+    }
+    return true
+  }, [cfg, mapNorm, onFocusPing, pingCards])
+
+  useEffect(() => {
+    if (focusPingId == null) {
+      lastAppliedFocusPingRef.current = null
+      return
+    }
+    const applyKey = `${mapNorm}:${focusPingId}`
+    if (lastAppliedFocusPingRef.current === applyKey) return
+    if (!pingCards.some(card => card.ping.id === focusPingId)) return
+    lastAppliedFocusPingRef.current = applyKey
+    focusPing(focusPingId)
+  }, [focusPing, focusPingId, mapNorm, pingCards])
+
+  useEffect(() => {
+    if (resolvedFocusPingId == null || pingCards.some(card => card.ping.id === resolvedFocusPingId)) return
+    if (hasExternalFocusPing) onFocusPing?.(null)
+    else setInternalFocusPingId(null)
+  }, [hasExternalFocusPing, onFocusPing, pingCards, resolvedFocusPingId])
+
+  useEffect(() => {
+    if (showPings) return
+    clearPingFocus()
+    setInternalHoverPingId(null)
+  }, [clearPingFocus, showPings])
+
+  const focusOverview = useCallback(() => {
+    clearPingFocus()
+    setInternalHoverPingId(null)
+    if (mapRef.current && boundsRef.current) mapRef.current.fitBounds(boundsRef.current)
+  }, [clearPingFocus])
+
+  useEffect(() => {
+    if (overviewNonce === lastOverviewNonceRef.current) return
+    lastOverviewNonceRef.current = overviewNonce
+    focusOverview()
+  }, [focusOverview, overviewNonce])
+
   // ─── Sync position ping markers ─────────────────────────────────────────────
   // Keyed on a coarse signature rather than on pingCards itself: the tick that
   // drives the decay fires every 5s, and rebuilding markers that often would
@@ -1127,7 +1291,17 @@ export default function MapLeaflet({
       const p = card.ping
       const decay = staleness(card.age)
       const angle = pingAngle(p.yaw, p.map)
-      const icon = makePingIcon(card.color, p.user[0].toUpperCase(), angle, decay.opacity, p.taps)
+      const focusState = pingFocusActive
+        ? (focusedPingIds.has(p.id) ? 'focus' : 'dim')
+        : 'normal'
+      const icon = makePingIcon(
+        card.color,
+        p.user[0].toUpperCase(),
+        angle,
+        Math.max(decay.opacity, 0.35),
+        p.taps,
+        focusState,
+      )
       const lines = [
         card.floor ? `${card.floor} · ${card.elev}` : `ELEVATION ${card.elev}`,
         card.motion ? `MOVING ${card.motion.dir} · ${card.motion.speed} m/s` : null,
@@ -1155,11 +1329,93 @@ export default function MapLeaflet({
           </div>
         </div>`
       // z then x — y is height, never placement.
-      const lm = L.marker(L.latLng(p.z, p.x), { icon, interactive: true, zIndexOffset: 400 })
+      const lm = L.marker(L.latLng(p.z, p.x), {
+        icon,
+        interactive: true,
+        pane: 'pingsPane',
+        zIndexOffset: focusState === 'focus' ? 430 : 400,
+      })
       bindTacticalTooltip(lm, tooltipHtml, { offset: [0, -18] })
       return lm
     })
-  }, [pingSig, showPings, mapNorm]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [focusedPingIds, pingFocusActive, pingSig, showPings, mapNorm]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const announcementId = pingAnnouncement?.id
+    if (!announcementId || lastAutoFocusAnnouncementRef.current === announcementId) return
+    lastAutoFocusAnnouncementRef.current = announcementId
+
+    const card = pingCards.find(candidate => candidate.ping.id === announcementId)
+    if (!card || pingAutofocus === 'off' || replayOn || !showPings || mode === 'draw') return
+    if (Date.now() - lastUserInteractionRef.current < 6000) return
+    if (card.ping.user_id === myUserId || card.ping.user === myName) return
+    if (pingAutofocus === 'alerts' && (Number(card.ping.taps) || 1) < 2) return
+    focusPing(announcementId)
+  }, [focusPing, mode, myName, myUserId, pingAnnouncement?.id, pingAutofocus, pingCards, replayOn, showPings])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || replayOn || !showPings) {
+      setOffscreenChevrons([])
+      return undefined
+    }
+
+    let frame = null
+    function recompute() {
+      if (frame !== null) return
+      frame = requestAnimationFrame(() => {
+        frame = null
+        const bounds = map.getBounds()
+        const size = map.getSize()
+        if (!size.x || !size.y) {
+          setOffscreenChevrons([])
+          return
+        }
+
+        const center = L.point(size.x / 2, size.y / 2)
+        const inset = Math.min(28, Math.max(18, Math.min(size.x, size.y) * 0.08))
+        const ownPing = pingCards.find(card => card.ping.user_id === myUserId || card.ping.user === myName)?.ping
+        const origin = ownPing || { x: map.getCenter().lng, z: map.getCenter().lat }
+        const next = echoCards.map(card => {
+          const target = L.latLng(card.ping.z, card.ping.x)
+          if (bounds.contains(target)) return null
+
+          const point = map.latLngToContainerPoint(target)
+          const dx = point.x - center.x
+          const dy = point.y - center.y
+          if (!dx && !dy) return null
+          const edgeX = dx > 0 ? size.x - inset : inset
+          const edgeY = dy > 0 ? size.y - inset : inset
+          const tx = dx ? (edgeX - center.x) / dx : Infinity
+          const ty = dy ? (edgeY - center.y) / dy : Infinity
+          const scale = Math.min(
+            tx > 0 ? tx : Infinity,
+            ty > 0 ? ty : Infinity,
+          )
+          if (!Number.isFinite(scale)) return null
+          const range = bearingRange(origin, card.ping)
+          return {
+            id: card.ping.id,
+            user: card.ping.user,
+            initial: card.ping.user?.[0]?.toUpperCase() || '?',
+            color: card.color,
+            left: center.x + dx * scale,
+            top: center.y + dy * scale,
+            angle: (Math.atan2(dy, dx) * 180) / Math.PI,
+            distance: range?.dist ?? null,
+          }
+        }).filter(Boolean)
+        setOffscreenChevrons(next)
+      })
+    }
+
+    map.on('move zoom resize', recompute)
+    recompute()
+    return () => {
+      map.off('move zoom resize', recompute)
+      if (frame !== null) cancelAnimationFrame(frame)
+    }
+  }, [echoCards, mapNorm, myName, myUserId, pingCards, pingSig, replayOn, showPings])
 
   // ─── Replay trails ──────────────────────────────────────────────────────────
   // The payoff of a replay is the *path*, not the dots — where the squad
@@ -1382,6 +1638,12 @@ export default function MapLeaflet({
     setLayersOpen(false)
     setRingRadius(0)
     setReplay(null)
+    setInternalFocusPingId(null)
+    setInternalHoverPingId(null)
+    setOffscreenChevrons([])
+    lastAppliedFocusPingRef.current = null
+    lastAutoFocusAnnouncementRef.current = null
+    if (hasExternalFocusPing && focusPingId != null) onFocusPing?.(null)
   }, [mapNorm]) // eslint-disable-line
 
   useEffect(() => {
@@ -1455,6 +1717,9 @@ export default function MapLeaflet({
       </span>
     </div>
   ))
+  const updateAnnouncementPause = useCallback(() => {
+    pausePingAnnouncement(announcementHoverRef.current || announcementFocusRef.current)
+  }, [pausePingAnnouncement])
 
   return (
     <div
@@ -1533,6 +1798,28 @@ export default function MapLeaflet({
               ▲ PINGS ({pingList.length})
             </button>
           )}
+          {pingList.length > 0 && (
+            <div className="ping-autofocus-control" role="group" aria-label="Ping auto-focus mode">
+              <span className="mono ping-autofocus-label">AUTO</span>
+              {[
+                ['off', 'OFF'],
+                ['alerts', 'ALERTS'],
+                ['all', 'ALL'],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  className={pingAutofocus === value ? 'ping-autofocus-active' : ''}
+                  onClick={() => setPingAutofocus(value)}
+                  aria-pressed={pingAutofocus === value}
+                  type="button">
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <button className="btn-ghost btn-sm" onClick={focusOverview} style={{ fontSize: 10 }} type="button">
+            &#8984; OVERVIEW
+          </button>
           <div className="map-layer-menu" ref={layersMenuRef}>
             <button
               className={layersOpen ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
@@ -1749,7 +2036,28 @@ export default function MapLeaflet({
           </div>
         )}
         {showPings && !replayOn && pingAnnouncement && (
-          <div className="map-ping-announcement" role="status" aria-live="polite">
+          <div
+            className="map-ping-announcement"
+            role="status"
+            aria-live="polite"
+            onMouseEnter={() => {
+              announcementHoverRef.current = true
+              updateAnnouncementPause()
+            }}
+            onMouseLeave={() => {
+              announcementHoverRef.current = false
+              updateAnnouncementPause()
+            }}
+            onFocus={() => {
+              announcementFocusRef.current = true
+              updateAnnouncementPause()
+            }}
+            onBlur={event => {
+              if (!event.currentTarget.contains(event.relatedTarget)) {
+                announcementFocusRef.current = false
+                updateAnnouncementPause()
+              }
+            }}>
             <span className="map-ping-announcement-signal" style={{ color: pingAnnouncement.cadence.color }}>●</span>
             <span className="mono map-ping-announcement-user" style={{ color: pingAnnouncement.color }}>
               {pingAnnouncement.user.toUpperCase()}
@@ -1761,12 +2069,47 @@ export default function MapLeaflet({
               {pingAnnouncement.taps > 1 ? `${pingAnnouncement.taps}× TAP` : 'PINGED MAP'}
               {pingAnnouncement.nearArea ? ` · ${pingAnnouncement.nearArea.name.toUpperCase()}` : ''}
             </span>
+            <button
+              type="button"
+              className="mono map-ping-announcement-go"
+              onClick={event => {
+                event.stopPropagation()
+                focusPing(pingAnnouncement.id)
+                dismissPingAnnouncement()
+              }}>
+              ⌘ GO
+            </button>
           </div>
         )}
         <div
           ref={mapContainerRef}
           style={{ width: '100%', height: fill ? '100%' : mapHeight, minHeight: fill ? 0 : undefined, borderRadius: 4 }}
         />
+        <div className="map-offscreen-layer">
+          {offscreenChevrons.map(chevron => (
+            <button
+              key={chevron.id}
+              type="button"
+              className="map-offscreen-chevron"
+              style={{
+                left: chevron.left,
+                top: chevron.top,
+                color: chevron.color,
+                transform: `translate(-50%, -50%) rotate(${chevron.angle}deg)`,
+              }}
+              aria-label={`Focus ${chevron.user}, ${chevron.distance ?? 'unknown'} metres away`}
+              onMouseDown={event => event.stopPropagation()}
+              onClick={event => {
+                event.stopPropagation()
+                focusPing(chevron.id)
+              }}>
+              <span className="map-offscreen-chevron-glyph">›</span>
+              <span className="mono map-offscreen-chevron-label" style={{ transform: `rotate(${-chevron.angle}deg)` }}>
+                {chevron.initial} {chevron.distance != null ? `${chevron.distance}M` : '?'}
+              </span>
+            </button>
+          ))}
+        </div>
         {debugCoord && (
           <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 9999, background: '#0c0e0d', border: '1px solid var(--gold)', borderRadius: 4, padding: '5px 10px', pointerEvents: 'none' }}>
             <span className="mono" style={{ fontSize: 11, color: 'var(--goldtx)', letterSpacing: '.06em' }}>
@@ -1845,12 +2188,31 @@ export default function MapLeaflet({
       )}
 
       {/* Ping strip — the callout in words, since a cone alone does not say "140 m NE" */}
-      {showPings && !hidePingStrip && pingStripMode !== 'rail' && pingCards.length > 0 && (
+      {showPings && !hidePingStrip && pingStripMode !== 'rail' && echoCards.length > 0 && (
         <div className="ping-strip">
-          {pingCards.map(card => {
+          {echoCards.map(card => {
             const decay = staleness(card.age)
+            const active = visualFocusPingId === card.ping.id
             return (
-              <div key={card.ping.id} className="ping-card" style={{ opacity: Math.max(decay.opacity, 0.35), borderLeftColor: card.cadence.color }}>
+              <div
+                key={card.ping.id}
+                className={`ping-card${active ? ' ping-card-active' : ''}`}
+                style={{ opacity: Math.max(decay.opacity, 0.35), borderLeftColor: card.cadence.color }}
+                role="button"
+                tabIndex={0}
+                onMouseEnter={() => {
+                  if (!hasExternalHoverPing) setInternalHoverPingId(card.ping.id)
+                }}
+                onMouseLeave={() => {
+                  if (!hasExternalHoverPing) setInternalHoverPingId(null)
+                }}
+                onClick={() => focusPing(card.ping.id)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    focusPing(card.ping.id)
+                  }
+                }}>
                 <div className="ping-card-head">
                   <span className="mono" style={{ color: card.color, fontSize: 11, letterSpacing: '.08em' }}>{card.ping.user.toUpperCase()}</span>
                   <span className="mono" style={{ color: card.cadence.color, fontSize: 10, letterSpacing: '.08em' }}>{card.cadence.label}</span>

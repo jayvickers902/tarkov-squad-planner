@@ -146,10 +146,24 @@ function buildObjectiveRows({ tasks, memberQuests, memberNames, memberIds, progr
   })
 }
 
-function PingCard({ card }) {
+function PingCard({ card, focusPingId, onFocusPing, onHoverPing }) {
   const decay = staleness(card.age)
+  const active = focusPingId === card.ping.id
   return (
-    <div className="ping-card raid-ping-card" style={{ opacity: Math.max(decay.opacity, 0.35), borderLeftColor: card.cadence.color }}>
+    <div
+      className={`ping-card raid-ping-card${active ? ' ping-card-active' : ''}`}
+      style={{ opacity: Math.max(decay.opacity, 0.35), borderLeftColor: card.cadence.color }}
+      role="button"
+      tabIndex={0}
+      onMouseEnter={() => onHoverPing(card.ping.id)}
+      onMouseLeave={() => onHoverPing(null)}
+      onClick={() => onFocusPing(card.ping.id)}
+      onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onFocusPing(card.ping.id)
+        }
+      }}>
       <div className="ping-card-head">
         <span className="mono" style={{ color: card.color, fontSize: 11, letterSpacing: '.08em' }}>{card.ping.user.toUpperCase()}</span>
         <span className="mono" style={{ color: card.cadence.color, fontSize: 10, letterSpacing: '.08em' }}>{card.cadence.label}</span>
@@ -183,9 +197,23 @@ function PingCard({ card }) {
   )
 }
 
-function LastKnownCard({ card }) {
+function LastKnownCard({ card, focusPingId, onFocusPing, onHoverPing }) {
+  const active = focusPingId === card.ping.id
   return (
-    <div className="last-known-card" style={{ borderLeftColor: card.color }}>
+    <div
+      className={`last-known-card${active ? ' last-known-card-active' : ''}`}
+      style={{ borderLeftColor: card.color }}
+      role="button"
+      tabIndex={0}
+      onMouseEnter={() => onHoverPing(card.ping.id)}
+      onMouseLeave={() => onHoverPing(null)}
+      onClick={() => onFocusPing(card.ping.id)}
+      onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onFocusPing(card.ping.id)
+        }
+      }}>
       <div className="last-known-head">
         <span className="mono" style={{ color: card.color, fontSize: 11, letterSpacing: '.08em' }}>
           {card.ping.user.toUpperCase()}
@@ -257,6 +285,9 @@ export default function RaidRail({
   focusKey = null,
   onHoverFocus,
   onToggleFocus,
+  focusPingId = null,
+  onFocusPing = () => {},
+  onHoverPing = () => {},
 }) {
   const dragRef = useRef(null)
   const rows = useMemo(() => buildObjectiveRows({
@@ -309,7 +340,15 @@ export default function RaidRail({
             <MonitorDot monitorStatus={monitorStatus} />
           </div>
           {pingCards.length > 0
-            ? <div className="raid-ping-list">{pingCards.map(card => <PingCard key={card.ping.id} card={card} />)}</div>
+            ? <div className="raid-ping-list">{pingCards.map(card => (
+                <PingCard
+                  key={card.ping.id}
+                  card={card}
+                  focusPingId={focusPingId}
+                  onFocusPing={onFocusPing}
+                  onHoverPing={onHoverPing}
+                />
+              ))}</div>
             : <div className="mono raid-rail-empty">NO SQUAD ECHO YET</div>}
         </section>
 
@@ -319,7 +358,15 @@ export default function RaidRail({
             <span className="raid-rail-count">{lastKnownCards.length}</span>
           </div>
           {lastKnownCards.length > 0
-            ? <div className="last-known-list">{lastKnownCards.map(card => <LastKnownCard key={card.ping.id} card={card} />)}</div>
+            ? <div className="last-known-list">{lastKnownCards.map(card => (
+                <LastKnownCard
+                  key={card.ping.id}
+                  card={card}
+                  focusPingId={focusPingId}
+                  onFocusPing={onFocusPing}
+                  onHoverPing={onHoverPing}
+                />
+              ))}</div>
             : <div className="mono raid-rail-empty">NO LAST KNOWN PINGS YET</div>}
         </section>
 

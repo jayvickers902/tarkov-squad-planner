@@ -290,6 +290,14 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   padding: 6px 9px;
   transition: opacity .4s ease;
 }
+.ping-card[role='button'],
+.last-known-card[role='button'] { cursor: pointer; transition: background .12s, border-color .12s, opacity .4s ease; }
+.ping-card[role='button']:hover,
+.ping-card-active,
+.last-known-card[role='button']:hover,
+.last-known-card-active { background: rgba(201,168,76,.12); border-color: var(--golddim); }
+.ping-card[role='button']:focus-visible,
+.last-known-card[role='button']:focus-visible { outline: 1px solid var(--gold); outline-offset: 1px; }
 .ping-card-head { display: flex; align-items: center; gap: 7px; }
 .ping-card-body {
   display: flex;
@@ -534,6 +542,8 @@ select:disabled { opacity: .6; cursor: not-allowed; }
    the map itself, even when the user is not looking at a tooltip. */
 .map-ping-marker { position: relative; width: 44px; height: 44px; overflow: visible; }
 .map-ping-marker > svg { position: relative; z-index: 2; display: block; overflow: visible; }
+.map-ping-marker-dim { filter: grayscale(.85) brightness(.72); }
+.map-ping-marker-focus { filter: drop-shadow(0 0 5px var(--ping-color)); }
 .map-ping-pulse,
 .map-ping-pulse::before,
 .map-ping-pulse::after {
@@ -579,7 +589,7 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   border-radius: 4px;
   background: rgba(12,14,13,.92);
   box-shadow: 0 4px 16px rgba(0,0,0,.45);
-  pointer-events: none;
+  pointer-events: auto;
   transform: translateX(-50%);
   animation: mapPingAnnouncementIn .2s ease-out both;
 }
@@ -589,10 +599,75 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .map-ping-announcement-copy { font-size: 10px; letter-spacing: .08em; white-space: nowrap; }
 .map-ping-announcement-user { font-weight: 700; }
 .map-ping-announcement-copy { color: var(--txm); overflow: hidden; text-overflow: ellipsis; }
+.map-ping-announcement-go {
+  flex-shrink: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--golddim);
+  border-radius: 3px;
+  background: rgba(201,168,76,.12);
+  color: var(--goldtx);
+  font-size: 10px;
+  letter-spacing: .08em;
+}
+.map-ping-announcement-go:hover,
+.map-ping-announcement-go:focus-visible { border-color: var(--gold); background: rgba(201,168,76,.24); color: var(--tx); }
 @keyframes mapPingAnnouncementIn {
   from { opacity: 0; transform: translateX(-50%) translateY(-5px) scale(.97); }
   to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 }
+
+.map-focus-dim-layer { transition: opacity .2s ease; }
+.map-ping-focus-active .map-focus-dim-layer { opacity: .24; }
+
+.ping-autofocus-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--brd2);
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.ping-autofocus-label {
+  padding: 4px 5px;
+  color: var(--txd);
+  font-size: 9px;
+  letter-spacing: .06em;
+}
+.ping-autofocus-control button {
+  padding: 4px 5px;
+  border-left: 1px solid var(--brd2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--txm);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  letter-spacing: .04em;
+}
+.ping-autofocus-control button:hover,
+.ping-autofocus-control button:focus-visible { color: var(--goldtx); background: rgba(201,168,76,.1); }
+.ping-autofocus-control .ping-autofocus-active { background: rgba(201,168,76,.2); color: var(--goldtx); }
+
+.map-offscreen-layer { position: absolute; inset: 0; z-index: 1003; pointer-events: none; }
+.map-offscreen-chevron {
+  position: absolute;
+  z-index: 1003;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 30px;
+  padding: 2px 4px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: rgba(12,14,13,.88);
+  box-shadow: 0 2px 7px rgba(0,0,0,.45);
+  pointer-events: auto;
+  transform-origin: center;
+}
+.map-offscreen-chevron:hover,
+.map-offscreen-chevron:focus-visible { background: rgba(31,35,30,.96); outline: 1px solid currentColor; outline-offset: 1px; }
+.map-offscreen-chevron-glyph { font-size: 19px; line-height: .7; }
+.map-offscreen-chevron-label { font-size: 9px; line-height: 1; letter-spacing: .04em; white-space: nowrap; }
 
 .map-chrome { backdrop-filter: blur(4px); }
 .map-layer-controls {

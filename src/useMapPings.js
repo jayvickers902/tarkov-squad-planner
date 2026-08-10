@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TARKOV_MAP_CONFIGS } from './data/tarkovMapConfigs'
 import {
   activePings, staleness, pingAge,
@@ -8,6 +8,8 @@ import {
 import { nearestIntel } from './tarkovIntel'
 import { getUserColor } from './tarkovObjectives'
 import { classifyPmcSpawns, nearestFocusedPmcSpawn } from './tarkovSpawns'
+
+export { bearingRange }
 
 function mapKeyPoints(mapKeys, mapNorm) {
   const cfg = TARKOV_MAP_CONFIGS[mapNorm]
@@ -74,7 +76,18 @@ export function useMapPings({
   const [replay, setReplay] = useState(null)
   const [now, setNow] = useState(() => Date.now())
   const [pingAnnouncement, setPingAnnouncement] = useState(null)
+  const [pingAnnouncementPaused, setPingAnnouncementPaused] = useState(false)
   const seenPingIdsRef = useRef(null)
+  const announcementTimerRef = useRef(null)
+  const announcementTimingRef = useRef({ id: null, remaining: 8000, deadline: 0 })
+
+  const dismissPingAnnouncement = useCallback(() => {
+    setPingAnnouncement(null)
+    setPingAnnouncementPaused(false)
+  }, [])
+  const pausePingAnnouncement = useCallback(paused => {
+    setPingAnnouncementPaused(Boolean(paused))
+  }, [])
 
   const replayData = useMemo(() => (enabled && replayEnabled ? replayWindow(pingLog, mapNorm) : null), [enabled, replayEnabled, pingLog, mapNorm])
   const canReplay = enabled && !!replayData && !hideReplay
@@ -262,6 +275,7 @@ export function useMapPings({
     // new events and should not trigger the live announcement.
     seenPingIdsRef.current = null
     setPingAnnouncement(null)
+    setPingAnnouncementPaused(false)
   }, [mapNorm])
 
   // A live ping is a moment worth surfacing even when the user never opens a
@@ -291,12 +305,49 @@ export function useMapPings({
   }, [enabled, replayOn, pingCards])
 
   useEffect(() => {
+    const timing = announcementTimingRef.current
+    const announcementId = pingAnnouncement?.id ?? null
+    if (timing.id !== announcementId) {
+      timing.id = announcementId
+      timing.remaining = 8000
+      timing.deadline = 0
+    }
+
+    if (announcementTimerRef.current !== null) {
+      clearTimeout(announcementTimerRef.current)
+      announcementTimerRef.current = null
+    }
+
     if (!pingAnnouncement) return undefined
-    const timer = setTimeout(() => {
-      setPingAnnouncement(current => current?.id === pingAnnouncement.id ? null : current)
-    }, 5200)
-    return () => clearTimeout(timer)
-  }, [pingAnnouncement?.id])
+
+    if (pingAnnouncementPaused) {
+      if (timing.deadline) {
+        timing.remaining = Math.max(0, timing.deadline - Date.now())
+        timing.deadline = 0
+      }
+      return undefined
+    }
+
+    if (timing.remaining <= 0) {
+      dismissPingAnnouncement()
+      return undefined
+    }
+
+    timing.deadline = Date.now() + timing.remaining
+    announcementTimerRef.current = setTimeout(() => {
+      timing.remaining = 0
+      timing.deadline = 0
+      announcementTimerRef.current = null
+      dismissPingAnnouncement()
+    }, timing.remaining)
+
+    return () => {
+      if (announcementTimerRef.current !== null) {
+        clearTimeout(announcementTimerRef.current)
+        announcementTimerRef.current = null
+      }
+    }
+  }, [dismissPingAnnouncement, pingAnnouncement?.id, pingAnnouncementPaused])
 
   // The rail is an echo, not a packet inspector: one summary per teammate,
   // newest position wins, while the map still receives every ping for replay.
@@ -306,7 +357,10 @@ export function useMapPings({
       const key = card.ping.user_id || card.ping.user
       if (!byMember.has(key)) byMember.set(key, card)
     }
-    return [...byMember.values()]
+    return [...byMember.values()].sort((a, b) =>
+      (Number(b.ping.taps) || 1) - (Number(a.ping.taps) || 1)
+      || b.ping.at - a.ping.at
+    )
   }, [pingCards])
 
   // Keep the last-known projection separate from the squad echo projection. The
@@ -338,6 +392,8 @@ export function useMapPings({
     echoCards,
     lastKnownCards,
     pingAnnouncement,
+    dismissPingAnnouncement,
+    pausePingAnnouncement,
     pingSig,
   }
 }
