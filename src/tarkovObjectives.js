@@ -14,6 +14,29 @@ export function getUserColor(user, names = [], userId = null, ids = []) {
   return USER_COLORS[Math.max(index, 0) % USER_COLORS.length]
 }
 
+export function mapNameMatches(mapName, mapNorm) {
+  if (!mapName || !mapNorm) return false
+  return mapName === mapNorm
+    || mapName.startsWith(`${mapNorm}-`)
+    || mapNorm.startsWith(`${mapName}-`)
+}
+
+// Raid View is a map-action rail, so an objective needs a real in-raid location
+// on the active map. Global find/hand-in/build objectives deliberately do not
+// qualify even when the quest appears in the member's active quest list.
+export function objectiveHasMapLocation(objective, task, mapNorm) {
+  if (!mapNorm) return true
+  const objectiveMaps = (objective?.maps || []).map(map => map?.normalizedName).filter(Boolean)
+  const taskMap = task?.map?.normalizedName || null
+  return (objective?.zones || []).some(zone => {
+    if (!zone?.position) return false
+    const zoneMap = zone.map?.normalizedName
+    if (zoneMap) return mapNameMatches(zoneMap, mapNorm)
+    if (objectiveMaps.length) return objectiveMaps.some(mapName => mapNameMatches(mapName, mapNorm))
+    return mapNameMatches(taskMap, mapNorm)
+  })
+}
+
 /**
  * Return uncompleted objective zones for each party_members row on one map.
  */
@@ -37,14 +60,11 @@ export function objectivePins(tasks = [], members = [], names = [], progress = {
 
       const task = taskById.get(questId)
       if (!task) continue
-      if (task.map && task.map.normalizedName !== mapNorm) continue
-
       for (const objective of task.objectives || []) {
-        if (objective.optional) continue
+        if (objective.optional || !objectiveHasMapLocation(objective, task, mapNorm)) continue
         for (const zone of objective.zones || []) {
           if (!zone.position) continue
-          if (zone.map && zone.map.normalizedName !== mapNorm
-              && !zone.map.normalizedName.startsWith(mapNorm)) continue
+          if (zone.map?.normalizedName && !mapNameMatches(zone.map.normalizedName, mapNorm)) continue
 
           pins.push({
             id: `${member.user_id}::${task.id}::${objective.id}::${zone.id}`,

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { bearingRange, staleness, ageLabel } from '../tarkovPings'
 import { CLUSTER_RADIUS_M, kindOf } from '../tarkovIntel'
-import { getUserColor } from '../tarkovObjectives'
+import { getUserColor, objectiveHasMapLocation } from '../tarkovObjectives'
 import { normalizeMembers, objectiveProgressKey, questDoneKey } from '../partyMembers'
 
 const OBJECTIVE_LABELS = {
@@ -16,17 +16,6 @@ const OBJECTIVE_LABELS = {
   shoot: 'eliminate',
   skill: 'skill',
   buildWeapon: 'build weapon',
-}
-
-function isTaskOnMap(task, mapNorm) {
-  return !task?.map || !mapNorm || task.map.normalizedName === mapNorm
-}
-
-function isObjectiveOnMap(objective, task, mapNorm) {
-  if (!mapNorm) return true
-  if (objective.maps?.length) return objective.maps.some(map => map.normalizedName === mapNorm)
-  if (task?.map?.normalizedName) return task.map.normalizedName === mapNorm
-  return true
 }
 
 function objectiveLabel(objective) {
@@ -108,10 +97,10 @@ function buildObjectiveRows({ tasks, memberQuests, memberNames, memberIds, progr
     for (const questEntry of questEntries) {
       const questId = questEntry?.id ?? questEntry
       const task = taskById.get(questId)
-      if (!task || !isTaskOnMap(task, mapNorm)) continue
+      if (!task) continue
 
       for (const objective of task.objectives || []) {
-        if (objective.optional || !isObjectiveOnMap(objective, task, mapNorm)) continue
+        if (objective.optional || !objectiveHasMapLocation(objective, task, mapNorm)) continue
         const rowKey = objectiveProgressKey(task.id, objective.id, member.user_id)
         if (seen.has(rowKey)) continue
         seen.add(rowKey)
