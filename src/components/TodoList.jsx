@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, memo } from 'react'
 import { normalizeMembers, objectiveProgressKey, questDoneKey } from '../partyMembers'
+import { objectiveHasMapLocation } from '../tarkovObjectives'
 
 const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
@@ -255,9 +256,10 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
         const allDone   = objs.length > 0 && doneCount === objs.length
         const completed = owners.length > 0 && owners.every(m => progress?.[questDoneKey(task.id, memberIdsByName.get(m))])
         const canAct    = owners.some(m => memberIdsByName.get(m) === myUserId)
-        // True if any non-optional objective is tied to a specific map — false for any-map quests (Gunsmith etc.)
+        // True only when the quest has an objective with an actual map position.
+        // Map metadata alone is not enough for the MAP OBJECTIVES view.
         const isMapSpecific  = mapNorm
-          ? (task.objectives || []).some(o => !o.optional && o.maps && o.maps.length > 0)
+          ? (task.objectives || []).some(o => !o.optional && objectiveHasMapLocation(o, task, mapNorm))
           : false
         return { task, owners, objs, doneCount, starred, allDone, completed, canAct, isMapSpecific }
       })
@@ -332,11 +334,12 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
 
   // Flat list of map-specific objectives for the objectives view
   const objectiveRows = filteredActive
-    .filter(r => r.isMapSpecific)
-    .flatMap(r => r.objs.map(obj => ({
+    .flatMap(r => r.objs
+      .filter(obj => objectiveHasMapLocation(obj, r.task, mapNorm))
+      .map(obj => ({
       obj, task: r.task, owners: r.owners,
       doneByMembers: r.owners.filter(m => progress?.[objectiveProgressKey(r.task.id, obj.id, memberIdsByName.get(m))]),
-    })))
+      })))
     .filter(row => row.obj.type !== 'giveItem' && row.obj.type !== 'giveQuestItem')
 
   const sortedObjRows = (() => {
@@ -467,8 +470,8 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
           </div>
         ) : objectiveRows.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 24px' }}>
-            <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', letterSpacing: '.1em' }}>NO MAP-SPECIFIC OBJECTIVES</div>
-            <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', marginTop: 8 }}>NO FILTERED QUESTS HAVE OBJECTIVES TIED TO THIS MAP</div>
+            <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', letterSpacing: '.1em' }}>NO MAP-LOCATED OBJECTIVES</div>
+            <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', marginTop: 8 }}>NO FILTERED QUESTS HAVE OBJECTIVES WITH MAP LOCATIONS</div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>

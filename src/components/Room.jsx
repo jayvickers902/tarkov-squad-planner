@@ -338,7 +338,7 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
                   {pendingIn.length > 0 && <span className="mono" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)', color: 'var(--gold)' }}>{pendingIn.length}</span>}
                 </button>
                 {isAdmin && <button className="btn-ghost btn-sm" onClick={onAdmin} style={{ color: 'var(--txm)' }}>⚙</button>}
-                <button className={settingsOpen ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => setSettingsOpen(value => !value)} aria-label="Raid settings">⚙ SETTINGS</button>
+                <button className={settingsOpen ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => setSettingsOpen(value => !value)} aria-label="Open settings">⚙ SETTINGS</button>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, padding: '5px 10px' }}>
                   <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>PARTY</span>
                   <span className="mono" style={{ fontSize: 17, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
@@ -364,7 +364,7 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
               FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
             </button>
             {isAdmin && <button className="btn-ghost btn-sm" onClick={onAdmin} style={{ color: 'var(--txm)' }}>⚙</button>}
-            <button className={settingsOpen ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => setSettingsOpen(value => !value)} aria-label="Raid settings">⚙</button>
+            <button className={settingsOpen ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => setSettingsOpen(value => !value)} aria-label="Open settings">⚙</button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, padding: '4px 8px' }}>
               <span className="mono" style={{ fontSize: 15, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
               <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
@@ -376,15 +376,35 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
         )}
       </div>
 
-      {settingsOpen && (
-        <RaidSettings
-          party={party}
+      <div className={`room-settings-panel ${settingsOpen ? 'room-settings-panel-open' : ''}`}>
+        <MonitorLink
+          maps={maps}
+          mapNorm={party.map_norm}
           userId={myUserId}
-          userSettings={userSettings}
-          onChange={onSetRaidSettings}
-          onClose={() => setSettingsOpen(false)}
+          myName={myName}
+          isLeader={isLeader}
+          canChangeMap={canChangeMap}
+          hasPlan={hasPlan}
+          onSelectMap={onSelectMap}
+          onAddPing={onAddPing}
+          onCharacterSnapshot={onCharacterSnapshot}
+          currentCharacterSnapshot={mineMember?.character_snapshot}
+          onStatus={handleMonitorStatus}
+          settings={userSettings}
+          onSetSetting={onSetUserSetting}
+          detailsOpen={settingsOpen}
         />
-      )}
+
+        {settingsOpen && (
+          <RaidSettings
+            party={party}
+            userId={myUserId}
+            userSettings={userSettings}
+            onChange={onSetRaidSettings}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
+      </div>
 
       {/* Friends panel */}
       {showFriends && (
@@ -535,7 +555,7 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
                     )}
                     {!isSelf && !isFriend && !isPending && (
                       <button className="btn-ghost btn-sm" style={{ fontSize: 10 }}
-                        onClick={() => onSendRequest(m)}>
+                        onClick={() => onSendRequest({ userId: member.user_id, callsign: m })}>
                         + FRIEND
                       </button>
                     )}
@@ -656,23 +676,6 @@ export default function Room({ party, raidView = false, myUserId, myName, isAdmi
               )
             }
           </div>
-
-          <MonitorLink
-            maps={maps}
-            mapNorm={party.map_norm}
-            userId={myUserId}
-            myName={myName}
-            isLeader={isLeader}
-            canChangeMap={canChangeMap}
-            hasPlan={hasPlan}
-            onSelectMap={onSelectMap}
-            onAddPing={onAddPing}
-            onCharacterSnapshot={onCharacterSnapshot}
-            currentCharacterSnapshot={mineMember?.character_snapshot}
-            onStatus={handleMonitorStatus}
-            settings={userSettings}
-            onSetSetting={onSetUserSetting}
-          />
 
           {party.map_id && (
             <>

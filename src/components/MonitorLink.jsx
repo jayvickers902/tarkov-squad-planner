@@ -55,7 +55,7 @@ const POS_REJECT_TEXT = {
   bounds: 'a position outside the map’s bounds',
 }
 
-export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, onCharacterSnapshot, currentCharacterSnapshot = null, onStatus, settings = {}, onSetSetting }) {
+export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, onCharacterSnapshot, currentCharacterSnapshot = null, onStatus, settings = {}, onSetSetting, detailsOpen = false }) {
   const [copied, setCopied] = useState(false)
   const [confirmRegen, setConfirmRegen] = useState(false)
   const [lastAction, setLastAction] = useState(null)  // { value, at, ok, reason }
@@ -64,7 +64,6 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
   const [pending, setPending] = useState(0)           // taps buffered in the current window
   const [pendingCharacter, setPendingCharacter] = useState(null)
   const [, setTick] = useState(0)
-  const [detailsExpanded, setDetailsExpanded] = useState(() => settings.monitor_expanded === true)
   const characterShareMode = CHARACTER_SHARE_MODES.some(([mode]) => mode === settings.character_share_mode)
     ? settings.character_share_mode
     : 'full'
@@ -268,26 +267,39 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
   const showRejected = !!rejected && (!lastAction || rejected.at >= lastAction.at)
   const cadence = lastPing ? cadenceOf(lastPing.taps) : null
   const showPosRejected = !!posRejected && (!lastPing || posRejected.at >= lastPing.at)
-  const forceOpen = !!pendingMap || !!pendingCharacter || !!throttled || !!quiet || showPosRejected || showRejected || !canChangeMap
-  const collapsed = status === 'connected' && !detailsExpanded && !forceOpen
+  const compactEvent = showPosRejected
+    ? 'POSITION REJECTED'
+    : pendingMap
+      ? `RAID STARTED · ${pendingMap.value.toUpperCase()}`
+      : lastPing
+        ? `PING SENT · ${cadence?.label || 'POSITION'}`
+        : lastAction?.reason === 'switched'
+          ? `MAP SWITCHED · ${lastAction.value.toUpperCase()}`
+          : lastAction?.reason === 'already'
+            ? `RAID STARTED · ${lastAction.value.toUpperCase()}`
+            : quiet
+              ? 'CONNECTED · NO RAID EVENT'
+              : showRejected
+                ? 'MAP EVENT IGNORED'
+                : null
 
-  function changeExpanded(next) {
-    setDetailsExpanded(next)
-    onSetSetting?.('monitor_expanded', next)
-  }
+  const collapsed = !detailsOpen
 
   return (
-    <div className="card" style={{ padding: 16 }}>
+    <div className={`card monitor-link-shell ${collapsed ? 'monitor-link-shell-compact' : 'monitor-link-shell-open'}`}>
       {collapsed ? (
         <div className="monitor-collapsed">
           <div className="monitor-collapsed-status">
-            <span className="mon-dot mon-dot-live" style={{ background: statusColor }} />
-            <span className="mono" style={{ color: statusColor, fontSize: 10, letterSpacing: '.08em' }}>LISTENING</span>
+            <span className={`mon-dot ${status === 'connected' ? 'mon-dot-live' : ''}`} style={{ background: statusColor }} />
+            <span className="mono" style={{ color: statusColor, fontSize: 10, letterSpacing: '.08em' }}>{statusLabel}</span>
             <span className="mono monitor-collapsed-separator">·</span>
             <code>{code}</code>
+            {compactEvent && <span className="mono monitor-collapsed-event">{compactEvent}</span>}
           </div>
-          <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
-          <button className="btn-ghost btn-sm" onClick={() => changeExpanded(true)} aria-label="Expand monitor details">▾</button>
+          {enabled
+            ? <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
+            : <button className="btn-ghost btn-sm" onClick={connect} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>LINK</button>
+          }
         </div>
       ) : (
       <>
@@ -298,9 +310,6 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
           <span className="mono" style={{ fontSize: 10, color: statusColor, letterSpacing: '.06em' }}>{statusLabel}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {status === 'connected' && (
-            <button className="btn-ghost btn-sm" onClick={() => changeExpanded(false)} aria-label="Collapse monitor details">▴</button>
-          )}
           {enabled
           ? <button className="btn-ghost btn-sm" onClick={() => {
               clearTimeout(tapRef.current.timer)

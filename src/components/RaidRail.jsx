@@ -183,6 +183,26 @@ function PingCard({ card }) {
   )
 }
 
+function LastKnownCard({ card }) {
+  return (
+    <div className="last-known-card" style={{ borderLeftColor: card.color }}>
+      <div className="last-known-head">
+        <span className="mono" style={{ color: card.color, fontSize: 11, letterSpacing: '.08em' }}>
+          {card.ping.user.toUpperCase()}
+        </span>
+        <span className="mono last-known-age">{ageLabel(card.age)} AGO</span>
+      </div>
+      <div className="mono last-known-body">
+        <span className="last-known-area">
+          {card.nearArea ? `NEAR ${card.nearArea.name.toUpperCase()}` : 'AREA UNKNOWN'}
+        </span>
+        {card.nearArea && <span className="last-known-distance">{card.nearArea.dist} M</span>}
+        {card.floor && <span>{card.floor}</span>}
+      </div>
+    </div>
+  )
+}
+
 function ObjectiveRow({ row, focusKey, onHoverFocus, onToggleFocus }) {
   const active = focusKey === row.focusKey
   const distanceLabel = !row.hasLocation
@@ -222,6 +242,7 @@ export default function RaidRail({
   mobileHeight = 35,
   onMobileHeight,
   pingCards = [],
+  lastKnownCards = [],
   monitorStatus = null,
   tasks = [],
   memberQuests = [],
@@ -290,6 +311,16 @@ export default function RaidRail({
           {pingCards.length > 0
             ? <div className="raid-ping-list">{pingCards.map(card => <PingCard key={card.ping.id} card={card} />)}</div>
             : <div className="mono raid-rail-empty">NO SQUAD ECHO YET</div>}
+        </section>
+
+        <section className="raid-rail-section">
+          <div className="mono raid-rail-heading">
+            LAST KNOWN
+            <span className="raid-rail-count">{lastKnownCards.length}</span>
+          </div>
+          {lastKnownCards.length > 0
+            ? <div className="last-known-list">{lastKnownCards.map(card => <LastKnownCard key={card.ping.id} card={card} />)}</div>
+            : <div className="mono raid-rail-empty">NO LAST KNOWN PINGS YET</div>}
         </section>
 
         <section className="raid-rail-section">

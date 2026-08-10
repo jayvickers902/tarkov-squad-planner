@@ -186,9 +186,21 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .mon-character-confirm-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .mon-character-confirm-actions button { font-size: 10px; padding: 4px 8px; }
 
+.monitor-link-shell { margin-bottom: 14px; }
+.monitor-link-shell-compact { padding: 6px 10px; }
+.monitor-link-shell-open { padding: 16px; }
 .monitor-collapsed { display: flex; align-items: center; gap: 8px; min-height: 26px; }
 .monitor-collapsed-status { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }
 .monitor-collapsed-separator { color: var(--txd); }
+.monitor-collapsed-event {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--txm);
+  font-size: 9px;
+  letter-spacing: .06em;
+}
 .monitor-collapsed code {
   color: var(--goldtx);
   background: var(--sur2);
@@ -196,6 +208,12 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   border-radius: 3px;
   padding: 3px 7px;
   letter-spacing: .14em;
+}
+.room-settings-panel-open .monitor-link-shell { margin-bottom: 8px; }
+
+@media (max-width: 768px) {
+  .monitor-collapsed-event { display: none; }
+  .monitor-link-shell-compact { margin-left: -2px; margin-right: -2px; }
 }
 
 /* Synced Tarkov identity/loadout preview in the party rail */
@@ -461,6 +479,20 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .raid-rail-link-down .raid-rail-link-dot { animation: rail-link-pulse 1.4s ease-in-out infinite; }
 @keyframes rail-link-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
 .raid-ping-list { display: flex; flex-direction: column; gap: 5px; }
+.last-known-list { display: flex; flex-direction: column; gap: 5px; }
+.last-known-card {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--brd);
+  border-left: 3px solid var(--brd2);
+  border-radius: 3px;
+  background: var(--sur2);
+}
+.last-known-head { display: flex; align-items: center; gap: 7px; }
+.last-known-age { margin-left: auto; color: var(--txd); font-size: 9px; letter-spacing: .08em; }
+.last-known-body { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; margin-top: 4px; color: var(--txm); font-size: 10px; line-height: 1.35; }
+.last-known-area { color: var(--goldtx); }
+.last-known-distance { color: var(--txd); }
 .raid-ping-card { flex: none; min-width: 0; padding: 6px 8px; }
 .raid-ping-body { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; color: var(--txm); font-size: 10px; line-height: 1.4; }
 .obj-list { display: flex; flex-direction: column; gap: 3px; }
@@ -497,6 +529,70 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .obj-pin-dim { opacity: .3; }
 .obj-pin-focus { animation: objPinPulse 1.15s ease-in-out infinite; filter: drop-shadow(0 0 4px var(--gold)); }
 @keyframes objPinPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }
+
+/* Position pings radiate from the player circle so a fresh callout reads from
+   the map itself, even when the user is not looking at a tooltip. */
+.map-ping-marker { position: relative; width: 44px; height: 44px; overflow: visible; }
+.map-ping-marker > svg { position: relative; z-index: 2; display: block; overflow: visible; }
+.map-ping-pulse,
+.map-ping-pulse::before,
+.map-ping-pulse::after {
+  position: absolute;
+  content: '';
+  left: 15px;
+  top: 15px;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--ping-color);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1;
+}
+.map-ping-pulse { animation: mapPingPulse 1.8s ease-out infinite; }
+.map-ping-pulse::before,
+.map-ping-pulse::after { left: 0; top: 0; }
+.map-ping-pulse::before { animation: mapPingPulse 1.8s ease-out .45s infinite; }
+.map-ping-pulse::after { animation: mapPingPulse 1.8s ease-out .9s infinite; }
+.map-ping-marker-taps-2 .map-ping-pulse,
+.map-ping-marker-taps-2 .map-ping-pulse::before,
+.map-ping-marker-taps-2 .map-ping-pulse::after { animation-duration: 1.35s; border-width: 2px; }
+.map-ping-marker-taps-3 .map-ping-pulse,
+.map-ping-marker-taps-3 .map-ping-pulse::before,
+.map-ping-marker-taps-3 .map-ping-pulse::after { animation-duration: 1s; border-width: 2px; }
+@keyframes mapPingPulse {
+  0% { opacity: .85; transform: scale(.7); }
+  70%, 100% { opacity: 0; transform: scale(2.8); }
+}
+
+.map-ping-announcement {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 1002;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100% - 20px);
+  padding: 7px 10px;
+  border: 1px solid var(--golddim);
+  border-left: 3px solid var(--gold);
+  border-radius: 4px;
+  background: rgba(12,14,13,.92);
+  box-shadow: 0 4px 16px rgba(0,0,0,.45);
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: mapPingAnnouncementIn .2s ease-out both;
+}
+.map-ping-announcement-signal { font-size: 11px; animation: monPulse 1s ease-in-out infinite; }
+.map-ping-announcement-user,
+.map-ping-announcement-action,
+.map-ping-announcement-copy { font-size: 10px; letter-spacing: .08em; white-space: nowrap; }
+.map-ping-announcement-user { font-weight: 700; }
+.map-ping-announcement-copy { color: var(--txm); overflow: hidden; text-overflow: ellipsis; }
+@keyframes mapPingAnnouncementIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-5px) scale(.97); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
 
 .map-chrome { backdrop-filter: blur(4px); }
 .map-layer-controls {
@@ -798,6 +894,10 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 }
 
 /* Custom dark tooltip — className: 'tac-tooltip' set on every bindTooltip call */
+.leaflet-tooltip-pane {
+  z-index: 1100 !important;
+  pointer-events: none;
+}
 .tac-tooltip {
   background: #131614 !important;
   border: 1px solid #262b25 !important;
@@ -808,9 +908,19 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   padding: 10px 13px !important;
   font-family: 'Share Tech Mono', monospace;
   font-size: 11px;
+  box-sizing: border-box;
+  width: 280px;
   max-width: 280px;
+  max-height: min(360px, calc(100vh - 16px));
+  overflow: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   white-space: normal;
   filter: none !important;
+}
+.tac-tooltip > div {
+  min-width: 0 !important;
+  max-width: 100% !important;
 }
 .tac-tooltip::before { display: none !important; }
 

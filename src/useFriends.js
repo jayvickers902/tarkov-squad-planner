@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabase'
 
 function otherUserId(row, userId) {
@@ -10,6 +10,7 @@ export function useFriends(userId, myCallsign) {
   const [pendingIn, setPendingIn]   = useState([]) // [{ id, user_id, callsign }]
   const [pendingOut, setPendingOut] = useState([]) // [{ id, user_id, callsign }]
   const [loading, setLoading]       = useState(false)
+  const requestsInFlightRef         = useRef(new Set())
 
   const refresh = useCallback(async () => {
     if (!userId) return
@@ -65,28 +66,48 @@ export function useFriends(userId, myCallsign) {
 
   useEffect(() => { refresh() }, [refresh])
 
-  const sendRequest = useCallback(async (callsign) => {
-    const trimmed = callsign.trim()
+  const sendRequest = useCallback(async (target, targetCallsign = '') => {
+    const isMemberTarget = target && typeof target === 'object'
+    const targetUserId = isMemberTarget ? target.userId : (targetCallsign ? target : null)
+    const requestedCallsign = isMemberTarget ? target.callsign : (targetCallsign || target)
+    const trimmed = (requestedCallsign || '').trim()
     if (!userId) return 'Not signed in'
-    if (!trimmed) return 'Enter a callsign'
-    if (trimmed.toLowerCase() === myCallsign?.toLowerCase()) return "That's you"
-    if (friends.find(friend => friend.callsign.toLowerCase() === trimmed.toLowerCase())) return 'Already friends'
-    if (pendingOut.find(friend => friend.callsign.toLowerCase() === trimmed.toLowerCase())) return 'Request already sent'
-    if (pendingIn.find(friend => friend.callsign.toLowerCase() === trimmed.toLowerCase())) return 'They sent you a request - check incoming'
+    if (!targetUserId && !trimmed) return 'Enter a callsign'
+    if (targetUserId && targetUserId === userId) return "That's you"
+    if (!targetUserId && trimmed.toLowerCase() === myCallsign?.toLowerCase()) return "That's you"
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id, callsign')
-      .ilike('callsign', trimmed)
-      .maybeSingle()
-    if (!profile) return 'Callsign not found'
+    const matchesTarget = entry => targetUserId
+      ? entry.user_id === targetUserId
+      : entry.callsign.toLowerCase() === trimmed.toLowerCase()
+    if (friends.find(matchesTarget)) return 'Already friends'
+    if (pendingOut.find(matchesTarget)) return 'Request already sent'
+    if (pendingIn.find(matchesTarget)) return 'They sent you a request - check incoming'
 
-    const { error } = await supabase
-      .from('friendships')
-      .insert({ requester_id: userId, addressee_id: profile.id, status: 'pending' })
-    if (error) return error.message
-    await refresh()
-    return null
+    const requestKey = targetUserId ? `user:${targetUserId}` : `callsign:${trimmed.toLowerCase()}`
+    if (requestsInFlightRef.current.has(requestKey)) return 'Request already sent'
+    requestsInFlightRef.current.add(requestKey)
+
+    try {
+      let addresseeId = targetUserId
+      if (!addresseeId) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .ilike('callsign', trimmed)
+          .maybeSingle()
+        if (!profile) return 'Callsign not found'
+        addresseeId = profile.id
+      }
+
+      const { error } = await supabase
+        .from('friendships')
+        .insert({ requester_id: userId, addressee_id: addresseeId, status: 'pending' })
+      if (error) return error.message
+      await refresh()
+      return null
+    } finally {
+      requestsInFlightRef.current.delete(requestKey)
+    }
   }, [userId, myCallsign, friends, pendingIn, pendingOut, refresh])
 
   const acceptRequest = useCallback(async (id) => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { TARKOV_MAP_CONFIGS } from './data/tarkovMapConfigs'
 import {
   activePings, staleness, pingAge,
@@ -31,6 +31,21 @@ function mapKeyPoints(mapKeys, mapNorm) {
     }))
 }
 
+function mapAreaPoints(mapKeys, extracts, mapNorm) {
+  const landmarks = mapKeyPoints(mapKeys, mapNorm).map(point => ({
+    ...point,
+    kind: 'landmark',
+  }))
+  const exits = (extracts || [])
+    .map(extract => {
+      const position = extract?.position || extract
+      if (!extract?.name || !Number.isFinite(position?.x) || !Number.isFinite(position?.z)) return null
+      return { name: extract.name, x: position.x, z: position.z, kind: 'extract' }
+    })
+    .filter(Boolean)
+  return [...landmarks, ...exits]
+}
+
 /**
  * Shared live/replay ping projection for MapLeaflet and the Raid View rail.
  * The marker signature intentionally stays coarse: only a decay tier or a
@@ -58,6 +73,8 @@ export function useMapPings({
 }) {
   const [replay, setReplay] = useState(null)
   const [now, setNow] = useState(() => Date.now())
+  const [pingAnnouncement, setPingAnnouncement] = useState(null)
+  const seenPingIdsRef = useRef(null)
 
   const replayData = useMemo(() => (enabled && replayEnabled ? replayWindow(pingLog, mapNorm) : null), [enabled, replayEnabled, pingLog, mapNorm])
   const canReplay = enabled && !!replayData && !hideReplay
@@ -129,7 +146,7 @@ export function useMapPings({
 
   const pingCards = useMemo(() => {
     if (!enabled || !pingList.length) return []
-    const keyPoints = mapKeyPoints(mapKeys, mapNorm)
+    const areaPoints = mapAreaPoints(mapKeys, extracts, mapNorm)
     const mine = pingList.find(p => p.user_id === myUserId)
       || pingList.find(p => p.user === myName)
       || null
@@ -167,9 +184,15 @@ export function useMapPings({
       }
 
       let nearKey = null
-      for (const key of keyPoints) {
+      for (const key of areaPoints.filter(point => point.kind === 'landmark')) {
         const distance = Math.hypot(key.x - p.x, key.z - p.z)
         if (!nearKey || distance < nearKey.dist) nearKey = { dist: distance, name: key.name }
+      }
+
+      let nearArea = null
+      for (const area of areaPoints) {
+        const distance = Math.hypot(area.x - p.x, area.z - p.z)
+        if (!nearArea || distance < nearArea.dist) nearArea = { ...area, dist: distance }
       }
 
       let nearExtract = null
@@ -195,6 +218,9 @@ export function useMapPings({
           : null,
         nearKey: nearKey && nearKey.dist < 120
           ? { ...nearKey, dist: Math.round(nearKey.dist) }
+          : null,
+        nearArea: nearArea && nearArea.dist < (nearArea.kind === 'landmark' ? 240 : 350)
+          ? { ...nearArea, dist: Math.round(nearArea.dist) }
           : null,
         nearExtract: nearExtract && nearExtract.dist < 350
           ? { ...nearExtract, dist: Math.round(nearExtract.dist) }
@@ -231,6 +257,47 @@ export function useMapPings({
     })
   }, [enabled, pingList, autoObjPins, mapKeys, mapNorm, memberNames, memberIds, myUserId, myName, clock, allIntel, extracts, isChecked, earlySpawnPingsByMember, pmcSpawns, spawnIntel])
 
+  useEffect(() => {
+    // A map switch hydrates a different set of existing pings; those are not
+    // new events and should not trigger the live announcement.
+    seenPingIdsRef.current = null
+    setPingAnnouncement(null)
+  }, [mapNorm])
+
+  // A live ping is a moment worth surfacing even when the user never opens a
+  // tooltip. Hydration is intentionally silent so opening a raid does not
+  // replay old events as fresh announcements.
+  useEffect(() => {
+    if (!enabled || replayOn) return
+    const visibleIds = new Set(pingCards.map(card => card.ping.id))
+    if (seenPingIdsRef.current === null) {
+      seenPingIdsRef.current = visibleIds
+      return
+    }
+
+    const newCards = pingCards.filter(card => !seenPingIdsRef.current.has(card.ping.id))
+    seenPingIdsRef.current = visibleIds
+    if (!newCards.length) return
+
+    const card = [...newCards].sort((a, b) => b.ping.at - a.ping.at)[0]
+    setPingAnnouncement({
+      id: card.ping.id,
+      user: card.ping.user,
+      taps: card.ping.taps,
+      cadence: card.cadence,
+      color: card.color,
+      nearArea: card.nearArea,
+    })
+  }, [enabled, replayOn, pingCards])
+
+  useEffect(() => {
+    if (!pingAnnouncement) return undefined
+    const timer = setTimeout(() => {
+      setPingAnnouncement(current => current?.id === pingAnnouncement.id ? null : current)
+    }, 5200)
+    return () => clearTimeout(timer)
+  }, [pingAnnouncement?.id])
+
   // The rail is an echo, not a packet inspector: one summary per teammate,
   // newest position wins, while the map still receives every ping for replay.
   const echoCards = useMemo(() => {
@@ -242,8 +309,19 @@ export function useMapPings({
     return [...byMember.values()]
   }, [pingCards])
 
+  // Keep the last-known projection separate from the squad echo projection. The
+  // echo can grow richer over time; this surface only needs the newest position,
+  // its named area and the age of that observation.
+  const lastKnownCards = useMemo(() => echoCards.map(card => ({
+    ping: card.ping,
+    age: card.age,
+    color: card.color,
+    floor: card.floor,
+    nearArea: card.nearArea,
+  })), [echoCards])
+
   const pingSig = pingCards
-    .map(card => `${card.ping.id}:${staleness(card.age).tier}:${Math.floor(card.age / 15000)}:${card.nearObj?.questName || ''}:${card.nearIntel?.point?.id || ''}:${card.nearExtract?.name || ''}:${card.likelySpawn?.dist || ''}:${card.likelySpawn?.ageLabel || ''}:${card.nearby?.map(teammate => teammate.user).join(',') || ''}`)
+    .map(card => `${card.ping.id}:${staleness(card.age).tier}:${Math.floor(card.age / 15000)}:${card.nearObj?.questName || ''}:${card.nearIntel?.point?.id || ''}:${card.nearExtract?.name || ''}:${card.nearArea?.name || ''}:${card.likelySpawn?.dist || ''}:${card.likelySpawn?.ageLabel || ''}:${card.nearby?.map(teammate => teammate.user).join(',') || ''}`)
     .join('|')
 
   return {
@@ -258,6 +336,8 @@ export function useMapPings({
     replayTrails,
     pingCards,
     echoCards,
+    lastKnownCards,
+    pingAnnouncement,
     pingSig,
   }
 }

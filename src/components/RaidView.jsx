@@ -215,6 +215,7 @@ export default function RaidView({
             mobileHeight={mobileRailHeight}
             onMobileHeight={setMobileRailHeight}
             pingCards={pingState.echoCards}
+            lastKnownCards={pingState.lastKnownCards}
             monitorStatus={monitorStatus}
             tasks={allTasks || tasks || []}
             memberQuests={memberRows}

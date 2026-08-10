@@ -177,6 +177,99 @@ function makeZoneTooltip(title, color, lines) {
   </div>`
 }
 
+// Leaflet's built-in `auto` direction only chooses left or right. Map tooltips
+// still get clipped vertically when a marker is near the top or bottom edge,
+// which is especially noticeable in the compact raid view. Keep the existing
+// visual preference for an above-marker card, but flip and clamp it after
+// Leaflet has measured the rendered content.
+function bindTacticalTooltip(layer, content, options = {}) {
+  layer.bindTooltip(content, {
+    direction: 'top',
+    offset: [0, -8],
+    opacity: 1,
+    className: 'tac-tooltip',
+    ...options,
+  })
+
+  let frame = null
+
+  function reposition() {
+    const map = layer._map
+    const tooltip = layer.getTooltip?.()
+    const element = tooltip?.getElement?.()
+    if (!map || !tooltip || !element) return
+
+    const mapElement = map.getContainer()
+    const mapRect = mapElement.getBoundingClientRect()
+    const latlng = layer.getLatLng?.() || layer.getCenter?.() || tooltip.getLatLng?.()
+    if (!latlng) return
+
+    const gutter = 8
+    const availableWidth = Math.max(0, mapRect.width - gutter * 2)
+    if (availableWidth > 0) {
+      element.style.width = `${Math.min(280, availableWidth)}px`
+      element.style.maxWidth = `${availableWidth}px`
+    }
+    element.style.marginLeft = '0px'
+    element.style.marginTop = '0px'
+
+    const point = map.latLngToContainerPoint(latlng)
+    const offset = L.point(tooltip.options.offset || [0, 0])
+    const height = element.offsetHeight
+    const topFits = point.y + offset.y - height >= gutter
+    const bottomFits = point.y + offset.y + height <= mapRect.height - gutter
+    const direction = topFits || !bottomFits ? 'top' : 'bottom'
+
+    if (tooltip.options.direction !== direction) {
+      tooltip.options.direction = direction
+      // setLatLng is the public Leaflet path for recalculating the overlay
+      // position after changing its direction.
+      tooltip.setLatLng(latlng)
+    }
+
+    const rect = element.getBoundingClientRect()
+    const shiftX = rect.left < mapRect.left + gutter
+      ? mapRect.left + gutter - rect.left
+      : rect.right > mapRect.right - gutter
+      ? mapRect.right - gutter - rect.right
+      : 0
+    const shiftY = rect.top < mapRect.top + gutter
+      ? mapRect.top + gutter - rect.top
+      : rect.bottom > mapRect.bottom - gutter
+      ? mapRect.bottom - gutter - rect.bottom
+      : 0
+
+    element.style.marginLeft = `${Math.round(shiftX)}px`
+    element.style.marginTop = `${Math.round(shiftY)}px`
+  }
+
+  function scheduleReposition() {
+    if (frame !== null) return
+    frame = requestAnimationFrame(() => {
+      frame = null
+      reposition()
+    })
+  }
+
+  function onTooltipOpen() {
+    const map = layer._map
+    if (!map) return
+    map.on('move zoom resize', scheduleReposition)
+    scheduleReposition()
+  }
+
+  function onTooltipClose() {
+    const map = layer._map
+    map?.off('move zoom resize', scheduleReposition)
+    if (frame !== null) cancelAnimationFrame(frame)
+    frame = null
+  }
+
+  layer.on('tooltipopen', onTooltipOpen)
+  layer.on('tooltipclose', onTooltipClose)
+  return layer
+}
+
 function LayerToggleRow({ label, count, checked, onChange, disabled = false }) {
   return (
     <label className={`map-layer-row${disabled ? ' map-layer-row-disabled' : ''}`}>
@@ -280,11 +373,14 @@ function makePingIcon(color, initial, angle, opacity, taps) {
     ? `<g>${Array.from({ length: taps }, (_, i) =>
         `<circle cx="${22 + (i - (taps - 1) / 2) * 6}" cy="37" r="2.1" fill="${color}" stroke="rgba(0,0,0,0.85)" stroke-width="0.8"/>`).join('')}</g>`
     : ''
+  const intensity = Math.min(Math.max(Number(taps) || 1, 1), 3)
   return L.divIcon({
     className: '',
     iconSize: [44, 44],
     iconAnchor: [22, 22],
-    html: `<svg width="44" height="44" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg" style="opacity:${opacity}">
+    html: `<div class="map-ping-marker map-ping-marker-taps-${intensity}" style="--ping-color:${color};opacity:${opacity}" data-taps="${intensity}">
+      <span class="map-ping-pulse" aria-hidden="true"></span>
+      <svg width="44" height="44" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
       <g transform="rotate(${angle.toFixed(1)} 22 22)">
         <path d="M22 22 L10.5 3.5 A22 22 0 0 1 33.5 3.5 Z" fill="${color}" fill-opacity="0.28" stroke="${color}" stroke-opacity="0.55" stroke-width="1"/>
       </g>
@@ -292,7 +388,8 @@ function makePingIcon(color, initial, angle, opacity, taps) {
       <text x="22" y="25.5" text-anchor="middle" fill="rgba(0,0,0,0.85)"
         font-size="8" font-weight="bold" font-family="Share Tech Mono">${initial}</text>
       ${dots}
-    </svg>`,
+      </svg>
+    </div>`,
   })
 }
 
@@ -486,7 +583,7 @@ export default function MapLeaflet({
   })
   const {
     replay, setReplay, replayData, canReplay, replayOn,
-    pingList, replayTrails, pingCards, pingSig,
+    pingList, replayTrails, pingCards, pingAnnouncement, pingSig,
   } = sharedPingState || localPingState
   // In-raid full-bleed view hides the strip for space; replay is a post-raid
   // tool and does not belong there either.
@@ -727,7 +824,7 @@ export default function MapLeaflet({
           </div>` : ''}
         </div>`
       const lm = L.marker(latlng, { icon, interactive: true })
-      lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -20], opacity: 1, className: 'tac-tooltip' })
+      bindTacticalTooltip(lm, tooltipHtml, { offset: [0, -20] })
       lm.addTo(map)
       markerLayersRef.current[m.id] = lm
     }
@@ -742,15 +839,10 @@ export default function MapLeaflet({
       if (v.loc_x == null || v.loc_y == null) return null
       const latlng = normToLatlng([v.loc_x, v.loc_y], bounds)
       const km = L.marker(latlng, { icon: makeKeyIcon(v.priority), interactive: true, zIndexOffset: 100 })
-      km.bindTooltip(`<div style="min-width:150px">
+      bindTacticalTooltip(km, `<div style="min-width:150px">
         <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em">🔑 ${escapeHtml(keyName)}</div>
         <div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;color:#9aaa98;font-size:10px">SOURCE: CURATED MAP KEY${v.priority ? ' · PRIORITY' : ''}</div>
-      </div>`, {
-        direction: 'top',
-        offset: [0, -10],
-        opacity: 1,
-        className: 'tac-tooltip',
-      })
+      </div>`, { offset: [0, -10] })
       return km
     })
     const upstream = locks.map(lock => {
@@ -760,7 +852,7 @@ export default function MapLeaflet({
         interactive: true,
         zIndexOffset: 80,
       })
-      km.bindTooltip(`<div style="min-width:165px">
+      bindTacticalTooltip(km, `<div style="min-width:165px">
         <div style="color:#6a9aaa;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em">🔑 UPSTREAM LOCK</div>
         <div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;display:flex;flex-direction:column;gap:3px;color:#9aaa98;font-size:10px">
           <div>TYPE: ${escapeHtml(lock.lockType || 'unknown').toUpperCase()}</div>
@@ -768,12 +860,7 @@ export default function MapLeaflet({
           <div>KEY ID: ${escapeHtml(lock.key || 'unknown')}</div>
           <div style="color:#5c6b61">SOURCE: UPSTREAM MAP LOCK</div>
         </div>
-      </div>`, {
-        direction: 'top',
-        offset: [0, -10],
-        opacity: 1,
-        className: 'tac-tooltip',
-      })
+      </div>`, { offset: [0, -10] })
       return km
     })
     return [...curated, ...upstream]
@@ -812,7 +899,7 @@ export default function MapLeaflet({
           interactive: true,
           pane: 'zonesPane',
         })
-        polygon.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+        bindTacticalTooltip(polygon, tooltip)
         layers.push(polygon)
       } else {
         const fallback = L.circleMarker(L.latLng(extract.position.z, extract.position.x), {
@@ -825,7 +912,7 @@ export default function MapLeaflet({
           interactive: true,
           pane: 'zonesPane',
         })
-        fallback.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+        bindTacticalTooltip(fallback, tooltip)
         layers.push(fallback)
       }
 
@@ -835,7 +922,7 @@ export default function MapLeaflet({
         interactive: true,
         zIndexOffset: 70,
       })
-      label.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+      bindTacticalTooltip(label, tooltip)
       layers.push(label)
 
       for (const switchRecord of extractSwitches) {
@@ -852,11 +939,11 @@ export default function MapLeaflet({
           interactive: true,
           zIndexOffset: 60,
         })
-        switchMarker.bindTooltip(makeZoneTooltip(switchRecord.name || 'SWITCH', '#e8a030', [
+        bindTacticalTooltip(switchMarker, makeZoneTooltip(switchRecord.name || 'SWITCH', '#e8a030', [
           'EXTRACT SWITCH',
           openedExtracts.length ? `OPENS: ${openedExtracts.join(' · ')}` : null,
           elevationLine(switchRecord.position, mapNorm),
-        ]), { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+        ]))
         layers.push(switchMarker)
       }
     }
@@ -885,7 +972,7 @@ export default function MapLeaflet({
           interactive: true,
           pane: 'zonesPane',
         })
-        polygon.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+        bindTacticalTooltip(polygon, tooltip)
         layers.push(polygon)
       } else {
         const fallback = L.circleMarker(L.latLng(transit.position.z, transit.position.x), {
@@ -898,7 +985,7 @@ export default function MapLeaflet({
           interactive: true,
           pane: 'zonesPane',
         })
-        fallback.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+        bindTacticalTooltip(fallback, tooltip)
         layers.push(fallback)
       }
       const labelPosition = centroid(transit.outline) || [transit.position.z, transit.position.x]
@@ -907,7 +994,7 @@ export default function MapLeaflet({
         interactive: true,
         zIndexOffset: 65,
       })
-      label.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+      bindTacticalTooltip(label, tooltip)
       layers.push(label)
     }
     return layers
@@ -921,10 +1008,10 @@ export default function MapLeaflet({
         interactive: true,
         zIndexOffset: 50,
       })
-      marker.bindTooltip(makeZoneTooltip(stop.name || 'BTR STOP', '#e8a030', [
+      bindTacticalTooltip(marker, makeZoneTooltip(stop.name || 'BTR STOP', '#e8a030', [
         'BTR STOP',
         elevationLine(stop.position, mapNorm),
-      ]), { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+      ]))
       return marker
     })
   }, [showBtr, btrStops, mapNorm])
@@ -965,7 +1052,7 @@ export default function MapLeaflet({
         interactive: true,
         zIndexOffset: 40,
       })
-      marker.bindTooltip(tooltip, { direction: 'top', opacity: 1, className: 'tac-tooltip' })
+      bindTacticalTooltip(marker, tooltip)
       return marker
     })
   }, [showLoot, selectedLootPoints, mapNorm])
@@ -980,9 +1067,9 @@ export default function MapLeaflet({
       const sm = L.marker(L.latLng(s.position.z, s.position.x), {
         icon: makeSpawnIcon(focused), interactive: true, zIndexOffset: focused ? 90 : 50,
       })
-      sm.bindTooltip(
+      bindTacticalTooltip(sm,
         `<div><div style="color:${focused ? '#5de87a' : '#e8a030'};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${focused ? 'LIKELY PMC SPAWN' : 'PMC SPAWN'}</div></div>`,
-        { direction: 'top', offset: [0, -10], opacity: 1, className: 'tac-tooltip' }
+        { offset: [0, -10] }
       )
       return sm
     })
@@ -1008,7 +1095,7 @@ export default function MapLeaflet({
           </div>
         </div>`
       const lm = L.marker(latlng, { icon, interactive: true, zIndexOffset: 200 })
-      lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -12], opacity: 1, className: 'tac-tooltip' })
+      bindTacticalTooltip(lm, tooltipHtml, { offset: [0, -12] })
       return lm
     })
   }, [autoObjPins, focusKey, mapNorm, showQuestPins])
@@ -1047,6 +1134,7 @@ export default function MapLeaflet({
         card.fromMe ? `${card.fromMe.dist} m ${card.fromMe.dir} OF YOU` : null,
         card.nearObj ? `${card.nearObj.dist} m FROM ${card.nearObj.questName.toUpperCase()}` : null,
         card.nearKey ? `${card.nearKey.dist} m FROM ${card.nearKey.name.toUpperCase()}` : null,
+        card.nearArea ? `${card.nearArea.dist} m FROM ${card.nearArea.name.toUpperCase()}` : null,
         card.nearExtract ? `${card.nearExtract.dist} m FROM ${card.nearExtract.name.toUpperCase()} EXTRACT` : null,
         card.nearIntel
           ? `NEAREST ${kindOf(card.nearIntel.point).short}: ${card.nearIntel.dist} m ${card.nearIntel.dir}`
@@ -1068,7 +1156,7 @@ export default function MapLeaflet({
         </div>`
       // z then x — y is height, never placement.
       const lm = L.marker(L.latLng(p.z, p.x), { icon, interactive: true, zIndexOffset: 400 })
-      lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -18], opacity: 1, className: 'tac-tooltip' })
+      bindTacticalTooltip(lm, tooltipHtml, { offset: [0, -18] })
       return lm
     })
   }, [pingSig, showPings, mapNorm]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1126,7 +1214,7 @@ export default function MapLeaflet({
         interactive: true,
         zIndexOffset: 150,
       })
-      lm.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -10], opacity: 1, className: 'tac-tooltip' })
+      bindTacticalTooltip(lm, tooltipHtml, { offset: [0, -10] })
       lm.on('click', () => toggleChecked(point.id))
       return lm
     })
@@ -1658,6 +1746,21 @@ export default function MapLeaflet({
             background: 'var(--sur)', borderRadius: 4,
           }}>
             <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAP...</span>
+          </div>
+        )}
+        {showPings && !replayOn && pingAnnouncement && (
+          <div className="map-ping-announcement" role="status" aria-live="polite">
+            <span className="map-ping-announcement-signal" style={{ color: pingAnnouncement.cadence.color }}>●</span>
+            <span className="mono map-ping-announcement-user" style={{ color: pingAnnouncement.color }}>
+              {pingAnnouncement.user.toUpperCase()}
+            </span>
+            <span className="mono map-ping-announcement-action" style={{ color: pingAnnouncement.cadence.color }}>
+              {pingAnnouncement.cadence.label}
+            </span>
+            <span className="mono map-ping-announcement-copy">
+              {pingAnnouncement.taps > 1 ? `${pingAnnouncement.taps}× TAP` : 'PINGED MAP'}
+              {pingAnnouncement.nearArea ? ` · ${pingAnnouncement.nearArea.name.toUpperCase()}` : ''}
+            </span>
           </div>
         )}
         <div
