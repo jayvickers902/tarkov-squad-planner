@@ -127,11 +127,6 @@ export default function RaidView({
         onClose()
         return
       }
-      if (event.key === 'Tab') {
-        event.preventDefault()
-        toggleRail()
-        return
-      }
       if (event.key.toLowerCase() === 'm') {
         event.preventDefault()
         toggleRail()

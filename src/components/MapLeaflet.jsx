@@ -23,6 +23,7 @@ import {
 import { objectivePins, getUserColor } from '../tarkovObjectives'
 import { useMapPings } from '../useMapPings'
 import { classifyPmcSpawns } from '../tarkovSpawns'
+import { escapeHtml, parseSanitizedSvg } from '../mapHtml'
 
 const PALETTE = ['#e85d5d', '#f5a623', '#e8e85d', '#5de87a', '#5de8d4', '#5db8e8', '#c45de8', '#e85da8', '#ffffff', '#b0b0b0']
 
@@ -88,16 +89,6 @@ function makeKeyIcon(priority) {
         d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>
     </svg>`,
   })
-}
-
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, character => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  }[character]))
 }
 
 const MAP_LABELS = {
@@ -567,8 +558,8 @@ export default function MapLeaflet({
       fetch(cfg.svgPath)
         .then(r => r.text())
         .then(text => {
-          svgEl.innerHTML = text
-          const inner = svgEl.children[0]
+          const inner = parseSanitizedSvg(text)
+          svgEl.appendChild(inner)
           if (inner) svgEl.setAttribute('viewBox', inner.getAttribute('viewBox'))
 
           // Show only the base layer group, hide others
@@ -715,15 +706,16 @@ export default function MapLeaflet({
       if (markerLayersRef.current[m.id]) continue
       const latlng = normToLatlng([m.x, m.y], bounds)
       const color = getUserColor(m.user, memberNames, m.user_id, memberIds)
-      const icon = makeQuestIcon(color, m.user[0].toUpperCase())
+      const markerUser = String(m.user || 'Unknown')
+      const icon = makeQuestIcon(color, escapeHtml(markerUser[0].toUpperCase()))
       const task = tasks.find(t => t.id === m.questId)
       const objectives = task?.objectives?.filter(o => !o.optional) || []
       const tooltipHtml = `
         <div style="min-width:160px">
-          <div style="color:${color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;margin-bottom:4px">${m.user.toUpperCase()}</div>
-          <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;line-height:1.2;margin-bottom:${objectives.length ? 6 : 0}px">${m.questName}</div>
+          <div style="color:${color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;margin-bottom:4px">${escapeHtml(markerUser.toUpperCase())}</div>
+          <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;line-height:1.2;margin-bottom:${objectives.length ? 6 : 0}px">${escapeHtml(m.questName)}</div>
           ${objectives.length ? `<div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">
-            ${objectives.map(o => `<div style="color:#9aaa98;font-size:11px">· ${o.description}</div>`).join('')}
+            ${objectives.map(o => `<div style="color:#9aaa98;font-size:11px">· ${escapeHtml(o.description)}</div>`).join('')}
           </div>` : ''}
         </div>`
       const lm = L.marker(latlng, { icon, interactive: true })
@@ -996,15 +988,15 @@ export default function MapLeaflet({
       const focusState = focusKey
         ? (pin.key === focusKey ? 'focus' : 'dim')
         : 'normal'
-      const icon = makeObjIcon(pin.color, pin.initial, focusState)
+      const icon = makeObjIcon(pin.color, escapeHtml(pin.initial), focusState)
       const typeLabel = pin.objType === 'visit' ? 'LOCATE' : pin.objType?.toUpperCase() ?? ''
       const tooltipHtml = `
         <div style="min-width:170px;max-width:260px">
-          <div style="color:${pin.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;margin-bottom:4px">${pin.memberName.toUpperCase()}</div>
-          <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;line-height:1.2;margin-bottom:6px">${pin.questName}</div>
+          <div style="color:${pin.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;margin-bottom:4px">${escapeHtml(pin.memberName.toUpperCase())}</div>
+          <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;line-height:1.2;margin-bottom:6px">${escapeHtml(pin.questName)}</div>
           <div style="border-top:1px solid #262b25;padding-top:6px">
-            ${typeLabel ? `<div style="color:#5c6b61;font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px">${typeLabel}</div>` : ''}
-            <div style="color:#e4e0d4;font-size:11px;line-height:1.4">${pin.objDescription}</div>
+            ${typeLabel ? `<div style="color:#5c6b61;font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px">${escapeHtml(typeLabel)}</div>` : ''}
+            <div style="color:#e4e0d4;font-size:11px;line-height:1.4">${escapeHtml(pin.objDescription)}</div>
           </div>
         </div>`
       const lm = L.marker(latlng, { icon, interactive: true, zIndexOffset: 200 })
@@ -1040,7 +1032,8 @@ export default function MapLeaflet({
       const p = card.ping
       const decay = staleness(card.age)
       const angle = pingAngle(p.yaw, p.map)
-      const icon = makePingIcon(card.color, p.user[0].toUpperCase(), angle, decay.opacity, p.taps)
+      const pingUser = String(p.user || 'Unknown')
+      const icon = makePingIcon(card.color, escapeHtml(pingUser[0].toUpperCase()), angle, decay.opacity, p.taps)
       const lines = [
         card.floor ? `${card.floor} · ${card.elev}` : `ELEVATION ${card.elev}`,
         card.motion ? `MOVING ${card.motion.dir} · ${card.motion.speed} m/s` : null,
@@ -1057,13 +1050,13 @@ export default function MapLeaflet({
       const tooltipHtml = `
         <div style="min-width:170px;max-width:280px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-            <span style="color:${card.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${p.user.toUpperCase()}</span>
-            <span style="color:${card.cadence.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.08em">${card.cadence.label}</span>
-            <span style="color:#5c6b61;font-size:10px;margin-left:auto">${ageLabel(card.age)} AGO</span>
+            <span style="color:${card.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${escapeHtml(pingUser.toUpperCase())}</span>
+            <span style="color:${card.cadence.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.08em">${escapeHtml(card.cadence.label)}</span>
+            <span style="color:#5c6b61;font-size:10px;margin-left:auto">${escapeHtml(ageLabel(card.age))} AGO</span>
           </div>
           <div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">
-            ${lines.map(l => `<div style="color:#9aaa98;font-size:11px">· ${l}</div>`).join('')}
-            ${card.nearObj ? `<div style="color:#5c6b61;font-size:10px;line-height:1.4">${card.nearObj.desc}</div>` : ''}
+            ${lines.map(l => `<div style="color:#9aaa98;font-size:11px">· ${escapeHtml(l)}</div>`).join('')}
+            ${card.nearObj ? `<div style="color:#5c6b61;font-size:10px;line-height:1.4">${escapeHtml(card.nearObj.desc)}</div>` : ''}
           </div>
         </div>`
       // z then x — y is height, never placement.
@@ -1112,11 +1105,11 @@ export default function MapLeaflet({
       const tooltipHtml = `
         <div style="min-width:150px;max-width:250px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-            <span style="color:${checked ? '#5de87a' : kind.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${kind.short}</span>
+            <span style="color:${checked ? '#5de87a' : kind.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${escapeHtml(kind.short)}</span>
             ${checked ? `<span style="color:#5de87a;font-size:10px">✓ CHECKED</span>` : ''}
           </div>
           <div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">
-            ${lines.map(l => `<div style="color:#9aaa98;font-size:11px">· ${l}</div>`).join('')}
+            ${lines.map(l => `<div style="color:#9aaa98;font-size:11px">· ${escapeHtml(l)}</div>`).join('')}
             <div style="color:#5c6b61;font-size:10px">click to ${checked ? 'un-check' : 'check off'}</div>
           </div>
         </div>`
@@ -1412,6 +1405,7 @@ export default function MapLeaflet({
 
         {mode === 'marker' && (
           <select
+            aria-label="Quest to pin"
             value={selectedQuestId}
             onChange={handleQuestSelect}
             style={{ fontSize: 11, padding: '3px 6px', background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, color: selectedQuestId ? 'var(--gold)' : 'var(--txm)', flexShrink: 1, minWidth: 0, maxWidth: 220 }}>
@@ -1619,7 +1613,7 @@ export default function MapLeaflet({
           <>
             <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', marginRight: 2 }}>COLOR</span>
             {PALETTE.map(c => (
-              <button key={c} onClick={() => setMyColor(c)} style={{
+              <button key={c} onClick={() => setMyColor(c)} aria-label={`Use drawing color ${c}`} aria-pressed={myColor === c} style={{
                 width: 16, height: 16, borderRadius: '50%', padding: 0, flexShrink: 0,
                 background: c,
                 border: myColor === c ? '2px solid var(--gold)' : '1.5px solid rgba(255,255,255,0.2)',
@@ -1691,6 +1685,8 @@ export default function MapLeaflet({
             <span className="mono replay-title">⏱ REPLAY</span>
             <button
               className="btn-gold btn-sm"
+              aria-label={replay.playing ? 'Pause replay' : 'Play replay'}
+              aria-pressed={replay.playing}
               onClick={() => setReplay(r => ({
                 ...r,
                 // Replaying from the end would show one frozen frame, so a play
@@ -1708,6 +1704,8 @@ export default function MapLeaflet({
               max={replayData.to}
               step={100}
               value={replay.t}
+              aria-label="Replay position"
+              aria-valuetext={`${replayElapsed(replayData.from, replay.t)} of ${replayElapsed(replayData.from, replayData.to)}`}
               onChange={e => setReplay(r => ({ ...r, t: Number(e.target.value), playing: false }))}
             />
             <span className="mono replay-clock">
@@ -1717,6 +1715,8 @@ export default function MapLeaflet({
               <button
                 key={s}
                 className={replay.speed === s ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+                aria-label={`Replay speed ${s} times`}
+                aria-pressed={replay.speed === s}
                 onClick={() => setReplay(r => ({ ...r, speed: s }))}
                 style={{ fontSize: 10 }}>
                 {s}×

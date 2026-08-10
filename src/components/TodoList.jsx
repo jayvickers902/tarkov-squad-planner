@@ -500,6 +500,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
                   <button
                     onClick={e => { e.stopPropagation(); sendObjToTop(key) }}
                     title="Send to top"
+                    aria-label={`Send ${row.obj.description} to top`}
                     style={{
                       background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                       color: 'var(--txd)', fontSize: 13, flexShrink: 0, lineHeight: 1,

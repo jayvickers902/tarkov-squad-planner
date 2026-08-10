@@ -238,7 +238,7 @@ export default function AdminKeyManager({ onBack }) {
             style={{ width: '100%', fontSize: 12, padding: '4px 6px', marginBottom: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, color: 'var(--tx)' }}>
             {DOCUMENT_NAMES.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
-          <input placeholder="Note (e.g. 3rd floor office desk)" value={lootNotes}
+          <input aria-label="Document spawn note" placeholder="Note (e.g. 3rd floor office desk)" value={lootNotes}
             onChange={e => setLootNotes(e.target.value)}
             style={{ width: '100%', fontSize: 12, marginBottom: 6 }} />
           <button

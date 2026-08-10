@@ -155,10 +155,11 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId }) {
       </div>
 
       <div style={{ marginBottom: 14 }}>
-        <label className="mono" style={{ display: 'block', fontSize: 10, color: 'var(--txm)', marginBottom: 5 }}>
+        <label htmlFor="catch-up-pmc-level" className="mono" style={{ display: 'block', fontSize: 10, color: 'var(--txm)', marginBottom: 5 }}>
           PMC LEVEL (OPTIONAL)
         </label>
         <input
+          id="catch-up-pmc-level"
           type="number"
           min="1"
           max="79"

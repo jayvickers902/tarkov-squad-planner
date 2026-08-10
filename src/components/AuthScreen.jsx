@@ -75,8 +75,8 @@ export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsi
           <div className="card auth-card fade-in">
             <h2>CHOOSE YOUR CALLSIGN</h2>
             <p className="mono auth-note">THIS IS YOUR IN-GAME NAME - CHOOSE WISELY</p>
-            <div><div className="lbl">CALLSIGN</div><input placeholder="Your in-game name" value={callsign} onChange={event => { setCallsign(event.target.value); setLocal(''); setError('') }} disabled={busy || profileBlocked} autoFocus onKeyDown={event => event.key === 'Enter' && handleCallsign()} /></div>
-            {err && <p className="mono auth-error">! {err}</p>}
+            <div><label className="lbl" htmlFor="callsign">CALLSIGN</label><input id="callsign" name="callsign" autoComplete="nickname" placeholder="Your in-game name" value={callsign} onChange={event => { setCallsign(event.target.value); setLocal(''); setError('') }} disabled={busy || profileBlocked} autoFocus onKeyDown={event => event.key === 'Enter' && handleCallsign()} /></div>
+            {err && <p className="mono auth-error" role="alert">! {err}</p>}
             {busy && <p className="mono auth-busy">SAVING...</p>}
             <div className="auth-form-actions">
               {!needsCallsign && <button className="btn-ghost" onClick={reset} disabled={busy}>BACK</button>}
@@ -85,7 +85,7 @@ export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsi
           </div>
         )}
 
-        {err && mode === 'home' && <p className="mono auth-error auth-home-error">! {err}</p>}
+        {err && mode === 'home' && <p className="mono auth-error auth-home-error" role="alert">! {err}</p>}
         <p className="mono auth-footer">QUEST DATA VIA TARKOV.DEV - COMMUNITY MAINTAINED</p>
       </div>
     </div>

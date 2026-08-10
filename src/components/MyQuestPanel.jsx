@@ -263,6 +263,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                     <button
                       onClick={() => moveToTop(task.id, sectionRows)}
                       title="Move to top"
+                      aria-label={`Move ${task.name} to top`}
                       disabled={sectionIdx === 0}
                       style={{
                         background: 'none', border: 'none', padding: '1px 4px',
@@ -274,6 +275,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                     <button
                       onClick={() => moveToBottom(task.id, sectionRows)}
                       title="Move to bottom"
+                      aria-label={`Move ${task.name} to bottom`}
                       disabled={sectionIdx === sectionRows.length - 1}
                       style={{
                         background: 'none', border: 'none', padding: '1px 4px',
@@ -286,6 +288,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                 )}
                 <button
                   onClick={() => toggleDone(task.id)}
+                  aria-label={`${isDone ? 'Undo completion of' : 'Mark complete'} ${task.name}`}
                   style={{
                     background: 'none',
                     border: `1px solid ${isDone ? 'var(--grn)' : isPendingDone ? 'var(--golddim)' : 'var(--brd2)'}`,

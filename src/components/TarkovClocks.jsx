@@ -24,7 +24,7 @@ export default function TarkovClocks() {
   const [times, setTimes] = useState(getTarkovTimes)
 
   useEffect(() => {
-    const id = setInterval(() => setTimes(getTarkovTimes()), 100)
+    const id = setInterval(() => setTimes(getTarkovTimes()), 1000)
     return () => clearInterval(id)
   }, [])
 
@@ -34,10 +34,10 @@ export default function TarkovClocks() {
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
       {[
-        { secs: times.left,  day: leftDay  },
-        { secs: times.right, day: rightDay },
-      ].map(({ secs, day }) => (
-        <div key={secs} style={{
+        { side: 'left', secs: times.left,  day: leftDay  },
+        { side: 'right', secs: times.right, day: rightDay },
+      ].map(({ side, secs, day }) => (
+        <div key={side} style={{
           background: 'var(--sur2)',
           border: `1px solid ${day ? 'var(--golddim)' : '#2a3d52'}`,
           borderRadius: 5,

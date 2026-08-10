@@ -239,6 +239,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
           {tasksLoading && searchMap !== 'any'
             ? <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', padding: '8px 0' }}>LOADING QUESTS...</div>
             : <input
+                aria-label="Search saved quests"
                 placeholder={`Search quests${searchMap !== 'any' ? ` for ${MAP_NAMES[searchMap] || searchMap}` : ' (any map)'}...`}
                 value={searchQ}
                 onChange={e => { setSearchQ(e.target.value); setSearchOpen(true) }}
@@ -254,9 +255,10 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
               maxHeight: 300, overflowY: 'auto',
             }}>
               {searchHits.map(t => (
-                <div key={t.id}
-                  onMouseDown={() => handleAdd(t)}
-                  style={{ padding: '9px 12px', cursor: 'pointer', borderBottom: '1px solid var(--brd)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                <button type="button" key={t.id}
+                  onMouseDown={event => event.preventDefault()}
+                  onClick={() => handleAdd(t)}
+                  style={{ width: '100%', padding: '9px 12px', cursor: 'pointer', border: 0, borderBottom: '1px solid var(--brd)', borderRadius: 0, background: 'transparent', color: 'inherit', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--sur)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
@@ -271,7 +273,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                     </div>
                   </div>
                   <span style={{ color: 'var(--gold)', fontSize: 18, flexShrink: 0, marginLeft: 8 }}>+</span>
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -380,6 +382,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                   <button
                     onClick={() => moveToTop(q.quest_id)}
                     title="Move to top"
+                    aria-label={`Move ${q.quest_name} to top`}
                     disabled={idx === 0}
                     style={{
                       background: 'none', border: 'none', padding: '1px 4px', cursor: idx === 0 ? 'default' : 'pointer',
@@ -389,6 +392,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                   <button
                     onClick={() => moveToBottom(q.quest_id)}
                     title="Move to bottom"
+                    aria-label={`Move ${q.quest_name} to bottom`}
                     disabled={idx === orderedFiltered.length - 1}
                     style={{
                       background: 'none', border: 'none', padding: '1px 4px', cursor: idx === orderedFiltered.length - 1 ? 'default' : 'pointer',
@@ -420,6 +424,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                 {/* Remove */}
                 <button
                   onClick={() => onRemove(q.quest_id)}
+                  aria-label={`Remove ${q.quest_name}`}
                   style={{ background: 'none', border: 'none', color: 'var(--txd)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: 0, flexShrink: 0 }}
                   title="Remove from saved list">×</button>
               </div>

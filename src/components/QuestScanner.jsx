@@ -165,6 +165,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
         </div>
         <button
           onClick={close}
+          aria-label="Close screenshot scanner"
           style={{ background: 'none', border: 'none', color: 'var(--txd)', fontSize: 18, cursor: 'pointer', padding: 0 }}
         >×</button>
       </div>
@@ -172,7 +173,16 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
       {/* Drop / paste zone */}
       {!scanning && showUpload && (
         <div
+          role="button"
+          tabIndex={0}
+          aria-label="Choose a quest journal screenshot"
           onClick={() => fileRef.current?.click()}
+          onKeyDown={event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              fileRef.current?.click()
+            }
+          }}
           onDrop={handleDrop}
           onDragOver={e => e.preventDefault()}
           style={{
@@ -202,7 +212,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
 
       {/* Scanning state */}
       {scanning && (
-        <div style={{ padding: '28px 0', textAlign: 'center' }}>
+        <div role="status" aria-live="polite" style={{ padding: '28px 0', textAlign: 'center' }}>
           <div className="mono" style={{ fontSize: 11, color: 'var(--gold)', letterSpacing: '.08em' }}>
             {STAGE_LABEL[stage] ?? 'SCANNING...'}
           </div>
@@ -312,7 +322,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd }) {
 
       {/* Error */}
       {error && (
-        <div className="mono" style={{
+        <div className="mono" role="alert" style={{
           marginTop: 10, padding: '8px 10px', borderRadius: 4,
           background: 'rgba(180,60,60,.12)', border: '1px solid rgba(180,60,60,.3)',
           fontSize: 11, color: '#e07070',

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabase'
 
-export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManageQuests, onLogout, onAdmin, isAdmin, error, loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
+export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManageQuests, onLogout, onAdmin, isAdmin, error, friendsError = '', loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const [mode, setMode]         = useState('home')
   const [code, setCode]         = useState('')
   const [local, setLocal]       = useState('')
@@ -83,7 +83,7 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
     setLocal(''); setFriendJoinCode(null); onEnter('join', c)
   }
 
-  const err = local || error
+  const err = local || error || friendsError
   const totalFriends = friends.length
   const hasPending = pendingIn.length > 0
 
@@ -130,8 +130,8 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
                 <div className="mono" style={{ fontSize: 20, color: 'var(--gold)', letterSpacing: '0.2em', marginTop: 2 }}>{autoJoinCode}</div>
               </div>
             </div>
-            {error && (
-              <p className="mono" style={{ color: 'var(--red)', fontSize: 12, marginTop: 10 }}>⚠ {error}</p>
+            {err && (
+              <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 10 }}>⚠ {err}</p>
             )}
           </div>
         )}
@@ -150,7 +150,7 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
                 LEAVE
               </button>
             </div>
-            {error && <p className="mono" style={{ color: 'var(--red)', fontSize: 11, marginTop: 6 }}>⚠ {error}</p>}
+            {err && <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 11, marginTop: 6 }}>⚠ {err}</p>}
           </div>
         )}
 
@@ -280,6 +280,7 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
                   {/* Add friend input */}
                   <div style={{ display: 'flex', gap: 6, marginTop: 8, borderTop: '1px solid var(--brd)', paddingTop: 10 }}>
                     <input
+                      aria-label="Friend callsign"
                       placeholder="Add by callsign"
                       value={addInput}
                       onChange={e => { setAddInput(e.target.value); setAddError('') }}
@@ -291,8 +292,8 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
                       + ADD
                     </button>
                   </div>
-                  {addError && <p className="mono" style={{ color: 'var(--red)', fontSize: 11, marginTop: 4 }}>⚠ {addError}</p>}
-                  {addSuccess && <p className="mono" style={{ color: 'var(--grn)', fontSize: 11, marginTop: 4 }}>✓ REQUEST SENT</p>}
+                  {addError && <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 11, marginTop: 4 }}>⚠ {addError}</p>}
+                  {addSuccess && <p className="mono" role="status" style={{ color: 'var(--grn)', fontSize: 11, marginTop: 4 }}>✓ REQUEST SENT</p>}
                 </div>
               )}
             </div>
@@ -303,8 +304,8 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
           <div className="card fade-in" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <h2 style={{ fontSize: 22, color: 'var(--goldtx)' }}>JOIN PARTY</h2>
             <div>
-              <div className="lbl">PARTY CODE</div>
-              <input placeholder="6-letter code" value={code}
+              <label className="lbl" htmlFor="party-code">PARTY CODE</label>
+              <input id="party-code" name="party-code" autoComplete="off" placeholder="6-letter code" value={code}
                 onChange={e => { setCode(e.target.value.toUpperCase()); setLocal('') }}
                 style={{ fontFamily: 'Share Tech Mono', letterSpacing: '0.2em', fontSize: 20 }}
                 maxLength={6} autoFocus onKeyDown={e => e.key === 'Enter' && join()} />

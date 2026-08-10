@@ -9,6 +9,7 @@ import { useIntelChecklist } from '../useIntelChecklist'
 import { curatedLootPoints, mergeIntelSources, countByKind, INTEL_KINDS, bestCluster, RING_RADII_M } from '../tarkovIntel'
 import { findMember, objectiveProgressKey, progressOwnerId, progressQuestId } from '../partyMembers'
 import BossCard from './BossCard'
+import useDialogFocus from '../useDialogFocus'
 
 function toAntifandom(url) {
   if (!url) return null
@@ -74,7 +75,8 @@ function BossColumn({ label, bosses }) {
   )
 }
 
-export default function StartRaidModal({ party, myUserId, tasks, onClose }) {
+export default function StartRaidModal({ party, myUserId, tasks, onClose, onCancel = onClose }) {
+  const dialogRef = useDialogFocus(true, onCancel)
   const [times, setTimes] = useState(getTarkovTimes)
   const [exitSummary, setExitSummary] = useState(null)
   const [goonReports, setGoonReports] = useState([])
@@ -220,14 +222,23 @@ export default function StartRaidModal({ party, myUserId, tasks, onClose }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 16,
       }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onClick={e => { if (e.target === e.currentTarget) onCancel() }}
     >
-      <div className="card fade-in" style={{
+      <div
+        ref={dialogRef}
+        className="card fade-in"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="start-raid-title"
+        aria-describedby="start-raid-description"
+        tabIndex={-1}
+        style={{
         width: '100%', maxWidth: 480,
         maxHeight: '90vh', overflow: 'auto',
         display: 'flex', flexDirection: 'column',
         padding: 0,
-      }}>
+        }}
+      >
 
         {/* Header */}
         <div style={{ position: 'relative', height: 76, overflow: 'hidden', flexShrink: 0, borderRadius: '4px 4px 0 0' }}>
@@ -247,10 +258,10 @@ export default function StartRaidModal({ party, myUserId, tasks, onClose }) {
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
           }}>
             <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.18em', textShadow: '0 0 4px #000, 0 1px 3px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>◆ INSERTING INTO</div>
-            <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '.12em', lineHeight: 1, color: 'var(--goldtx)', textShadow: '0 0 4px #000, 0 1px 4px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>
+            <div id="start-raid-title" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '.12em', lineHeight: 1, color: 'var(--goldtx)', textShadow: '0 0 4px #000, 0 1px 4px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>
               {(mapName || 'UNKNOWN').toUpperCase()}
             </div>
-            <div className="mono" style={{ fontSize: 9, color: 'var(--txm)', letterSpacing: '.14em', textShadow: '0 0 4px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>START RAID</div>
+            <div id="start-raid-description" className="mono" style={{ fontSize: 9, color: 'var(--txm)', letterSpacing: '.14em', textShadow: '0 0 4px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>REVIEW YOUR RAID BRIEF</div>
           </div>
         </div>
 
@@ -447,6 +458,7 @@ export default function StartRaidModal({ party, myUserId, tasks, onClose }) {
         {/* Footer */}
         <div style={{ padding: '0 16px 14px', flexShrink: 0 }}>
           <button
+            data-autofocus
             className="btn-gold"
             style={{ width: '100%', padding: '11px', fontSize: 15, letterSpacing: '.1em' }}
             onClick={onClose}

@@ -87,7 +87,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
           <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>FETCHING QUESTS FROM TARKOV.DEV...</span>
         </div>
       ) : (
-        <input ref={ref} placeholder="Search quests for this map..."
+        <input ref={ref} aria-label="Search quests for this map" placeholder="Search quests for this map..."
           value={q}
           onChange={e => { setQ(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
@@ -101,9 +101,10 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
           maxHeight: 320, overflowY: 'auto',
         }}>
           {hits.map(t => (
-            <div key={t.id}
-              onMouseDown={() => { onAdd({ id: t.id, name: t.name }); setQ(''); ref.current?.focus() }}
-              style={{ padding: '9px 12px', cursor: 'pointer', borderBottom: '1px solid var(--brd)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            <button type="button" key={t.id}
+              onMouseDown={event => event.preventDefault()}
+              onClick={() => { onAdd({ id: t.id, name: t.name }); setQ(''); ref.current?.focus() }}
+              style={{ width: '100%', padding: '9px 12px', cursor: 'pointer', border: 0, borderBottom: '1px solid var(--brd)', borderRadius: 0, background: 'transparent', color: 'inherit', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
               onMouseEnter={e => e.currentTarget.style.background = 'var(--sur)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
@@ -115,7 +116,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
                 </div>
               </div>
               <span style={{ color: 'var(--gold)', fontSize: 18, flexShrink: 0, marginLeft: 8 }}>+</span>
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -142,7 +143,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
               cursor: 'default',
             }}>
             <span style={{ color: 'var(--goldtx)' }}>{item.name}</span>
-            <button onMouseDown={() => onRemove(item.id)}
+            <button aria-label={`Remove ${item.name}`} onClick={() => onRemove(item.id)}
               style={{ background: 'none', border: 'none', color: 'var(--txm)', padding: '0 0 0 3px', fontSize: 16, lineHeight: 1, cursor: 'pointer' }}>×</button>
           </div>
         ))}
