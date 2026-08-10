@@ -287,6 +287,15 @@ export function useParty(userId, userSettings = {}, {
             merged[key] = partyRef.current[key]
           }
         }
+        // A raw parties row is not authoritative about pings once the child table
+        // is in use: nothing writes parties.pings any more, so the broadcast
+        // carries empty legacy arrays. append_party_ping bumps last_active_at
+        // itself, so without this every screenshot ping wiped itself the moment
+        // its own write echoed back. Same guard as runAtomicPartyWrite.
+        if (pingEventsWritable && partyRef.current) {
+          merged.pings = partyRef.current.pings
+          merged.ping_log = partyRef.current.ping_log
+        }
         applyParty(merged)
       })
       .on('postgres_changes', {
