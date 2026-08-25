@@ -1,16 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { progressToImport } from '../tarkovTracker'
 import { useTarkovTracker } from '../useTarkovTracker'
-
-const MODE_LABELS = {
-  regular: 'REGULAR',
-  pve: 'PVE',
-  'pvp-season': 'SEASON',
-}
-
-function modeLabel(mode) {
-  return MODE_LABELS[mode] || mode?.toUpperCase() || 'UNKNOWN'
-}
+import { gameModeLabel } from '../gameMode'
 
 function taskMapName(task) {
   return task?.map?.normalizedName
@@ -56,6 +47,13 @@ export default function TrackerLink({ userId, allTasks, userQuests, onBulkAdd, o
     return userQuests.filter(quest => importState.complete.has(quest.quest_id))
   }, [importState, userQuests])
   const modeIsExplicit = Object.prototype.hasOwnProperty.call(userSettings, 'game_mode')
+  const tokenModeMismatch = tracker.linked && tracker.mode && tracker.mode !== gameMode
+
+  function tokenModeMismatchMessage() {
+    const label = gameModeLabel(tracker.mode)
+    const switchLabel = label === 'SEASON' ? 'Season' : label
+    return `This token is a ${label} token. Switch to ${switchLabel}, or link the token for this mode.`
+  }
 
   useEffect(() => {
     const availableIds = new Set(available.map(task => task.id))
@@ -72,15 +70,18 @@ export default function TrackerLink({ userId, allTasks, userQuests, onBulkAdd, o
   // A token is a mode assertion. Auto-resolve only when the user has never
   // explicitly chosen a mode; otherwise make the disagreement actionable.
   useEffect(() => {
-    if (!tracker.linked || !tracker.mode || handledMode.current === tracker.mode) return
-    handledMode.current = tracker.mode
+    const handledKey = `${tracker.mode}:${gameMode}:${Boolean(onSetGameMode)}`
+    if (!tracker.linked || !tracker.mode || handledMode.current === handledKey) return
+    handledMode.current = handledKey
     if (gameMode === tracker.mode) return
     if (!modeIsExplicit && onSetGameMode) {
       onSetGameMode(tracker.mode)
-      setModeNotice(`TOKEN MODE DETECTED — TASK DATA SWITCHED TO ${modeLabel(tracker.mode)}.`)
+      setModeNotice(`TOKEN MODE DETECTED — TASK DATA SWITCHED TO ${gameModeLabel(tracker.mode)}.`)
       return
     }
-    setModeNotice(`TOKEN REPORTS ${modeLabel(tracker.mode)}, BUT YOUR TASK MODE IS ${modeLabel(gameMode)}. CHOOSE WHICH DATASET TO USE.`)
+    setModeNotice(onSetGameMode
+      ? `TOKEN REPORTS ${gameModeLabel(tracker.mode)}, BUT YOUR TASK MODE IS ${gameModeLabel(gameMode)}. CHOOSE WHICH DATASET TO USE.`
+      : tokenModeMismatchMessage())
   }, [tracker.linked, tracker.mode, gameMode, modeIsExplicit, onSetGameMode])
 
   function toggleSelected(taskId) {
@@ -103,6 +104,10 @@ export default function TrackerLink({ userId, allTasks, userQuests, onBulkAdd, o
   }
 
   function handleImport() {
+    if (tokenModeMismatch) {
+      setModeNotice(tokenModeMismatchMessage())
+      return
+    }
     if (!selectedTasks.length) return
     onBulkAdd(selectedTasks.map(task => ({
       id: task.id,
@@ -181,7 +186,7 @@ export default function TrackerLink({ userId, allTasks, userQuests, onBulkAdd, o
             <div>
               <div className="tracker-link-name">{tracker.displayName || 'LINKED OPERATOR'}</div>
               <div className="mono tracker-link-muted">
-                LVL {tracker.playerLevel ?? '—'} · {modeLabel(tracker.mode)} · SYNCED {formatSynced(tracker.lastSyncedAt)}
+                LVL {tracker.playerLevel ?? '—'} · {gameModeLabel(tracker.mode)} · SYNCED {formatSynced(tracker.lastSyncedAt)}
               </div>
             </div>
             <div className="tracker-link-actions">
@@ -195,10 +200,10 @@ export default function TrackerLink({ userId, allTasks, userQuests, onBulkAdd, o
           {modeNotice && (
             <div className="tracker-link-mode-note mono">
               {modeNotice}
-              {tracker.mode !== gameMode && (
+              {tracker.mode !== gameMode && onSetGameMode && (
                 <div className="tracker-link-actions">
-                  <button className="btn-gold btn-sm" onClick={() => { onSetGameMode?.(tracker.mode); setModeNotice(`TASK DATA SET TO ${modeLabel(tracker.mode)}.`) }}>USE TOKEN MODE</button>
-                  <button className="btn-ghost btn-sm" onClick={() => setModeNotice(`KEEPING ${modeLabel(gameMode)} TASK DATA.`)}>KEEP {modeLabel(gameMode)}</button>
+                  <button className="btn-gold btn-sm" onClick={() => { onSetGameMode(tracker.mode); setModeNotice(`TASK DATA SET TO ${gameModeLabel(tracker.mode)}.`) }}>USE TOKEN MODE</button>
+                  <button className="btn-ghost btn-sm" onClick={() => setModeNotice(`KEEPING ${gameModeLabel(gameMode)} TASK DATA.`)}>KEEP {gameModeLabel(gameMode)}</button>
                 </div>
               )}
             </div>
@@ -257,7 +262,7 @@ export default function TrackerLink({ userId, allTasks, userQuests, onBulkAdd, o
               )}
 
               <div className="tracker-link-actions">
-                <button className="btn-gold btn-sm" onClick={handleImport} disabled={!selectedTasks.length}>
+                <button className="btn-gold btn-sm" onClick={handleImport} disabled={!selectedTasks.length || tokenModeMismatch}>
                   ADD {selectedTasks.length} QUEST{selectedTasks.length === 1 ? '' : 'S'}
                 </button>
                 <button className="btn-ghost btn-sm" onClick={() => setSelectedIds(new Set(available.map(task => task.id)))} disabled={!available.length}>SELECT ALL</button>

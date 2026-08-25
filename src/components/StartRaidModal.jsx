@@ -75,12 +75,12 @@ function BossColumn({ label, bosses }) {
   )
 }
 
-export default function StartRaidModal({ party, myUserId, tasks, onClose, onCancel = onClose }) {
+export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClose, onCancel = onClose }) {
   const dialogRef = useDialogFocus(true, onCancel)
   const [times, setTimes] = useState(getTarkovTimes)
   const [exitSummary, setExitSummary] = useState(null)
   const [goonReports, setGoonReports] = useState([])
-  const { getBossesForMap, loading: bossLoading } = useBossSpawns()
+  const { getBossesForMap, loading: bossLoading } = useBossSpawns(gameMode)
 
   useEffect(() => {
     const id = setInterval(() => setTimes(getTarkovTimes()), 1000)
@@ -101,7 +101,7 @@ export default function StartRaidModal({ party, myUserId, tasks, onClose, onCanc
   useEffect(() => {
     let active = true
     const controller = new AbortController()
-    getRestGoonReports(controller.signal)
+    getRestGoonReports(controller.signal, gameMode)
       .then(result => {
         if (!active || result?.fromCache !== false || !Array.isArray(result?.data)) return
         setGoonReports(result.data)
@@ -117,7 +117,7 @@ export default function StartRaidModal({ party, myUserId, tasks, onClose, onCanc
 
   const mapName = party.map_name
   const isFactory = mapNorm === 'factory'
-  const { allKeys } = useKeys(mapNorm)
+  const { allKeys } = useKeys(mapNorm, gameMode)
   const keyIconMap = useMemo(() => Object.fromEntries(allKeys.map(k => [k.id, k.iconLink || null])), [allKeys])
   const dayBosses   = mapNorm ? getBossesForMap(isFactory ? 'factory' : mapNorm) : []
   const nightBosses = isFactory ? getBossesForMap('night-factory') : []

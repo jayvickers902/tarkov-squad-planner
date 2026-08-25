@@ -437,11 +437,12 @@ export function useParty(userId, userSettings = {}, {
     }
   }, [])
 
-  const createParty = useCallback(async (name, savedQuests = []) => {
+  const createParty = useCallback(async (name, gameMode, savedQuests = []) => {
     autoRejoinBlockedRef.current = true
     setLoading(true); setError('')
     savedQuestsRef.current = savedQuests
     const { data, error: rpcError } = await supabase.rpc('create_party', {
+      p_game_mode: gameMode,
       p_quests: questsForMap(savedQuests, null),
       p_quests_all: allQuestEntries(savedQuests),
       p_starred: starredFor(savedQuests),

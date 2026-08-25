@@ -7,8 +7,8 @@ function Spin() {
   return <div style={{ width: 20, height: 20, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
 }
 
-export default function KeysList({ mapNorm }) {
-  const { keys, loading } = useKeys(mapNorm)
+export default function KeysList({ mapNorm, gameMode }) {
+  const { keys, loading } = useKeys(mapNorm, gameMode)
   const { mapKeys } = useMapKeys(mapNorm)
 
   // Only show keys explicitly starred in the admin panel

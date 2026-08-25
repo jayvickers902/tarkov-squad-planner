@@ -119,6 +119,10 @@ will remain unavailable. No write path to TarkovTracker exists yet.
 
 The REST dataset supports `regular`, `pve`, and `pvp-season`. The active game mode is a resolved setting rather than a module constant. Prebaked JSON is only a valid floor for the mode recorded in its stamp, and another mode must wait for its REST response.
 
+## Game Mode
+
+Game mode belongs to character progression, not to a display preference. A party fixes its mode when it is created, and the database trigger makes that mode immutable. `user_quests` is scoped by mode so each character keeps an independent quest list. While a user is outside a party, their own `game_mode` setting selects the active progression. `resolvePartyMode` in `src/gameMode.js` is the single place that defines party-over-user precedence.
+
 ## Conventions
 
 - Plain React hooks for all state — no Redux, Zustand, or context providers

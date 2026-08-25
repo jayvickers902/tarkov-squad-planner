@@ -13,6 +13,7 @@ import MonitorLink from './MonitorLink'
 import RaidSettings from './RaidSettings'
 import useEphemeralSweep from '../useEphemeralSweep'
 import { resolveSetting } from '../settings'
+import { gameModeLabel, resolvePartyMode } from '../gameMode'
 import { normalizeMembers, findMember, memberIds, memberNames, progressOwnerId, progressQuestId } from '../partyMembers'
 import { characterAssetIconUrl, characterItemLabel, characterModeLabel, displayCharacterSide } from '../tarkovCharacters'
 
@@ -144,7 +145,7 @@ function hasRaidWork(progress) {
   return Object.keys(progress || {}).some(key => key !== '__raid_start__')
 }
 
-export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onCharacterSnapshot, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, gameMode = 'regular', onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid, onOpenRaid, onCloseRaid }) {
+export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, activeQuestCount = 0, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onCharacterSnapshot, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, gameMode = 'regular', onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid, onOpenRaid, onCloseRaid }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
@@ -215,6 +216,8 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   )
   const { extracts: mapExtracts } = useExtracts(party.map_norm, gameMode)
   const isLeader = party.leader_id === myUserId
+  const ownGameMode = resolvePartyMode(null, userSettings)
+  const partyModeDiffers = ownGameMode !== gameMode
   const settingLayers = { raid: party.settings || {}, unit: null, user: userSettings }
   const pingTtlMs = Number(resolveSetting('ping_ttl_ms', settingLayers))
   const replayEnabled = resolveSetting('replay_enabled', settingLayers)
@@ -288,6 +291,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
           members={members}
           tasks={tasks}
           allTasks={allTasks}
+          gameMode={gameMode}
           loadingTasks={loadingTasks}
           skippedQuestIds={skippedQuestIds}
           onToggleStar={onToggleStar}
@@ -314,6 +318,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
           myUserId={myUserId}
           myName={myName}
           tasks={allTasks}
+          gameMode={gameMode}
           onClose={() => {
             if (startRaidPending) {
               const ts = Date.now()
@@ -341,6 +346,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
               <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {party.map_name ? `// ${party.map_name.toUpperCase()}` : '// NO MAP SELECTED'}
               </div>
+              <div className="mono room-mode-badge">MODE · {gameModeLabel(gameMode)}</div>
             </div>
           </div>
           <div className="room-header-actions">
@@ -397,6 +403,15 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
         <div className="sr-status" aria-live="polite">{copied ? 'Invite link copied.' : ''}</div>
         {(partyError || friendsError || copyError) && <div className="room-error mono" role="alert">{partyError || friendsError || copyError}</div>}
       </div>
+
+      {partyModeDiffers && (
+        <div className="room-game-mode-notice mono" role="status">
+          This party is {gameModeLabel(gameMode)}. You are seeing your {gameModeLabel(gameMode)} quest list.
+          {!questsLoading && activeQuestCount === 0 && (
+            <span> Your {gameModeLabel(gameMode)} list is empty, which is expected for a mode you have not played. Open Quest Manager to use TarkovTracker, Catch Up, or the screenshot import routes.</span>
+          )}
+        </div>
+      )}
 
       <div className={`room-settings-panel ${settingsOpen ? 'room-settings-panel-open' : ''}`}>
         <MonitorLink
@@ -783,7 +798,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                 <div className="card fade-in" style={{ padding: 16 }}>
                   {loadingTasks && !tasks.length
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
-                    : <RequiredItems tasks={tasks} memberQuests={members} mapNorm={party.map_norm} progress={party.progress} />
+                    : <RequiredItems tasks={tasks} memberQuests={members} mapNorm={party.map_norm} progress={party.progress} gameMode={gameMode} />
                   }
                 </div>
               )}
@@ -799,7 +814,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
 
               {tab === 'bosses' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  <BossPanel mapNorm={party.map_norm} />
+                  <BossPanel mapNorm={party.map_norm} gameMode={gameMode} />
                 </div>
               )}
 

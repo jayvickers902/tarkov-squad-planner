@@ -17,6 +17,7 @@ import { normalizeMembers, findMember, memberIds as getMemberIds, memberNames as
 export default function RaidView({
   party, myUserId, myName, members,
   tasks, allTasks, loadingTasks,
+  gameMode = 'regular',
   skippedQuestIds,
   onAddStroke, onClearMyStrokes,
   onAddMarker, onClearMyMarkers,
@@ -49,7 +50,7 @@ export default function RaidView({
 
   const { mapKeys } = useMapKeys(party.map_norm)
   const { intelPoints } = useIntel(party.map_norm)
-  const { extracts } = useExtracts(party.map_norm)
+  const { extracts } = useExtracts(party.map_norm, gameMode)
   const pmcSpawns = usePmcSpawns()
   const { lootRows } = useMapLoot(party.map_norm)
   const { isChecked } = useIntelChecklist(party.map_norm, raidKey)

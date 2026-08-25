@@ -24,11 +24,11 @@ function objIsOnMap(obj, mapNorm, taskMapNorm) {
   return true
 }
 
-export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progress }) {
+export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progress, gameMode }) {
   const memberRows = normalizeMembers(memberQuests)
   const members = memberRows.map(member => member.callsign)
   const [activeMember, setActiveMember] = useState('all')
-  const { allKeys } = useKeys(mapNorm)
+  const { allKeys } = useKeys(mapNorm, gameMode)
 
   const keyIdSet = useMemo(() => new Set(allKeys.map(k => k.id)), [allKeys])
   // Lookup map for key iconLink by id — tasks query may return null iconLink, fall back to keys query

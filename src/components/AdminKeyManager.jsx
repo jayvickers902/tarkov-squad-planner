@@ -32,7 +32,7 @@ const MAP_LABELS = {
   'icebreaker': 'Icebreaker', 'the-labyrinth': 'Labyrinth',
 }
 
-export default function AdminKeyManager({ onBack }) {
+export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
   const [mapNorm, setMapNorm]       = useState('customs')
   const [section, setSection]       = useState('keys')  // 'keys' | 'loot' | 'share'
   const [placing, setPlacing]       = useState(null)   // key name being placed on map
@@ -49,11 +49,11 @@ export default function AdminKeyManager({ onBack }) {
   const imgRef = useRef(null)
 
   const isMobile = useIsMobile()
-  const { keys, loading: keysLoading } = useKeys(mapNorm)
+  const { keys, loading: keysLoading } = useKeys(mapNorm, gameMode)
   const { mapKeys, upsertKey }         = useMapKeys(mapNorm)
   const { lootRows, error: lootError, addLoot, removeLoot } = useMapLoot(mapNorm)
   const { intelPoints } = useIntel(mapNorm)
-  const { tasks } = useTasks(null)
+  const { tasks } = useTasks(null, gameMode)
   const { overrides, loading: overridesLoading, upsertOverride } = useQuestShareOverrides()
 
   // The prebaked loose-loot points, projected back onto the flat map image, so a

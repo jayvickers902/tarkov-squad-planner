@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabase'
+import { GAME_MODES, gameModeLabel, normalizeGameMode } from '../gameMode'
 
-export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManageQuests, onLogout, onAdmin, isAdmin, error, friendsError = '', loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
+export default function Lobby({ userId, callsign, userGameMode = 'regular', onEnter, onForceJoin, onManageQuests, onLogout, onAdmin, isAdmin, error, friendsError = '', loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const [mode, setMode]         = useState('home')
+  const [createGameMode, setCreateGameMode] = useState(() => normalizeGameMode(userGameMode))
   const [code, setCode]         = useState('')
   const [local, setLocal]       = useState('')
   const [lastCode, setLastCode] = useState(() => {
@@ -16,6 +18,12 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
   const [addError, setAddError] = useState('')
   const [addBusy, setAddBusy]   = useState(false)
   const [addSuccess, setAddSuccess] = useState(false)
+  const [rejoinGameMode, setRejoinGameMode] = useState(null)
+  const [friendPartyModes, setFriendPartyModes] = useState({})
+
+  useEffect(() => {
+    setCreateGameMode(normalizeGameMode(userGameMode))
+  }, [userGameMode])
 
   useEffect(() => {
     let cancelled = false
@@ -40,7 +48,7 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
       }
       const partyId = membership?.[0]?.party_id
       const { data: partyRow, error: partyError } = partyId
-        ? await supabase.from('parties').select('code').eq('id', partyId).maybeSingle()
+        ? await supabase.from('parties').select('code, game_mode').eq('id', partyId).maybeSingle()
         : { data: null, error: null }
       if (cancelled) return
       if (partyError) {
@@ -49,6 +57,7 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
       }
       const currentCode = partyRow?.code || null
       setLastCode(currentCode)
+      setRejoinGameMode(partyRow?.game_mode || null)
       setRejoinLookup('ready')
       try {
         if (currentCode) localStorage.setItem('lastPartyCode', currentCode)
@@ -59,6 +68,20 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
     findCurrentParty()
     return () => { cancelled = true }
   }, [userId])
+
+  useEffect(() => {
+    let cancelled = false
+    const friendIds = friends.filter(friend => friend.partyCode).map(friend => friend.user_id)
+    if (!friendIds.length) {
+      setFriendPartyModes({})
+      return () => { cancelled = true }
+    }
+    supabase.rpc('get_friend_parties', { p_user_ids: friendIds }).then(({ data }) => {
+      if (cancelled) return
+      setFriendPartyModes(Object.fromEntries((data || []).map(row => [row.user_id, normalizeGameMode(row.game_mode)])))
+    })
+    return () => { cancelled = true }
+  }, [friends])
 
   async function handleSendRequest() {
     if (!addInput.trim()) return
@@ -75,7 +98,7 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
   }
 
   function create() {
-    setLocal(''); onEnter('create', '')
+    setLocal(''); onEnter('create', '', createGameMode)
   }
   function join() {
     const c = code.trim().toUpperCase()
@@ -150,6 +173,7 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
                 LEAVE
               </button>
             </div>
+            <div className="mono party-list-mode">MODE · {gameModeLabel(rejoinGameMode)}</div>
             {err && <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 11, marginTop: 6 }}>⚠ {err}</p>}
           </div>
         )}
@@ -159,6 +183,21 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
             <button className="btn-gold" style={{ padding: '14px 24px', fontSize: 16 }} onClick={create}>
               CREATE PARTY
             </button>
+            <div className="party-mode-picker">
+              <span className="mono party-mode-picker-label">NEW PARTY MODE</span>
+              <div className="party-mode-options" role="group" aria-label="New party game mode">
+                {GAME_MODES.map(value => (
+                  <button
+                    key={value}
+                    className={createGameMode === value ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+                    onClick={() => setCreateGameMode(value)}
+                    aria-pressed={createGameMode === value}
+                  >
+                    {gameModeLabel(value)}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button className="btn-ghost" style={{ padding: '14px 24px', fontSize: 16 }} onClick={() => setMode('join')}>
               JOIN PARTY
             </button>
@@ -232,10 +271,13 @@ export default function Lobby({ userId, callsign, onEnter, onForceJoin, onManage
                           {f.callsign}
                         </span>
                         {f.partyCode && (
-                          <button className="btn-gold btn-sm" disabled={loading}
-                            onClick={() => { setFriendJoinCode(f.partyCode); onEnter('join', f.partyCode) }}>
-                            JOIN
-                          </button>
+                          <>
+                            <span className="mono party-list-mode">{gameModeLabel(friendPartyModes[f.user_id])}</span>
+                            <button className="btn-gold btn-sm" disabled={loading}
+                              onClick={() => { setFriendJoinCode(f.partyCode); onEnter('join', f.partyCode) }}>
+                              JOIN
+                            </button>
+                          </>
                         )}
                         {confirmUnfriend === f.user_id ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>

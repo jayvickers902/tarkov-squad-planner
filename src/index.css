@@ -91,6 +91,8 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .room-header { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--brd); }
 .room-header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .room-header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.room-mode-badge { margin-top: 3px; color: var(--goldtx); font-size: 10px; letter-spacing: .06em; }
+.room-game-mode-notice { margin-bottom: 14px; padding: 9px 12px; color: var(--gold); border: 1px solid var(--golddim); border-left: 3px solid var(--gold); border-radius: 4px; background: rgba(201,168,76,.06); font-size: 11px; line-height: 1.6; }
 .room-mobile-actions { display: flex; align-items: stretch; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .room-mobile-clocks { flex-basis: 100%; }
 .room-mobile-clocks > div { width: 100%; }
@@ -251,6 +253,11 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .quest-mode-options { display: flex; gap: 4px; }
 .quest-mode-options button { font-size: 10px; }
 .quest-mode-hint { margin-left: auto; color: var(--txd); font-size: 9px; }
+.party-mode-picker { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur); }
+.party-mode-picker-label { color: var(--txm); font-size: 10px; }
+.party-mode-options { display: flex; gap: 4px; }
+.party-mode-options button { font-size: 10px; }
+.party-list-mode { color: var(--goldtx); font-size: 9px; letter-spacing: .05em; white-space: nowrap; }
 
 @media (max-width: 560px) {
   .tracker-link-status { align-items: flex-start; flex-direction: column; }

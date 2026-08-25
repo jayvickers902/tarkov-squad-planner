@@ -9,7 +9,7 @@ import AuthScreen from './components/AuthScreen'
 import Lobby from './components/Lobby'
 import Room from './components/Room'
 import { findMember, objectiveProgressKey, progressParts } from './partyMembers'
-import { resolveSetting } from './settings'
+import { normalizeGameMode, resolvePartyMode } from './gameMode'
 import useDialogFocus from './useDialogFocus'
 
 const MyQuests = lazy(() => import('./components/MyQuests'))
@@ -36,13 +36,20 @@ export default function App() {
 
   const { settings: userSettings, loading: settingsLoading, setSetting: setUserSetting } = useSettings(user?.id, profile?.callsign)
 
+  // The party is discovered by useParty, while useParty needs the currently
+  // loaded quest list for joins. Keep the last known party mode as a bootstrap
+  // hint so the quest hook can switch lists without merging modes.
+  const [partyModeHint, setPartyModeHint] = useState(null)
+  const questModeParty = partyModeHint ? { game_mode: partyModeHint } : null
+  const questGameMode = resolvePartyMode(questModeParty, userSettings)
+
   const {
     quests: userQuests, loading: questsLoading,
     addQuest: saveQuest, removeQuest: removeSavedQuest,
     bulkAddQuests,
     toggleImportant, toggleSkipped, clearAllQuests, restoreSnapshot, markCompleted: markQuestCompleted,
     saveObjectiveProgress,
-  } = useUserQuests(user?.id)
+  } = useUserQuests(user?.id, questGameMode)
 
   const { friends, pendingIn, pendingOut, error: friendsError, sendRequest, acceptRequest, removeRequest, removeFriend, refresh: refreshFriends } = useFriends(user?.id, profile?.callsign)
 
@@ -68,12 +75,22 @@ export default function App() {
   })
 
   const isAdmin = profile?.is_admin === true
-  const gameMode = resolveSetting('game_mode', { user: userSettings })
+  const gameMode = resolvePartyMode(party || questModeParty, userSettings)
+  const userGameMode = resolvePartyMode(null, userSettings)
+
+  useEffect(() => {
+    const nextMode = party?.game_mode || null
+    setPartyModeHint(current => current === nextMode ? current : nextMode)
+  }, [party?.game_mode])
+
+  useEffect(() => {
+    setPartyModeHint(null)
+  }, [user?.id])
 
   // Keep the party hook's savedQuestsRef in sync — quests may load after joining
   useEffect(() => {
-    if (party) syncSavedQuests(userQuests)
-  }, [userQuests]) // eslint-disable-line
+    if (party && !questsLoading && questGameMode === gameMode) syncSavedQuests(userQuests)
+  }, [party, userQuests, questsLoading, questGameMode, gameMode]) // eslint-disable-line
 
   const prevProgressRef = useRef(null)
   const pendingCompletedIds = useRef(new Set())
@@ -121,6 +138,7 @@ export default function App() {
       profile.callsign,
       userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id)),
     ).then(joined => {
+      if (joined?.game_mode) setPartyModeHint(normalizeGameMode(joined.game_mode))
       if (joined?.code) navigate({ screen: 'room', code: joined.code }, { replace: true })
     })
   }, [user, profile, authLoading, questsLoading, partyLoading, party, pendingJoinCode, autoJoinFired, navigate, joinParty]) // eslint-disable-line
@@ -298,6 +316,7 @@ export default function App() {
       try {
         await leaveParty()
       } finally {
+        setPartyModeHint(null)
         navigate({ screen: 'lobby' }, { replace: true })
       }
     }
@@ -327,6 +346,7 @@ export default function App() {
         userSettings={userSettings}
         onSetUserSetting={setUserSetting}
         gameMode={gameMode}
+        activeQuestCount={userQuests.length}
         onlineMemberIds={onlineMemberIds}
         presenceReady={presenceReady}
         onSetRaidSettings={setRaidSettings}
@@ -388,7 +408,7 @@ export default function App() {
             aria-hidden={!showPartyAdmin}
           >
             <Suspense fallback={<AppSpinner />}>
-              <AdminKeyManager onBack={() => navigate({ screen: 'room', code: party.code }, { replace: true })} />
+              <AdminKeyManager gameMode={gameMode} onBack={() => navigate({ screen: 'room', code: party.code }, { replace: true })} />
             </Suspense>
           </div>
         )}
@@ -435,25 +455,35 @@ export default function App() {
   if (route.screen === 'admin' && !route.code && isAdmin) {
     return (
       <Suspense fallback={<AppSpinner />}>
-        <AdminKeyManager onBack={() => navigate({ screen: 'lobby' }, { replace: true })} />
+        <AdminKeyManager gameMode={gameMode} onBack={() => navigate({ screen: 'lobby' }, { replace: true })} />
       </Suspense>
     )
   }
 
-  async function handleEnter(mode, code) {
+  async function handleEnter(mode, code, requestedGameMode) {
     const savedQuests = userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id))
-    if (mode === 'create') await createParty(profile.callsign, savedQuests)
-    else await joinParty(code, profile.callsign, savedQuests)
+    if (mode === 'create') {
+      const partyMode = normalizeGameMode(requestedGameMode || userGameMode)
+      const created = await createParty(profile.callsign, partyMode, savedQuests)
+      if (created?.game_mode) setPartyModeHint(normalizeGameMode(created.game_mode))
+      return created
+    }
+    const joined = await joinParty(code, profile.callsign, savedQuests)
+    if (joined?.game_mode) setPartyModeHint(normalizeGameMode(joined.game_mode))
+    return joined
   }
 
   async function handleForceJoin(code) {
-    await forceJoinParty(code, profile.callsign, userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id)))
+    const joined = await forceJoinParty(code, profile.callsign, userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id)))
+    if (joined?.game_mode) setPartyModeHint(normalizeGameMode(joined.game_mode))
+    return joined
   }
 
   return (
     <Lobby
       userId={user.id}
       callsign={profile.callsign}
+      userGameMode={userGameMode}
       onEnter={handleEnter}
       onForceJoin={handleForceJoin}
       onManageQuests={() => navigate({ screen: 'quests' })}

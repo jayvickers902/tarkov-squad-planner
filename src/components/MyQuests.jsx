@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useTasks } from '../useTarkov'
 import { FEATURED } from '../constants'
-import { resolveSetting } from '../settings'
 import QuestScanner from './QuestScanner'
 import CatchUp from './CatchUp'
 import TrackerLink from './TrackerLink'
+import { GAME_MODES, gameModeLabel, resolvePartyMode } from '../gameMode'
 
 // Small Kappa badge — reused in search results and saved list
 function KappaBadge() {
@@ -44,17 +44,31 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
     })
   }, [userQuests])
 
-  const snapKey = userId ? `tarkov_quests_${userId}` : null
-  const [snapshot, setSnapshot] = useState(() => {
-    if (!snapKey) return null
-    try { return JSON.parse(localStorage.getItem(snapKey)) } catch { return null }
-  })
+  const gameMode = passedGameMode || resolvePartyMode(null, userSettings)
+  const canChangeGameMode = !inParty && !!onSetUserSetting
+
+  const snapKey = userId ? `tarkov_quests_${userId}_${gameMode}` : null
+  // Snapshots predating mode scoping were saved unsuffixed, and every quest row
+  // they hold backfilled to regular — so surface them there and nowhere else.
+  const legacySnapKey = userId && gameMode === 'regular' ? `tarkov_quests_${userId}` : null
+  const [snapshot, setSnapshot] = useState(null)
+  useEffect(() => {
+    if (!snapKey) {
+      setSnapshot(null)
+      return
+    }
+    try {
+      const stored = localStorage.getItem(snapKey)
+        || (legacySnapKey ? localStorage.getItem(legacySnapKey) : null)
+      setSnapshot(stored ? JSON.parse(stored) : null)
+    } catch { setSnapshot(null) }
+  }, [snapKey, legacySnapKey])
   const [confirmRestore, setConfirmRestore] = useState(false)
   const [restoring, setRestoring] = useState(false)
 
   function handleSaveSnapshot() {
     if (!snapKey) return
-    const snap = { savedAt: new Date().toISOString(), quests: userQuests }
+    const snap = { savedAt: new Date().toISOString(), gameMode, quests: userQuests }
     localStorage.setItem(snapKey, JSON.stringify(snap))
     setSnapshot(snap)
   }
@@ -65,8 +79,6 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
     setConfirmRestore(false)
     setRestoring(false)
   }
-
-  const gameMode = passedGameMode || resolveSetting('game_mode', { user: userSettings })
 
   // Load tasks for the currently selected search map
   const { tasks, loading: tasksLoading } = useTasks(searchMap === 'any' ? null : searchMap, gameMode)
@@ -225,26 +237,22 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
           onMarkCompleted={onMarkCompleted}
           gameMode={gameMode}
           userSettings={userSettings}
-          onSetGameMode={mode => onSetUserSetting?.('game_mode', mode)}
+          onSetGameMode={canChangeGameMode ? mode => onSetUserSetting('game_mode', mode) : undefined}
         />
       </div>
 
       <div className="quest-mode-row">
         <span className="mono quest-mode-label">GAME MODE</span>
         <div className="quest-mode-options" role="group" aria-label="Game mode">
-          {[
-            ['regular', 'REGULAR'],
-            ['pve', 'PVE'],
-            ['pvp-season', 'SEASON'],
-          ].map(([value, label]) => (
+          {GAME_MODES.map(value => (
             <button
               key={value}
               className={gameMode === value ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
               onClick={() => onSetUserSetting?.('game_mode', value)}
-              disabled={!onSetUserSetting}
+              disabled={!canChangeGameMode}
               aria-pressed={gameMode === value}
             >
-              {label}
+              {gameModeLabel(value)}
             </button>
           ))}
         </div>

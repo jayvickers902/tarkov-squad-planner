@@ -1,0 +1,114 @@
+import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { renderHook, waitFor, act } from '@testing-library/react'
+import { GAME_MODES, gameModeLabel, normalizeGameMode, resolvePartyMode } from './gameMode'
+import { useUserQuests } from './useUserQuests'
+
+const db = vi.hoisted(() => ({
+  rows: [],
+  from: vi.fn(),
+}))
+
+vi.mock('./supabase', () => ({ supabase: { from: db.from } }))
+
+function createQueryBuilder() {
+  const filters = {}
+  let operation = 'select'
+  let payload = null
+  const matches = row => Object.entries(filters).every(([key, value]) => row[key] === value)
+  function applyMutation() {
+    if (operation === 'upsert') {
+      for (const row of payload) {
+        const existing = db.rows.findIndex(entry => entry.user_id === row.user_id && entry.game_mode === row.game_mode && entry.quest_id === row.quest_id)
+        if (existing === -1) db.rows.push({ ...row, id: `${row.game_mode}-${row.quest_id}` })
+        else db.rows[existing] = { ...db.rows[existing], ...row }
+      }
+    } else if (operation === 'insert') {
+      db.rows.push(...payload.map(row => ({ ...row, id: `${row.game_mode}-${row.quest_id}` })))
+    } else if (operation === 'delete') {
+      db.rows = db.rows.filter(row => !matches(row))
+    } else if (operation === 'update') {
+      db.rows = db.rows.map(row => matches(row) ? { ...row, ...payload } : row)
+    }
+  }
+  const builder = {
+    select() { return builder },
+    eq(column, value) { filters[column] = value; return builder },
+    order() { return builder },
+    upsert(next) { operation = 'upsert'; payload = Array.isArray(next) ? next : [next]; return builder },
+    insert(next) { operation = 'insert'; payload = next; return builder },
+    update(next) { operation = 'update'; payload = next; return builder },
+    delete() { operation = 'delete'; return builder },
+    single() { applyMutation(); return Promise.resolve({ data: payload[0], error: null }) },
+    then(resolve, reject) {
+      try {
+        applyMutation()
+        return Promise.resolve({ data: db.rows.filter(matches), error: null }).then(resolve, reject)
+      } catch (error) {
+        return Promise.reject(error).then(resolve, reject)
+      }
+    },
+  }
+  return builder
+}
+
+db.from.mockImplementation(() => createQueryBuilder())
+
+describe('game mode contract', () => {
+  beforeEach(() => {
+    db.rows = [{ user_id: 'user-1', game_mode: 'regular', quest_id: 'regular-1', quest_name: 'Regular quest', completed: false }]
+  })
+
+  it('round-trips every mode through its display label', () => {
+    expect(GAME_MODES.map(mode => [mode, gameModeLabel(mode)])).toEqual([
+      ['regular', 'REGULAR'],
+      ['pve', 'PVE'],
+      ['pvp-season', 'SEASON'],
+    ])
+  })
+
+  it('normalizes garbage and null safely to regular', () => {
+    for (const value of [null, undefined, '', 'garbage', {}, 42]) {
+      expect(() => normalizeGameMode(value)).not.toThrow()
+      expect(normalizeGameMode(value)).toBe('regular')
+    }
+  })
+
+  it("lets a party's mode beat the user's setting", () => {
+    expect(resolvePartyMode({ game_mode: 'pve' }, { game_mode: 'pvp-season' })).toBe('pve')
+  })
+
+  it("uses the user's setting when there is no party", () => {
+    expect(resolvePartyMode(null, { game_mode: 'pvp-season' })).toBe('pvp-season')
+  })
+
+  it("falls back to regular when neither source has a mode", () => {
+    expect(resolvePartyMode(null, null)).toBe('regular')
+  })
+
+  it('switches lists without carrying quests across modes', async () => {
+    const { result, rerender } = renderHook(({ mode }) => useUserQuests('user-1', mode), {
+      initialProps: { mode: 'regular' },
+    })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => { await result.current.addQuest({ id: 'regular-2', name: 'Another regular quest' }) })
+    expect(result.current.quests.map(quest => quest.quest_id)).toEqual(['regular-1', 'regular-2'])
+
+    rerender({ mode: 'pve' })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.quests).toEqual([])
+
+    rerender({ mode: 'regular' })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.quests.map(quest => quest.quest_id)).toEqual(['regular-1', 'regular-2'])
+  })
+
+  it('clears only the active mode', async () => {
+    db.rows.push({ user_id: 'user-1', game_mode: 'pve', quest_id: 'pve-1', quest_name: 'PVE quest', completed: false })
+    const { result } = renderHook(() => useUserQuests('user-1', 'pve'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => { await result.current.clearAllQuests() })
+
+    expect(db.rows.filter(row => row.game_mode === 'pve')).toEqual([])
+    expect(db.rows.filter(row => row.game_mode === 'regular').map(row => row.quest_id)).toEqual(['regular-1'])
+  })
+})
