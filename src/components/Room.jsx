@@ -144,7 +144,7 @@ function hasRaidWork(progress) {
   return Object.keys(progress || {}).some(key => key !== '__raid_start__')
 }
 
-export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onCharacterSnapshot, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid, onOpenRaid, onCloseRaid }) {
+export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onCharacterSnapshot, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, gameMode = 'regular', onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid, onOpenRaid, onCloseRaid }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
@@ -207,13 +207,13 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
     setAddBusy(false)
   }
 
-  const { maps, loading: loadingMaps } = useMaps()
-  const { tasks: allTasks, loading: loadingTasks } = useTasks(null)
+  const { maps, loading: loadingMaps } = useMaps(gameMode)
+  const { tasks: allTasks, loading: loadingTasks } = useTasks(null, gameMode)
   const tasks = useMemo(
     () => allTasks.filter(task => !task.map || task.map?.normalizedName === party.map_norm),
     [allTasks, party.map_norm],
   )
-  const { extracts: mapExtracts } = useExtracts(party.map_norm)
+  const { extracts: mapExtracts } = useExtracts(party.map_norm, gameMode)
   const isLeader = party.leader_id === myUserId
   const settingLayers = { raid: party.settings || {}, unit: null, user: userSettings }
   const pingTtlMs = Number(resolveSetting('ping_ttl_ms', settingLayers))

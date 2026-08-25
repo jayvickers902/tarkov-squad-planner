@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useTasks } from '../useTarkov'
 import { FEATURED } from '../constants'
+import { resolveSetting } from '../settings'
 import QuestScanner from './QuestScanner'
 import CatchUp from './CatchUp'
+import TrackerLink from './TrackerLink'
 
 // Small Kappa badge — reused in search results and saved list
 function KappaBadge() {
@@ -22,7 +24,7 @@ const MAP_NAMES = {
   'ground-zero': 'Ground Zero', 'the-lab': 'The Lab',
 }
 
-export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onRestore, onDone, inParty }) {
+export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onRestore, onDone, inParty, userSettings = {}, onSetUserSetting, onMarkCompleted, gameMode: passedGameMode = null }) {
   const [mapFilter, setMapFilter]     = useState('all')
   const [searchMap, setSearchMap]     = useState('any')
   const [searchQ, setSearchQ]         = useState('')
@@ -64,10 +66,12 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
     setRestoring(false)
   }
 
+  const gameMode = passedGameMode || resolveSetting('game_mode', { user: userSettings })
+
   // Load tasks for the currently selected search map
-  const { tasks, loading: tasksLoading } = useTasks(searchMap === 'any' ? null : searchMap)
+  const { tasks, loading: tasksLoading } = useTasks(searchMap === 'any' ? null : searchMap, gameMode)
   // Always load all tasks for kappa lookup (uses module-level cache — no extra fetch)
-  const { tasks: allTasks } = useTasks(null)
+  const { tasks: allTasks } = useTasks(null, gameMode)
   const kappaIds = useMemo(() => new Set(allTasks.filter(t => t.kappaRequired).map(t => t.id)), [allTasks])
 
   const searchHits = useMemo(() => {
@@ -213,6 +217,38 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
         <QuestScanner allTasks={allTasks} userQuests={userQuests} onAdd={onAdd} />
         <CatchUp allTasks={allTasks} userQuests={userQuests} onBulkAdd={onBulkAdd} userId={userId} />
+        <TrackerLink
+          userId={userId}
+          allTasks={allTasks}
+          userQuests={userQuests}
+          onBulkAdd={onBulkAdd}
+          onMarkCompleted={onMarkCompleted}
+          gameMode={gameMode}
+          userSettings={userSettings}
+          onSetGameMode={mode => onSetUserSetting?.('game_mode', mode)}
+        />
+      </div>
+
+      <div className="quest-mode-row">
+        <span className="mono quest-mode-label">GAME MODE</span>
+        <div className="quest-mode-options" role="group" aria-label="Game mode">
+          {[
+            ['regular', 'REGULAR'],
+            ['pve', 'PVE'],
+            ['pvp-season', 'SEASON'],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              className={gameMode === value ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+              onClick={() => onSetUserSetting?.('game_mode', value)}
+              disabled={!onSetUserSetting}
+              aria-pressed={gameMode === value}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="mono quest-mode-hint">TASK DATA · {gameMode.toUpperCase()}</span>
       </div>
 
       {/* Add quest section */}

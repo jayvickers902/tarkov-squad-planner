@@ -108,6 +108,15 @@ user UUID.
   - Key query uses `types: [keys]` (plural, not `key`)
 - **Map images** from `raw.githubusercontent.com/the-hideout/tarkov-dev/main/public/maps`
 
+## TarkovTracker link
+
+The TarkovTracker integration is a read-only Vercel proxy at `/api/tracker`; it verifies the
+caller's Supabase JWT before reading or writing anything. The tracker token lives only in the
+server-side `user_integrations` row and is never selected by the browser or returned to it.
+Its `PVP_`, `PVE_`, or `SZN_` prefix determines regular, PVE, or Season game mode respectively.
+Vercel must have `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set before deploy or linking
+will remain unavailable. No write path to TarkovTracker exists yet.
+
 The REST dataset supports `regular`, `pve`, and `pvp-season`. The active game mode is a resolved setting rather than a module constant. Prebaked JSON is only a valid floor for the mode recorded in its stamp, and another mode must wait for its REST response.
 
 ## Conventions

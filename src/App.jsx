@@ -9,6 +9,7 @@ import AuthScreen from './components/AuthScreen'
 import Lobby from './components/Lobby'
 import Room from './components/Room'
 import { findMember, objectiveProgressKey, progressParts } from './partyMembers'
+import { resolveSetting } from './settings'
 import useDialogFocus from './useDialogFocus'
 
 const MyQuests = lazy(() => import('./components/MyQuests'))
@@ -67,6 +68,7 @@ export default function App() {
   })
 
   const isAdmin = profile?.is_admin === true
+  const gameMode = resolveSetting('game_mode', { user: userSettings })
 
   // Keep the party hook's savedQuestsRef in sync — quests may load after joining
   useEffect(() => {
@@ -324,6 +326,7 @@ export default function App() {
         userObjProgress={userObjProgress}
         userSettings={userSettings}
         onSetUserSetting={setUserSetting}
+        gameMode={gameMode}
         onlineMemberIds={onlineMemberIds}
         presenceReady={presenceReady}
         onSetRaidSettings={setRaidSettings}
@@ -368,6 +371,10 @@ export default function App() {
                 onToggleSkipped={toggleSkipped}
                 onClearAll={clearAllQuests}
                 onRestore={restoreSnapshot}
+                onMarkCompleted={markQuestCompleted}
+                userSettings={userSettings}
+                onSetUserSetting={setUserSetting}
+                gameMode={gameMode}
                 onDone={() => navigate({ screen: 'room', code: party.code }, { replace: true })}
                 inParty={showPartyQuests}
               />
@@ -415,6 +422,10 @@ export default function App() {
           onToggleSkipped={toggleSkipped}
           onClearAll={clearAllQuests}
           onRestore={restoreSnapshot}
+          onMarkCompleted={markQuestCompleted}
+          userSettings={userSettings}
+          onSetUserSetting={setUserSetting}
+          gameMode={gameMode}
           onDone={() => navigate({ screen: 'lobby' }, { replace: true })}
         />
       </Suspense>
