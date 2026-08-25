@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildObjectiveAssignments,
+  capsForGoal,
   buildPackingManifest,
   buildPlanRoute,
   scoreSquadMaps,
@@ -208,11 +209,107 @@ describe('raid planning engine', () => {
     expect(assignment.shareabilitySource).toBe('override')
   })
 
-  it('keeps absolute scores stable when a better map is added', () => {
-    const one = scoreSquadMaps(baseInput({ maps: [maps[0]] }))[0]
-    const two = scoreSquadMaps(baseInput({ maps: [maps[0], { id: 'better', name: 'Better', normalizedName: 'better' }] }))[0]
-    expect(two.score).toBe(one.score)
-    expect(two.components).toEqual(one.components)
+  // The map added here must genuinely outscore Customs. An empty second map does
+  // not discriminate: under relative normalisation the best map is still Customs
+  // both times, so it still lands on the cap and the assertion holds anyway.
+  it('keeps absolute scores stable when a genuinely better map is added', () => {
+    const richMembers = ['u-a', 'u-b', 'u-c', 'u-d'].map(userId => ({
+      user_id: userId,
+      callsign: userId.toUpperCase(),
+      quests_all: [{ id: 'q-rich-one', important: true }, { id: 'q-rich-two', important: true }],
+    }))
+    const richTasks = ['q-rich-one', 'q-rich-two'].flatMap(id => [{
+      id,
+      name: id,
+      map: { normalizedName: 'rich' },
+      neededKeys: [],
+      objectives: Array.from({ length: 6 }, (unused, index) => ({
+        id: `${id}-o${index}`,
+        type: 'visit',
+        description: 'Rich objective',
+        maps: [{ normalizedName: 'rich' }],
+        zones: [{ id: `rich-${index}`, position: { x: index, y: 0, z: index }, map: { normalizedName: 'rich' } }],
+      })),
+    }])
+    const richMap = { id: 'rich-id', name: 'Rich', normalizedName: 'rich' }
+
+    const alone = scoreSquadMaps(baseInput({ maps: [maps[0]] }))[0]
+    const withRich = scoreSquadMaps(baseInput({
+      maps: [maps[0], richMap],
+      tasks: [...tasks, ...richTasks],
+      members: [...members, ...richMembers],
+    }))
+
+    const rich = withRich.find(result => result.map.normalizedName === 'rich')
+    const customs = withRich.find(result => result.map.normalizedName === 'customs')
+
+    // Guard the guard: if the added map does not actually outscore Customs the
+    // test proves nothing, so assert the premise before the invariant.
+    expect(rich.score).toBeGreaterThan(alone.score)
+    expect(customs.score).toBe(alone.score)
+    expect(customs.components).toEqual(alone.components)
+  })
+
+  it('shares one fixed component budget across every goal preset', () => {
+    const budget = Object.values(capsForGoal('quest-push')).reduce((total, cap) => total + cap, 0)
+    for (const preset of ['quest-push', 'squad-overlap', 'money-run', 'boss-hunt']) {
+      const caps = capsForGoal(preset)
+      const total = Object.values(caps).reduce((sum, cap) => sum + cap, 0)
+      expect(total).toBeCloseTo(budget, 6)
+    }
+    // A preset must re-weight, not inflate: no preset may reach 100 more easily
+    // than quest-push, because the clamp would flatten the top of the ranking.
+    expect(capsForGoal('squad-overlap').overlap).toBeGreaterThan(capsForGoal('quest-push').overlap)
+    expect(capsForGoal('squad-overlap').coverage).toBeLessThan(capsForGoal('quest-push').coverage)
+    expect(capsForGoal('money-run').opportunity).toBeGreaterThan(capsForGoal('quest-push').opportunity)
+  })
+
+  it('names only the members actually inside an overlap', () => {
+    const zone = (x, z) => ({ id: 'z', position: { x, z }, map: { normalizedName: 'customs' } })
+    const overlapTasks = [
+      {
+        id: 'q-shared',
+        name: 'Shared',
+        map: { normalizedName: 'customs' },
+        neededKeys: [],
+        objectives: [{ id: 'o1', type: 'visit', maps: [{ normalizedName: 'customs' }], zones: [zone(100, 200)] }],
+      },
+      {
+        id: 'q-lonely',
+        name: 'Lonely',
+        map: { normalizedName: 'customs' },
+        neededKeys: [],
+        objectives: [{ id: 'o9', type: 'visit', maps: [{ normalizedName: 'customs' }], zones: [zone(900, 900)] }],
+      },
+    ]
+    const result = scoreSquadMaps(baseInput({
+      maps: [maps[0]],
+      tasks: overlapTasks,
+      members: [
+        { user_id: 'u-a', callsign: 'A', quests_all: [{ id: 'q-shared' }] },
+        { user_id: 'u-b', callsign: 'B', quests_all: [{ id: 'q-shared' }] },
+        { user_id: 'u-c', callsign: 'C', quests_all: [{ id: 'q-lonely' }] },
+      ],
+    }))[0]
+    const exact = result.reasons.find(item => item.code === 'overlap.exact-position')
+    expect(exact.memberIds).toEqual(['u-a', 'u-b'])
+  })
+
+  it('reports medium confidence when quest data is complete but auxiliary data is not', () => {
+    const complete = scoreSquadMaps(baseInput())[0]
+    expect(complete.confidence).toBe('high')
+
+    const noExtras = scoreSquadMaps(baseInput({ mapExtras: {} }))
+      .find(result => result.map.normalizedName === 'customs')
+    expect(noExtras.confidence).toBe('medium')
+
+    const noClaims = scoreSquadMaps(baseInput({ keyClaims: {} }))
+      .find(result => result.map.normalizedName === 'customs')
+    expect(noClaims.confidence).toBe('medium')
+
+    // An incomplete quest list is the one thing that still drops to low.
+    const incomplete = scoreSquadMaps(baseInput({ members: [{ user_id: 'u-a' }] }))[0]
+    expect(incomplete.confidence).toBe('low')
   })
 
   it('emits a human-readable reason for every nonzero score component', () => {

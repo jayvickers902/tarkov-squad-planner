@@ -15,11 +15,31 @@ const BASE_CAPS = {
   opportunity: 10,
 }
 
-const GOAL_CAPS = {
-  'quest-push': { ...BASE_CAPS },
-  'squad-overlap': { ...BASE_CAPS, overlap: 30, carry: 25 },
-  'money-run': { ...BASE_CAPS, opportunity: 25 },
-  'boss-hunt': { ...BASE_CAPS, opportunity: 25 },
+// Confidence contributes its own 5 points outside the goal-weighted components,
+// so the five caps below always share the same fixed budget.
+const CONFIDENCE_CAP = 5
+const COMPONENT_BUDGET = Object.values(BASE_CAPS).reduce((total, cap) => total + cap, 0)
+
+// A preset expresses *relative* emphasis, never a bigger total. Raising a cap
+// without lowering the others would push a strong map past 100, where the clamp
+// flattens the top of the ranking — the one place ordering matters most.
+const GOAL_EMPHASIS = {
+  'quest-push': {},
+  'squad-overlap': { coverage: 0.85, overlap: 1.6, carry: 1.7 },
+  'money-run': { overlap: 0.7, carry: 0.7, opportunity: 3 },
+  'boss-hunt': { coverage: 0.85, overlap: 0.7, carry: 0.7, opportunity: 3.2 },
+}
+
+// Caps are deliberately left unrounded. Only the component values derived from
+// them are rounded, so every preset sums to exactly COMPONENT_BUDGET.
+export function capsForGoal(preset) {
+  const emphasis = GOAL_EMPHASIS[preset] || GOAL_EMPHASIS['quest-push']
+  const weighted = {}
+  for (const [key, cap] of Object.entries(BASE_CAPS)) weighted[key] = cap * (emphasis[key] ?? 1)
+  const total = Object.values(weighted).reduce((sum, value) => sum + value, 0)
+  const caps = {}
+  for (const [key, value] of Object.entries(weighted)) caps[key] = value / total * COMPONENT_BUDGET
+  return caps
 }
 
 const RED_REBEL_GEAR = [
@@ -253,7 +273,7 @@ function collectFacts({ mapNorm: targetMap, tasks, members, progress, overrides 
 
 function normalizeGoal(goal) {
   const value = typeof goal === 'string' ? goal : goal?.preset || goal?.goal
-  return GOAL_CAPS[value] ? value : 'quest-push'
+  return GOAL_EMPHASIS[value] ? value : 'quest-push'
 }
 
 function goalObject(goal) {
@@ -388,10 +408,18 @@ function confidenceFor({ maps, tasks, members, facts, mapExtras, targetMap, keyC
     .some(task => !Array.isArray(task.objectives) || task.objectives.length === 0))
   if (hasUnknownTask || hasMissingObjectives) return 'low'
 
+  // A map we have nothing to say about earns no confidence points, however
+  // complete the inputs behind it are.
+  if (!facts.length) return 'low'
+
+  // Quest data is the primary axis and it is complete by this point. The
+  // auxiliary inputs — map opportunity data and manual key claims — separate a
+  // confident answer from a usable one. Before the brief wires either of them up,
+  // a complete quest list is still worth more than an incomplete one, so this
+  // must not collapse back to 'low'.
   const extras = mapExtras && typeof mapExtras === 'object' ? mapExtras[targetMap] : null
   const claims = normalizeClaims(keyClaims)
-  if (!extras || !claims.known || !facts.length) return 'low'
-  return 'high'
+  return extras && claims.known ? 'high' : 'medium'
 }
 
 function extractOpportunity(extra, preset) {
@@ -446,7 +474,7 @@ export function scoreSquadMaps({
 } = {}) {
   const normalizedMaps = array(maps).map(mapLabel).filter(map => map.normalizedName)
   const preset = normalizeGoal(goal)
-  const caps = GOAL_CAPS[preset]
+  const caps = capsForGoal(preset)
   const results = normalizedMaps.map(map => {
     const facts = collectFacts({ mapNorm: map.normalizedName, tasks, members, progress, overrides })
     const memberMap = new Map()
@@ -454,17 +482,29 @@ export function scoreSquadMaps({
 
     let exactPairs = 0
     let sameMapPairs = 0
+    // Only the members of a counted pair may be named in that reason. Attributing
+    // an overlap to every member on the map reads as a claim about them and is
+    // exactly the kind of unexplainable number the scorer exists to avoid.
+    const exactMembers = new Set()
+    const sameMapMembers = new Set()
     for (let left = 0; left < facts.length; left += 1) {
       for (let right = left + 1; right < facts.length; right += 1) {
         const a = facts[left]
         const b = facts[right]
         if (a.beneficiaryUserId === b.beneficiaryUserId) continue
         const exact = a.pointKeys.some(key => b.pointKeys.includes(key))
-        if (exact) exactPairs += 1
+        if (exact) {
+          exactPairs += 1
+          exactMembers.add(a.beneficiaryUserId)
+          exactMembers.add(b.beneficiaryUserId)
         // If both objectives have known, different positions, they are not an
         // overlap. Same-map credit is reserved for objectives whose location is
         // genuinely only map-level; synthetic possibleLocations ids never enter.
-        else if (!a.hasPosition || !b.hasPosition) sameMapPairs += 1
+        } else if (!a.hasPosition || !b.hasPosition) {
+          sameMapPairs += 1
+          sameMapMembers.add(a.beneficiaryUserId)
+          sameMapMembers.add(b.beneficiaryUserId)
+        }
       }
     }
     const overlapPoints = exactPairs * 2 + sameMapPairs
@@ -472,7 +512,7 @@ export function scoreSquadMaps({
     const priorityFacts = facts.filter(fact => isPriority(fact, goal))
     const blockers = buildBlockers(facts, map.normalizedName, keyClaims)
     const quality = confidenceFor({ maps: normalizedMaps, tasks, members, facts, mapExtras, targetMap: map.normalizedName, keyClaims })
-    const confidencePoints = quality === 'high' ? 5 : quality === 'medium' ? 2 : 0
+    const confidencePoints = quality === 'high' ? CONFIDENCE_CAP : quality === 'medium' ? 2 : 0
     const opportunity = extractOpportunity(mapExtras?.[map.normalizedName], preset)
 
     const components = {
@@ -487,8 +527,8 @@ export function scoreSquadMaps({
     if (components.coverage !== 0) {
       reasons.push(reason('coverage.objectives', `${facts.length} uncompleted objective${facts.length === 1 ? '' : 's'} on this map`, facts.length, facts.map(fact => fact.beneficiaryUserId)))
     }
-    if (exactPairs) reasons.push(reason('overlap.exact-position', `${exactPairs} exact-position overlap${exactPairs === 1 ? '' : 's'}`, exactPairs * 2, facts.flatMap(fact => [fact.beneficiaryUserId])))
-    if (sameMapPairs) reasons.push(reason('overlap.same-map', `${sameMapPairs} same-map overlap${sameMapPairs === 1 ? '' : 's'}`, sameMapPairs, facts.flatMap(fact => [fact.beneficiaryUserId])))
+    if (exactPairs) reasons.push(reason('overlap.exact-position', `${exactPairs} exact-position overlap${exactPairs === 1 ? '' : 's'}`, exactPairs * 2, [...exactMembers]))
+    if (sameMapPairs) reasons.push(reason('overlap.same-map', `${sameMapPairs} same-map overlap${sameMapPairs === 1 ? '' : 's'}`, sameMapPairs, [...sameMapMembers]))
     if (carryFacts.length) reasons.push(reason('carry.squad-objectives', `${carryFacts.length} squad-shareable objective${carryFacts.length === 1 ? '' : 's'}`, carryFacts.length, carryFacts.map(fact => fact.beneficiaryUserId)))
     if (priorityFacts.length) reasons.push(reason('priority.marked', `${priorityFacts.length} priority objective${priorityFacts.length === 1 ? '' : 's'}`, priorityFacts.length, priorityFacts.map(fact => fact.beneficiaryUserId)))
     reasons.push(...opportunity.reasons)
