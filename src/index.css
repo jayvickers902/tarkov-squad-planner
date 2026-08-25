@@ -560,6 +560,7 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .obj-row-quest { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-family: 'Rajdhani', sans-serif; font-weight: 600; }
 .obj-row-separator { color: var(--txd); flex: 0 0 auto; }
 .obj-row-action { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txm); font-size: 10px; }
+.quest-share-badge { flex: 0 0 auto; color: var(--grn); border: 1px solid rgba(102,183,120,.45); border-radius: 2px; padding: 1px 4px; font-size: 9px; letter-spacing: .06em; line-height: 1.2; }
 .obj-row-distance { margin-left: auto; flex: 0 0 auto; color: var(--goldtx); font-size: 9px; white-space: nowrap; }
 .obj-row-no-location .obj-row-distance { color: var(--txd); }
 .raid-rail-drag-handle { display: none; }

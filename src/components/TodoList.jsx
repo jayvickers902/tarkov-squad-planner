@@ -1,8 +1,9 @@
 import { useState, useMemo, useCallback, memo } from 'react'
 import { normalizeMembers, objectiveProgressKey, questDoneKey } from '../partyMembers'
-import { objectiveHasMapLocation } from '../tarkovObjectives'
+import { objectiveHasMapLocation, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
+import { classifyObjective, classifyTask } from '../questShare'
+import { useQuestShareOverrides } from '../useQuestShareOverrides'
 
-const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
 function toAntifandom(url) {
   if (!url) return null
@@ -57,8 +58,11 @@ function objectiveOrderKey(taskId, objectiveId) {
 const QuestCard = memo(function QuestCard({
   task, owners, objs, doneCount, starred, allDone, completed, canAct, dimmed,
   isOpen, onToggleExpand, onToggleStar, onSkip, members, progress, memberIdsByName,
+  overrides,
 }) {
   const pct = objs.length ? (doneCount / objs.length) * 100 : 0
+  const taskShare = classifyTask(task, overrides)
+  const loyalty = traderGateLabel(task)
 
   return (
     <div style={{
@@ -108,12 +112,16 @@ const QuestCard = memo(function QuestCard({
                 color: 'var(--gold)', letterSpacing: '.06em',
               }}>κ</span>
             )}
+            {taskShare === 'shared' && (
+              <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
             {owners.map(o => <MemberPill key={o} name={o} allMembers={members} />)}
             {task.trader?.imageLink && (
               <img src={task.trader.imageLink} alt={task.trader.name} title={task.trader.name} style={{ width: 18, height: 18, borderRadius: 2, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--brd2)', opacity: completed || allDone ? 0.4 : 0.8 }} />
             )}
+            {loyalty && <span className="mono" style={{ fontSize: 9, color: 'var(--txm)' }}>{loyalty}</span>}
           </div>
         </div>
 
@@ -199,8 +207,11 @@ const QuestCard = memo(function QuestCard({
                   background: 'var(--sur)', border: '1px solid var(--brd)',
                   borderRadius: 2, padding: '1px 5px',
                 }}>
-                  {TYPE_LABEL[obj.type] || obj.type?.toUpperCase() || '?'}
+                  {objectiveTypeLabel(obj.type)}
                 </span>
+                {classifyObjective(obj, task, overrides) === 'squad' && (
+                  <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
+                )}
               </div>
             )
           })}
@@ -220,6 +231,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
   const [dragObjKey, setDragObjKey]     = useState(null)
   const [dragOverObjKey, setDragOverObjKey] = useState(null)
   const memberRows = normalizeMembers(memberQuests)
+  const { overrides } = useQuestShareOverrides()
   const members = memberRows.map(member => member.callsign)
   const memberIdsByName = new Map(memberRows.map(member => [member.callsign, member.user_id]))
 
@@ -376,6 +388,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
     members,
     progress,
     memberIdsByName,
+    overrides,
   }
 
   return (
@@ -558,8 +571,11 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
                     background: 'var(--sur)', border: '1px solid var(--brd)',
                     borderRadius: 2, padding: '1px 5px',
                   }}>
-                    {TYPE_LABEL[row.obj.type] || row.obj.type?.toUpperCase() || '?'}
+                    {objectiveTypeLabel(row.obj.type)}
                   </span>
+                  {classifyObjective(row.obj, row.task, overrides) === 'squad' && (
+                    <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
+                  )}
 
                   {/* Member completion chips */}
                   <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>

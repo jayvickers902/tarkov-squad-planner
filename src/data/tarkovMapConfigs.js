@@ -104,4 +104,20 @@ export const TARKOV_MAP_CONFIGS = {
     svgLayer: null,
     tilePath: 'https://assets.tarkov.dev/maps/labs_v4/1st/{z}/{x}/{y}.png',
   },
+  icebreaker: {
+    transform: [2, 125, 3.5, 91],
+    coordinateRotation: 180,
+    bounds: [[77, -64.5], [-65.5, 67.4]],
+    minZoom: 1,
+    maxZoom: 5,
+    tilePath: 'https://assets.tarkov.dev/maps/icebreaker/06_infirmary/{z}/{x}/{y}.png',
+  },
+  'the-labyrinth': {
+    transform: [2.115, 85.5, 2.115, 128],
+    coordinateRotation: 270,
+    bounds: [[-52, -37], [53, 76]],
+    minZoom: 1,
+    maxZoom: 6,
+    tilePath: 'https://assets.tarkov.dev/maps/labyrinth/main/{z}/{x}/{y}.png',
+  },
 }

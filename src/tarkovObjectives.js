@@ -5,6 +5,49 @@ export const USER_COLORS = [
   '#c45de8', '#5de8d4', '#e8e85d', '#e85da8',
 ]
 
+// Display labels for tarkov.dev objective types. Upstream ships camelCase
+// identifiers, so any type missing from this table leaks to the reader as
+// "GIVEITEM" or "BUILDWEAPON" — keep it covering every type the API returns.
+// It lives here rather than in the three panels that render it because those
+// copies had already drifted apart once.
+const OBJECTIVE_TYPE_LABEL = {
+  visit: 'LOCATE',        findItem: 'FIND',        findQuestItem: 'FIND',
+  giveItem: 'HAND OVER',  giveQuestItem: 'HAND OVER',
+  mark: 'MARK',           shoot: 'KILL',           extract: 'EXTRACT',
+  plantItem: 'PLANT',     plantQuestItem: 'PLANT', buildWeapon: 'BUILD',
+  useItem: 'USE',         sellItem: 'SELL',        skill: 'SKILL',
+  traderLevel: 'LOYALTY', traderStanding: 'REP',   taskStatus: 'PREREQ',
+  experience: 'XP',       globalVariable: 'EVENT', dialogue: 'TALK',
+}
+
+export function objectiveTypeLabel(type) {
+  if (OBJECTIVE_TYPE_LABEL[type]) return OBJECTIVE_TYPE_LABEL[type]
+  return typeof type === 'string' && type ? type.toUpperCase() : '?'
+}
+
+/**
+ * The trader gate a task sits behind, as one readable string, or null.
+ *
+ * Patch 1.1 moved 88 tasks off the quest chain and onto trader loyalty alone, so
+ * this is often the only thing standing between a player and the task. Every
+ * requirement is rendered, not just the first: four tasks upstream carry three
+ * separate trader gates, and showing one of them reads as "you need Jaeger LL2"
+ * when you actually need all three.
+ */
+export function traderGateLabel(task) {
+  const requirements = Array.isArray(task?.traderRequirements) ? task.traderRequirements : []
+  const parts = requirements
+    .map(requirement => {
+      const trader = requirement?.trader?.name
+      if (!trader || requirement.value == null) return null
+      if (requirement.requirementType === 'level') return `${trader} LL${requirement.value}`
+      if (requirement.requirementType === 'reputation') return `${trader} REP ${requirement.value}`
+      return null
+    })
+    .filter(Boolean)
+  return parts.length ? parts.join(' · ') : null
+}
+
 // Prefer the immutable user_id when it is available. The callsign fallback is
 // retained for old drawings/markers that predate the identity cutover.
 export function getUserColor(user, names = [], userId = null, ids = []) {

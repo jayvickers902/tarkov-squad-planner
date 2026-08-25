@@ -1,9 +1,13 @@
 const REST_BASE = 'https://json.tarkov.dev'
-const GAME_MODE = 'regular'
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000
 const CACHE_PREFIX = 'tsp.cache.rest.'
+const GAME_MODES = new Set(['regular', 'pve', 'pvp-season'])
 
 const inFlight = new Map()
+
+export function resolveGameMode(value) {
+  return GAME_MODES.has(value) ? value : 'regular'
+}
 
 function abortError() {
   if (typeof DOMException !== 'undefined') return new DOMException('The operation was aborted.', 'AbortError')
@@ -85,23 +89,27 @@ function sharedLoad(key, producer, signal) {
   })
 }
 
-async function fetchRestJson(endpoint, { signal } = {}) {
-  const res = await fetch(`${REST_BASE}/${GAME_MODE}/${endpoint}`, { signal })
+async function fetchRestJson(endpoint, { signal, gameMode = 'regular' } = {}) {
+  const mode = resolveGameMode(gameMode)
+  const res = await fetch(`${REST_BASE}/${mode}/${endpoint}`, { signal })
   if (!res.ok) throw new Error(`json.tarkov.dev HTTP ${res.status}`)
   const body = await res.json()
   if (!body?.data) throw new Error(`json.tarkov.dev returned no ${endpoint} data`)
   return body.data
 }
 
-function loadJson(endpoint, signal) {
-  return sharedLoad(`endpoint:${endpoint}`, internalSignal => fetchRestJson(endpoint, { signal: internalSignal }), signal)
+function loadJson(endpoint, signal, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
+  return sharedLoad(`endpoint:${mode}:${endpoint}`, internalSignal => fetchRestJson(endpoint, { signal: internalSignal, gameMode: mode }), signal)
 }
 
-function loadDataset(cacheKey, producer, signal) {
-  const persisted = readPersisted(cacheKey)
-  return sharedLoad(`dataset:${cacheKey}`, producer, signal)
+function loadDataset(cacheKey, producer, signal, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
+  const scopedKey = `${mode}.${cacheKey}`
+  const persisted = readPersisted(scopedKey)
+  return sharedLoad(`dataset:${scopedKey}`, producer, signal)
     .then(data => {
-      writePersisted(cacheKey, data)
+      writePersisted(scopedKey, data)
       return { data, cachedAt: Date.now(), fromCache: false }
     })
     .catch(error => {
@@ -572,6 +580,58 @@ export function adaptTasks({ rawTasks, taskTranslations, rawTraders, traderTrans
         })
         .filter(Boolean)
       : []
+    // Kord Breach 1.1 moved unlocks and packing data outside the quest chain.
+    const neededKeys = Array.isArray(task.neededKeys)
+      ? task.neededKeys.map(entry => {
+          const neededMap = mapReference(entry?.map, mapsById)
+          if (!neededMap) return null
+          return {
+            map: neededMap,
+            keys: normalizeIds(entry?.keys)
+              .map(key => itemReference(key, itemTranslations))
+              .filter(Boolean),
+          }
+        }).filter(Boolean)
+      : []
+    const traderRequirements = Array.isArray(task.traderRequirements)
+      ? task.traderRequirements.map(requirement => {
+          const requirementTraderId = typeof requirement?.trader === 'object'
+            ? requirement.trader?.id
+            : requirement?.trader
+          const requirementTrader = requirementTraderId ? tradersById[requirementTraderId] : null
+          if (!requirementTrader) return null
+          return {
+            id: requirement?.id,
+            requirementType: requirement?.requirementType,
+            compareMethod: requirement?.compareMethod,
+            value: requirement?.value,
+            trader: {
+              name: translated(traderTranslations, requirementTrader.name || `${requirementTraderId} Nickname`) || requirementTraderId,
+              imageLink: requirementTrader.imageLink || null,
+            },
+          }
+        }).filter(Boolean)
+      : []
+    const otherRequirements = Array.isArray(task.otherRequirements)
+      ? task.otherRequirements.map(requirement => {
+          if (!requirement || typeof requirement.type !== 'string') return null
+          const adapted = { type: requirement.type }
+          for (const key of ['variableId', 'compareMethod', 'value']) {
+            if (requirement[key] !== undefined) adapted[key] = requirement[key]
+          }
+          if (Array.isArray(requirement.traders)) {
+            adapted.traders = requirement.traders
+              .map(value => {
+                const id = typeof value === 'object' ? value?.id : value
+                const traderRecord = id ? tradersById[id] : null
+                const rawName = typeof value === 'object' ? value?.name : null
+                return translated(traderTranslations, traderRecord?.name || rawName || `${id} Nickname`) || traderRecord?.name || rawName || id
+              })
+              .filter(Boolean)
+          }
+          return adapted
+        }).filter(Boolean)
+      : []
     return {
       id: task.id,
       name: translated(taskTranslations, task.name) || task.name || task.id,
@@ -581,6 +641,9 @@ export function adaptTasks({ rawTasks, taskTranslations, rawTraders, traderTrans
       trader: traderId ? { name: traderName, imageLink: trader?.imageLink || null } : null,
       map,
       taskRequirements,
+      neededKeys,
+      traderRequirements,
+      otherRequirements,
       objectives: (task.objectives || []).map(objective => adaptObjective(objective, mapsById, taskTranslations, itemTranslations)),
     }
   })
@@ -694,82 +757,90 @@ export function adaptGoonReports(rawMaps, bundle) {
 
 // ─── Runtime loaders ───────────────────────────────────────────────────────
 
-async function getMapBundle(signal) {
+async function getMapBundle(signal, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
   return loadDataset('maps-bundle', async internalSignal => {
     const [raw, translations] = await Promise.all([
-      loadJson('maps', internalSignal),
-      loadJson('maps_en', internalSignal),
+      loadJson('maps', internalSignal, mode),
+      loadJson('maps_en', internalSignal, mode),
     ])
     return adaptMapBundle(raw, translations)
-  }, signal)
+  }, signal, mode)
 }
 
-export function getRestMaps(signal) {
-  return getMapBundle(signal).then(result => ({
+export function getRestMaps(signal, gameMode = 'regular') {
+  return getMapBundle(signal, gameMode).then(result => ({
     data: adaptMaps(result.data),
     cachedAt: result.cachedAt,
     fromCache: result.fromCache,
   }))
 }
 
-export function getRestBosses(signal) {
+export function getRestBosses(signal, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
   return loadDataset('bosses', async internalSignal => {
-    const bundle = await getMapBundle(internalSignal)
+    const bundle = await getMapBundle(internalSignal, mode)
     return adaptBosses(bundle.data)
-  }, signal)
+  }, signal, mode)
 }
 
-export function getRestSpawns(signal) {
+export function getRestSpawns(signal, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
   return loadDataset('spawns', async internalSignal => {
-    const bundle = await getMapBundle(internalSignal)
+    const bundle = await getMapBundle(internalSignal, mode)
     return adaptSpawns(bundle.data)
-  }, signal)
+  }, signal, mode)
 }
 
-export function getRestZones(signal) {
+export function getRestZones(signal, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
   return loadDataset('zones', async internalSignal => {
-    const bundle = await getMapBundle(internalSignal)
+    const bundle = await getMapBundle(internalSignal, mode)
     return adaptZones(bundle.data)
-  }, signal)
+  }, signal, mode)
 }
 
-export function getRestGoonReports(signal) {
+export function getRestGoonReports(signal, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
   return loadDataset('goon-reports', async internalSignal => {
     const [rawMaps, bundle] = await Promise.all([
-      loadJson('maps', internalSignal),
-      getMapBundle(internalSignal),
+      loadJson('maps', internalSignal, mode),
+      getMapBundle(internalSignal, mode),
     ])
     return adaptGoonReports(rawMaps, bundle.data)
-  }, signal)
+  }, signal, mode)
 }
 
-export function getRestExtracts(signal) {
+export function getRestExtracts(signal, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
   return loadDataset('extracts', async internalSignal => {
-    const bundle = await getMapBundle(internalSignal)
+    const bundle = await getMapBundle(internalSignal, mode)
     return adaptExtracts(bundle.data)
-  }, signal)
+  }, signal, mode)
 }
 
-export function getRestKeys(signal) {
+export function getRestKeys(signal, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
   return loadDataset('keys', async internalSignal => {
     const [raw, translations] = await Promise.all([
-      loadJson('items', internalSignal),
-      loadJson('items_en', internalSignal),
+      loadJson('items', internalSignal, mode),
+      loadJson('items_en', internalSignal, mode),
     ])
     return adaptKeys(raw, translations)
-  }, signal)
+  }, signal, mode)
 }
 
-export function getRestTasks(signal) {
+export function getRestTasks(signal, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
   return loadDataset('tasks', async internalSignal => {
     const [rawTasks, taskTranslations, rawTraders, traderTranslations, bundle, itemTranslations] = await Promise.all([
-      loadJson('tasks', internalSignal),
-      loadJson('tasks_en', internalSignal),
-      loadJson('traders', internalSignal),
-      loadJson('traders_en', internalSignal),
-      getMapBundle(internalSignal),
-      loadJson('items_en', internalSignal),
+      loadJson('tasks', internalSignal, mode),
+      loadJson('tasks_en', internalSignal, mode),
+      loadJson('traders', internalSignal, mode),
+      loadJson('traders_en', internalSignal, mode),
+      getMapBundle(internalSignal, mode),
+      loadJson('items_en', internalSignal, mode),
     ])
     return adaptTasks({ rawTasks, taskTranslations, rawTraders, traderTranslations, bundle: bundle.data, itemTranslations })
-  }, signal)
+  }, signal, mode)
 }

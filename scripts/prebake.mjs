@@ -30,13 +30,14 @@ import {
   adaptKeys,
   adaptTasks,
   adaptIntel,
+  resolveGameMode,
 } from '../src/tarkovRest.js'
 import { FEATURED } from '../src/constants.js'
 
 // Overridable so the offline/failure path (keep the committed file, warn, do not
 // fail the build) can be exercised: PREBAKE_BASE=http://127.0.0.1:1 npm run build
 const REST_BASE = process.env.PREBAKE_BASE || 'https://json.tarkov.dev'
-const GAME_MODE = 'regular'
+const GAME_MODE = resolveGameMode(process.env.TSP_GAME_MODE || 'regular')
 const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'data', 'prebaked')
 
 const warnings = []
@@ -98,6 +99,24 @@ async function emit(file, payload, counts) {
     await keepExisting(file, 'adapter produced nothing')
     return
   }
+  // A re-run whose upstream data is byte-identical must leave the file alone.
+  // Restamping it anyway puts a whole-file diff on the owner's desk that says
+  // nothing changed, and these are single-line JSON files, so review cannot see
+  // that from the diff itself.
+  const path = join(OUT_DIR, file)
+  const existing = await readFile(path, 'utf8').catch(() => null)
+  if (existing) {
+    try {
+      const previous = JSON.parse(existing)
+      if (previous?.gameMode === GAME_MODE && JSON.stringify(previous.data) === JSON.stringify(payload)) {
+        console.log(`  = ${file.padEnd(12)} unchanged, kept`)
+        return
+      }
+    } catch {
+      // Unparseable committed copy — fall through and overwrite it.
+    }
+  }
+
   const stamped = {
     generatedAt: new Date().toISOString(),
     gameMode: GAME_MODE,
@@ -105,7 +124,7 @@ async function emit(file, payload, counts) {
     data: payload,
   }
   const json = JSON.stringify(stamped)
-  await writeFile(join(OUT_DIR, file), `${json}\n`, 'utf8')
+  await writeFile(path, `${json}\n`, 'utf8')
   const kb = (Buffer.byteLength(json) / 1024).toFixed(1)
   const summary = Object.entries(counts).map(([k, v]) => `${k}=${v}`).join(' ')
   console.log(`  → ${file.padEnd(12)} ${kb.padStart(8)} KB  ${summary}`)
@@ -234,7 +253,14 @@ async function main() {
       itemTranslations: raw.items_en,
     })
     const objectiveCount = tasks.reduce((total, task) => total + task.objectives.length, 0)
-    await emit('tasks.json', tasks, { tasks: tasks.length, objectives: objectiveCount })
+    await emit('tasks.json', tasks, {
+      tasks: tasks.length,
+      objectives: objectiveCount,
+      taskRequirements: tasks.filter(task => task.taskRequirements.length).length,
+      traderRequirements: tasks.filter(task => task.traderRequirements.length).length,
+      neededKeys: tasks.filter(task => task.neededKeys.length).length,
+      otherRequirements: tasks.filter(task => task.otherRequirements.length).length,
+    })
   } else {
     await keepExisting('tasks.json', 'tasks, traders or map data unavailable')
   }

@@ -108,6 +108,8 @@ user UUID.
   - Key query uses `types: [keys]` (plural, not `key`)
 - **Map images** from `raw.githubusercontent.com/the-hideout/tarkov-dev/main/public/maps`
 
+The REST dataset supports `regular`, `pve`, and `pvp-season`. The active game mode is a resolved setting rather than a module constant. Prebaked JSON is only a valid floor for the mode recorded in its stamp, and another mode must wait for its REST response.
+
 ## Conventions
 
 - Plain React hooks for all state — no Redux, Zustand, or context providers
@@ -119,13 +121,41 @@ user UUID.
 
 ## Map System
 
-Ten featured maps are defined in `FEATURED` in `src/constants.js`. Each carries an
-image URL, PMC spawn coordinates (0–1 fractions), a terrain SVG fallback, and
-terrain labels. Leaflet bounds and zoom settings live in
+Twelve featured maps are defined in `FEATURED` in `src/constants.js`. The ten
+original maps each carry an image URL, PMC spawn coordinates (0–1 fractions), a
+terrain SVG fallback, and terrain labels. Leaflet bounds and zoom settings live in
 `src/data/tarkovMapConfigs.js`. `MapLeaflet.jsx` is the active renderer;
 `MapCanvas.jsx` is legacy.
 
+Icebreaker and Labyrinth were added after patch 1.1 and are config-only: they have
+no `SPAWNS`, `TERRAIN` or `TERRAIN_LABELS` entries, because live spawn data covers
+them and `MapOverlay.jsx` (the only consumer of the terrain fallbacks) is legacy
+and unmounted. Do not invent coordinates for them. Two quirks worth knowing:
+Labyrinth's normalized name is `the-labyrinth` while its image is
+`labyrinth-2d.jpg`, and **Icebreaker's upstream bounds cover only the Infirmary
+deck** — real PMC spawns sit at z≈82 against a declared z-max of 67.4, so they
+clear `inMapBounds` only on its 12% pad and render past the image edge. Icebreaker
+also has zero positioned objective zones upstream, so it will never show quest
+pins. Both are upstream data gaps, not ours; see `CODEX-HANDOFF-preraid.md`.
+
 Ping focus has three per-device auto-focus modes: OFF, ALERTS (CONTACT and NEED HELP), and ALL. The selected mode is stored in localStorage under `tsp.ping_autofocus`. Any user map interaction suppresses auto-focus for six seconds so camera control stays with the reader.
+
+## Quest Shareability
+
+Patch 1.1 lets a groupmate contribute to your task progress. Nothing upstream flags
+which tasks qualify, so `src/questShare.js` derives it: world-action objective types
+(`shoot`, `visit`, `plantItem`, `mark`, `extract`, `useItem`) are squad-shareable,
+anything ending in your inventory or on your profile is personal, and a
+`foundInRaid` item is always personal whatever its type. `classifyTask` rolls the
+non-optional objectives up to `shared` / `partial` / `solo`.
+
+Because it is inference, every surface that renders a verdict marks it as derived,
+and unknown input always resolves to the *less* shareable answer. The
+`quest_share_overrides` table is the curated correction path for the solo-only
+chains BSG named (The Tarkov Shooter, The Punisher), admin-gated by
+`profiles.is_admin` and shaped like `map_keys`. A task override of `shared` or
+`solo` forces every objective; `partial` deliberately does not, so a mixed task
+keeps its per-objective verdicts.
 
 ## Quest Screenshot Scanning
 

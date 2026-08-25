@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect } from 'react'
 import { objectiveProgressKey, questDoneKey } from '../partyMembers'
+import { objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
+import { classifyObjective, classifyTask } from '../questShare'
+import { useQuestShareOverrides } from '../useQuestShareOverrides'
 
-const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
 
 function objsForMap(objectives, mapNorm, taskMapNorm) {
   return (objectives || []).filter(o => {
@@ -15,6 +17,7 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
 
 export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myUserId, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, loading, settings = {}, onSetSetting }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
+  const { overrides } = useQuestShareOverrides()
 
   const [questOrder, setQuestOrder] = useState(() => {
     const saved = myUserId ? settings.quest_order?.[myUserId] : null
@@ -208,6 +211,8 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
           // Section peers for move-to-top/bottom (same isMapSpecific + isComplete group)
           const sectionRows = rows.filter(r => r.isMapSpecific === isMapSpecific && r.isComplete === isComplete)
           const sectionIdx = sectionRows.findIndex(r => r.task.id === task.id)
+          const taskShare = classifyTask(task, overrides)
+          const loyalty = traderGateLabel(task)
 
           return (
             <div key={task.id}>
@@ -250,11 +255,15 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                     {task.kappaRequired && (
                       <span className="mono" style={{ fontSize: 9, color: 'var(--gold)' }}>κ KAPPA</span>
                     )}
+                    {taskShare === 'shared' && (
+                      <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
+                    )}
                     {objs.length > 0 && (
                       <span className="mono" style={{ fontSize: 9, color: isDone || allObjsDone ? 'var(--grn)' : 'var(--txd)' }}>
                         {doneObjCount}/{objs.length} OBJ
                       </span>
                     )}
+                    {loyalty && <span className="mono" style={{ fontSize: 9, color: 'var(--txm)' }}>{loyalty}</span>}
                   </div>
                 </div>
                 {/* Move to top / bottom within section */}
@@ -350,8 +359,11 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                       background: 'var(--sur)', border: '1px solid var(--brd)',
                       borderRadius: 2, padding: '1px 4px',
                     }}>
-                      {TYPE_LABEL[obj.type] || obj.type?.toUpperCase() || '?'}
+                      {objectiveTypeLabel(obj.type)}
                     </span>
+                    {classifyObjective(obj, task, overrides) === 'squad' && (
+                      <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
+                    )}
                   </div>
                 )
               })}

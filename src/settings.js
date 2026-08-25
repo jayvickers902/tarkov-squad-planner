@@ -1,4 +1,5 @@
 export const SYSTEM_DEFAULTS = {
+  game_mode: 'regular',
   ping_ttl_ms: 10 * 60 * 1000,
   marker_scope: 'raid',
   drawing_scope: 'raid',

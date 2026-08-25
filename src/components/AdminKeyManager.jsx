@@ -1,11 +1,12 @@
 import { useState, useRef, useMemo } from 'react'
 import { FEATURED, MAP_IMAGES } from '../constants'
-import { useKeys } from '../useTarkov'
+import { useKeys, useTasks } from '../useTarkov'
 import { useMapKeys } from '../useMapKeys'
 import { useMapLoot } from '../useMapLoot'
 import { useIntel } from '../useIntel'
 import { useIsMobile } from '../useIsMobile'
 import { INTEL_KINDS, worldToNorm } from '../tarkovIntel'
+import { useQuestShareOverrides } from '../useQuestShareOverrides'
 
 // Season 1 "Kord Breach" document items. Upstream has these items but *no*
 // coordinates for them on any map — 0 hits across all 17 maps in lootLoose and
@@ -28,11 +29,12 @@ const MAP_LABELS = {
   'shoreline': 'Shoreline', 'factory': 'Factory', 'lighthouse': 'Lighthouse',
   'streets-of-tarkov': 'Streets of Tarkov', 'reserve': 'Reserve',
   'ground-zero': 'Ground Zero', 'the-lab': 'The Lab',
+  'icebreaker': 'Icebreaker', 'the-labyrinth': 'Labyrinth',
 }
 
 export default function AdminKeyManager({ onBack }) {
   const [mapNorm, setMapNorm]       = useState('customs')
-  const [section, setSection]       = useState('keys')  // 'keys' | 'loot'
+  const [section, setSection]       = useState('keys')  // 'keys' | 'loot' | 'share'
   const [placing, setPlacing]       = useState(null)   // key name being placed on map
   const [saving, setSaving]         = useState(null)   // key name currently saving
   const [feedback, setFeedback]     = useState('')
@@ -40,6 +42,10 @@ export default function AdminKeyManager({ onBack }) {
   const [lootNotes, setLootNotes]   = useState('')
   const [placingLoot, setPlacingLoot] = useState(false)
   const [showIntelRef, setShowIntelRef] = useState(true)
+  const [overrideTaskId, setOverrideTaskId] = useState('')
+  const [overrideTaskName, setOverrideTaskName] = useState('')
+  const [overrideVerdict, setOverrideVerdict] = useState('solo')
+  const [overrideNote, setOverrideNote] = useState('')
   const imgRef = useRef(null)
 
   const isMobile = useIsMobile()
@@ -47,6 +53,8 @@ export default function AdminKeyManager({ onBack }) {
   const { mapKeys, upsertKey }         = useMapKeys(mapNorm)
   const { lootRows, error: lootError, addLoot, removeLoot } = useMapLoot(mapNorm)
   const { intelPoints } = useIntel(mapNorm)
+  const { tasks } = useTasks(null)
+  const { overrides, loading: overridesLoading, upsertOverride } = useQuestShareOverrides()
 
   // The prebaked loose-loot points, projected back onto the flat map image, so a
   // hand-placed document can be put where the intel spawns already are instead
@@ -106,6 +114,27 @@ export default function AdminKeyManager({ onBack }) {
     else flash(`Location cleared for ${keyName}`)
   }
 
+  function selectOverrideTask(taskId) {
+    setOverrideTaskId(taskId)
+    const task = tasks.find(entry => entry.id === taskId)
+    const existing = overrides[taskId]
+    setOverrideTaskName(existing?.task_name || task?.name || '')
+    setOverrideVerdict(existing?.verdict || 'solo')
+    setOverrideNote(existing?.note || '')
+  }
+
+  async function saveOverride() {
+    const taskId = overrideTaskId.trim()
+    if (!taskId) { flash('Task id is required'); return }
+    const { error } = await upsertOverride({
+      taskId,
+      taskName: overrideTaskName.trim(),
+      verdict: overrideVerdict,
+      note: overrideNote.trim(),
+    })
+    flash(error ? 'Save failed: ' + error.message : `Override saved for ${overrideTaskName || taskId}`)
+  }
+
   const imgSrc = MAP_IMAGES[mapNorm]
   const located = Object.entries(mapKeys).filter(([, v]) => v.loc_x != null && v.loc_y != null)
   const armed = section === 'loot' ? placingLoot : !!placing
@@ -128,6 +157,8 @@ export default function AdminKeyManager({ onBack }) {
             onClick={() => { setSection('keys'); setPlacingLoot(false) }}>🔑 KEYS</button>
           <button className={section === 'loot' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
             onClick={() => { setSection('loot'); setPlacing(null) }}>📄 DOCUMENTS</button>
+          <button className={section === 'share' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+            onClick={() => { setSection('share'); setPlacing(null); setPlacingLoot(false) }}>⚑ SHAREABILITY</button>
         </div>
         {feedback && (
           <div className="mono" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--gold)', background: 'var(--sur2)', border: '1px solid var(--golddim)', borderRadius: 4, padding: '4px 10px' }}>
@@ -147,6 +178,41 @@ export default function AdminKeyManager({ onBack }) {
           </button>
         ))}
       </div>
+
+      {section === 'share' && (
+        <div className="card" style={{ padding: 14, marginBottom: 16, maxWidth: 900 }}>
+          <div className="lbl" style={{ marginBottom: 8 }}>QUEST SHAREABILITY OVERRIDES</div>
+          <div className="mono" style={{ fontSize: 10, lineHeight: 1.5, color: 'var(--txd)', marginBottom: 10 }}>
+            CLASSIFICATION IS DERIVED FROM OBJECTIVE TYPES. USE THIS EDITOR FOR SOLO-ONLY CHAINS OR OTHER CURATED CORRECTIONS.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.5fr 1fr 150px', gap: 8, alignItems: 'end' }}>
+            <label className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>
+              TASK
+              <select value={overrideTaskId} onChange={e => selectOverrideTask(e.target.value)} style={{ display: 'block', width: '100%', marginTop: 4, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, color: 'var(--tx)', padding: 7 }}>
+                <option value="">Select a task…</option>
+                {tasks.map(task => <option key={task.id} value={task.id}>{task.name} · {task.id}</option>)}
+              </select>
+            </label>
+            <label className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>
+              VERDICT
+              <select value={overrideVerdict} onChange={e => setOverrideVerdict(e.target.value)} style={{ display: 'block', width: '100%', marginTop: 4, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, color: 'var(--tx)', padding: 7 }}>
+                <option value="solo">SOLO</option><option value="partial">PARTIAL</option><option value="shared">SHARED</option>
+              </select>
+            </label>
+            <button className="btn-gold" onClick={saveOverride} disabled={overridesLoading || !overrideTaskId}>SAVE OVERRIDE</button>
+          </div>
+          <input aria-label="Override task name" placeholder="Task name" value={overrideTaskName} onChange={e => setOverrideTaskName(e.target.value)} style={{ marginTop: 8 }} />
+          <input aria-label="Override note" placeholder="Reason / source note" value={overrideNote} onChange={e => setOverrideNote(e.target.value)} style={{ marginTop: 8 }} />
+          <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 14, marginBottom: 6 }}>SAVED OVERRIDES ({Object.keys(overrides).length})</div>
+          {Object.values(overrides).map(row => (
+            <div key={row.task_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: '1px solid var(--brd)' }}>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>{row.task_name || row.task_id}</span>
+              <span className="mono" style={{ fontSize: 10, color: row.verdict === 'solo' ? 'var(--red)' : row.verdict === 'shared' ? 'var(--grn)' : 'var(--gold)' }}>{row.verdict.toUpperCase()}</span>
+              <button className="btn-ghost btn-sm" onClick={() => selectOverrideTask(row.task_id)}>EDIT</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '320px 1fr', gap: 16, alignItems: 'start' }}>
 

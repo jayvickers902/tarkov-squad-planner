@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { TARKOV_API, FEATURED, GRAPHQL_ENABLED } from './constants'
-import { getRestMaps, getRestTasks, getRestKeys, getRestBosses, getRestExtracts } from './tarkovRest'
+import { getRestMaps, getRestTasks, getRestKeys, getRestBosses, getRestExtracts, resolveGameMode } from './tarkovRest'
 import { loadPrebaked } from './data/prebaked'
 
 const MAPS_QUERY = `{ maps { id name normalizedName } }`
@@ -46,16 +46,16 @@ function keyToMap(name) {
   return null
 }
 
-let keysCache = null
-let tasksCache = null // cache busted — requiredKeys moved to inline fragments
-let mapBossCache = null
-let bossPortraitsCache = null
-let keysCacheAt = null
-let tasksCacheAt = null
-let mapBossCacheAt = null
-let bossPortraitsCacheAt = null
-let extractCache = null
-let extractCacheAt = null
+const keysCache = new Map()
+const tasksCache = new Map() // cache busted — requiredKeys moved to inline fragments
+const mapBossCache = new Map()
+const bossPortraitsCache = new Map()
+const keysCacheAt = new Map()
+const tasksCacheAt = new Map()
+const mapBossCacheAt = new Map()
+const bossPortraitsCacheAt = new Map()
+const extractCache = new Map()
+const extractCacheAt = new Map()
 
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000
 const STORAGE_KEYS = {
@@ -65,6 +65,10 @@ const STORAGE_KEYS = {
   bosses: 'tsp.cache.bosses',
   bossPortraits: 'tsp.cache.bossPortraits',
   extracts: 'tsp.cache.extracts',
+}
+
+function scopedStorageKey(key, gameMode) {
+  return `${key}.${resolveGameMode(gameMode)}`
 }
 
 function readPersisted(key) {
@@ -88,9 +92,11 @@ function writePersisted(key, data) {
   }
 }
 
-function cacheSeed(storageKey, memoryValue, memorySavedAt, fallback, isValid = () => true) {
-  if (memoryValue !== null) return { data: memoryValue, savedAt: memorySavedAt, fromMemory: true }
-  const persisted = readPersisted(storageKey)
+function cacheSeed(storageKey, memoryCache, memoryAtCache, gameMode, fallback, isValid = () => true) {
+  const memoryValue = memoryCache.get(gameMode)
+  const memorySavedAt = memoryAtCache.get(gameMode)
+  if (memoryValue !== undefined && memoryValue !== null) return { data: memoryValue, savedAt: memorySavedAt, fromMemory: true }
+  const persisted = readPersisted(scopedStorageKey(storageKey, gameMode))
   return persisted && isValid(persisted.data)
     ? { data: persisted.data, savedAt: persisted.savedAt, fromMemory: false }
     : { data: fallback, savedAt: null, fromMemory: false }
@@ -174,9 +180,28 @@ function restFallbackError(cause, fromCache) {
 // floor: the live result always wins, and a prebaked chunk that resolves after
 // the live fetch must not clobber it. Call the returned function the moment
 // live data lands.
-function seedFromPrebaked(name, apply) {
+const PREBAKED_LOADERS = {
+  maps: () => import('./data/prebaked/maps.json'),
+  tasks: () => import('./data/prebaked/tasks.json'),
+  keys: () => import('./data/prebaked/keys.json'),
+  bosses: () => import('./data/prebaked/bosses.json'),
+  extracts: () => import('./data/prebaked/extracts.json'),
+}
+
+function loadPrebakedForMode(name, gameMode) {
+  const loader = PREBAKED_LOADERS[name]
+  return Promise.all([
+    loadPrebaked(name),
+    loader ? loader() : Promise.resolve(null),
+  ]).then(([prebaked, module]) => {
+    const stamped = module?.default ?? module
+    return prebaked && stamped?.gameMode === gameMode ? prebaked : null
+  })
+}
+
+function seedFromPrebaked(name, gameMode, apply) {
   let superseded = false
-  loadPrebaked(name).then(prebaked => {
+  loadPrebakedForMode(name, gameMode).then(prebaked => {
     if (prebaked && !superseded) apply(prebaked)
   })
   return () => { superseded = true }
@@ -199,8 +224,9 @@ async function loadData({ label, signal, gql, rest }) {
 
 const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink trader { name imageLink } map { id normalizedName } taskRequirements { task { id } status } objectives { id description type optional maps { normalizedName } ... on TaskObjectiveItem { item { id name iconLink } count foundInRaid requiredKeys { id name iconLink } } ... on TaskObjectiveMark { markerItem { id name iconLink } requiredKeys { id name iconLink } } ... on TaskObjectiveBasic { zones { id position { x y z } map { normalizedName } } requiredKeys { id name iconLink } } ... on TaskObjectiveShoot { zones { id position { x y z } map { normalizedName } } } } } }`
 
-export function useMaps() {
-  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.maps, null, null, [], Array.isArray))
+export function useMaps(gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
+  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.maps, new Map(), new Map(), mode, [], Array.isArray))
   const [maps, setMaps] = useState(seed.data)
   const [cachedAt, setCachedAt] = useState(seed.savedAt)
   const [loading, setLoading] = useState(seed.data.length === 0)
@@ -211,9 +237,12 @@ export function useMaps() {
     const controller = new AbortController()
     let active = true
     setError(null)
-    setLoading(maps.length === 0)
-    const markLive = maps.length === 0
-      ? seedFromPrebaked('maps', prebaked => {
+    const currentSeed = cacheSeed(STORAGE_KEYS.maps, new Map(), new Map(), mode, [], Array.isArray)
+    setMaps(currentSeed.data)
+    setCachedAt(currentSeed.savedAt)
+    setLoading(currentSeed.data.length === 0)
+    const markLive = currentSeed.data.length === 0
+      ? seedFromPrebaked('maps', mode, prebaked => {
           if (!active) return
           setMaps(filteredMaps(prebaked.data))
           setLoading(false)
@@ -224,7 +253,7 @@ export function useMaps() {
       signal: controller.signal,
       gql: async signal => filteredMaps(requireArray(await gqlRetry(MAPS_QUERY, { signal }), 'maps')),
       rest: async signal => {
-        const result = await getRestMaps(signal)
+        const result = await getRestMaps(signal, mode)
         return { ...result, data: filteredMaps(result.data) }
       },
     })
@@ -233,7 +262,7 @@ export function useMaps() {
         if (!active) return
         setMaps(result.data)
         setCachedAt(result.cachedAt)
-        if (result.source === 'graphql') writePersisted(STORAGE_KEYS.maps, result.data)
+        if (result.source === 'graphql') writePersisted(scopedStorageKey(STORAGE_KEYS.maps, mode), result.data)
         if (result.fallback) setError(restFallbackError(result.cause, result.fromCache))
       })
       .catch(err => {
@@ -243,7 +272,7 @@ export function useMaps() {
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
-  }, [retryToken]) // eslint-disable-line
+  }, [retryToken, mode]) // eslint-disable-line
 
   return { maps, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
 }
@@ -251,8 +280,9 @@ export function useMaps() {
 // Extracts are fetched from the REST map bundle because the GraphQL map query
 // intentionally stays small. The adapter preserves the same world coordinates
 // used by TarkovMonitor, so echo distance is calculated in one coordinate space.
-export function useExtracts(mapNorm = null) {
-  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.extracts, extractCache, extractCacheAt, [], Array.isArray))
+export function useExtracts(mapNorm = null, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
+  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.extracts, extractCache, extractCacheAt, mode, [], Array.isArray))
   const [extracts, setExtracts] = useState(seed.data)
   const [cachedAt, setCachedAt] = useState(seed.savedAt)
   const [loading, setLoading] = useState(seed.data.length === 0)
@@ -263,21 +293,24 @@ export function useExtracts(mapNorm = null) {
     const controller = new AbortController()
     let active = true
     setError(null)
-    setLoading(extracts.length === 0)
-    const markLive = extracts.length === 0
-      ? seedFromPrebaked('extracts', prebaked => {
+    const currentSeed = cacheSeed(STORAGE_KEYS.extracts, extractCache, extractCacheAt, mode, [], Array.isArray)
+    setExtracts(currentSeed.data)
+    setCachedAt(currentSeed.savedAt)
+    setLoading(currentSeed.data.length === 0)
+    const markLive = currentSeed.data.length === 0
+      ? seedFromPrebaked('extracts', mode, prebaked => {
           if (!active) return
           setExtracts(prebaked.data)
           setLoading(false)
         })
       : () => {}
 
-    getRestExtracts(controller.signal)
+    getRestExtracts(controller.signal, mode)
       .then(result => {
         markLive()
         if (!active) return
-        extractCache = result.data
-        extractCacheAt = result.cachedAt
+        extractCache.set(mode, result.data)
+        extractCacheAt.set(mode, result.cachedAt)
         setExtracts(result.data)
         setCachedAt(result.cachedAt)
       })
@@ -289,7 +322,7 @@ export function useExtracts(mapNorm = null) {
       .finally(() => { if (active) setLoading(false) })
 
     return () => { active = false; controller.abort() }
-  }, [retryToken]) // eslint-disable-line
+  }, [retryToken, mode]) // eslint-disable-line
 
   const current = mapNorm ? extracts.find(map => map.normalizedName === mapNorm)?.extracts || [] : []
   return { extracts: current, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
@@ -297,8 +330,9 @@ export function useExtracts(mapNorm = null) {
 
 // Pass mapNorm=null to get all tasks (used in MyQuests search)
 // Pass a mapNorm string to get map-filtered tasks (used in party quest search)
-export function useTasks(mapNorm) {
-  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.tasks, tasksCache, tasksCacheAt, [], Array.isArray))
+export function useTasks(mapNorm, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
+  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.tasks, tasksCache, tasksCacheAt, mode, [], Array.isArray))
   const [tasks, setTasks] = useState(seed.data)
   const [cachedAt, setCachedAt] = useState(seed.savedAt)
   const [loading, setLoading] = useState(seed.data.length === 0)
@@ -306,13 +340,16 @@ export function useTasks(mapNorm) {
   const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
-    if (seed.fromMemory && retryToken === 0) return
+    const currentSeed = cacheSeed(STORAGE_KEYS.tasks, tasksCache, tasksCacheAt, mode, [], Array.isArray)
+    setTasks(currentSeed.data)
+    setCachedAt(currentSeed.savedAt)
+    if (currentSeed.fromMemory && retryToken === 0) return
     const controller = new AbortController()
     let active = true
     setError(null)
-    setLoading(tasks.length === 0)
-    const markLive = tasks.length === 0
-      ? seedFromPrebaked('tasks', prebaked => {
+    setLoading(currentSeed.data.length === 0)
+    const markLive = currentSeed.data.length === 0
+      ? seedFromPrebaked('tasks', mode, prebaked => {
           if (!active) return
           setTasks(prebaked.data)
           setLoading(false)
@@ -337,8 +374,11 @@ export function useTasks(mapNorm) {
             })
             .filter(Boolean)
           : [],
+        neededKeys: [],
+        traderRequirements: [],
+        otherRequirements: [],
       })),
-      rest: signal => getRestTasks(signal),
+      rest: signal => getRestTasks(signal, mode),
     })
       .then(result => {
         markLive()
@@ -347,11 +387,11 @@ export function useTasks(mapNorm) {
         // success, so the Phase 1 poisoning rule still holds. localStorage stays
         // GraphQL-only: tarkovRest persists its own adapted copy under
         // tsp.cache.rest.* and the two must not collide.
-        tasksCache = result.data
-        tasksCacheAt = result.cachedAt
+        tasksCache.set(mode, result.data)
+        tasksCacheAt.set(mode, result.cachedAt)
         setTasks(result.data)
         setCachedAt(result.cachedAt)
-        if (result.source === 'graphql') writePersisted(STORAGE_KEYS.tasks, result.data)
+        if (result.source === 'graphql') writePersisted(scopedStorageKey(STORAGE_KEYS.tasks, mode), result.data)
         if (result.fallback) setError(restFallbackError(result.cause, result.fromCache))
       })
       .catch(err => {
@@ -361,7 +401,7 @@ export function useTasks(mapNorm) {
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
-  }, [retryToken]) // eslint-disable-line
+  }, [retryToken, mode]) // eslint-disable-line
 
   const filtered = mapNorm === null
     ? tasks
@@ -430,9 +470,10 @@ function mergeBossEnrichment(fallbackData, liveData) {
   }
 }
 
-export function useBossSpawns() {
-  const [mapSeed] = useState(() => cacheSeed(STORAGE_KEYS.bosses, mapBossCache, mapBossCacheAt, [], Array.isArray))
-  const [portraitSeed] = useState(() => cacheSeed(STORAGE_KEYS.bossPortraits, bossPortraitsCache, bossPortraitsCacheAt, {}, value => value && !Array.isArray(value) && typeof value === 'object'))
+export function useBossSpawns(gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
+  const [mapSeed] = useState(() => cacheSeed(STORAGE_KEYS.bosses, mapBossCache, mapBossCacheAt, mode, [], Array.isArray))
+  const [portraitSeed] = useState(() => cacheSeed(STORAGE_KEYS.bossPortraits, bossPortraitsCache, bossPortraitsCacheAt, mode, {}, value => value && !Array.isArray(value) && typeof value === 'object'))
   const [mapBosses, setMapBosses] = useState(mapSeed.data)
   const [bossPortraits, setBossPortraits] = useState(portraitSeed.data)
   const [cachedAt, setCachedAt] = useState(mapSeed.savedAt || portraitSeed.savedAt)
@@ -441,17 +482,22 @@ export function useBossSpawns() {
   const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
-    if (mapSeed.fromMemory && portraitSeed.fromMemory && retryToken === 0) return
+    const currentMapSeed = cacheSeed(STORAGE_KEYS.bosses, mapBossCache, mapBossCacheAt, mode, [], Array.isArray)
+    const currentPortraitSeed = cacheSeed(STORAGE_KEYS.bossPortraits, bossPortraitsCache, bossPortraitsCacheAt, mode, {}, value => value && !Array.isArray(value) && typeof value === 'object')
+    setMapBosses(currentMapSeed.data)
+    setBossPortraits(currentPortraitSeed.data)
+    setCachedAt(currentMapSeed.savedAt || currentPortraitSeed.savedAt)
+    setLoading(currentMapSeed.data.length === 0 || Object.keys(currentPortraitSeed.data).length === 0)
+    if (currentMapSeed.fromMemory && currentPortraitSeed.fromMemory && retryToken === 0) return
     const controller = new AbortController()
     let active = true
     setError(null)
-    setLoading(mapBosses.length === 0 || Object.keys(bossPortraits).length === 0)
     // Always resolve the prebaked floor before merging the live response. A lean
     // persisted cache can otherwise skip seeding, and a very fast REST response
     // can supersede the dynamic import before its armour/drop enrichment paints.
-    const prebakedFloor = loadPrebaked('bosses').then(prebaked => {
+    const prebakedFloor = loadPrebakedForMode('bosses', mode).then(prebaked => {
       const floor = prebaked?.data || { maps: [], portraits: {} }
-      if (active && mapBosses.length === 0) {
+      if (active && prebaked && currentMapSeed.data.length === 0) {
         setMapBosses(floor.maps || [])
         setBossPortraits(floor.portraits || {})
         setLoading(false)
@@ -470,7 +516,7 @@ export function useBossSpawns() {
         for (const b of requireArray(portraitData, 'bosses')) portraits[b.name] = b.imagePortraitLink
         return { maps: requireArray(mapData, 'maps'), portraits }
       },
-      rest: signal => getRestBosses(signal),
+      rest: signal => getRestBosses(signal, mode),
     })
       .then(async result => {
         const prebaked = await prebakedFloor
@@ -482,16 +528,16 @@ export function useBossSpawns() {
           },
           result.data,
         )
-        mapBossCache = maps
-        mapBossCacheAt = result.cachedAt
-        bossPortraitsCache = portraits
-        bossPortraitsCacheAt = result.cachedAt
+        mapBossCache.set(mode, maps)
+        mapBossCacheAt.set(mode, result.cachedAt)
+        bossPortraitsCache.set(mode, portraits)
+        bossPortraitsCacheAt.set(mode, result.cachedAt)
         setMapBosses(maps)
         setBossPortraits(portraits)
         setCachedAt(result.cachedAt)
         if (result.source === 'graphql') {
-          writePersisted(STORAGE_KEYS.bosses, maps)
-          writePersisted(STORAGE_KEYS.bossPortraits, portraits)
+          writePersisted(scopedStorageKey(STORAGE_KEYS.bosses, mode), maps)
+          writePersisted(scopedStorageKey(STORAGE_KEYS.bossPortraits, mode), portraits)
         }
         if (result.fallback) setError(restFallbackError(result.cause, result.fromCache))
       })
@@ -502,7 +548,7 @@ export function useBossSpawns() {
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
-  }, [retryToken]) // eslint-disable-line
+  }, [retryToken, mode]) // eslint-disable-line
 
   function getBossesForMap(normName) {
     const mapData = mapBosses.find(m => m.normalizedName === normName)
@@ -520,8 +566,9 @@ export function useBossSpawns() {
   return { getBossesForMap, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
 }
 
-export function useKeys(mapNorm) {
-  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.keys, keysCache, keysCacheAt, [], Array.isArray))
+export function useKeys(mapNorm, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
+  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.keys, keysCache, keysCacheAt, mode, [], Array.isArray))
   const [allKeys, setAllKeys] = useState(seed.data)
   const [cachedAt, setCachedAt] = useState(seed.savedAt)
   const [loading, setLoading] = useState(seed.data.length === 0)
@@ -529,13 +576,16 @@ export function useKeys(mapNorm) {
   const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
-    if (seed.fromMemory && retryToken === 0) return
+    const currentSeed = cacheSeed(STORAGE_KEYS.keys, keysCache, keysCacheAt, mode, [], Array.isArray)
+    setAllKeys(currentSeed.data)
+    setCachedAt(currentSeed.savedAt)
+    setLoading(currentSeed.data.length === 0)
+    if (currentSeed.fromMemory && retryToken === 0) return
     const controller = new AbortController()
     let active = true
     setError(null)
-    setLoading(allKeys.length === 0)
-    const markLive = allKeys.length === 0
-      ? seedFromPrebaked('keys', prebaked => {
+    const markLive = currentSeed.data.length === 0
+      ? seedFromPrebaked('keys', mode, prebaked => {
           if (!active) return
           setAllKeys(prebaked.data)
           setLoading(false)
@@ -545,16 +595,16 @@ export function useKeys(mapNorm) {
       label: 'keys',
       signal: controller.signal,
       gql: async signal => requireArray(await gqlRetry(KEYS_QUERY, { signal }), 'items'),
-      rest: signal => getRestKeys(signal),
+      rest: signal => getRestKeys(signal, mode),
     })
       .then(result => {
         markLive()
         if (!active) return
-        keysCache = result.data
-        keysCacheAt = result.cachedAt
+        keysCache.set(mode, result.data)
+        keysCacheAt.set(mode, result.cachedAt)
         setAllKeys(result.data)
         setCachedAt(result.cachedAt)
-        if (result.source === 'graphql') writePersisted(STORAGE_KEYS.keys, result.data)
+        if (result.source === 'graphql') writePersisted(scopedStorageKey(STORAGE_KEYS.keys, mode), result.data)
         if (result.fallback) setError(restFallbackError(result.cause, result.fromCache))
       })
       .catch(err => {
@@ -564,7 +614,7 @@ export function useKeys(mapNorm) {
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
-  }, [retryToken]) // eslint-disable-line
+  }, [retryToken, mode]) // eslint-disable-line
 
   const keys = useMemo(() => {
     if (!mapNorm || !allKeys.length) return []

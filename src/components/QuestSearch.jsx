@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-
-const TYPE_LABEL = { location: 'LOCATE', item: 'FIND', mark: 'MARK', shoot: 'KILL', extract: 'EXTRACT', skill: 'SKILL' }
+import { objectiveTypeLabel } from '../tarkovObjectives'
 
 function QuestTooltip({ task, anchor, mapNorm }) {
   if (!task || !anchor) return null
@@ -41,7 +40,7 @@ function QuestTooltip({ task, anchor, mapNorm }) {
             fontSize: 9, color: 'var(--txd)', flexShrink: 0, marginTop: 2,
             background: 'var(--sur)', border: '1px solid var(--brd)',
             borderRadius: 2, padding: '1px 4px', letterSpacing: '.04em',
-          }}>{TYPE_LABEL[obj.type] || obj.type?.toUpperCase() || '?'}</span>
+          }}>{objectiveTypeLabel(obj.type)}</span>
         </div>
       ))}
     </div>

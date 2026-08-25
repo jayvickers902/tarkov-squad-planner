@@ -8,7 +8,7 @@ export const GRAPHQL_ENABLED = false
 
 export const FEATURED = [
   'customs','woods','interchange','shoreline','factory',
-  'lighthouse','streets-of-tarkov','reserve','ground-zero','the-lab'
+  'lighthouse','streets-of-tarkov','reserve','ground-zero','the-lab','icebreaker','the-labyrinth'
 ]
 
 // Maps where Cliff Descent extract is available (requires Red Rebel Ice Pick + Paracord)
@@ -26,6 +26,8 @@ export const MAP_IMAGES = {
   'reserve':           `${RAW}/reserve-2d.jpg`,
   'ground-zero':       `${RAW}/ground-zero-2d.jpg`,
   'the-lab':           `${RAW}/labs-2d.jpg`,
+  'icebreaker':        `${RAW}/icebreaker-2d.jpg`,
+  'the-labyrinth':     `${RAW}/labyrinth-2d.jpg`,
 }
 
 // PMC player spawn zones — x/y as 0-1 fractions of the map image
