@@ -134,16 +134,32 @@ Game mode belongs to character progression, not to a display preference. A party
 
 ## Map System
 
-Twelve featured maps are defined in `FEATURED` in `src/constants.js`. The ten
-original maps each carry an image URL, PMC spawn coordinates (0–1 fractions), a
-terrain SVG fallback, and terrain labels. Leaflet bounds and zoom settings live in
+Ten featured maps are defined in `FEATURED` in `src/constants.js`. Each carries an
+image URL, PMC spawn coordinates (0–1 fractions), a terrain SVG fallback, and
+terrain labels. Leaflet bounds and zoom settings live in
 `src/data/tarkovMapConfigs.js`. `MapLeaflet.jsx` is the active renderer;
 `MapCanvas.jsx` is legacy.
 
-Icebreaker and Labyrinth were added after patch 1.1 and are config-only: they have
-no `SPAWNS`, `TERRAIN` or `TERRAIN_LABELS` entries, because live spawn data covers
-them and `MapOverlay.jsx` (the only consumer of the terrain fallbacks) is legacy
-and unmounted. Do not invent coordinates for them. Two quirks worth knowing:
+**`FEATURED` is an allowlist, not a display list.** It gates TarkovMonitor map
+switches (`useTarkovMonitor.js`), ping validation (`tarkovPings.js`), the upstream
+map filter (`useTarkov.js`) and the prebake filter (`scripts/prebake.mjs`). It must
+stay identical to the `map_norm` allowlists inside `select_map_party` and
+`append_party_ping` in `supabase/10_10_security_hardening.sql`;
+`securityContract.test.js` asserts that both lists match. Adding a map here without
+adding it to those two RPCs produces a map the picker offers and the server refuses,
+which reads as a broken app rather than an unsupported map.
+
+Icebreaker and Labyrinth were added to the config after patch 1.1 but are **not in
+`FEATURED`**. The server allowlist never included them, so neither was ever
+selectable; they were listed client-side for two releases while every attempt to
+pick one failed server-side. Their `MAP_IMAGES` and `tarkovMapConfigs` entries are
+kept so re-enabling is cheap, but re-enabling means editing `FEATURED` **and** both
+RPCs in one change.
+
+They are also still upstream data gaps, which is why they are not worth that change
+yet. Neither has `SPAWNS`, `TERRAIN` or `TERRAIN_LABELS` entries — live spawn data
+covers them and `MapOverlay.jsx`, the only consumer of the terrain fallbacks, is
+legacy and unmounted. Do not invent coordinates for them. Two quirks worth knowing:
 Labyrinth's normalized name is `the-labyrinth` while its image is
 `labyrinth-2d.jpg`, and **Icebreaker's upstream bounds cover only the Infirmary
 deck** — real PMC spawns sit at z≈82 against a declared z-max of 67.4, so they

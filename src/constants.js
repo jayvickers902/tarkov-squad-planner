@@ -6,9 +6,22 @@ export const TARKOV_API = 'https://api.tarkov.dev/graphql'
 // if it ever returns. See IMPLEMENTATION-PLAN.md, Phase 3.
 export const GRAPHQL_ENABLED = false
 
+// FEATURED is not just a display list. It is the allowlist that gates TarkovMonitor
+// map switches (useTarkovMonitor.js), ping validation (tarkovPings.js), the upstream
+// map filter (useTarkov.js) and the prebake filter (scripts/prebake.mjs).
+//
+// It must stay identical to the map_norm allowlist inside select_map_party and
+// append_party_ping in supabase/10_10_security_hardening.sql — securityContract.test.js
+// asserts that. A map listed here but missing there can be picked in the UI and then
+// refused by the server, which reads as a broken app rather than an unsupported map.
+//
+// Icebreaker and Labyrinth are deliberately held back. They exist in MAP_IMAGES and
+// tarkovMapConfigs and upstream serves them, but the server allowlist has never
+// included them, so neither has ever been selectable. Re-adding either one means
+// adding it to the two RPCs in the same change, not here alone.
 export const FEATURED = [
   'customs','woods','interchange','shoreline','factory',
-  'lighthouse','streets-of-tarkov','reserve','ground-zero','the-lab','icebreaker','the-labyrinth'
+  'lighthouse','streets-of-tarkov','reserve','ground-zero','the-lab'
 ]
 
 // Maps where Cliff Descent extract is available (requires Red Rebel Ice Pick + Paracord)

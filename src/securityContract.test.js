@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { FEATURED } from './constants'
 
 const root = process.cwd()
 const partyClient = readFileSync(join(root, 'src', 'useParty.js'), 'utf8')
@@ -25,6 +26,19 @@ describe('security-sensitive contracts', () => {
     expect(migration).toContain('Accepting replacement')
     expect(partyClient).not.toContain('p_markers:')
     expect(partyClient).not.toContain('p_drawings:')
+  })
+
+  // A map the picker offers but the RPC refuses reads as a broken app, not as an
+  // unsupported map. Icebreaker and Labyrinth sat on the wrong side of this for
+  // two releases because nothing compared the two lists.
+  it('offers exactly the maps the server will accept', () => {
+    const allowlists = [...migration.matchAll(/not in \(([^)]*'the-lab'[^)]*)\)/g)]
+      .map(match => [...match[1].matchAll(/'([a-z0-9-]+)'/g)].map(entry => entry[1]))
+
+    expect(allowlists.length).toBeGreaterThanOrEqual(2)
+    for (const allowlist of allowlists) {
+      expect([...allowlist].sort()).toEqual([...FEATURED].sort())
+    }
   })
 
   it('keeps visible keyboard focus and reduced-motion support', () => {
