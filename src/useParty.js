@@ -10,10 +10,7 @@ import {
   progressQuestId,
 } from './partyMembers'
 import { normalizeCharacterSnapshot } from './tarkovCharacters'
-
-function ignoreAsyncError(value) {
-  Promise.resolve(value).catch(() => {})
-}
+import { nextDelay, recordFailure, recordSuccess } from './supabaseHealth'
 
 function saveLastPartyCode(code) {
   try {
@@ -41,13 +38,30 @@ function comparableParty(data) {
   }
 }
 
+// Recovery paths want the old contract: a failed read degrades to null rather
+// than throwing. Only the poll loop needs to tell "query failed" apart from "no
+// such party", because only it feeds the backoff breaker. Everything else is
+// already handling a failure and must not raise a second one on the way out.
+async function fetchPartyByIdSafe(partyId) {
+  try {
+    const fresh = await fetchPartyById(partyId)
+    recordSuccess()
+    return fresh
+  } catch (fetchError) {
+    recordFailure(fetchError)
+    return null
+  }
+}
+
 async function fetchPartyById(partyId) {
   if (!partyId) return null
   const [partyResult, membersResult] = await Promise.all([
     supabase.from('parties').select().eq('id', partyId).maybeSingle(),
     supabase.from('party_members').select().eq('party_id', partyId).order('joined_at', { ascending: true }),
   ])
-  if (partyResult.error || !partyResult.data || membersResult.error) return null
+  if (partyResult.error) throw partyResult.error
+  if (membersResult.error) throw membersResult.error
+  if (!partyResult.data) return null
   const party = normalizeParty(partyResult.data, membersResult.data || [])
 
   // Position events are the source of truth for the current raid. Keep this
@@ -212,19 +226,29 @@ export function useParty(userId, userSettings = {}, {
     const partyId = partyIdRef.current
     const code = partyCode
     let cancelled = false
+    let refreshInFlight = false
 
     async function refreshFromDatabase() {
-      const fresh = await fetchPartyById(partyId)
-      if (cancelled || !fresh) return
-      const pending = pendingFieldsRef.current
-      const merged = { ...(partyRef.current || {}), ...fresh }
-      for (const key of pending) {
-        if (partyRef.current && Object.prototype.hasOwnProperty.call(partyRef.current, key)) {
-          merged[key] = partyRef.current[key]
+      if (refreshInFlight) return
+      refreshInFlight = true
+      try {
+        const fresh = await fetchPartyById(partyId)
+        recordSuccess()
+        if (cancelled || !fresh) return
+        const pending = pendingFieldsRef.current
+        const merged = { ...(partyRef.current || {}), ...fresh }
+        for (const key of pending) {
+          if (partyRef.current && Object.prototype.hasOwnProperty.call(partyRef.current, key)) {
+            merged[key] = partyRef.current[key]
+          }
         }
+        if (JSON.stringify(comparableParty(merged)) === JSON.stringify(comparableParty(partyRef.current))) return
+        applyParty(merged)
+      } catch (refreshError) {
+        recordFailure(refreshError)
+      } finally {
+        refreshInFlight = false
       }
-      if (JSON.stringify(comparableParty(merged)) === JSON.stringify(comparableParty(partyRef.current))) return
-      applyParty(merged)
     }
 
     function updatePresence(channel) {
@@ -308,19 +332,45 @@ export function useParty(userId, userSettings = {}, {
     let heartbeat = null
 
     function stopTimers() {
-      if (poll) clearInterval(poll)
-      if (heartbeat) clearInterval(heartbeat)
+      if (poll) clearTimeout(poll)
+      if (heartbeat) clearTimeout(heartbeat)
       poll = null
       heartbeat = null
+    }
+
+    function schedulePoll() {
+      if (document.hidden || cancelled) return
+      poll = setTimeout(async () => {
+        poll = null
+        await refreshFromDatabase()
+        schedulePoll()
+      }, nextDelay(15000))
+    }
+
+    async function runHeartbeat() {
+      try {
+        const result = await supabase.rpc('heartbeat', { p_code: code })
+        if (result?.error) throw result.error
+        recordSuccess()
+      } catch (heartbeatError) {
+        recordFailure(heartbeatError)
+      }
+    }
+
+    function scheduleHeartbeat() {
+      if (document.hidden || cancelled) return
+      heartbeat = setTimeout(async () => {
+        heartbeat = null
+        await runHeartbeat()
+        scheduleHeartbeat()
+      }, nextDelay(30000))
     }
 
     function startTimers() {
       if (document.hidden || cancelled) return
       stopTimers()
-      poll = setInterval(refreshFromDatabase, 15000)
-      heartbeat = setInterval(() => {
-        ignoreAsyncError(supabase.rpc('heartbeat', { p_code: code }))
-      }, 30000)
+      schedulePoll()
+      scheduleHeartbeat()
     }
 
     function onVisibilityChange() {
@@ -424,12 +474,12 @@ export function useParty(userId, userSettings = {}, {
         return result
       }
       setError(result.error.message || 'Party sync failed. Refresh and try again.')
-      const fresh = await fetchPartyById(partyIdRef.current)
+      const fresh = await fetchPartyByIdSafe(partyIdRef.current)
       if (fresh) applyParty(fresh)
       return result
     } catch (writeError) {
       setError('Party sync failed. Check your connection and try again.')
-      const fresh = await fetchPartyById(partyIdRef.current)
+      const fresh = await fetchPartyByIdSafe(partyIdRef.current)
       if (fresh) applyParty(fresh)
       return { data: null, error: writeError }
     } finally {
@@ -845,7 +895,7 @@ export function useParty(userId, userSettings = {}, {
     const storedPing = pingFromEvent(stored)
     if (eventError || !storedPing) {
       setError(eventError?.message || 'Position sync failed. Try again.')
-      const fresh = await fetchPartyById(partyIdRef.current)
+      const fresh = await fetchPartyByIdSafe(partyIdRef.current)
       if (fresh) applyParty(fresh)
       return { data: null, error: eventError }
     }
@@ -907,14 +957,14 @@ export function useParty(userId, userSettings = {}, {
     const current = partyRef.current
     if (!current || current.leader_id !== userIdRef.current || !changes) return
     applyParty({ ...current, ...changes })
-    runAtomicPartyWrite('sweep_party_ephemeral', {
+    return runAtomicPartyWrite('sweep_party_ephemeral', {
       p_code: codeRef.current,
       p_raid_id: Number(current.raid_id) || 0,
     }, ['markers', 'drawings'])
   }, [runAtomicPartyWrite])
 
   const refreshParty = useCallback(async () => {
-    const fresh = await fetchPartyById(partyIdRef.current)
+    const fresh = await fetchPartyByIdSafe(partyIdRef.current)
     if (fresh) applyParty(fresh)
   }, [])
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { prunePings } from './tarkovPings'
 import { resolveSetting } from './settings'
+import { nextDelay, recordFailure, recordSuccess } from './supabaseHealth'
 
 function sameValue(a, b) {
   return JSON.stringify(a) === JSON.stringify(b)
@@ -46,12 +47,36 @@ export default function useEphemeralSweep({ party, userId, userSettings = {}, on
   onSweepRef.current = onSweep
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    let timer = null
+    let cancelled = false
+
+    async function runSweep() {
       const current = partyRef.current
       if (!current || !userId || current.leader_id !== userId) return
       const changes = sweepEphemeral(current, userSettingsRef.current)
-      if (changes) Promise.resolve(onSweepRef.current?.(changes)).catch(() => {})
-    }, 30000)
-    return () => clearInterval(timer)
+      if (!changes) return
+      try {
+        const result = await onSweepRef.current?.(changes)
+        if (result?.error) throw result.error
+        recordSuccess()
+      } catch (sweepError) {
+        recordFailure(sweepError)
+      }
+    }
+
+    function schedule() {
+      if (cancelled) return
+      timer = setTimeout(async () => {
+        timer = null
+        await runSweep()
+        schedule()
+      }, nextDelay(30000))
+    }
+
+    schedule()
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
   }, [userId])
 }
