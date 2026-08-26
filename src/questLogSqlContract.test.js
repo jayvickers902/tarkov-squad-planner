@@ -31,8 +31,18 @@ describe('quest log migration contract', () => {
     expect(migration).toMatch(/v_event_key !~ '\^\[A-Za-z0-9\]/i)
     expect(migration).toMatch(/v_item->>'occurred_at' !~ '\^\[0-9\]/i)
     expect(migration).toMatch(/set search_path = public/i)
-    expect(migration).toMatch(/revoke all on function public\.reconcile_user_quest_log_events\(text, jsonb\) from public/i)
+    // Supabase default privileges grant EXECUTE to anon and service_role at
+    // create time; revoking PUBLIC alone leaves both able to call the RPC.
+    expect(migration).toMatch(/revoke all on function public\.reconcile_user_quest_log_events\(text, jsonb\) from public, anon, service_role/i)
     expect(migration).toMatch(/grant execute on function public\.reconcile_user_quest_log_events\(text, jsonb\) to authenticated/i)
+  })
+
+  it('reconciles every column the client writes', () => {
+    // skipped lived only in the create-table body of supabase-schema.sql, so it
+    // was absent from the live table while toggleSkipped wrote to it.
+    for (const column of ['game_mode', 'state', 'state_at', 'state_source', 'source_event_key', 'obj_progress', 'skipped']) {
+      expect(migration).toMatch(new RegExp(`add column if not exists ${column}\\b`, 'i'))
+    }
   })
 
   it('accepts exactly the maps the picker offers', () => {

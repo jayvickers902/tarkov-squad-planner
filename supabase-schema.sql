@@ -57,6 +57,7 @@ alter table public.user_quests add column if not exists state text not null defa
 alter table public.user_quests add column if not exists state_at timestamptz;
 alter table public.user_quests add column if not exists state_source text not null default 'manual';
 alter table public.user_quests add column if not exists source_event_key text;
+alter table public.user_quests add column if not exists skipped boolean not null default false;
 alter table public.user_quests drop constraint if exists user_quests_user_id_quest_id_key;
 do $$
 begin

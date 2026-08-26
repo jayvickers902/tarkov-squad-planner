@@ -13,7 +13,11 @@ alter table public.user_quests
   add column if not exists state_at timestamptz,
   add column if not exists state_source text not null default 'manual',
   add column if not exists source_event_key text,
-  add column if not exists obj_progress jsonb not null default '{}';
+  add column if not exists obj_progress jsonb not null default '{}',
+  -- Live drift: skipped is declared in supabase-schema.sql only inside the
+  -- create-table body, which never ran against the existing table, so the
+  -- column was missing in production while toggleSkipped wrote to it.
+  add column if not exists skipped boolean not null default false;
 
 alter table public.user_quests drop column if exists completed;
 alter table public.user_quests alter column state_at drop not null;
@@ -224,7 +228,10 @@ begin
 end;
 $$;
 
-revoke all on function public.reconcile_user_quest_log_events(text, jsonb) from public;
+-- `revoke from public` is not sufficient on Supabase: alter default privileges
+-- grants EXECUTE explicitly to anon and service_role at create time, and an
+-- explicit role grant survives a revoke aimed at PUBLIC. Name them.
+revoke all on function public.reconcile_user_quest_log_events(text, jsonb) from public, anon, service_role;
 grant execute on function public.reconcile_user_quest_log_events(text, jsonb) to authenticated;
 
 commit;
