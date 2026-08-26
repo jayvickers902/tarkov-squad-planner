@@ -150,8 +150,9 @@ begin
   end if;
 end $$;
 
--- Auto-cleanup parties older than 48 hours (run manually or via pg_cron)
--- delete from public.parties where created_at < now() - interval '48 hours';
+-- Party cleanup is scheduled in production, not run manually, and it keys on
+-- coalesce(last_active_at, created_at) rather than created_at. See the block at
+-- the foot of supabase/10_05_lifecycle.sql for the live job and the reasoning.
 
 -- Remove a member from a party (used when clicking Leave)
 create or replace function public.leave_party(p_code text, p_name text)

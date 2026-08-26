@@ -1382,7 +1382,7 @@ cancelled. A contract test pins `FEATURED` to both RPC allowlists so the two can
 again. Re-enabling Icebreaker or Labyrinth later means editing `FEATURED` and both RPCs in one
 change; their `MAP_IMAGES` and `tarkovMapConfigs` entries were kept to make that cheap.
 
-**2. `pg_cron` cleanup — ANSWERED 2026-08-25 by measurement, one action recommended.**
+**2. `pg_cron` cleanup — CLOSED 2026-08-25. Applied to production.**
 `cleanup_stale()` is not scheduled, so the ten-minute member sweep never fires. A hand-written
 `cleanup-old-parties` job runs hourly and deletes parties six hours after `created_at` rather
 than after last activity (**F4**, **F14**). Recommended: re-key it to `last_active_at` with a
@@ -1394,6 +1394,17 @@ The predicate must be `coalesce(last_active_at, created_at)`, not `last_active_a
 `null < now() - interval '24 hours'` is null rather than true — a bare column reference would
 make any row with a null timestamp immortal. `coalesce` degrades that row to the current
 creation-time behaviour instead.
+
+Applied 2026-08-25. `cleanup-old-parties` is now jobid 2, hourly, with the `coalesce` predicate
+and a 24-hour window; it is the only job in `cron.job`. `cleanup_stale()` remains unscheduled and
+must stay that way — it carries the ten-minute member sweep, and the heartbeat stops on a hidden
+tab, so scheduling it would evict live members mid-raid. The comment at the foot of
+`supabase/10_05_lifecycle.sql` previously invited exactly that and has been replaced.
+
+One item is still open from this decision: `cleanup_stale()` carries the same nullable-column bug
+in its own 48-hour delete. The repo file is fixed; production still holds the old body. Re-running
+`supabase/10_05_lifecycle.sql` closes it and is idempotent. Latent, not live — the function is
+unscheduled and the client never calls it.
 
 **3. Drop `quest_state_events` from v1? — MY CALL, REVERSIBLE.**
 Recommended yes: provenance columns on `user_quests` cover every v1 consumer, and the ledger
