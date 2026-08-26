@@ -352,6 +352,25 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
           <div className="room-header-actions">
             {!isMobile && (
               <>
+                <div className="room-header-monitor" hidden={!settingsOpen}>
+                  <MonitorLink
+                    maps={maps}
+                    mapNorm={party.map_norm}
+                    userId={myUserId}
+                    myName={myName}
+                    isLeader={isLeader}
+                    canChangeMap={canChangeMap}
+                    hasPlan={hasPlan}
+                    onSelectMap={onSelectMap}
+                    onAddPing={onAddPing}
+                    onCharacterSnapshot={onCharacterSnapshot}
+                    currentCharacterSnapshot={mineMember?.character_snapshot}
+                    onStatus={handleMonitorStatus}
+                    settings={userSettings}
+                    onSetSetting={onSetUserSetting}
+                    detailsOpen={false}
+                  />
+                </div>
                 <TarkovClocks />
                 <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>
                 {party.map_id && (
@@ -413,35 +432,36 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
         </div>
       )}
 
-      <div className={`room-settings-panel ${settingsOpen ? 'room-settings-panel-open' : ''}`}>
-        <MonitorLink
-          maps={maps}
-          mapNorm={party.map_norm}
-          userId={myUserId}
-          myName={myName}
-          isLeader={isLeader}
-          canChangeMap={canChangeMap}
-          hasPlan={hasPlan}
-          onSelectMap={onSelectMap}
-          onAddPing={onAddPing}
-          onCharacterSnapshot={onCharacterSnapshot}
-          currentCharacterSnapshot={mineMember?.character_snapshot}
-          onStatus={handleMonitorStatus}
-          settings={userSettings}
-          onSetSetting={onSetUserSetting}
-          detailsOpen={settingsOpen}
-        />
-
-        {settingsOpen && (
-          <RaidSettings
-            party={party}
+      {isMobile && (
+        <div className="room-settings-panel room-settings-panel-open" hidden={!settingsOpen}>
+          <MonitorLink
+            maps={maps}
+            mapNorm={party.map_norm}
             userId={myUserId}
-            userSettings={userSettings}
-            onChange={onSetRaidSettings}
-            onClose={() => setSettingsOpen(false)}
+            myName={myName}
+            isLeader={isLeader}
+            canChangeMap={canChangeMap}
+            hasPlan={hasPlan}
+            onSelectMap={onSelectMap}
+            onAddPing={onAddPing}
+            onCharacterSnapshot={onCharacterSnapshot}
+            currentCharacterSnapshot={mineMember?.character_snapshot}
+            onStatus={handleMonitorStatus}
+            settings={userSettings}
+            onSetSetting={onSetUserSetting}
+            detailsOpen={false}
           />
-        )}
-      </div>
+        </div>
+      )}
+      {settingsOpen && <div className="room-settings-panel room-settings-panel-open">
+        <RaidSettings
+          party={party}
+          userId={myUserId}
+          userSettings={userSettings}
+          onChange={onSetRaidSettings}
+          onClose={() => setSettingsOpen(false)}
+        />
+      </div>}
 
       {/* Friends panel */}
       {showFriends && (
