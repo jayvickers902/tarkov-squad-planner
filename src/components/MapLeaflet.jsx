@@ -1528,7 +1528,10 @@ export default function MapLeaflet({
         return
       }
       if (mode !== 'draw') return
-      if (e.isPrimary === false || e.button !== 0) return
+      // In draw mode, middle-drag draws while the primary mouse button remains
+      // available for Leaflet's normal map panning.
+      if (e.isPrimary === false || e.button !== 1) return
+      e.preventDefault()
       isDrawing.current = true
       drawingPointerId.current = e.pointerId
       currentPts.current = []
@@ -1744,7 +1747,7 @@ export default function MapLeaflet({
             </button>
             {mode === 'draw' && (
               <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.05em' }}>
-                MID CLICK TO PAN
+                LEFT CLICK TO PAN
               </span>
             )}
           </>
