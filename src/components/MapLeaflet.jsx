@@ -2276,6 +2276,9 @@ export default function MapLeaflet({
           {intelCounts.document > 0 && (
             <span style={{ color: kindOf({ kind: 'document' }).color }}>▧ {intelCounts.document} DOCUMENT</span>
           )}
+          {intelCounts.battlepass > 0 && (
+            <span style={{ color: kindOf({ kind: 'battlepass' }).color }}>▧ {intelCounts.battlepass} BATTLE PASS INTEL</span>
+          )}
           <span style={{ color: checkedCount ? 'var(--grn)' : 'var(--txd)' }}>✓ {checkedCount} CHECKED THIS RAID</span>
           {foundToday > 0 && <span style={{ color: 'var(--txd)' }}>{foundToday} TODAY</span>}
         </div>

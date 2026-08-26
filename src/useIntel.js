@@ -1,19 +1,13 @@
-// Intel spawn points for one map — Phase 7.
+// Battle Pass Intel spawn points for one map.
 //
-// Prebaked only, deliberately. Every other dataset in this app paints from
-// src/data/prebaked and then refreshes from json.tarkov.dev, but the intel
-// adapter needs `maps` *and* `items_en`, and items_en is the 16.5 MB payload
-// prebake exists to keep off the client. A live refresh here would download
-// more data than the whole rest of the app to move ~300 static loose-loot
-// positions that change only on a wipe. So this reads the bundled file and
-// stops. The consequence is honest and worth stating: intel points are only as
-// fresh as the last build.
-//
-// Curated Season 1 document points come from Supabase instead — see useMapLoot.
+// tarkov.dev still has no coordinates for the Battle Pass collectibles. The
+// committed dataset is refreshed explicitly with `npm run update:intel` from a
+// current community map, avoiding a large network request every time the map
+// opens while keeping the source and refresh path documented in the repo.
 
 import { useEffect, useMemo, useState } from 'react'
 import { loadPrebaked } from './data/prebaked'
-import { prebakedIntelPoints } from './tarkovIntel'
+import { battlepassIntelPoints } from './tarkovIntel'
 
 export function useIntel(mapNorm) {
   const [data, setData] = useState(null)
@@ -22,7 +16,7 @@ export function useIntel(mapNorm) {
 
   useEffect(() => {
     let cancelled = false
-    loadPrebaked('intel').then(payload => {
+    loadPrebaked('battlepassIntel').then(payload => {
       if (cancelled) return
       setData(payload?.data || [])
       setGeneratedAt(payload?.generatedAt || null)
@@ -32,7 +26,7 @@ export function useIntel(mapNorm) {
   }, [])
 
   const intelPoints = useMemo(
-    () => (data ? prebakedIntelPoints(data, mapNorm) : []),
+    () => (data ? battlepassIntelPoints(data, mapNorm) : []),
     [data, mapNorm],
   )
 

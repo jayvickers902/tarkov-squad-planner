@@ -7,6 +7,7 @@
     "dev": "vite",
     "prebuild": "node scripts/prebake.mjs",
     "prebake": "node scripts/prebake.mjs",
+    "update:intel": "node scripts/update-battlepass-intel.mjs",
     "build": "vite build",
     "build:client": "vite build",
     "preview": "vite preview",

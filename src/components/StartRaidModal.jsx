@@ -137,7 +137,7 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
     [intelPoints, lootRows, mapNorm],
   )
   const intelCounts = useMemo(() => countByKind(allIntel), [allIntel])
-  const intelTotal = intelCounts.folder + intelCounts.case + intelCounts.document
+  const intelTotal = intelCounts.folder + intelCounts.case + intelCounts.document + intelCounts.battlepass
   // The pre-raid half of the planning rings: the tightest group on this map,
   // quoted at the same radius the map's default ring uses so the number the
   // brief gives is the number the gold ring will show.
@@ -348,6 +348,9 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
               )}
               {intelCounts.document > 0 && (
                 <span style={{ color: INTEL_KINDS.document.color }}>{intelCounts.document} DOCUMENT</span>
+              )}
+              {intelCounts.battlepass > 0 && (
+                <span style={{ color: INTEL_KINDS.battlepass.color }}>{intelCounts.battlepass} BATTLE PASS INTEL</span>
               )}
               <span style={{ color: 'var(--txd)' }}>— ENABLE THE INTEL LAYER ON THE MAP</span>
               {intelCluster && intelCluster.count > 1 && (

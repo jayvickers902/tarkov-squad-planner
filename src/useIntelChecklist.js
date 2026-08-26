@@ -10,10 +10,9 @@
 // reload, and it resets when the raid does: `raidKey` is the party's
 // __raid_start__ stamp, so pressing START RAID clears last raid's ticks.
 //
-// The daily counter is a *counter*, not a cap. The Season 1 document cap is
-// shared across game modes, but its actual value was not confirmable from any
-// source we can reach, and a wrong "3/3 — done for today" is worse than no
-// number at all. It counts what you ticked today and says nothing about a limit.
+// The daily counter remains a counter rather than a cap because the current
+// limit differs by progression mode. It counts what was checked today and does
+// not pretend the app knows which character limit the player is looking at.
 
 import { useCallback, useEffect, useState } from 'react'
 

@@ -18,6 +18,7 @@ const LOADERS = {
   zones: () => import('./zones.json'),
   loot: () => import('./loot.json'),
   intel: () => import('./intel.json'),
+  battlepassIntel: () => import('./battlepass-intel.json'),
 }
 
 const cache = new Map()
