@@ -28,6 +28,30 @@ function parse(files, taskIds = [regularTask, secondTask, pveTask], options) {
 }
 
 describe('EFT log file recognition', () => {
+  // The live client names files "<date>_<time>_<version> <type>_<nnn>.log".
+  // Anchoring the type at the start of the basename matched none of them, so a
+  // real Logs folder previewed as zero files.
+  it('accepts the timestamped filenames the live client actually writes', () => {
+    const stamp = '2026.07.26_23-49-12_1.0.6.5.46221'
+    expect([
+      `${stamp} push-notifications_000.log`,
+      `${stamp} backend_000.log`,
+      `${stamp} application_000.log`,
+      `Logs/log_${stamp}/${stamp} push-notifications_000.log`,
+    ].every(isRelevantEftLogFile)).toBe(true)
+
+    // Same prefix, log types this feature has no business reading.
+    expect([
+      `${stamp} errors_000.log`,
+      `${stamp} network-messages_000.log`,
+      `${stamp} inventory_000.log`,
+      `${stamp} player_000.log`,
+      `${stamp} files-checker_000.log`,
+      `${stamp} backend_queue_000.log`,
+      `${stamp} spatial-audio_000.log`,
+    ].some(isRelevantEftLogFile)).toBe(false)
+  })
+
   it('accepts notification and known context filename variants only', () => {
     expect([
       'notifications.log',
@@ -240,6 +264,57 @@ describe('parseEftLogFiles', () => {
     expect(preview.events.find(event => event.eventKey === 'event:synthetic-event-active').gameMode).toBe('regular')
     expect(preview.events.find(event => event.eventKey === 'fallback:synthetic-message-active|1787659260|657315ddab5a49b71f098853|active')).toBeUndefined()
     expect(preview.events.find(event => event.eventKey === 'event:synthetic-pve-start').gameMode).toBe('pve')
+  })
+})
+
+describe('live client log shape', () => {
+  // The live client logs `Got notification | ChatMessageReceived` on the line
+  // BEFORE the JSON body, so the marker is outside the object. Requiring it
+  // inside meant a real Logs folder produced zero events even once the
+  // filenames matched.
+  const stamp = '2026.07.26_23-49-12_1.0.6.5.46221'
+  const prefixed = (taskId, type, dt, eventId) => [
+    `2026-07-26 23:49:12.123 +01:00|1.0.6.5.46221|Info|network|Got notification | ChatMessageReceived`,
+    JSON.stringify({ eventId, type: 1, message: { type, templateId: taskId, dt, messageId: `m-${eventId}` } }),
+  ].join('\n')
+
+  it('reads records whose marker sits in the preceding log line', () => {
+    const preview = parse([{
+      name: `Logs/log_${stamp}/${stamp} push-notifications_000.log`,
+      text: [
+        prefixed(regularTask, 10, '2026-07-26T23:50:00.000Z', 'live-1'),
+        prefixed(secondTask, 12, '2026-07-26T23:55:00.000Z', 'live-2'),
+      ].join('\n'),
+    }, {
+      name: `Logs/log_${stamp}/${stamp} application_000.log`,
+      text: '2026-07-26 23:49:13 Session mode: PVP',
+    }])
+
+    expect(preview.events).toHaveLength(2)
+    expect(preview.events.map(event => event.state)).toEqual(['active', 'completed'])
+    expect(preview.events[0].gameMode).toBe('regular')
+    expect(preview.availableVersions).toEqual(['1.0'])
+  })
+
+  it('does not let one record\'s marker vouch for the next record', () => {
+    // Marker on the first record only; the second is an unmarked object that
+    // happens to follow it. A naive lookback window would accept both.
+    const text = [
+      prefixed(regularTask, 10, '2026-07-26T23:50:00.000Z', 'marked'),
+      JSON.stringify({ eventId: 'unmarked', message: { type: 12, templateId: secondTask, dt: '2026-07-26T23:51:00.000Z' } }),
+    ].join('\n')
+    const preview = parse([{ name: `Logs/log_${stamp}/${stamp} push-notifications_000.log`, text }])
+
+    expect(preview.events).toHaveLength(1)
+    expect(preview.events[0].taskId).toBe(regularTask)
+  })
+
+  it('still reads the older shape that carries the marker inside the object', () => {
+    const preview = parse([{
+      name: 'Logs/0.16.9.0/notifications.log',
+      text: jsonNotification({ eventId: 'legacy-shape' }),
+    }])
+    expect(preview.events).toHaveLength(1)
   })
 })
 

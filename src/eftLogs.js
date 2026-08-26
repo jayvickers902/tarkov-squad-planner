@@ -1,5 +1,5 @@
-const NOTIFICATION_FILE_RE = /^(?:notifications(?:[_-]\d+)?|push-notifications(?:[_-]?\d+|[_-][^.]*)?)\.log$/i
-const CONTEXT_FILE_RE = /^(?:backend|application)(?:[_-][^.]*)?\.log$/i
+const NOTIFICATION_FILE_RE = /^(?:notifications|push-notifications)(?:[_-]\d+)?\.log$/i
+const CONTEXT_FILE_RE = /^(?:backend|application)(?:[_-]\d+)?\.log$/i
 const TASK_ID_RE = /^[a-f0-9]{24}$/i
 // Persisted event keys must satisfy the reconciliation RPC's strict charset.
 const EVENT_KEY_SAFE_RE = /^[A-Za-z0-9][A-Za-z0-9_.:|=-]*$/
@@ -105,17 +105,30 @@ function extractVersion(path) {
   return candidates[0] || null
 }
 
+/**
+ * The live client writes `<date>_<time>_<version> <type>_<nnn>.log`, so the log
+ * type sits after a space rather than at the start of the name. Older builds
+ * wrote a bare `<type>.log`. Match on the segment after the last space and both
+ * shapes resolve to the same type; anchoring on the whole basename matched
+ * neither of the real ones.
+ */
+function logTypeName(path) {
+  const name = basename(path)
+  const space = name.lastIndexOf(' ')
+  return space === -1 ? name : name.slice(space + 1)
+}
+
 function isNotificationFile(path) {
-  return NOTIFICATION_FILE_RE.test(basename(path))
+  return NOTIFICATION_FILE_RE.test(logTypeName(path))
 }
 
 function isContextFile(path) {
-  return CONTEXT_FILE_RE.test(basename(path))
+  return CONTEXT_FILE_RE.test(logTypeName(path))
 }
 
 /** Return whether a selected file is one of the bounded EFT logs we understand. */
 export function isRelevantEftLogFile(path) {
-  const name = basename(path)
+  const name = logTypeName(path)
   return NOTIFICATION_FILE_RE.test(name) || CONTEXT_FILE_RE.test(name)
 }
 
@@ -191,8 +204,11 @@ function extractJsonObjects(text) {
   return { objects, parseErrors }
 }
 
+const NOTIFICATION_MARKER_RE = /chatmessagereceived/i
+const MARKER_LOOKBACK = 512
+
 function markerString(value) {
-  return typeof value === 'string' && /chatmessagereceived/i.test(value)
+  return typeof value === 'string' && NOTIFICATION_MARKER_RE.test(value)
 }
 
 function hasNotificationMarker(record) {
@@ -200,12 +216,28 @@ function hasNotificationMarker(record) {
   return Object.values(record).some(markerString)
 }
 
-function findNotificationMessages(value, result = [], seen = new Set()) {
+/**
+ * The live client writes `Got notification | ChatMessageReceived` on the log
+ * line *before* the JSON body, so the marker frequently sits outside the object
+ * entirely. Look only at the text between the previous record and this one:
+ * that span is exactly this record's log-line prefix, so a marker belonging to
+ * the preceding record cannot leak forward and mislabel this one.
+ */
+function markerInPrefix(text, start, previousEnd) {
+  const from = Math.max(previousEnd + 1, start - MARKER_LOOKBACK)
+  return from < start && NOTIFICATION_MARKER_RE.test(text.slice(from, start))
+}
+
+function findNotificationMessages(value, result = [], seen = new Set(), markedByPrefix = false) {
   if (!isPlainObject(value) || seen.has(value)) return result
   seen.add(value)
 
-  if (isPlainObject(value.message) && hasNotificationMarker(value)) result.push({ record: value, message: value.message })
-  for (const child of Object.values(value)) findNotificationMessages(child, result, seen)
+  if (isPlainObject(value.message) && (markedByPrefix || hasNotificationMarker(value))) {
+    result.push({ record: value, message: value.message })
+  }
+  // Only the record the prefix introduces is covered by that marker; nested
+  // objects must still carry their own.
+  for (const child of Object.values(value)) findNotificationMessages(child, result, seen, false)
   return result
 }
 
@@ -488,8 +520,10 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
       }
 
       if (!file.notification) continue
-      for (const { value: record } of parsed.objects) {
-        const messages = findNotificationMessages(record)
+      let previousEnd = -1
+      for (const { value: record, start, end } of parsed.objects) {
+        const messages = findNotificationMessages(record, [], new Set(), markerInPrefix(text, start, previousEnd))
+        previousEnd = end
         for (const { record: notification, message } of messages) {
           const type = messageType(message)
           const state = STATE_BY_MESSAGE_TYPE[type]
@@ -616,6 +650,8 @@ function collectProfileIdsFromText(text, session) {
 
 export const __eftLogInternals = {
   extractJsonObjects,
+  markerInPrefix,
+  logTypeName,
   safeEventKey,
   extractVersion,
   resolveMode,
