@@ -8,9 +8,12 @@ import { isPartyEntrySentinel, parseJoinCode, PARTY_ENTRY_SENTINEL_STATE, useApp
 import AuthScreen from './components/AuthScreen'
 import Lobby from './components/Lobby'
 import Room from './components/Room'
+import WelcomeModal from './components/WelcomeModal'
 import { findMember, objectiveProgressKey, progressParts } from './partyMembers'
 import { normalizeGameMode, resolvePartyMode } from './gameMode'
 import useDialogFocus from './useDialogFocus'
+import { RELEASE_VERSION } from './whatsNew'
+import { resolveWelcomeVariant, welcomeStamp, WELCOME_SETTINGS_KEY } from './welcome'
 
 const MyQuests = lazy(() => import('./components/MyQuests'))
 const AdminKeyManager = lazy(() => import('./components/AdminKeyManager'))
@@ -23,15 +26,18 @@ export default function App() {
   const { route, navigate, lastPop } = useAppRoute()
   const [pendingJoinCode] = useState(() => parseJoinCode(window.location.pathname))
   const [autoJoinFired, setAutoJoinFired] = useState(false)
+  const [autoJoinSettled, setAutoJoinSettled] = useState(false)
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
   const [openedPartyOverlays, setOpenedPartyOverlays] = useState({ code: null, quests: false, admin: false })
+  const [welcomeDismissedUserId, setWelcomeDismissedUserId] = useState(null)
+  const [manualWelcomeVariant, setManualWelcomeVariant] = useState(null)
   const partyHistoryCodeRef = useRef(null)
   const leaveDialogRef = useDialogFocus(leaveConfirmOpen, () => setLeaveConfirmOpen(false))
 
   const {
     user, profile, profileError: authProfileError, loading: authLoading,
     error: authError, setError: setAuthError,
-    logout, loginWithGoogle, createProfile,
+    logout, loginWithGoogle, createProfile, isNewProfile,
   } = useAuth()
 
   const { settings: userSettings, loading: settingsLoading, setSetting: setUserSetting } = useSettings(user?.id, profile?.callsign)
@@ -73,6 +79,7 @@ export default function App() {
     settingsLoading,
     pendingJoinCode,
   })
+
 
   const isAdmin = profile?.is_admin === true
   const gameMode = resolvePartyMode(party || questModeParty, userSettings)
@@ -140,8 +147,14 @@ export default function App() {
     ).then(joined => {
       if (joined?.game_mode) setPartyModeHint(normalizeGameMode(joined.game_mode))
       if (joined?.code) navigate({ screen: 'room', code: joined.code }, { replace: true })
-    })
+    }).finally(() => setAutoJoinSettled(true))
   }, [user, profile, authLoading, questsLoading, partyLoading, party, pendingJoinCode, autoJoinFired, navigate, joinParty]) // eslint-disable-line
+
+  useEffect(() => {
+    if (!pendingJoinCode || autoJoinFired || !party) return
+    setAutoJoinFired(true)
+    setAutoJoinSettled(true)
+  }, [pendingJoinCode, autoJoinFired, party])
 
   // A party owns a pair of same-document entries: the replaced entry is a
   // marked sentinel and the pushed entry is the visible room. A hard refresh
@@ -226,6 +239,41 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [party?.code, route.code, route.screen, isAdmin, leaveConfirmOpen, navigate])
+
+  const resolvedWelcomeVariant = resolveWelcomeVariant({
+    settings: userSettings,
+    settingsLoading,
+    isNewProfile,
+    releaseVersion: RELEASE_VERSION,
+  })
+  const welcomeVariant = manualWelcomeVariant || resolvedWelcomeVariant
+  const welcomeDismissed = welcomeDismissedUserId === user?.id
+  const welcomeJoinPending = pendingJoinCode && (!autoJoinFired || !autoJoinSettled)
+
+  function openWelcomeGuide() {
+    setWelcomeDismissedUserId(null)
+    setManualWelcomeVariant('setup')
+  }
+
+  function dismissWelcome() {
+    const wasManual = !!manualWelcomeVariant
+    setWelcomeDismissedUserId(user?.id || null)
+    setManualWelcomeVariant(null)
+    if (wasManual || !welcomeVariant) return
+
+    const stamped = welcomeStamp(
+      welcomeVariant,
+      RELEASE_VERSION,
+      new Date().toISOString(),
+      userSettings?.welcome,
+    )
+    Promise.resolve(setUserSetting(WELCOME_SETTINGS_KEY, stamped)).catch(() => {})
+  }
+
+  const welcomeLayer = user && profile && welcomeVariant && !welcomeDismissed
+    && !authLoading && !settingsLoading && !welcomeJoinPending
+    ? <WelcomeModal variant={welcomeVariant} onDismiss={dismissWelcome} />
+    : null
 
   if (authLoading) {
     return (
@@ -425,38 +473,46 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {welcomeLayer}
       </>
     )
   }
 
   if (route.screen === 'quests' && !route.code) {
     return (
-      <Suspense fallback={<AppSpinner />}>
-        <MyQuests
-          userId={user?.id}
-          userQuests={userQuests}
-          onAdd={saveQuest}
-          onBulkAdd={bulkAddQuests}
-          onRemove={removeSavedQuest}
-          onToggleImportant={toggleImportant}
-          onToggleSkipped={toggleSkipped}
-          onClearAll={clearAllQuests}
-          onRestore={restoreSnapshot}
-          onMarkCompleted={markQuestCompleted}
-          userSettings={userSettings}
-          onSetUserSetting={setUserSetting}
-          gameMode={gameMode}
-          onDone={() => navigate({ screen: 'lobby' }, { replace: true })}
-        />
-      </Suspense>
+      <>
+        <Suspense fallback={<AppSpinner />}>
+          <MyQuests
+            userId={user?.id}
+            userQuests={userQuests}
+            onAdd={saveQuest}
+            onBulkAdd={bulkAddQuests}
+            onRemove={removeSavedQuest}
+            onToggleImportant={toggleImportant}
+            onToggleSkipped={toggleSkipped}
+            onClearAll={clearAllQuests}
+            onRestore={restoreSnapshot}
+            onMarkCompleted={markQuestCompleted}
+            userSettings={userSettings}
+            onSetUserSetting={setUserSetting}
+            gameMode={gameMode}
+            onDone={() => navigate({ screen: 'lobby' }, { replace: true })}
+          />
+        </Suspense>
+        {welcomeLayer}
+      </>
     )
   }
 
   if (route.screen === 'admin' && !route.code && isAdmin) {
     return (
-      <Suspense fallback={<AppSpinner />}>
-        <AdminKeyManager gameMode={gameMode} onBack={() => navigate({ screen: 'lobby' }, { replace: true })} />
-      </Suspense>
+      <>
+        <Suspense fallback={<AppSpinner />}>
+          <AdminKeyManager gameMode={gameMode} onBack={() => navigate({ screen: 'lobby' }, { replace: true })} />
+        </Suspense>
+        {welcomeLayer}
+      </>
     )
   }
 
@@ -480,28 +536,32 @@ export default function App() {
   }
 
   return (
-    <Lobby
-      userId={user.id}
-      callsign={profile.callsign}
-      userGameMode={userGameMode}
-      onEnter={handleEnter}
-      onForceJoin={handleForceJoin}
-      onManageQuests={() => navigate({ screen: 'quests' })}
-      onLogout={logout}
-      onAdmin={() => navigate({ screen: 'admin' })}
-      isAdmin={isAdmin}
-      error={partyError}
-      friendsError={friendsError}
-      loading={partyLoading}
-      autoJoinCode={!autoJoinFired ? pendingJoinCode : null}
-      friends={friends}
-      pendingIn={pendingIn}
-      pendingOut={pendingOut}
-      onSendRequest={sendRequest}
-      onAcceptRequest={acceptRequest}
-      onRemoveRequest={removeRequest}
-      onRemoveFriend={removeFriend}
-      onRefreshFriends={refreshFriends}
-    />
+    <>
+      <Lobby
+        userId={user.id}
+        callsign={profile.callsign}
+        userGameMode={userGameMode}
+        onEnter={handleEnter}
+        onForceJoin={handleForceJoin}
+        onManageQuests={() => navigate({ screen: 'quests' })}
+        onLogout={logout}
+        onOpenGuide={openWelcomeGuide}
+        onAdmin={() => navigate({ screen: 'admin' })}
+        isAdmin={isAdmin}
+        error={partyError}
+        friendsError={friendsError}
+        loading={partyLoading}
+        autoJoinCode={!autoJoinFired ? pendingJoinCode : null}
+        friends={friends}
+        pendingIn={pendingIn}
+        pendingOut={pendingOut}
+        onSendRequest={sendRequest}
+        onAcceptRequest={acceptRequest}
+        onRemoveRequest={removeRequest}
+        onRemoveFriend={removeFriend}
+        onRefreshFriends={refreshFriends}
+      />
+      {welcomeLayer}
+    </>
   )
 }

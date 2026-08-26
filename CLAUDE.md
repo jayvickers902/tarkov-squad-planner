@@ -203,3 +203,7 @@ per scan and needs no rate limiting.
 
 Accuracy lives in the preprocessing and the thresholds in `acceptThreshold()`,
 not in a smarter model. Tune there first.
+
+## Welcome / What's New
+
+Onboarding and release-note content lives in `src/whatsNew.js`. Shipping release notes means bumping `RELEASE_VERSION` and prepending a `RELEASES` entry in the same commit. The seen flag lives in `user_settings.settings.welcome`, so it follows the account rather than the browser.

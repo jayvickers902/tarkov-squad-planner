@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../supabase'
 import { GAME_MODES, gameModeLabel, normalizeGameMode } from '../gameMode'
 
-export default function Lobby({ userId, callsign, userGameMode = 'regular', onEnter, onForceJoin, onManageQuests, onLogout, onAdmin, isAdmin, error, friendsError = '', loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
+export default function Lobby({ userId, callsign, userGameMode = 'regular', onEnter, onForceJoin, onManageQuests, onLogout, onOpenGuide, onAdmin, isAdmin, error, friendsError = '', loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const [mode, setMode]         = useState('home')
   const [createGameMode, setCreateGameMode] = useState(() => normalizeGameMode(userGameMode))
   const [code, setCode]         = useState('')
@@ -140,6 +140,7 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
             <span className="mono" style={{ fontSize: 12, color: 'var(--goldtx)' }}>
               ◆ {callsign.toUpperCase()}
             </span>
+            <button className="btn-ghost btn-sm" onClick={() => onOpenGuide?.()} style={{ fontSize: 11 }}>GUIDE</button>
             <button className="btn-ghost btn-sm" onClick={onLogout} style={{ fontSize: 11 }}>LOGOUT</button>
           </div>
         </div>

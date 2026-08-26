@@ -16,6 +16,7 @@ export function useAuth() {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
   const [profileError, setProfileError] = useState('')
+  const [isNewProfile, setIsNewProfile] = useState(false)
   const createInFlight = useRef(false)
 
   useEffect(() => {
@@ -43,14 +44,24 @@ export function useAuth() {
       if (cancelled) return
       setUser(session?.user ?? null)
       if (session?.user) fetchProfile(session.user.id)
-      else { setProfile(null); setProfileError(''); setLoading(false) }
+      else {
+        setProfile(null)
+        setProfileError('')
+        setIsNewProfile(false)
+        setLoading(false)
+      }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (cancelled) return
       setUser(session?.user ?? null)
       if (session?.user) fetchProfile(session.user.id)
-      else { setProfile(null); setProfileError(''); setLoading(false) }
+      else {
+        setProfile(null)
+        setProfileError('')
+        setIsNewProfile(false)
+        setLoading(false)
+      }
     })
 
     return () => {
@@ -107,6 +118,7 @@ export function useAuth() {
 
       setProfile({ id: session.user.id, callsign: trimmed, is_admin: false })
       setProfileError('')
+      setIsNewProfile(true)
       return true
     } finally {
       createInFlight.current = false
@@ -121,6 +133,7 @@ export function useAuth() {
     user,
     profile,
     profileError,
+    isNewProfile,
     loading,
     error,
     setError,
