@@ -1,0 +1,199 @@
+-- Phase 10 migration 18: set-based, bounded quest-log reconciliation.
+-- This migration only replaces the RPC; it does not change the user_quests schema.
+
+begin;
+
+create or replace function public.reconcile_user_quest_log_events(
+  p_game_mode text,
+  p_events jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_invalid boolean := false;
+  v_inserted integer := 0;
+  v_updated integer := 0;
+  v_ignored integer := 0;
+  v_affected text[] := array[]::text[];
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  if v_uid is null then raise exception 'not authenticated'; end if;
+  if p_game_mode is null or p_game_mode not in ('regular', 'pve') then
+    raise exception 'invalid quest log game mode';
+  end if;
+  if p_events is null or jsonb_typeof(p_events) is distinct from 'array' then
+    raise exception 'invalid quest log event payload';
+  end if;
+  -- 200-event client chunks stay well below these server-side bounds, while the
+  -- RPC keeps the original hard ceiling for other authenticated callers.
+  if jsonb_array_length(p_events) > 1000 or octet_length(p_events::text) > 1048576 then
+    raise exception 'invalid quest log event payload';
+  end if;
+
+  -- Parse as text first. The timestamp cast is reached only after its shape is
+  -- checked; one exception path keeps malformed input from partially applying.
+  begin
+    with checked as (
+      select event.*,
+        case
+          when event.occurred_at is null then null::timestamptz
+          when event.occurred_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,6})?Z$'
+            then event.occurred_at::timestamptz
+          else null::timestamptz
+        end as parsed_occurred_at
+      from jsonb_to_recordset(p_events) as event(
+        task_id text,
+        state text,
+        occurred_at text,
+        event_key text,
+        quest_name text,
+        map_norm text
+      )
+    )
+    select exists (
+      select 1
+      from checked
+      where task_id is null
+         or task_id !~* '^[a-f0-9]{24}$'
+         or state is null
+         or state not in ('active', 'failed', 'completed')
+         or event_key is null
+         or octet_length(event_key) = 0
+         or octet_length(event_key) > 240
+         or event_key !~ '^[A-Za-z0-9][A-Za-z0-9_.:|=-]{0,239}$'
+         or (quest_name is not null and (octet_length(quest_name) = 0 or octet_length(quest_name) > 160))
+         or (map_norm is not null and map_norm not in (
+           'customs', 'woods', 'interchange', 'shoreline', 'factory', 'lighthouse',
+           'streets-of-tarkov', 'reserve', 'ground-zero', 'the-lab'
+         ))
+         or (occurred_at is not null and (
+           occurred_at !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,6})?Z$'
+           or parsed_occurred_at is null
+         ))
+    ) into v_invalid;
+  exception when others then
+    v_invalid := true;
+  end;
+  if v_invalid then raise exception 'invalid quest log event payload'; end if;
+
+  -- Events are deduplicated by (task_id, event_key), preserving the first
+  -- occurrence just as the old staging table's primary key did. Each task is
+  -- then reduced to its monotonic winner, so one INSERT ... ON CONFLICT
+  -- statement handles the entire batch without a temporary table or explicit
+  -- row-locking path.
+  with raw_events as (
+    select event.task_id, event.state, event.occurred_at::timestamptz as occurred_at,
+      event.event_key, event.quest_name, event.map_norm, ord.input_order
+    -- WITH ORDINALITY is illegal on a function that carries a column definition
+    -- list, which jsonb_to_recordset always requires. Take the ordinality from
+    -- jsonb_array_elements instead and shred each element with jsonb_to_record,
+    -- which is not set-returning and so composes under a lateral join.
+    from jsonb_array_elements(p_events) with ordinality as ord(value, input_order)
+    cross join lateral jsonb_to_record(ord.value) as event(
+      task_id text,
+      state text,
+      occurred_at text,
+      event_key text,
+      quest_name text,
+      map_norm text
+    )
+  ), deduplicated as (
+    select distinct on (task_id, event_key)
+      task_id, state, occurred_at, event_key, quest_name, map_norm
+    from raw_events
+    order by task_id, event_key, input_order
+  ), ranked as (
+    select deduplicated.*,
+      row_number() over (
+        partition by task_id
+        order by occurred_at desc nulls last, event_key desc
+      ) as task_rank,
+      -- quest_name and map_norm are written on insert only, never on update, so
+      -- the single surviving row has to carry the best label the whole batch
+      -- knows. Ordering the null test first puts populated events ahead of empty
+      -- ones, so this is "most recent non-null, else null" -- a log event without
+      -- a name must not blank out a name an earlier event in the same batch had.
+      first_value(quest_name) over (
+        partition by task_id
+        order by (quest_name is null), occurred_at desc nulls last, event_key desc
+      ) as best_quest_name,
+      first_value(map_norm) over (
+        partition by task_id
+        order by (map_norm is null), occurred_at desc nulls last, event_key desc
+      ) as best_map_norm
+    from deduplicated
+  ), winners as (
+    select task_id, state, occurred_at, event_key,
+      best_quest_name as quest_name, best_map_norm as map_norm
+    from ranked
+    where task_rank = 1
+  ), applied as (
+    insert into public.user_quests (
+      user_id, game_mode, quest_id, quest_name, map_norm, state, state_at,
+      state_source, source_event_key
+    )
+    select
+      v_uid, p_game_mode, winners.task_id,
+      coalesce(winners.quest_name, winners.task_id), winners.map_norm,
+      winners.state, winners.occurred_at, 'log_import', winners.event_key
+    from winners
+    on conflict (user_id, game_mode, quest_id) do update
+    set state = excluded.state,
+        state_at = excluded.state_at,
+        state_source = 'log_import',
+        source_event_key = excluded.source_event_key
+    where (
+      excluded.state_at is not null
+      and (
+        public.user_quests.state_at is null
+        or excluded.state_at > public.user_quests.state_at
+        or (
+          excluded.state_at = public.user_quests.state_at
+          and public.user_quests.state_source = 'log_import'
+          and excluded.source_event_key > coalesce(public.user_quests.source_event_key, '')
+        )
+      )
+    ) or (
+      excluded.state_at is null
+      and public.user_quests.state_at is null
+      and public.user_quests.state_source = 'log_import'
+      and excluded.source_event_key > coalesce(public.user_quests.source_event_key, '')
+    )
+    returning quest_id, (xmax = 0) as was_insert
+  )
+  select
+    count(*) filter (where applied.was_insert),
+    count(*) filter (where not applied.was_insert),
+    (select count(*) from winners) - count(*),
+    coalesce(array_agg(applied.quest_id order by applied.quest_id), array[]::text[])
+  into v_inserted, v_updated, v_ignored, v_affected
+  from applied;
+
+  -- Deliberate count change: collapsing superseding events per task counts one
+  -- update instead of one update per passing event, so a batch that inserted a
+  -- row and then advanced it reports inserted=1/updated=0 where 10_17 reported
+  -- inserted=1/updated=1. Only the displayed tallies move; affected_task_ids and
+  -- the resulting state, state_at, state_source and source_event_key are
+  -- identical, because both guards are monotonic in (occurred_at, event_key).
+  -- Verified by differential test against the 10_17 body over 525 fixtures:
+  -- zero divergence outside quest_name/map_norm, which 10_17 froze at the
+  -- earliest event of the batch while this takes the most recent non-null.
+  return jsonb_build_object(
+    'inserted', v_inserted,
+    'updated', v_updated,
+    'ignored', v_ignored,
+    'affected_task_ids', to_jsonb(v_affected)
+  );
+end;
+$$;
+
+-- Explicitly remove Supabase's default execution grants before granting only to
+-- authenticated callers.
+revoke all on function public.reconcile_user_quest_log_events(text, jsonb) from public, anon, service_role;
+grant execute on function public.reconcile_user_quest_log_events(text, jsonb) to authenticated;
+
+commit;
