@@ -13,6 +13,7 @@ const partyState = { current: {} }
 vi.mock('./useAuth', () => ({ useAuth: () => authState.current }))
 vi.mock('./useSettings', () => ({ useSettings: () => settingsState.current }))
 vi.mock('./useParty', () => ({ useParty: () => partyState.current }))
+vi.mock('./useRaidSession', () => ({ useRaidSession: () => null }))
 vi.mock('./useUserQuests', () => ({
   useUserQuests: () => ({
     quests: [], loading: false,

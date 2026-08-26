@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { useAuth } from './useAuth'
 import { useParty } from './useParty'
+import { useRaidSession } from './useRaidSession'
 import { useSettings } from './useSettings'
 import { useUserQuests } from './useUserQuests'
 import { useFriends } from './useFriends'
@@ -80,6 +81,7 @@ export default function App() {
     pendingJoinCode,
   })
 
+  const raidSession = useRaidSession(party, user?.id, { onError: setPartyError })
 
   const isAdmin = profile?.is_admin === true
   const gameMode = resolvePartyMode(party || questModeParty, userSettings)
@@ -419,6 +421,7 @@ export default function App() {
         onRefreshFriends={refreshFriends}
         onRefresh={refreshParty}
         onStartRaid={startRaid}
+        raidSession={raidSession}
         onOpenRaid={() => navigate({ screen: 'raid', code: party.code })}
         onCloseRaid={() => navigate({ screen: 'room', code: party.code }, { replace: true })}
         />
