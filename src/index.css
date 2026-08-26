@@ -238,11 +238,28 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .eft-log-import-error { margin-top: 10px; padding: 8px 10px; color: var(--red); border: 1px solid rgba(224,107,107,.4); border-left: 3px solid var(--red); border-radius: 4px; background: rgba(224,107,107,.06); }
 .eft-log-import-watch { margin-top: 10px; padding: 8px 10px; color: var(--goldtx); border: 1px solid var(--golddim); border-radius: 4px; background: rgba(201,168,76,.05); font-size: 10px; }
 .eft-log-import-watch button { margin-left: auto; }
+.eft-log-import-progress { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 9px 10px; border: 1px solid var(--golddim); border-radius: 4px; background: rgba(201,168,76,.05); }
+.eft-log-import-progress-label { display: flex; justify-content: space-between; gap: 12px; color: var(--goldtx); font-size: 10px; }
+.eft-log-import-progress-track { height: 5px; border-radius: 3px; background: var(--sur2); overflow: hidden; }
+.eft-log-import-progress-fill { height: 100%; border-radius: 3px; background: var(--gold); transition: width .25s ease; }
+.eft-log-import-progress-note { color: var(--txd); font-size: 9px; }
+.eft-log-import-resume { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; padding: 8px 10px; border: 1px solid var(--golddim); border-left: 3px solid var(--gold); border-radius: 4px; background: rgba(201,168,76,.06); }
+.eft-log-import-resume-label { color: var(--goldtx); font-size: 10px; line-height: 1.5; }
+.eft-log-import-resume-actions { display: flex; gap: 7px; margin-left: auto; }
 .eft-log-import-preview { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--brd); }
 .eft-log-import-summary { display: flex; gap: 12px; flex-wrap: wrap; color: var(--goldtx); font-size: 10px; }
 .eft-log-import-meta,
 .eft-log-import-notes,
 .eft-log-import-muted { color: var(--txd); font-size: 10px; line-height: 1.5; }
+.eft-log-import-notes { display: flex; flex-direction: column; gap: 7px; }
+.eft-log-import-detail { border: 1px solid var(--brd); border-radius: 3px; background: var(--sur2); }
+.eft-log-import-detail summary { padding: 7px 9px; color: var(--goldtx); cursor: pointer; }
+.eft-log-import-detail summary::marker { color: var(--gold); }
+.eft-log-import-detail-list { display: flex; flex-direction: column; gap: 5px; padding: 0 9px 8px; }
+.eft-log-import-detail-row { min-width: 0; padding-top: 5px; border-top: 1px solid var(--brd); }
+.eft-log-import-detail-primary { overflow-wrap: anywhere; color: var(--txm); }
+.eft-log-import-detail-secondary { margin-top: 2px; overflow-wrap: anywhere; color: var(--txd); font-size: 9px; line-height: 1.45; }
+.eft-log-import-note-line { padding: 7px 9px; border: 1px solid var(--brd); border-radius: 3px; background: var(--sur2); }
 .eft-log-import-field { display: flex; align-items: center; gap: 8px; color: var(--txm); font-size: 10px; }
 .eft-log-import-field select { min-width: 180px; padding: 5px 7px; border: 1px solid var(--brd2); border-radius: 3px; background: var(--sur2); color: var(--tx); font-family: 'Share Tech Mono', monospace; font-size: 10px; }
 .eft-log-import-versions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }

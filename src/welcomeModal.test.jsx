@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import WelcomeModal from './components/WelcomeModal'
+import { RELEASES } from './whatsNew'
 
 afterEach(cleanup)
 
@@ -15,7 +16,7 @@ describe('WelcomeModal', () => {
   it('renders release notes and swaps to the setup guide in place', () => {
     const onDismiss = renderModal()
 
-    expect(screen.getByRole('heading', { name: 'EFT LOG IMPORT' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: RELEASES[0].title })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'SETUP GUIDE' }))
 
     expect(screen.getByRole('heading', { name: 'WELCOME TO SQUAD PLANNER' })).toBeInTheDocument()

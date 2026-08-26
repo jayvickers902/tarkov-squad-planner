@@ -130,6 +130,34 @@ function memoryStore() {
   }
 }
 
+// A store that also persists import jobs, which is what makes an interrupted
+// import resumable across a remount.
+function jobCapableStore() {
+  const base = memoryStore()
+  const jobs = new Map()
+  return {
+    ...base,
+    saveJob: vi.fn(async job => { jobs.set(job.jobId, job) }),
+    listJobs: vi.fn(async () => [...jobs.values()]),
+    deleteJob: vi.fn(async jobId => { jobs.delete(jobId) }),
+    jobCount: () => jobs.size,
+  }
+}
+
+function previewWithEvents(count) {
+  const events = Array.from({ length: count }, (_, index) => ({
+    eventKey: `event:bulk:${index}`,
+    taskId: index.toString(16).padStart(24, '0'),
+    state: 'active',
+    occurredAt: '2026-08-25T00:00:00.000Z',
+    gameMode: 'regular',
+    profileKey: null,
+    sessionKey: 'session-local',
+    version: '0.16',
+  }))
+  return preview({ events, eventsSeen: count, matchedEvents: count })
+}
+
 afterEach(() => vi.useRealTimers())
 
 describe('worker bundling contract', () => {
@@ -212,7 +240,7 @@ describe('useEftLogImport', () => {
     await expect(result.current.confirmImport()).rejects.toThrow('Choose Regular or PvE')
     act(() => result.current.setUnknownModeTarget('regular'))
     await act(async () => { await result.current.confirmImport() })
-    expect(onApply).toHaveBeenCalledWith('regular', expect.arrayContaining([expect.objectContaining({ taskId })]))
+    expect(onApply).toHaveBeenCalledWith('regular', expect.arrayContaining([expect.objectContaining({ task_id: taskId })]))
   })
 
   it('does not allow clearing the last included version', async () => {
@@ -246,7 +274,7 @@ describe('useEftLogImport', () => {
     }))
     await act(async () => { await result.current.parseSelectedFiles([logFile()]) })
     await act(async () => { await result.current.confirmImport() })
-    expect(onApply).toHaveBeenCalledWith('regular', expect.arrayContaining([expect.objectContaining({ taskId })]))
+    expect(onApply).toHaveBeenCalledWith('regular', expect.arrayContaining([expect.objectContaining({ task_id: taskId })]))
   })
 
   it('remembers a folder, checkpoints only after successful apply, and retries changed files', async () => {
@@ -433,10 +461,10 @@ describe('useEftLogImport', () => {
 
     const [, events] = onApply.mock.calls[0]
     // Without a name the RPC stores the 24-hex task ID as the quest name.
-    expect(events.find(event => event.taskId === taskId)).toMatchObject({ questName: 'Debut', mapNorm: 'customs' })
+    expect(events.find(event => event.task_id === taskId)).toMatchObject({ quest_name: 'Debut', map_norm: 'customs' })
     // A map outside the server allowlist would make the RPC reject the batch.
-    expect(events.find(event => event.taskId === offMapTask)).toMatchObject({ questName: 'Labyrinth Run' })
-    expect(events.find(event => event.taskId === offMapTask).mapNorm).toBeUndefined()
+    expect(events.find(event => event.task_id === offMapTask)).toMatchObject({ quest_name: 'Labyrinth Run' })
+    expect(events.find(event => event.task_id === offMapTask).map_norm).toBeUndefined()
   })
 
   it('returns to idle when auto-sync is requested without a remembered folder', async () => {
@@ -526,5 +554,107 @@ describe('useEftLogImport', () => {
 
     unmount()
     expect(environment.count('window', 'focus')).toBe(0)
+  })
+
+  it('reports chunked progress and clears the saved job when the import completes', async () => {
+    const count = 250
+    const value = previewWithEvents(count)
+    const store = jobCapableStore()
+    const onApply = vi.fn(async () => ({ inserted: 1, updated: 0, ignored: 0, affected_task_ids: [] }))
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: value.events.map(event => ({ id: event.taskId })),
+      gameMode: 'regular',
+      userId: 'user-1',
+      environment: universalEnvironment(),
+      workerFactory: workerFactoryWith(value),
+      handleStore: store,
+      onApply,
+    }))
+    await act(async () => { await result.current.parseSelectedFiles([logFile()]) })
+    await act(async () => { await result.current.confirmImport() })
+
+    // 250 events at a 200-event chunk size is two RPC round trips, not one.
+    expect(onApply).toHaveBeenCalledTimes(2)
+    expect(onApply.mock.calls[0][1]).toHaveLength(200)
+    expect(onApply.mock.calls[1][1]).toHaveLength(50)
+    // A finished import must not leave a resumable job behind.
+    expect(store.jobCount()).toBe(0)
+    expect(result.current.pendingJob).toBeNull()
+  })
+
+  it('keeps a resumable checkpoint when a chunk fails, and resumes without reapplying done work', async () => {
+    const count = 250
+    const value = previewWithEvents(count)
+    const store = jobCapableStore()
+    let failNext = true
+    const onApply = vi.fn(async () => {
+      if (failNext) { failNext = false; throw new Error('boom') }
+      return { inserted: 1, updated: 0, ignored: 0, affected_task_ids: [] }
+    })
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: value.events.map(event => ({ id: event.taskId })),
+      gameMode: 'regular',
+      userId: 'user-1',
+      environment: universalEnvironment(),
+      workerFactory: workerFactoryWith(value),
+      handleStore: store,
+      onApply,
+    }))
+    await act(async () => { await result.current.parseSelectedFiles([logFile()]) })
+    // Wrapped in act: the failure path sets pendingJob, and that render has to
+    // flush before the assertion below can observe it.
+    await act(async () => { await expect(result.current.confirmImport()).rejects.toThrow() })
+
+    // The first chunk failed, so nothing is applied yet but the job survives.
+    expect(result.current.pendingJob).toMatchObject({ applied: 0, total: count })
+    expect(store.jobCount()).toBe(1)
+
+    await act(async () => { await result.current.resumeImport() })
+    // Resume replays from the cursor: two chunks total across both attempts,
+    // on top of the one that threw. The completed job is then cleared.
+    expect(onApply).toHaveBeenCalledTimes(3)
+    expect(store.jobCount()).toBe(0)
+    expect(result.current.pendingJob).toBeNull()
+  })
+
+  it('surfaces an interrupted import on a later mount so progress survives leaving the page', async () => {
+    const count = 250
+    const value = previewWithEvents(count)
+    const store = jobCapableStore()
+    const allTasks = value.events.map(event => ({ id: event.taskId }))
+    let calls = 0
+    const failing = vi.fn(async () => {
+      calls += 1
+      if (calls > 1) throw new Error('boom')
+      return { inserted: 1, updated: 0, ignored: 0, affected_task_ids: [] }
+    })
+    const first = renderHook(() => useEftLogImport({
+      allTasks,
+      gameMode: 'regular',
+      userId: 'user-1',
+      environment: universalEnvironment(),
+      workerFactory: workerFactoryWith(value),
+      handleStore: store,
+      onApply: failing,
+    }))
+    await act(async () => { await first.result.current.parseSelectedFiles([logFile()]) })
+    await expect(first.result.current.confirmImport()).rejects.toThrow()
+    expect(store.jobCount()).toBe(1)
+    first.unmount()
+
+    // A fresh mount -- the reader closed the tab and came back -- has no
+    // preview, but must still find the checkpoint and offer to resume it.
+    const second = renderHook(() => useEftLogImport({
+      allTasks,
+      gameMode: 'regular',
+      userId: 'user-1',
+      environment: universalEnvironment(),
+      workerFactory: workerFactoryWith(value),
+      handleStore: store,
+      onApply: vi.fn(async () => ({ inserted: 1, updated: 0, ignored: 0, affected_task_ids: [] })),
+    }))
+    await act(async () => {})
+    expect(second.result.current.preview).toBeNull()
+    expect(second.result.current.pendingJob).toMatchObject({ applied: 200, total: count })
   })
 })

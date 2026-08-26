@@ -1,7 +1,11 @@
 const DB_NAME = 'tsp-eft-log-import'
-const DB_VERSION = 1
+// Bumped to 2 to add the import-job store. onupgradeneeded creates whichever
+// stores are missing, so a browser holding a v1 database gains the new store
+// without losing its directory handle or checkpoint.
+const DB_VERSION = 2
 const HANDLE_STORE = 'directory-handles'
 const CHECKPOINT_STORE = 'checkpoints'
+const JOB_STORE = 'import-jobs'
 const DEFAULT_KEY = 'default'
 
 const VALID_MODES = new Set(['regular', 'pve'])
@@ -95,6 +99,7 @@ export function createEftLogHandleStore({
           const database = request.result
           if (!database.objectStoreNames.contains(HANDLE_STORE)) database.createObjectStore(HANDLE_STORE, { keyPath: 'key' })
           if (!database.objectStoreNames.contains(CHECKPOINT_STORE)) database.createObjectStore(CHECKPOINT_STORE, { keyPath: 'key' })
+          if (!database.objectStoreNames.contains(JOB_STORE)) database.createObjectStore(JOB_STORE, { keyPath: 'jobId' })
         }
         request.onsuccess = () => resolve(request.result)
         request.onerror = () => reject(request.error || new Error('Local folder storage is unavailable.'))
@@ -142,6 +147,23 @@ export function createEftLogHandleStore({
 
     async deleteCheckpoint(key) {
       await withStore(CHECKPOINT_STORE, 'readwrite', store => requestToPromise(store.delete(normaliseKey(key))))
+    },
+
+    // Job persistence is what lets an interrupted import resume. The names below
+    // are the ones createQuestLogImportJob's storage lookup accepts, so this
+    // object can be handed to it directly as its store.
+    async saveJob(job) {
+      if (!job || typeof job !== 'object' || !job.jobId) throw new Error('A quest log import job is required.')
+      await withStore(JOB_STORE, 'readwrite', store => requestToPromise(store.put(job)))
+    },
+
+    async listJobs() {
+      const items = await withStore(JOB_STORE, 'readonly', store => requestToPromise(store.getAll()))
+      return Array.isArray(items) ? items : []
+    },
+
+    async deleteJob(jobId) {
+      await withStore(JOB_STORE, 'readwrite', store => requestToPromise(store.delete(String(jobId))))
     },
 
     async forget(key) {

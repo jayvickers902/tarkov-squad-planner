@@ -10,7 +10,33 @@ import {
   readRelevantEftLogFiles,
 } from './eftLogDirectory'
 import { createEftLogHandleStore, isIndexedDbSupported } from './eftLogHandleStore'
+import { createQuestLogImportJob, loadPendingJob, QUEST_LOG_IMPORT_CHUNK_SIZE } from './questLogImportJob'
 import { FEATURED } from './constants'
+
+// Resumability is a convenience, not a precondition. A browser in private mode
+// or with site data blocked rejects every IndexedDB write, and letting that
+// abort the import would fail the exact users the chunked path exists to help.
+// Fall back to an in-memory store: the import still runs and still reports
+// progress, it just cannot be resumed after the tab closes.
+function createResilientJobStore(store, memory) {
+  let degraded = false
+  async function attempt(real, fallback) {
+    if (!degraded) {
+      try {
+        return await real()
+      } catch {
+        degraded = true
+      }
+    }
+    return fallback()
+  }
+  return {
+    isDegraded: () => degraded,
+    saveJob: job => attempt(() => store.saveJob(job), () => { memory.set(job.jobId, job) }),
+    listJobs: () => attempt(() => store.listJobs(), () => [...memory.values()]),
+    deleteJob: jobId => attempt(() => store.deleteJob(jobId), () => { memory.delete(jobId) }),
+  }
+}
 
 const VALID_MODES = new Set(['regular', 'pve'])
 // The reconciliation RPC validates map_norm against the same allowlist, and it
@@ -18,6 +44,7 @@ const VALID_MODES = new Set(['regular', 'pve'])
 // on maps this app does not feature, so those import as "any map" instead.
 const IMPORTABLE_MAPS = new Set(FEATURED)
 const MAX_QUEST_NAME_BYTES = 160
+const MAX_PREVIEW_DETAIL_ROWS = 100
 const STALE_REQUEST = 'A newer EFT log scan replaced this one.'
 
 function environmentValue(environment, name) {
@@ -99,6 +126,33 @@ function safeProfileKey(profile) {
   return profile?.profileKey ?? profile?.key ?? profile?.id ?? null
 }
 
+function normaliseMalformedRecords(value) {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, MAX_PREVIEW_DETAIL_ROWS).flatMap(record => {
+    if (!record || typeof record !== 'object') return []
+    const file = String(record.file || '').trim()
+    const reason = String(record.reason || '').trim()
+    if (!file || !reason) return []
+    const line = Number.isInteger(record.line) && record.line > 0 ? record.line : null
+    return [{ file, line, reason }]
+  })
+}
+
+function normaliseUnmatchedTaskDetails(value, taskIds) {
+  const details = Array.isArray(value) ? value : []
+  const byId = new Map(details.map(detail => [detail?.taskId, detail]))
+  return taskIds.map(taskId => {
+    const detail = byId.get(taskId)
+    return {
+      taskId,
+      occurrences: Number.isInteger(detail?.occurrences) && detail.occurrences > 0 ? detail.occurrences : null,
+      states: Array.isArray(detail?.states) ? detail.states.map(String).filter(Boolean) : [],
+      versions: Array.isArray(detail?.versions) ? detail.versions.map(String).filter(Boolean) : [],
+      lastSeen: typeof detail?.lastSeen === 'string' ? detail.lastSeen : null,
+    }
+  })
+}
+
 function normalisePreview(preview, sourceMetadata = [], knownTaskIds = []) {
   const value = preview && typeof preview === 'object' ? preview : {}
   const availableVersions = [...new Set((value.availableVersions || []).map(String).filter(Boolean))]
@@ -112,6 +166,9 @@ function normalisePreview(preview, sourceMetadata = [], knownTaskIds = []) {
   const matchedEvents = Array.isArray(value.matchedEvents)
     ? value.matchedEvents
     : allEvents.filter(event => knownIds.has(event?.taskId))
+  const unmatchedTaskIds = Array.isArray(value.unmatchedTaskIds)
+    ? value.unmatchedTaskIds.map(String).filter(Boolean)
+    : []
   return {
     filesScanned: Number.isFinite(value.filesScanned) ? value.filesScanned : sourceMetadata.length,
     filesParsed: Number.isFinite(value.filesParsed) ? value.filesParsed : 0,
@@ -122,7 +179,9 @@ function normalisePreview(preview, sourceMetadata = [], knownTaskIds = []) {
     discoveredProfiles: profiles,
     events: allEvents,
     matchedEvents,
-    unmatchedTaskIds: Array.isArray(value.unmatchedTaskIds) ? value.unmatchedTaskIds : [],
+    unmatchedTaskIds,
+    unmatchedTaskDetails: normaliseUnmatchedTaskDetails(value.unmatchedTaskDetails, unmatchedTaskIds),
+    malformedRecords: normaliseMalformedRecords(value.malformedRecords),
     ambiguousModeEvents: Number.isFinite(value.ambiguousModeEvents) ? value.ambiguousModeEvents : 0,
     selectedProfileKey: value.selectedProfileKey || null,
     unknownModeTarget: value.unknownModeTarget || null,
@@ -239,6 +298,16 @@ export function useEftLogImport({
   const [error, setError] = useState(null)
   const [rememberedFolderName, setRememberedFolderName] = useState(null)
   const [lastSuccessfulCheck, setLastSuccessfulCheck] = useState(null)
+  const [progress, setProgress] = useState(null)
+  const [pendingJob, setPendingJob] = useState(null)
+
+  const jobMemoryRef = useRef(null)
+  if (!jobMemoryRef.current) jobMemoryRef.current = new Map()
+  const jobStoreRef = useRef(null)
+  if (!jobStoreRef.current) jobStoreRef.current = createResilientJobStore(store, jobMemoryRef.current)
+  const jobStore = jobStoreRef.current
+  const resumeControllerRef = useRef(null)
+  const jobSummaryRef = useRef(null)
 
   const mountedRef = useRef(true)
   const generationRef = useRef(0)
@@ -594,6 +663,35 @@ export function useEftLogImport({
     setPreview(current => current ? { ...current, unknownModeTarget: mode } : current)
   }, [])
 
+  // The job engine reports failure by returning a paused job rather than
+  // throwing, so that a partial import keeps its checkpoint. confirmImport's
+  // callers still expect a throw, so translate here -- and leave the paused job
+  // exposed as pendingJob so the panel can offer RESUME instead of a restart.
+  const runImportJob = useCallback(async (controller, runner) => {
+    jobSummaryRef.current = null
+    const start = typeof runner === 'function' ? runner : onProgress => controller.run(onProgress)
+    const finished = await start(update => {
+      if (!mountedRef.current) return
+      if (update?.summary) jobSummaryRef.current = update.summary
+      setProgress(update)
+    })
+    if (finished.status !== 'completed') {
+      resumeControllerRef.current = controller
+      if (mountedRef.current) {
+        setPendingJob({
+          jobId: finished.jobId,
+          applied: finished.cursor,
+          total: finished.total,
+          lastError: finished.lastError || null,
+        })
+      }
+      throw new Error(finished.lastError || 'The EFT quest update could not be applied.')
+    }
+    resumeControllerRef.current = null
+    if (mountedRef.current) { setPendingJob(null); setProgress(null) }
+    return jobSummaryRef.current || { inserted: 0, updated: 0, ignored: 0, affected_task_ids: [] }
+  }, [])
+
   const confirmImport = useCallback(async ({ autoSync = false, remember = false } = {}) => {
     if (!preview) throw new Error('Choose EFT logs before confirming the import.')
     if (preview.availableVersions.length && !selectionRef.current.includedVersions.length) throw new Error('Include at least one EFT log version.')
@@ -606,10 +704,27 @@ export function useEftLogImport({
       if (mountedRef.current) { setError(caughtError.message); setState('preview') }
       throw caughtError
     }
-    if (mountedRef.current) { setError(null); setState('applying') }
+    if (mountedRef.current) {
+      setError(null)
+      setState('applying')
+      setProgress({
+        applied: 0,
+        total: events.length,
+        chunkIndex: 0,
+        chunkCount: Math.ceil(events.length / QUEST_LOG_IMPORT_CHUNK_SIZE),
+        summary: null,
+        status: 'running',
+      })
+    }
     try {
       if (typeof onApplyRef.current !== 'function') throw new Error('Quest import is not connected.')
-      const result = await onApplyRef.current(mode, events)
+      const result = await runImportJob(createQuestLogImportJob({
+        events,
+        mode,
+        userId: key,
+        apply: (chunkMode, chunk) => onApplyRef.current(chunkMode, chunk),
+        store: jobStore,
+      }))
       if (result?.error) throw result.error
       // Watching needs an actual directory handle. Treating the REMEMBER
       // checkbox alone as sufficient left the panel stuck on APPLYING after a
@@ -628,7 +743,68 @@ export function useEftLogImport({
       if (mountedRef.current) { setError(nextError.message); setState('error') }
       throw nextError
     }
-  }, [key, persistentSupported, preview, startWatching, store])
+  }, [jobStore, key, persistentSupported, preview, runImportJob, startWatching, store])
+
+  // A job that outlived its tab is discoverable on the next mount, which is what
+  // makes "come back later and see where it got to" work. The apply function is
+  // supplied at resume time, not here, so a stale controller cannot fire on its own.
+  useEffect(() => {
+    if (!key || !targetMode) { setPendingJob(null); return undefined }
+    let cancelled = false
+    loadPendingJob(jobStore, key, targetMode).then(controller => {
+      if (cancelled || !mountedRef.current) return
+      if (!controller) { setPendingJob(null); return }
+      resumeControllerRef.current = controller
+      setPendingJob({
+        jobId: controller.jobId,
+        applied: controller.cursor,
+        total: controller.total,
+        lastError: controller.lastError || null,
+      })
+    }).catch(() => {
+      if (!cancelled && mountedRef.current) setPendingJob(null)
+    })
+    return () => { cancelled = true }
+  }, [jobStore, key, targetMode])
+
+  const resumeImport = useCallback(async () => {
+    const controller = resumeControllerRef.current
+    if (!controller) return null
+    if (typeof onApplyRef.current !== 'function') throw new Error('Quest import is not connected.')
+    if (mountedRef.current) {
+      setError(null)
+      setState('applying')
+      setProgress({
+        applied: controller.cursor,
+        total: controller.total,
+        chunkIndex: 0,
+        chunkCount: Math.ceil(controller.total / QUEST_LOG_IMPORT_CHUNK_SIZE),
+        summary: null,
+        status: 'running',
+      })
+    }
+    try {
+      const summary = await runImportJob(controller, onProgress => controller.resume(
+        (chunkMode, chunk) => onApplyRef.current(chunkMode, chunk),
+        onProgress,
+      ))
+      if (mountedRef.current) { setLastSuccessfulCheck(new Date().toISOString()); setState('idle') }
+      return summary
+    } catch (caughtError) {
+      const nextError = sanitisedError(caughtError, 'The EFT quest update could not be applied.')
+      if (mountedRef.current) { setError(nextError.message); setState('error') }
+      throw nextError
+    }
+  }, [runImportJob])
+
+  const discardPendingJob = useCallback(async () => {
+    const controller = resumeControllerRef.current
+    resumeControllerRef.current = null
+    if (mountedRef.current) { setPendingJob(null); setProgress(null) }
+    if (controller?.jobId) {
+      try { await jobStore.deleteJob(controller.jobId) } catch { /* the job is already unreachable */ }
+    }
+  }, [jobStore])
 
   const forgetFolder = useCallback(async () => {
     generationRef.current += 1
@@ -727,6 +903,10 @@ export function useEftLogImport({
     error,
     rememberedFolderName,
     lastSuccessfulCheck,
+    progress,
+    pendingJob,
+    resumeImport,
+    discardPendingJob,
     parseSelectedFiles,
     connectRememberedFolder,
     reconnectRememberedFolder,

@@ -21,6 +21,17 @@ const hookState = {
       { eventKey: 'unknown', taskId: '507f1f77bcf86cd799439012', state: 'completed', occurredAt: '2026-08-25T01:00:00Z', gameMode: 'regular', profileKey: null, version: '0.16' },
     ],
     unmatchedTaskIds: ['507f1f77bcf86cd799439012'],
+    unmatchedTaskDetails: [{
+      taskId: '507f1f77bcf86cd799439012',
+      occurrences: 1,
+      states: ['completed'],
+      versions: ['0.16'],
+      lastSeen: '2026-08-25T01:00:00.000Z',
+    }],
+    malformedRecords: [
+      { file: 'notifications.log', line: 12, reason: 'INVALID JSON RECORD' },
+      { file: 'notifications.log', line: 15, reason: 'TRUNCATED JSON RECORD' },
+    ],
     ambiguousModeEvents: 0,
   },
 }
@@ -77,5 +88,10 @@ describe('EftLogImport', () => {
     fireEvent.click(screen.getByRole('button', { name: 'SHOW IMPORT NOTES' }))
     // parseErrors is a count, not an array; reading `.length` always showed 0.
     expect(screen.getByText(/3 MALFORMED RECORDS SKIPPED/)).toBeInTheDocument()
+    expect(screen.getByText(/507f1f77bcf86cd799439012/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText(/3 MALFORMED RECORDS SKIPPED/))
+    expect(screen.getByText('notifications.log · LINE 12')).toBeInTheDocument()
+    expect(screen.getByText('notifications.log · LINE 15')).toBeInTheDocument()
   })
 })

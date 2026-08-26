@@ -77,6 +77,10 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
     error,
     rememberedFolderName,
     lastSuccessfulCheck,
+    progress,
+    pendingJob,
+    resumeImport,
+    discardPendingJob,
     parseSelectedFiles,
     connectRememberedFolder,
     reconnectRememberedFolder,
@@ -174,7 +178,29 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
     }
   }
 
+  async function handleResume() {
+    setBusy(true)
+    setApplyMessage('')
+    try {
+      const result = await resumeImport()
+      const applied = appliedCount(result, 0)
+      setApplyMessage(`RESUMED AND APPLIED ${applied} QUEST STATE${applied === 1 ? '' : 'S'}.`)
+    } catch {
+      setApplyMessage('RESUME FAILED — THE SAVED PROGRESS IS STILL HERE. TRY AGAIN WHEN READY.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDiscard() {
+    setApplyMessage('')
+    await discardPendingJob()
+  }
+
   function closePanel() {
+    // Closing mid-apply would unmount the progress bar while chunks are still
+    // being written. The job itself survives -- it is checkpointed after every
+    // batch -- but the reader loses the only view of it, so block the close.
     if (state === 'applying' || busy) return
     setOpen(false)
     setApplyMessage('')
@@ -199,6 +225,18 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
   const canConfirm = logModeSupported && preview && changingTasks.length > 0 && state !== 'applying' && state !== 'reading' && versionScopeValid
   const profileChoices = Array.isArray(preview?.discoveredProfiles) ? preview.discoveredProfiles : []
   const ambiguousCount = preview?.ambiguousModeEvents ?? 0
+  const unmatchedTaskIds = Array.isArray(preview?.unmatchedTaskIds) ? preview.unmatchedTaskIds : []
+  const unmatchedTaskDetails = Array.isArray(preview?.unmatchedTaskDetails) && preview.unmatchedTaskDetails.length
+    ? preview.unmatchedTaskDetails
+    : unmatchedTaskIds.map(taskId => ({ taskId, occurrences: null, states: [], versions: [], lastSeen: null }))
+  const malformedRecords = Array.isArray(preview?.malformedRecords) ? preview.malformedRecords : []
+  const hasImportNotes = unmatchedTaskIds.length > 0 || ambiguousCount > 0 || (preview?.parseErrors || 0) > 0
+  // Show the bar for any in-flight apply, including one that only just started
+  // and has no chunk result yet, so the reader never sees a frozen APPLYING...
+  const activeProgress = (state === 'applying' || busy) && progress && progress.total > 0 ? progress : null
+  const progressPercent = activeProgress
+    ? Math.min(100, Math.round((activeProgress.applied / activeProgress.total) * 100))
+    : 0
 
   return (
     <div className="card eft-log-import-panel">
@@ -249,6 +287,41 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
           <button className="btn-ghost btn-sm" onClick={checkNow} disabled={busy || state === 'reading' || state === 'applying'}>CHECK NOW</button>
           <button className="btn-ghost btn-sm" onClick={reconnectRememberedFolder} disabled={busy}>RECONNECT</button>
           <button className="btn-ghost btn-sm" onClick={forgetFolder} disabled={busy}>FORGET FOLDER</button>
+        </div>
+      )}
+
+      {activeProgress && (
+        <div className="eft-log-import-progress">
+          <div className="mono eft-log-import-progress-label">
+            <span>APPLYING QUEST EVENTS</span>
+            <span>{activeProgress.applied}/{activeProgress.total} · {progressPercent}%</span>
+          </div>
+          <div
+            className="eft-log-import-progress-track"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={activeProgress.total}
+            aria-valuenow={activeProgress.applied}
+            aria-label="Quest log import progress"
+          >
+            <div className="eft-log-import-progress-fill" style={{ width: `${progressPercent}%` }} />
+          </div>
+          <div className="mono eft-log-import-progress-note">
+            PROGRESS IS SAVED AFTER EACH BATCH. YOU CAN LEAVE THIS PAGE AND RESUME LATER.
+          </div>
+        </div>
+      )}
+
+      {pendingJob && state !== 'applying' && (
+        <div className="eft-log-import-resume">
+          <div className="mono eft-log-import-resume-label">
+            UNFINISHED IMPORT · {pendingJob.applied}/{pendingJob.total} EVENTS APPLIED
+            {pendingJob.lastError ? ` · ${pendingJob.lastError.toUpperCase()}` : ''}
+          </div>
+          <div className="eft-log-import-resume-actions">
+            <button className="btn-gold btn-sm" onClick={handleResume} disabled={busy || !onApply}>RESUME IMPORT</button>
+            <button className="btn-ghost btn-sm" onClick={handleDiscard} disabled={busy}>DISCARD</button>
+          </div>
         </div>
       )}
 
@@ -310,12 +383,52 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
               </div>
             )) : <div className="mono eft-log-import-muted">NO NEW STATE CHANGES.</div>}
           </div>
-          {(preview.unmatchedTaskIds?.length > 0 || preview.ambiguousModeEvents > 0) && (
+          {hasImportNotes && (
             <button className="btn-ghost btn-sm" onClick={() => setShowUnmatched(value => !value)}>
               {showUnmatched ? 'HIDE IMPORT NOTES' : 'SHOW IMPORT NOTES'}
             </button>
           )}
-          {showUnmatched && <div className="mono eft-log-import-notes">{preview.unmatchedTaskIds?.length || 0} UNKNOWN TASK IDS · {ambiguousCount} AMBIGUOUS MODE EVENTS · {preview.parseErrors || 0} MALFORMED RECORDS SKIPPED</div>}
+          {showUnmatched && (
+            <div className="eft-log-import-notes">
+              {unmatchedTaskIds.length > 0 && (
+                <details className="eft-log-import-detail">
+                  <summary className="mono">{unmatchedTaskIds.length} UNKNOWN TASK IDS</summary>
+                  <div className="eft-log-import-detail-list">
+                    {unmatchedTaskDetails.map(detail => (
+                      <div className="eft-log-import-detail-row" key={detail.taskId}>
+                        <div className="mono eft-log-import-detail-primary">{detail.taskId}</div>
+                        <div className="mono eft-log-import-detail-secondary">
+                          {detail.occurrences ? `${detail.occurrences} OCCURRENCE${detail.occurrences === 1 ? '' : 'S'}` : 'OCCURRENCE COUNT UNAVAILABLE'}
+                          {detail.states?.length ? ` · ${detail.states.join(' / ').toUpperCase()}` : ''}
+                          {detail.versions?.length ? ` · VERSION ${detail.versions.join(' / ')}` : ''}
+                          {detail.lastSeen ? ` · LAST SEEN ${safeDateTime(detail.lastSeen)}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+              {ambiguousCount > 0 && <div className="mono eft-log-import-note-line">{ambiguousCount} AMBIGUOUS MODE EVENTS</div>}
+              {(preview.parseErrors || 0) > 0 && (
+                <details className="eft-log-import-detail">
+                  <summary className="mono">{preview.parseErrors} MALFORMED RECORDS SKIPPED</summary>
+                  {malformedRecords.length ? (
+                    <div className="eft-log-import-detail-list">
+                      {malformedRecords.map((record, index) => (
+                        <div className="eft-log-import-detail-row" key={`${record.file}:${record.line || 'unknown'}:${record.reason}:${index}`}>
+                          <div className="mono eft-log-import-detail-primary">{record.file} · {record.line ? `LINE ${record.line}` : 'LINE UNKNOWN'}</div>
+                          <div className="mono eft-log-import-detail-secondary">{record.reason}</div>
+                        </div>
+                      ))}
+                      {malformedRecords.length < preview.parseErrors && (
+                        <div className="mono eft-log-import-detail-secondary">SHOWING {malformedRecords.length} OF {preview.parseErrors} RECORDS.</div>
+                      )}
+                    </div>
+                  ) : <div className="mono eft-log-import-detail-secondary">DETAILS UNAVAILABLE FOR THIS IMPORT.</div>}
+                </details>
+              )}
+            </div>
+          )}
           {applyMessage && <div className="mono eft-log-import-success">{applyMessage}</div>}
           <div className="eft-log-import-footer">
             <button className="btn-gold btn-sm" onClick={handleConfirm} disabled={!canConfirm || !onApply || busy}>

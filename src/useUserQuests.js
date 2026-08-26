@@ -4,6 +4,7 @@ import { normalizeGameMode } from './gameMode'
 import { activeQuestRows, manualQuestStatePatch, toQuestLogEventPayload } from './questLogState'
 
 const LOG_IMPORT_MODES = new Set(['regular', 'pve'])
+export const QUEST_LOG_CHUNK_SIZE = 200
 
 function throwIfError(error) {
   if (error) throw error
@@ -217,7 +218,7 @@ export function useUserQuests(userId, gameMode = 'regular') {
     return Array.isArray(result.data) ? result.data : []
   }, [userId, mode])
 
-  const reconcileLogEvents = useCallback(async (targetGameMode, events) => {
+  const reconcileLogEvents = useCallback(async (targetGameMode, events, options = {}) => {
     if (!userId) throw new Error('You must be signed in to import quest logs')
     const targetMode = normalizeGameMode(targetGameMode)
     if (!LOG_IMPORT_MODES.has(targetMode)) throw new Error('Quest log import supports Regular and PvE only')
@@ -225,13 +226,30 @@ export function useUserQuests(userId, gameMode = 'regular') {
 
     const safeEvents = toQuestLogEventPayload(events)
     const results = []
-    for (let offset = 0; offset < safeEvents.length; offset += 1000) {
+    const chunkCount = Math.ceil(safeEvents.length / QUEST_LOG_CHUNK_SIZE)
+    const onProgress = typeof options?.onProgress === 'function' ? options.onProgress : null
+    for (let offset = 0; offset < safeEvents.length; offset += QUEST_LOG_CHUNK_SIZE) {
       const { data, error } = await supabase.rpc('reconcile_user_quest_log_events', {
         p_game_mode: targetMode,
-        p_events: safeEvents.slice(offset, offset + 1000),
+        p_events: safeEvents.slice(offset, offset + QUEST_LOG_CHUNK_SIZE),
       })
       throwIfError(error)
       results.push(data || {})
+      if (onProgress) {
+        const summary = results.reduce((total, item) => ({
+          inserted: total.inserted + Number(item.inserted || 0),
+          updated: total.updated + Number(item.updated || 0),
+          ignored: total.ignored + Number(item.ignored || 0),
+          affected_task_ids: [...new Set([...total.affected_task_ids, ...(Array.isArray(item.affected_task_ids) ? item.affected_task_ids : [])])].slice(0, 1000),
+        }), { inserted: 0, updated: 0, ignored: 0, affected_task_ids: [] })
+        onProgress({
+          chunkIndex: Math.floor(offset / QUEST_LOG_CHUNK_SIZE) + 1,
+          chunkCount,
+          applied: Math.min(offset + QUEST_LOG_CHUNK_SIZE, safeEvents.length),
+          total: safeEvents.length,
+          summary,
+        })
+      }
     }
     const summary = results.reduce((total, item) => ({
       inserted: total.inserted + Number(item.inserted || 0),

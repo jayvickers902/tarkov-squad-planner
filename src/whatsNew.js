@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.09'
+export const RELEASE_VERSION = '2026.10'
 
 export const SETUP_STEPS = [
   {
@@ -28,6 +28,25 @@ export const SETUP_STEPS = [
 ]
 
 export const RELEASES = [
+  {
+    version: '2026.10',
+    date: '2026-08-26',
+    title: 'IMPORTS THAT SURVIVE',
+    items: [
+      {
+        title: 'RESUMABLE LOG IMPORT',
+        body: 'Large imports apply in batches behind a progress bar. Progress is saved after every batch, so you can leave the page and finish the import when you come back.',
+      },
+      {
+        title: 'CLEARER IMPORT DIAGNOSTICS',
+        body: 'Skipped records and unrecognized task IDs now name the file, line and reason instead of reporting a bare count.',
+      },
+      {
+        title: 'STEADIER CONNECTION',
+        body: 'Party polling and heartbeats back off when the server is struggling instead of hammering it, then recover on their own.',
+      },
+    ],
+  },
   {
     version: '2026.09',
     date: '2026-08-25',

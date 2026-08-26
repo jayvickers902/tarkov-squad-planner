@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RELEASE_VERSION } from './whatsNew'
+import { RELEASE_VERSION, RELEASES } from './whatsNew'
 import { WELCOME_SETTINGS_KEY } from './welcome'
 
 // These tests drive App's welcome gating, not its data layer. Every hook that
@@ -82,7 +82,9 @@ function setParty(overrides = {}) {
 }
 
 const setupHeading = () => screen.queryByRole('heading', { name: 'WELCOME TO SQUAD PLANNER' })
-const newsHeading = () => screen.queryByRole('heading', { name: 'EFT LOG IMPORT' })
+// Derived from the newest entry rather than hardcoded, for the same reason the
+// version above is: shipping a release must not break the gating tests.
+const newsHeading = () => screen.queryByRole('heading', { name: RELEASES[0].title })
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
