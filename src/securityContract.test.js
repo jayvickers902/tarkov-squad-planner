@@ -6,6 +6,7 @@ import { FEATURED } from './constants'
 const root = process.cwd()
 const partyClient = readFileSync(join(root, 'src', 'useParty.js'), 'utf8')
 const migration = readFileSync(join(root, 'supabase', '10_10_security_hardening.sql'), 'utf8')
+const raidSessionMigration = readFileSync(join(root, 'supabase', '10_15_raid_sessions.sql'), 'utf8')
 const css = readFileSync(join(root, 'src', 'index.css'), 'utf8')
 
 describe('security-sensitive contracts', () => {
@@ -32,10 +33,11 @@ describe('security-sensitive contracts', () => {
   // unsupported map. Icebreaker and Labyrinth sat on the wrong side of this for
   // two releases because nothing compared the two lists.
   it('offers exactly the maps the server will accept', () => {
-    const allowlists = [...migration.matchAll(/not in \(([^)]*'the-lab'[^)]*)\)/g)]
+    const allowlists = [migration, raidSessionMigration]
+      .flatMap(source => [...source.matchAll(/not in \(([^)]*'the-lab'[^)]*)\)/g)])
       .map(match => [...match[1].matchAll(/'([a-z0-9-]+)'/g)].map(entry => entry[1]))
 
-    expect(allowlists.length).toBeGreaterThanOrEqual(2)
+    expect(allowlists.length).toBeGreaterThanOrEqual(4)
     for (const allowlist of allowlists) {
       expect([...allowlist].sort()).toEqual([...FEATURED].sort())
     }

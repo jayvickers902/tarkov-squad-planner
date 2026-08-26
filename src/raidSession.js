@@ -16,6 +16,7 @@ const MAX_PLAN_STRING_BYTES = 4096
 const MAX_READINESS_BYTES = 16384
 const MAX_READINESS_KEYS = 64
 const MAX_READINESS_STRING_BYTES = 1024
+const MAX_PAYLOAD_KEY_BYTES = 160
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -40,6 +41,11 @@ function jsonBytes(value) {
   return encoded.length
 }
 
+function rawStringBytes(value) {
+  if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(value).length
+  return unescape(encodeURIComponent(value)).length
+}
+
 function hasOversizedString(value, maxBytes) {
   if (typeof value === 'string') return jsonBytes(value) - 2 > maxBytes
   if (Array.isArray(value)) return value.some(entry => hasOversizedString(entry, maxBytes))
@@ -56,6 +62,9 @@ function payloadResult(value, {
 } = {}) {
   if (!isObject(value)) return { valid: false, error: `${label} must be an object` }
   if (Object.keys(value).length > maxKeys) return { valid: false, error: `${label} has too many keys` }
+  if (Object.keys(value).some(key => rawStringBytes(key) > MAX_PAYLOAD_KEY_BYTES)) {
+    return { valid: false, error: `${label} contains an oversized key` }
+  }
   if (jsonBytes(value) > maxBytes) return { valid: false, error: `${label} is too large` }
   if (hasOversizedString(value, maxStringBytes)) {
     return { valid: false, error: `${label} contains an oversized string` }

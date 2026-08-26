@@ -245,6 +245,7 @@ create index if not exists raid_session_members_user_id_idx
 alter table public.raid_sessions enable row level security;
 alter table public.raid_session_members enable row level security;
 alter table public.raid_session_baselines enable row level security;
+alter table public.raid_session_baselines force row level security;
 
 drop policy if exists "Raid sessions member read" on public.raid_sessions;
 create policy "Raid sessions member read" on public.raid_sessions
@@ -284,6 +285,8 @@ create policy "Raid session members own insert" on public.raid_session_members
       join public.party_members pm on pm.party_id = rs.party_id
       where rs.id = raid_session_members.session_id
         and pm.user_id = auth.uid()
+        and pm.callsign = raid_session_members.callsign_snapshot
+        and raid_session_members.plan_revision = rs.plan_revision
     )
   );
 
@@ -357,7 +360,7 @@ begin
   limit 1
   for update;
 
-  if found and v_existing.status = 'planning' then
+  if found and v_existing.status in ('planning', 'locked') then
     update public.parties
     set active_session_id = v_existing.id, last_active_at = now()
     where id = v_party.id;
@@ -369,6 +372,10 @@ begin
         where rsm.session_id = v_existing.id
       ), '[]'::jsonb)
     );
+  end if;
+
+  if found and v_existing.status = 'active' then
+    raise exception 'a raid is already in progress';
   end if;
 
   update public.raid_sessions

@@ -58,9 +58,11 @@ describe('raid session normalization and derivation', () => {
   it('rejects malformed and oversized plan payloads before an RPC call', () => {
     expect(validateRaidPlan([])).toMatchObject({ valid: false })
     expect(validateRaidPlan({ a: 'x'.repeat(4097) })).toMatchObject({ valid: false })
+    expect(validateRaidPlan({ ['k'.repeat(161)]: true })).toEqual({ valid: false, error: 'raid plan payload contains an oversized key' })
     expect(validateRaidPlan(Object.fromEntries(Array.from({ length: 65 }, (_, index) => [`key-${index}`, true]))))
       .toMatchObject({ valid: false })
     expect(validateRaidPlan({ goal: 'quest-push', assignments: {} })).toEqual({ valid: true, error: null })
+    expect(validateReadiness({ ['k'.repeat(161)]: true })).toEqual({ valid: false, error: 'readiness payload contains an oversized key' })
   })
 
   it('recognizes the server CAS error and ignores unrelated failures', () => {
