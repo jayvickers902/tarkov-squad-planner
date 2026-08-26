@@ -22,9 +22,16 @@ function statusOf(error) {
   return Number.isFinite(Number(status)) ? Number(status) : null
 }
 
+// 502/503/504 are the origin's own gateway errors. 408/429 are explicit
+// "slow down" answers. 520-524 come from Cloudflare in front of Supabase when
+// the origin never answered at all -- a hung Postgres surfaces as 522 in the
+// browser, never as 504, so omitting that range meant the client kept polling
+// at full rate through exactly the outage this backoff exists for.
+const RETRYABLE_STATUSES = new Set([408, 429, 502, 503, 504, 520, 521, 522, 523, 524])
+
 function isRetryableFailure(error) {
   const status = statusOf(error)
-  if (status !== null) return status === 502 || status === 503 || status === 504
+  if (status !== null) return RETRYABLE_STATUSES.has(status)
   if (error instanceof TypeError || error?.name === 'TypeError') return true
   const message = String(error?.message || error || '')
   return /ERR_FAILED|failed to fetch|network (?:error|request|failure)|load failed/i.test(message)
