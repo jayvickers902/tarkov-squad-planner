@@ -1,0 +1,15 @@
+2026-08-25 12:01:00 | { 
+  "type": "ChatMessageReceived",
+  "eventId": "synthetic-event-active",
+  "message": {
+    "type": 10,
+    "templateId": "657315ddab5a49b71f098853 extra-template-data",
+    "dt": "1787659260",
+    "messageId": "synthetic-message-active",
+    "text": "A quoted brace } and an escaped quote: \"still text\""
+  }
+}
+{"type":"ChatMessageReceived","eventId":"synthetic-event-failed","message":{"type":11,"templateId":"59c9392986f7742f6923add2","dt":1787659320,"messageId":"synthetic-message-failed"}}
+{"type":"ChatMessageReceived","eventId":"synthetic-event-restarted","message":{"type":10,"templateId":"59c9392986f7742f6923add2","dt":1787659380,"messageId":"synthetic-message-restarted"}}
+{"type":"ChatMessageReceived","eventId":"synthetic-event-completed","message":{"type":12,"templateId":"59c9392986f7742f6923add2","dt":1787659440,"messageId":"synthetic-message-completed"}}
+{"type":"ChatMessageReceived","eventId":"synthetic-event-unknown","message":{"type":10,"templateId":"aaaaaaaaaaaaaaaaaaaaaaaa unknown task","dt":1787659500,"messageId":"synthetic-message-unknown"}}

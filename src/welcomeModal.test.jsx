@@ -15,7 +15,7 @@ describe('WelcomeModal', () => {
   it('renders release notes and swaps to the setup guide in place', () => {
     const onDismiss = renderModal()
 
-    expect(screen.getByRole('heading', { name: 'PRE-RAID UPDATE' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'EFT LOG IMPORT' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'SETUP GUIDE' }))
 
     expect(screen.getByRole('heading', { name: 'WELCOME TO SQUAD PLANNER' })).toBeInTheDocument()

@@ -145,9 +145,11 @@ export default function BossCard({ boss = {}, compact = false }) {
       )}
 
       {drops.length > 0 && (
-        <div style={{ marginTop: compact ? 6 : 8 }}>
-          <div className="mono" style={{ fontSize: compact ? 8 : 9, color: 'var(--txd)', letterSpacing: '.08em', marginBottom: 3 }}>TOP DROPS</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <details style={{ marginTop: compact ? 6 : 8 }}>
+          <summary className="mono" style={{ fontSize: compact ? 8 : 9, color: 'var(--txm)', letterSpacing: '.08em', cursor: 'pointer', userSelect: 'none', padding: '3px 0' }}>
+            VIEW TOP DROPS ({drops.length})
+          </summary>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4, paddingLeft: 2 }}>
             {drops.map((drop, index) => (
               <div key={drop.id || `${drop.name}-${index}`} style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                 {drop.iconLink && (
@@ -158,7 +160,7 @@ export default function BossCard({ boss = {}, compact = false }) {
               </div>
             ))}
           </div>
-        </div>
+        </details>
       )}
     </div>
   )

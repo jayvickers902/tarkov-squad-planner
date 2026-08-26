@@ -427,7 +427,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
         <div className="room-game-mode-notice mono" role="status">
           This party is {gameModeLabel(gameMode)}. You are seeing your {gameModeLabel(gameMode)} quest list.
           {!questsLoading && activeQuestCount === 0 && (
-            <span> Your {gameModeLabel(gameMode)} list is empty, which is expected for a mode you have not played. Open Quest Manager to use TarkovTracker, Catch Up, or the screenshot import routes.</span>
+            <span> Your {gameModeLabel(gameMode)} list is empty, which is expected for a mode you have not played. Open Quest Manager to import EFT logs, use Catch Up, the screenshot scanner, or add tasks manually.</span>
           )}
         </div>
       )}

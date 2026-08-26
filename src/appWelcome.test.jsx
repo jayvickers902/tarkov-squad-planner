@@ -20,6 +20,7 @@ vi.mock('./useUserQuests', () => ({
     addQuest: vi.fn(), removeQuest: vi.fn(), bulkAddQuests: vi.fn(),
     toggleImportant: vi.fn(), toggleSkipped: vi.fn(), clearAllQuests: vi.fn(),
     restoreSnapshot: vi.fn(), markCompleted: vi.fn(), saveObjectiveProgress: vi.fn(),
+    reconcileLogEvents: vi.fn(), getQuestHistory: vi.fn().mockResolvedValue([]),
   }),
 }))
 vi.mock('./useFriends', () => ({
@@ -81,7 +82,7 @@ function setParty(overrides = {}) {
 }
 
 const setupHeading = () => screen.queryByRole('heading', { name: 'WELCOME TO SQUAD PLANNER' })
-const newsHeading = () => screen.queryByRole('heading', { name: 'PRE-RAID UPDATE' })
+const newsHeading = () => screen.queryByRole('heading', { name: 'EFT LOG IMPORT' })
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')

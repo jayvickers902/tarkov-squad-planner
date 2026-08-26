@@ -56,6 +56,8 @@ export default function App() {
     bulkAddQuests,
     toggleImportant, toggleSkipped, clearAllQuests, restoreSnapshot, markCompleted: markQuestCompleted,
     saveObjectiveProgress,
+    reconcileLogEvents,
+    getQuestHistory,
   } = useUserQuests(user?.id, questGameMode)
 
   const { friends, pendingIn, pendingOut, error: friendsError, sendRequest, acceptRequest, removeRequest, removeFriend, refresh: refreshFriends } = useFriends(user?.id, profile?.callsign)
@@ -443,6 +445,8 @@ export default function App() {
                 onClearAll={clearAllQuests}
                 onRestore={restoreSnapshot}
                 onMarkCompleted={markQuestCompleted}
+                onReconcileLogEvents={reconcileLogEvents}
+                onGetQuestHistory={getQuestHistory}
                 userSettings={userSettings}
                 onSetUserSetting={setUserSetting}
                 gameMode={gameMode}
@@ -497,6 +501,8 @@ export default function App() {
             onClearAll={clearAllQuests}
             onRestore={restoreSnapshot}
             onMarkCompleted={markQuestCompleted}
+            onReconcileLogEvents={reconcileLogEvents}
+            onGetQuestHistory={getQuestHistory}
             userSettings={userSettings}
             onSetUserSetting={setUserSetting}
             gameMode={gameMode}

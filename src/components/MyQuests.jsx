@@ -3,7 +3,7 @@ import { useTasks } from '../useTarkov'
 import { FEATURED } from '../constants'
 import QuestScanner from './QuestScanner'
 import CatchUp from './CatchUp'
-import TrackerLink from './TrackerLink'
+import EftLogImport from './EftLogImport'
 import { GAME_MODES, gameModeLabel, resolvePartyMode } from '../gameMode'
 
 // Small Kappa badge — reused in search results and saved list
@@ -24,7 +24,7 @@ const MAP_NAMES = {
   'ground-zero': 'Ground Zero', 'the-lab': 'The Lab',
 }
 
-export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onRestore, onDone, inParty, userSettings = {}, onSetUserSetting, onMarkCompleted, gameMode: passedGameMode = null }) {
+export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onRestore, onDone, inParty, userSettings = {}, onSetUserSetting, onMarkCompleted, onReconcileLogEvents, onGetQuestHistory, gameMode: passedGameMode = null }) {
   const [mapFilter, setMapFilter]     = useState('all')
   const [searchMap, setSearchMap]     = useState('any')
   const [searchQ, setSearchQ]         = useState('')
@@ -229,15 +229,13 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
         <QuestScanner allTasks={allTasks} userQuests={userQuests} onAdd={onAdd} />
         <CatchUp allTasks={allTasks} userQuests={userQuests} onBulkAdd={onBulkAdd} userId={userId} />
-        <TrackerLink
-          userId={userId}
+        <EftLogImport
           allTasks={allTasks}
           userQuests={userQuests}
-          onBulkAdd={onBulkAdd}
-          onMarkCompleted={onMarkCompleted}
+          userId={userId}
+          onGetQuestHistory={onGetQuestHistory}
           gameMode={gameMode}
-          userSettings={userSettings}
-          onSetGameMode={canChangeGameMode ? mode => onSetUserSetting('game_mode', mode) : undefined}
+          onApply={onReconcileLogEvents}
         />
       </div>
 
@@ -448,8 +446,8 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                 {/* Done + Skip actions */}
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                   <button
-                    onClick={() => onRemove(q.quest_id)}
-                    title="Mark as done — removes from your list"
+                    onClick={() => onMarkCompleted?.(q.quest_id)}
+                    title="Mark as done — retains completion history and removes from your active list"
                     style={{
                       background: 'none', border: '1px solid var(--brd2)', borderRadius: 3,
                       padding: '2px 7px', cursor: 'pointer', fontSize: 10, fontFamily: 'Share Tech Mono',

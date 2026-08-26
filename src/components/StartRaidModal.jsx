@@ -1,20 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useBossSpawns, useKeys } from '../useTarkov'
 import { getRestGoonReports } from '../tarkovRest'
-import { loadPrebaked } from '../data/prebaked'
 import { RED_REBEL_MAPS } from '../constants'
 import { useIntel } from '../useIntel'
 import { useMapLoot } from '../useMapLoot'
 import { useIntelChecklist } from '../useIntelChecklist'
 import { curatedLootPoints, mergeIntelSources, countByKind, INTEL_KINDS, bestCluster, RING_RADII_M } from '../tarkovIntel'
-import { findMember, objectiveProgressKey, progressOwnerId, progressQuestId } from '../partyMembers'
+import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
 import BossCard from './BossCard'
 import useDialogFocus from '../useDialogFocus'
-
-function toAntifandom(url) {
-  if (!url) return null
-  return url.replace('escapefromtarkov.fandom.com', 'escapefromtarkov.antifandom.com')
-}
 
 function getTarkovTimes() {
   const utcSecs = Date.now() / 1000
@@ -32,23 +26,6 @@ function toHHMM(secs) {
 function isDaytime(secs) {
   const h = secs / 3600
   return h >= 6 && h < 21
-}
-
-function summarizeExits(data, mapNorm) {
-  const map = Array.isArray(data) ? data.find(entry => entry?.normalizedName === mapNorm) : null
-  const extracts = Array.isArray(map?.extracts) ? map.extracts : []
-  if (!extracts.length) return null
-  const counts = extracts.reduce((result, extract) => {
-    if (extract.faction === 'pmc') result.pmc += 1
-    else if (extract.faction === 'scav') result.scav += 1
-    else result.shared += 1
-    const switchIds = Array.isArray(extract.switchIds)
-      ? extract.switchIds
-      : extract.switchIds ? [extract.switchIds] : []
-    if (switchIds.length > 0) result.gated += 1
-    return result
-  }, { pmc: 0, scav: 0, shared: 0, gated: 0 })
-  return { total: extracts.length, ...counts }
 }
 
 function formatGoonAge(timestamp) {
@@ -78,7 +55,6 @@ function BossColumn({ label, bosses }) {
 export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClose, onCancel = onClose }) {
   const dialogRef = useDialogFocus(true, onCancel)
   const [times, setTimes] = useState(getTarkovTimes)
-  const [exitSummary, setExitSummary] = useState(null)
   const [goonReports, setGoonReports] = useState([])
   const { getBossesForMap, loading: bossLoading } = useBossSpawns(gameMode)
 
@@ -88,15 +64,6 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
   }, [])
 
   const mapNorm = party.map_norm
-
-  useEffect(() => {
-    let active = true
-    setExitSummary(null)
-    loadPrebaked('zones').then(prebaked => {
-      if (active) setExitSummary(summarizeExits(prebaked?.data, mapNorm))
-    })
-    return () => { active = false }
-  }, [mapNorm])
 
   useEffect(() => {
     let active = true
@@ -146,43 +113,47 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
     [allIntel, intelTotal],
   )
 
-  const myQuests = findMember(party.members, myUserId)?.quests || []
+  const memberRows = useMemo(() => normalizeMembers(party.members), [party.members])
+  const taskById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks])
 
-  const completedQuestIds = useMemo(() => new Set(
-    Object.entries(party.progress || {})
-      .filter(([k, v]) => k.startsWith('__done__:') && progressOwnerId(k) === myUserId && v)
-      .map(([k]) => progressQuestId(k))
-  ), [party.progress, myUserId])
-
-  const myMapQuests = useMemo(() => {
-    return myQuests
-      .filter(q => !completedQuestIds.has(q.id))
-      .map(q => tasks.find(t => t.id === q.id))
-      .filter(t => t && t.map?.normalizedName === mapNorm)
-  }, [myQuests, tasks, mapNorm, completedQuestIds]) // eslint-disable-line
-
-  const myItems = useMemo(() => {
+  const squadPrep = useMemo(() => memberRows.map(member => {
     const progress = party.progress || {}
     const itemMap = {}
-    myQuests.forEach(q => {
-      const task = tasks.find(t => t.id === q.id)
+    const seenQuests = new Set()
+    const mapQuests = member.quests
+      .filter(q => seenQuests.has(q.id) ? false : (seenQuests.add(q.id), true))
+      .filter(q => !progress[`__done__:${q.id}::${member.user_id}`])
+      .map(q => taskById.get(q.id))
+      .filter(task => task && task.map?.normalizedName === mapNorm)
+
+    member.quests.forEach(q => {
+      const task = taskById.get(q.id)
       if (!task) return
       task.objectives?.forEach(obj => {
         if (obj.optional) return
-        if (progress[objectiveProgressKey(task.id, obj.id, myUserId)]) return
+        if (progress[objectiveProgressKey(task.id, obj.id, member.user_id)]) return
         const isPlant = obj.type === 'plantItem' && obj.item
         const isMark  = obj.type === 'mark' && obj.markerItem
+        const isFind = obj.type === 'findItem' && obj.item
         const onMap = obj.maps?.length > 0
           ? obj.maps.some(m => m.normalizedName === mapNorm)
           : task.map?.normalizedName === mapNorm
         if (!onMap) return
-        if (isPlant || isMark) {
-          const item  = isPlant ? obj.item : obj.markerItem
-          const count = isPlant ? (obj.count || 1) : 1
-          if (itemMap[item.id]) {
-            itemMap[item.id].count += count
+        if (isPlant || isMark || isFind) {
+          const item = isMark ? obj.markerItem : obj.item
+          const count = isMark ? 1 : (obj.count || 1)
+          const key = `${item.id}::${isFind ? 'find' : 'bring'}`
+          if (itemMap[key]) {
+            itemMap[key].count += count
           } else {
-            itemMap[item.id] = { name: item.name, iconLink: item.iconLink || null, count, isKey: false }
+            itemMap[key] = {
+              name: item.name,
+              iconLink: item.iconLink || null,
+              count,
+              isKey: false,
+              action: isFind ? 'FIND' : 'BRING',
+              foundInRaid: Boolean(isFind && obj.foundInRaid),
+            }
           }
         }
         // Keys required to access/complete objectives on this map
@@ -200,6 +171,8 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
                   count: 1,
                   isKey: true,
                   questName: task.name,
+                  action: 'KEY',
+                  foundInRaid: false,
                 }
               }
             })
@@ -207,8 +180,8 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
         }
       })
     })
-    return Object.values(itemMap)
-  }, [myQuests, tasks, mapNorm, party.progress, myUserId, keyIconMap]) // eslint-disable-line
+    return { ...member, mapQuests, items: Object.values(itemMap) }
+  }), [memberRows, party.progress, taskById, mapNorm, keyIconMap])
 
   const hasCliffDescent = RED_REBEL_MAPS.has(mapNorm)
   const leftDay  = isDaytime(times.left)
@@ -268,6 +241,75 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
         {/* Body */}
         <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
+          {/* Squad prep comes first: this is the information players can act on before loading in. */}
+          <section aria-labelledby="squad-prep-title">
+            <div id="squad-prep-title" className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 7 }}>◆ SQUAD RAID PREP</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {squadPrep.map(member => {
+                const isMe = member.user_id === myUserId
+                return (
+                  <div key={member.user_id} style={{ padding: '8px 9px', background: 'var(--sur2)', border: '1px solid var(--brd)', borderLeft: `3px solid ${isMe ? 'var(--gold)' : 'var(--brd2)'}`, borderRadius: 3 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                      <span className="mono" style={{ fontSize: 10, color: isMe ? 'var(--goldtx)' : 'var(--txm)', letterSpacing: '.06em' }}>
+                        {(member.callsign || 'SQUAD MEMBER').toUpperCase()}{isMe ? ' · YOU' : ''}
+                      </span>
+                      <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', flexShrink: 0 }}>
+                        {member.mapQuests.length} QUEST{member.mapQuests.length === 1 ? '' : 'S'}
+                      </span>
+                    </div>
+
+                    {member.mapQuests.length > 0 ? (
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 5 }}>
+                        {member.mapQuests.map(task => (
+                          <span key={task.id} title={task.trader?.name || ''} style={{ fontSize: 11, color: 'var(--tx)', lineHeight: 1.2 }}>
+                            {task.name}
+                          </span>
+                        )).reduce((nodes, node, index) => index ? [...nodes, <span key={`sep-${index}`} style={{ color: 'var(--txd)' }}>·</span>, node] : [node], [])}
+                      </div>
+                    ) : (
+                      <div className="mono" style={{ marginTop: 4, fontSize: 9, color: 'var(--txd)' }}>NO ACTIVE QUESTS HERE</div>
+                    )}
+
+                    {member.items.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 7, paddingTop: 6, borderTop: '1px solid var(--brd)' }}>
+                        {member.items.map(item => (
+                          <div key={`${item.action}-${item.name}`} style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                            {item.iconLink && <img src={item.iconLink} alt="" style={{ width: 22, height: 22, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', background: 'var(--sur)', border: '1px solid var(--brd2)', borderRadius: 2 }} />}
+                            <span className="mono" style={{ fontSize: 9, color: item.isKey ? 'var(--goldtx)' : 'var(--txm)', minWidth: 35 }}>{item.action}</span>
+                            <span className="mono" style={{ fontSize: 10, color: 'var(--goldtx)', fontWeight: 700 }}>{item.count}×</span>
+                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--tx)' }}>{item.name}</span>
+                            {item.foundInRaid && <span className="mono" style={{ marginLeft: 'auto', fontSize: 8, color: '#e85a5a', flexShrink: 0 }}>FIR</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+
+          {/* Intel brief */}
+          {intelTotal > 0 && (
+            <div className="mono intel-brief">
+              <span style={{ color: 'var(--goldtx)', letterSpacing: '.1em' }}>▤ INTEL SPAWNS</span>
+              {intelCounts.folder > 0 && <span style={{ color: INTEL_KINDS.folder.color }}>{intelCounts.folder} FOLDER</span>}
+              {intelCounts.case > 0 && <span style={{ color: INTEL_KINDS.case.color }}>{intelCounts.case} CASE</span>}
+              {intelCounts.document > 0 && <span style={{ color: INTEL_KINDS.document.color }}>{intelCounts.document} DOCUMENT</span>}
+              {intelCounts.battlepass > 0 && <span style={{ color: INTEL_KINDS.battlepass.color }}>{intelCounts.battlepass} BATTLE PASS INTEL</span>}
+              <span style={{ color: 'var(--txd)' }}>— ENABLE THE INTEL LAYER ON THE MAP</span>
+              {intelCluster && intelCluster.count > 1 && <span style={{ color: 'var(--goldtx)' }}>· TIGHTEST GROUP {intelCluster.count} WITHIN {RING_RADII_M[0]} M — TURN ON ◎ RINGS TO SEE IT</span>}
+              {foundToday > 0 && <span style={{ color: 'var(--txd)', marginLeft: 'auto' }}>{foundToday} CHECKED TODAY</span>}
+            </div>
+          )}
+
+          {hasCliffDescent && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: 'rgba(201,168,76,0.06)', border: '1px solid var(--golddim)', borderRadius: 4 }}>
+              <span aria-hidden="true">⛏ 🪢</span>
+              <span className="mono" style={{ fontSize: 10, color: 'var(--goldtx)', letterSpacing: '.04em' }}>BRING RED REBEL + PARACORD FOR CLIFF DESCENT</span>
+            </div>
+          )}
+
           {/* Clocks */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -308,11 +350,6 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
               ) : (
                 <BossColumn bosses={bosses} />
               )}
-              {exitSummary && (
-                <div className="mono" style={{ marginTop: 8, fontSize: 9, color: 'var(--txm)', lineHeight: 1.35 }}>
-                  ↳ {exitSummary.total} EXITS — {exitSummary.pmc} PMC · {exitSummary.scav} SCAV · {exitSummary.shared} BOTH · {exitSummary.gated} NEEDS A SWITCH
-                </div>
-              )}
               {goonAge && (
                 <div className="mono" style={{ marginTop: 6, fontSize: 9, color: '#d69b5a', lineHeight: 1.35 }}>
                   ⚠ GOONS REPORTED HERE — {goonAge} · COMMUNITY REPORT
@@ -320,141 +357,6 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
               )}
             </div>
           </div>
-
-          {/* Cliff descent */}
-          {hasCliffDescent && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '7px 10px',
-              background: 'rgba(201,168,76,0.06)', border: '1px solid var(--golddim)', borderRadius: 4,
-            }}>
-              <span style={{ fontSize: 14 }}>⛏</span>
-              <span style={{ fontSize: 14 }}>🪢</span>
-              <span className="mono" style={{ fontSize: 10, color: 'var(--goldtx)', letterSpacing: '.04em' }}>
-                CLIFF DESCENT — BRING RED REBEL ICE PICK + PARACORD
-              </span>
-            </div>
-          )}
-
-          {/* Intel brief */}
-          {intelTotal > 0 && (
-            <div className="mono intel-brief">
-              <span style={{ color: 'var(--goldtx)', letterSpacing: '.1em' }}>▤ INTEL SPAWNS</span>
-              {intelCounts.folder > 0 && (
-                <span style={{ color: INTEL_KINDS.folder.color }}>{intelCounts.folder} FOLDER</span>
-              )}
-              {intelCounts.case > 0 && (
-                <span style={{ color: INTEL_KINDS.case.color }}>{intelCounts.case} CASE</span>
-              )}
-              {intelCounts.document > 0 && (
-                <span style={{ color: INTEL_KINDS.document.color }}>{intelCounts.document} DOCUMENT</span>
-              )}
-              {intelCounts.battlepass > 0 && (
-                <span style={{ color: INTEL_KINDS.battlepass.color }}>{intelCounts.battlepass} BATTLE PASS INTEL</span>
-              )}
-              <span style={{ color: 'var(--txd)' }}>— ENABLE THE INTEL LAYER ON THE MAP</span>
-              {intelCluster && intelCluster.count > 1 && (
-                <span style={{ color: 'var(--goldtx)' }}>
-                  · TIGHTEST GROUP {intelCluster.count} WITHIN {RING_RADII_M[0]} M — TURN ON ◎ RINGS TO SEE IT
-                </span>
-              )}
-              {foundToday > 0 && (
-                <span style={{ color: 'var(--txd)', marginLeft: 'auto' }}>{foundToday} CHECKED TODAY</span>
-              )}
-            </div>
-          )}
-
-          {/* My quests on this map */}
-          <div>
-            <div className="lbl" style={{ marginBottom: 6 }}>MY QUESTS ON THIS MAP</div>
-            {myMapQuests.length === 0 ? (
-              <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>— NO QUESTS ON THIS MAP</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {myMapQuests.map(task => (
-                  <div key={task.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '5px 9px',
-                    background: 'var(--sur2)', border: '1px solid var(--brd)',
-                    borderLeft: '3px solid var(--golddim)', borderRadius: 3,
-                  }}>
-                    {task.trader?.imageLink ? (
-                      <img
-                        src={task.trader.imageLink}
-                        alt={task.trader.name}
-                        title={task.trader.name}
-                        style={{ width: 32, height: 32, borderRadius: 3, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--brd2)' }}
-                      />
-                    ) : task.trader ? (
-                      <div style={{ width: 32, height: 32, borderRadius: 3, background: 'var(--sur3)', border: '1px solid var(--brd2)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span className="mono" style={{ fontSize: 8, color: 'var(--txd)' }}>{task.trader.name.slice(0, 3).toUpperCase()}</span>
-                      </div>
-                    ) : null}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {toAntifandom(task.wikiLink) ? (
-                        <a href={toAntifandom(task.wikiLink)} target="_blank" rel="noreferrer"
-                          style={{ fontSize: 12, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--goldtx)', lineHeight: 1.2, textDecoration: 'none' }}
-                          onMouseEnter={e => e.currentTarget.style.textDecoration = 'underline'}
-                          onMouseLeave={e => e.currentTarget.style.textDecoration = 'none'}>
-                          {task.name}
-                        </a>
-                      ) : (
-                        <div style={{ fontSize: 12, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)', lineHeight: 1.2 }}>
-                          {task.name}
-                        </div>
-                      )}
-                      {task.trader && (
-                        <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', marginTop: 1 }}>{task.trader.name}</div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Items to bring */}
-          {myItems.length > 0 && (
-            <div>
-              <div className="lbl" style={{ marginBottom: 6 }}>ITEMS TO BRING</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {myItems.map(item => (
-                  <div key={item.name} style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '5px 9px',
-                    background: 'var(--sur2)',
-                    border: '1px solid var(--brd)',
-                    borderLeft: item.isKey ? '3px solid var(--gold)' : '1px solid var(--brd)',
-                    borderRadius: 3,
-                  }}>
-                    {item.iconLink && (
-                      <img src={item.iconLink} alt="" style={{
-                        width: 32, height: 32, objectFit: 'contain', flexShrink: 0,
-                        imageRendering: 'pixelated',
-                        background: 'var(--sur)', border: '1px solid var(--brd2)', borderRadius: 2,
-                      }} />
-                    )}
-                    <span className="mono" style={{ fontSize: 12, color: 'var(--goldtx)', fontWeight: 700, flexShrink: 0 }}>
-                      {item.count}x
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 12, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)' }}>
-                          {item.name}
-                        </span>
-                        {item.isKey && (
-                          <span className="mono" style={{ fontSize: 9, color: 'var(--goldtx)', background: 'rgba(201,168,76,0.12)', border: '1px solid var(--golddim)', borderRadius: 3, padding: '1px 5px', letterSpacing: '.06em', flexShrink: 0 }}>KEY</span>
-                        )}
-                      </div>
-                      {item.isKey && item.questName && (
-                        <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', marginTop: 1 }}>{item.questName}</div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
         </div>
 

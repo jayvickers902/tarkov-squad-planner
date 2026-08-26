@@ -638,7 +638,7 @@ export default function MapLeaflet({
   // instead of looping — a replay that restarts silently reads as live data.
   // The window moves as pings arrive or the raid resets. Keep the scrubber inside it.
   // Context annotation — the thing tarkov.dev cannot do (no party) and
-  // TarkovTracker cannot (no map): we already hold the squad's quests, the key
+  // The quest import sources do not provide map data: we already hold the squad's quests, the key
   // list and the objective zones for this map, so every ping gets its
   // surroundings named.
   // ─── Init / teardown Leaflet map when mapNorm changes ───────────────────────

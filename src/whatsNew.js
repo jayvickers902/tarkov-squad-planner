@@ -1,9 +1,9 @@
-export const RELEASE_VERSION = '2026.08'
+export const RELEASE_VERSION = '2026.09'
 
 export const SETUP_STEPS = [
   {
     title: 'LOAD YOUR QUESTS',
-    body: 'Quest Manager holds your active task list. Link TarkovTracker with an API token to import it, drop in a screenshot of your in-game quest list, or search and add tasks by hand.',
+    body: 'Quest Manager holds your active task list. Import your EFT Logs folder locally, drop in a screenshot of your in-game quest list, or search and add tasks by hand.',
   },
   {
     title: 'PICK YOUR GAME MODE',
@@ -29,13 +29,13 @@ export const SETUP_STEPS = [
 
 export const RELEASES = [
   {
-    version: '2026.08',
+    version: '2026.09',
     date: '2026-08-25',
-    title: 'PRE-RAID UPDATE',
+    title: 'EFT LOG IMPORT',
     items: [
       {
-        title: 'TARKOVTRACKER LINK',
-        body: 'Import your real task progress with an API token. The token is stored on the server and never persisted in this browser.',
+        title: 'IMPORT EFT LOGS',
+        body: 'Choose your EFT Logs folder to preview started, failed, and completed task events. Logs stay on this device; only bounded quest events are synchronized.',
       },
       {
         title: 'GAME MODE PER CHARACTER',

@@ -1,6 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from './supabase'
 import { normalizeGameMode } from './gameMode'
+import { activeQuestRows, manualQuestStatePatch, toQuestLogEventPayload } from './questLogState'
+
+const LOG_IMPORT_MODES = new Set(['regular', 'pve'])
+
+function throwIfError(error) {
+  if (error) throw error
+}
+
+function activeRows(data) {
+  return activeQuestRows(Array.isArray(data) ? data : [])
+}
 
 export function useUserQuests(userId, gameMode = 'regular') {
   const mode = normalizeGameMode(gameMode)
@@ -8,8 +19,17 @@ export function useUserQuests(userId, gameMode = 'regular') {
   const [loading, setLoading] = useState(false)
   const [loadedUserId, setLoadedUserId] = useState(null)
   const [loadedGameMode, setLoadedGameMode] = useState(null)
+  const [error, setError] = useState(null)
   const activeModeRef = useRef(mode)
+  const questsRef = useRef(quests)
   activeModeRef.current = mode
+  questsRef.current = quests
+
+  const loadMode = useCallback(async (requestedUserId, requestedMode) => {
+    const result = await supabase.from('user_quests').select().eq('user_id', requestedUserId).eq('game_mode', requestedMode).order('created_at')
+    throwIfError(result.error)
+    return activeRows(result.data)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -17,6 +37,7 @@ export function useUserQuests(userId, gameMode = 'regular') {
       setQuests([])
       setLoadedUserId(null)
       setLoadedGameMode(null)
+      setError(null)
       setLoading(false)
       return () => { cancelled = true }
     }
@@ -24,18 +45,26 @@ export function useUserQuests(userId, gameMode = 'regular') {
     setLoadedUserId(null)
     setLoadedGameMode(null)
     setLoading(true)
-    supabase.from('user_quests').select().eq('user_id', userId).eq('game_mode', mode).eq('completed', false).order('created_at')
-      .then(({ data }) => {
+    setError(null)
+    loadMode(userId, mode)
+      .then(data => {
         if (cancelled) return
-        setQuests(data || [])
+        setQuests(data)
         setLoadedUserId(userId)
         setLoadedGameMode(mode)
+      })
+      .catch(loadError => {
+        if (!cancelled) {
+          setError(loadError)
+          setLoadedUserId(userId)
+          setLoadedGameMode(mode)
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [userId, mode])
+  }, [userId, mode, loadMode])
 
   // Add a quest to the user's saved list
   const addQuest = useCallback(async (quest, mapNorm = null) => {
@@ -46,11 +75,11 @@ export function useUserQuests(userId, gameMode = 'regular') {
       quest_id:   quest.id,
       quest_name: quest.name,
       map_norm:   mapNorm || null,
-      important:  false,
-      completed:  false,
+      ...manualQuestStatePatch('active'),
     }
     const { data, error } = await supabase.from('user_quests').upsert(row, { onConflict: 'user_id,game_mode,quest_id' }).select().single()
-    if (!error && data && activeModeRef.current === mode) {
+    throwIfError(error)
+    if (data && activeModeRef.current === mode) {
       setQuests(prev => prev.find(q => q.quest_id === quest.id) ? prev : [...prev, data])
     }
   }, [userId, mode])
@@ -59,7 +88,7 @@ export function useUserQuests(userId, gameMode = 'regular') {
   const bulkAddQuests = useCallback(async (entries) => {
     if (!userId || !Array.isArray(entries) || entries.length === 0) return
 
-    const seenIds = new Set(quests.map(q => q.quest_id))
+    const seenIds = new Set(questsRef.current.map(q => q.quest_id))
     const rows = entries
       .filter(entry => entry?.id && !seenIds.has(entry.id))
       .map(entry => {
@@ -70,8 +99,6 @@ export function useUserQuests(userId, gameMode = 'regular') {
           quest_id:   entry.id,
           quest_name: entry.name,
           map_norm:   entry.mapNorm || null,
-          important:  false,
-          completed:  false,
         }
       })
 
@@ -84,24 +111,26 @@ export function useUserQuests(userId, gameMode = 'regular') {
         .from('user_quests')
         .upsert(chunk, { onConflict: 'user_id,game_mode,quest_id' })
         .select()
-      if (!error && Array.isArray(data)) inserted.push(...data)
+      throwIfError(error)
+      if (Array.isArray(data)) inserted.push(...data)
     }
 
     if (inserted.length && activeModeRef.current === mode) {
       setQuests(prev => {
         const byId = new Map(prev.map(q => [q.quest_id, q]))
-        for (const quest of inserted) {
+        for (const quest of activeRows(inserted)) {
           if (!byId.has(quest.quest_id)) byId.set(quest.quest_id, quest)
         }
         return [...byId.values()]
       })
     }
-  }, [userId, mode, quests])
+  }, [userId, mode])
 
   // Remove a quest from saved list
   const removeQuest = useCallback(async (questId) => {
     if (!userId) return
-    await supabase.from('user_quests').delete().eq('user_id', userId).eq('game_mode', mode).eq('quest_id', questId)
+    const { error } = await supabase.from('user_quests').delete().eq('user_id', userId).eq('game_mode', mode).eq('quest_id', questId)
+    throwIfError(error)
     if (activeModeRef.current === mode) setQuests(prev => prev.filter(q => q.quest_id !== questId))
   }, [userId, mode])
 
@@ -111,7 +140,8 @@ export function useUserQuests(userId, gameMode = 'regular') {
     const existing = quests.find(q => q.quest_id === questId)
     if (!existing) return
     const newVal = !existing.skipped
-    await supabase.from('user_quests').update({ skipped: newVal }).eq('user_id', userId).eq('game_mode', mode).eq('quest_id', questId)
+    const { error } = await supabase.from('user_quests').update({ skipped: newVal }).eq('user_id', userId).eq('game_mode', mode).eq('quest_id', questId)
+    throwIfError(error)
     if (activeModeRef.current === mode) setQuests(prev => prev.map(q => q.quest_id === questId ? { ...q, skipped: newVal } : q))
   }, [userId, mode, quests])
 
@@ -121,35 +151,40 @@ export function useUserQuests(userId, gameMode = 'regular') {
     const existing = quests.find(q => q.quest_id === questId)
     if (!existing) return
     const newVal = !existing.important
-    await supabase.from('user_quests').update({ important: newVal }).eq('user_id', userId).eq('game_mode', mode).eq('quest_id', questId)
+    const { error } = await supabase.from('user_quests').update({ important: newVal }).eq('user_id', userId).eq('game_mode', mode).eq('quest_id', questId)
+    throwIfError(error)
     if (activeModeRef.current === mode) setQuests(prev => prev.map(q => q.quest_id === questId ? { ...q, important: newVal } : q))
   }, [userId, mode, quests])
 
   // Save objective completion states for a quest (persists across parties)
   const saveObjectiveProgress = useCallback(async (questId, objProgress) => {
     if (!userId) return
-    await supabase.from('user_quests').update({ obj_progress: objProgress }).eq('user_id', userId).eq('game_mode', mode).eq('quest_id', questId)
+    const { error } = await supabase.from('user_quests').update({ obj_progress: objProgress }).eq('user_id', userId).eq('game_mode', mode).eq('quest_id', questId)
+    throwIfError(error)
     if (activeModeRef.current === mode) setQuests(prev => prev.map(q => q.quest_id === questId ? { ...q, obj_progress: objProgress } : q))
   }, [userId, mode])
 
-  // Mark a quest as completed — removes it from the active list so it won't be re-imported
+  // Mark a quest as completed while retaining terminal history in the database.
   const markCompleted = useCallback(async (questId) => {
     if (!userId) return
-    await supabase.from('user_quests').update({ completed: true }).eq('user_id', userId).eq('game_mode', mode).eq('quest_id', questId)
+    const { error } = await supabase.from('user_quests').update(manualQuestStatePatch('completed')).eq('user_id', userId).eq('game_mode', mode).eq('quest_id', questId)
+    throwIfError(error)
     if (activeModeRef.current === mode) setQuests(prev => prev.filter(q => q.quest_id !== questId))
   }, [userId, mode])
 
   // Delete all quests for this user
   const clearAllQuests = useCallback(async () => {
     if (!userId) return
-    await supabase.from('user_quests').delete().eq('user_id', userId).eq('game_mode', mode)
+    const { error } = await supabase.from('user_quests').delete().eq('user_id', userId).eq('game_mode', mode)
+    throwIfError(error)
     if (activeModeRef.current === mode) setQuests([])
   }, [userId, mode])
 
   // Restore quests from a snapshot — clears existing and re-inserts all
   const restoreSnapshot = useCallback(async (snapshotQuests) => {
     if (!userId || !Array.isArray(snapshotQuests)) return
-    await supabase.from('user_quests').delete().eq('user_id', userId).eq('game_mode', mode)
+    const deleted = await supabase.from('user_quests').delete().eq('user_id', userId).eq('game_mode', mode)
+    throwIfError(deleted.error)
     const rows = snapshotQuests.map(q => ({
       user_id:    userId,
       game_mode:  mode,
@@ -158,12 +193,59 @@ export function useUserQuests(userId, gameMode = 'regular') {
       map_norm:   q.map_norm || null,
       important:  q.important || false,
       skipped:    q.skipped || false,
+      obj_progress: q.obj_progress || {},
+      ...manualQuestStatePatch('active'),
     }))
-    const { data } = rows.length
+    const { data, error } = rows.length
       ? await supabase.from('user_quests').insert(rows).select().order('created_at')
       : { data: [] }
+    throwIfError(error)
     if (activeModeRef.current === mode) setQuests(data || [])
   }, [userId, mode])
+
+  // History is bounded and deliberately scoped to one mode. It is used by the
+  // local import preview, never sent back to the browser for another user.
+  const getQuestHistory = useCallback(async (limit = 1000) => {
+    if (!userId) return []
+    // The upstream task vocabulary is ~700 entries, so this window covers a
+    // complete profile. Terminal history always carries a state timestamp, and
+    // descending order puts NULLs first in Postgres, which would otherwise
+    // spend the whole window on unstamped rows the active list already knows.
+    const boundedLimit = Math.max(1, Math.min(1000, Number(limit) || 1000))
+    const result = await supabase.from('user_quests').select().eq('user_id', userId).eq('game_mode', mode).order('state_at', { ascending: false, nullsFirst: false }).limit(boundedLimit)
+    throwIfError(result.error)
+    return Array.isArray(result.data) ? result.data : []
+  }, [userId, mode])
+
+  const reconcileLogEvents = useCallback(async (targetGameMode, events) => {
+    if (!userId) throw new Error('You must be signed in to import quest logs')
+    const targetMode = normalizeGameMode(targetGameMode)
+    if (!LOG_IMPORT_MODES.has(targetMode)) throw new Error('Quest log import supports Regular and PvE only')
+    if (!Array.isArray(events) || events.length === 0) return { inserted: 0, updated: 0, ignored: 0, affected_task_ids: [] }
+
+    const safeEvents = toQuestLogEventPayload(events)
+    const results = []
+    for (let offset = 0; offset < safeEvents.length; offset += 1000) {
+      const { data, error } = await supabase.rpc('reconcile_user_quest_log_events', {
+        p_game_mode: targetMode,
+        p_events: safeEvents.slice(offset, offset + 1000),
+      })
+      throwIfError(error)
+      results.push(data || {})
+    }
+    const summary = results.reduce((total, item) => ({
+      inserted: total.inserted + Number(item.inserted || 0),
+      updated: total.updated + Number(item.updated || 0),
+      ignored: total.ignored + Number(item.ignored || 0),
+      affected_task_ids: [...new Set([...total.affected_task_ids, ...(Array.isArray(item.affected_task_ids) ? item.affected_task_ids : [])])].slice(0, 1000),
+    }), { inserted: 0, updated: 0, ignored: 0, affected_task_ids: [] })
+
+    if (activeModeRef.current === targetMode) {
+      const refreshed = await loadMode(userId, targetMode)
+      if (activeModeRef.current === targetMode) setQuests(refreshed)
+    }
+    return summary
+  }, [userId, loadMode])
 
   // Get quests relevant to a map (map-specific + any-map)
   const questsForMap = useCallback((mapNorm) => {
@@ -172,6 +254,7 @@ export function useUserQuests(userId, gameMode = 'regular') {
 
   return {
     quests,
+    error,
     loading: Boolean(userId) && (loading || loadedUserId !== userId || loadedGameMode !== mode),
     gameMode: mode,
     addQuest,
@@ -184,5 +267,7 @@ export function useUserQuests(userId, gameMode = 'regular') {
     restoreSnapshot,
     markCompleted,
     saveObjectiveProgress,
+    reconcileLogEvents,
+    getQuestHistory,
   }
 }

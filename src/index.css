@@ -225,33 +225,33 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .monitor-link-shell { margin-bottom: 14px; }
 .monitor-link-shell-compact { padding: 6px 10px; }
 
-/* ── TarkovTracker link ──────────────────────────────────────────────────── */
-.tracker-link-panel { flex: 1 1 100%; padding: 16px; margin-bottom: 16px; border-color: var(--golddim); }
-.tracker-link-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.tracker-link-close { background: none; color: var(--txd); font-size: 18px; padding: 0; }
-.tracker-link-copy { color: var(--txm); font-size: 11px; line-height: 1.65; }
-.tracker-link-form { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
-.tracker-link-label { color: var(--txm); font-size: 10px; }
-.tracker-link-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-.tracker-link-anchor { color: var(--goldtx); font-size: 10px; text-decoration: none; }
-.tracker-link-anchor:hover { text-decoration: underline; }
-.tracker-link-muted { color: var(--txd); font-size: 10px; }
-.tracker-link-error { margin-top: 10px; padding: 8px 10px; color: var(--red); border: 1px solid rgba(224,107,107,.4); border-left: 3px solid var(--red); border-radius: 4px; background: rgba(224,107,107,.06); }
-.tracker-link-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; background: var(--sur2); border: 1px solid var(--brd2); border-radius: 4px; }
-.tracker-link-name { color: var(--goldtx); font-size: 15px; }
-.tracker-link-mode-note { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 9px 10px; color: var(--gold); border: 1px solid var(--golddim); border-left: 3px solid var(--gold); border-radius: 4px; background: rgba(201,168,76,.06); font-size: 10px; line-height: 1.6; }
-.tracker-link-stats { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0 8px; color: var(--goldtx); font-size: 10px; }
-.tracker-link-reconcile { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; padding: 8px 10px; color: var(--gold); border: 1px solid var(--golddim); border-radius: 4px; background: rgba(201,168,76,.05); font-size: 10px; }
-.tracker-link-list { display: flex; flex-direction: column; gap: 4px; max-height: 420px; overflow-y: auto; margin-bottom: 12px; }
-.tracker-link-task { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; cursor: pointer; background: var(--sur2); border: 1px solid var(--brd); border-left: 3px solid var(--brd); border-radius: 4px; }
-.tracker-link-task:hover { border-color: var(--brd2); }
-.tracker-link-task-selected { border-color: var(--golddim); border-left-color: var(--gold); }
-.tracker-link-task input { width: 14px; min-height: 14px; height: 14px; padding: 0; accent-color: var(--gold); flex-shrink: 0; }
-.tracker-link-task-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; font-size: 13px; }
-.tracker-link-task-main > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tracker-link-gate { flex-shrink: 0; max-width: 42%; overflow: hidden; text-overflow: ellipsis; color: var(--gold); font-size: 9px; }
-.tracker-link-empty { padding: 20px 8px; text-align: center; }
-.tracker-link-footnote { display: block; margin-top: 10px; line-height: 1.6; }
+/* ── Local EFT log import ────────────────────────────────────────────────── */
+.eft-log-import-panel { flex: 1 1 100%; padding: 16px; margin-bottom: 16px; border-color: var(--golddim); }
+.eft-log-import-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.eft-log-import-close { background: none; color: var(--txd); font-size: 18px; padding: 0; }
+.eft-log-import-copy { margin-top: 5px; color: var(--txm); font-size: 10px; line-height: 1.65; }
+.eft-log-import-actions,
+.eft-log-import-footer,
+.eft-log-import-watch { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.eft-log-import-check { display: inline-flex; align-items: center; gap: 5px; color: var(--txm); font-size: 10px; }
+.eft-log-import-check input { margin: 0; accent-color: var(--gold); }
+.eft-log-import-error { margin-top: 10px; padding: 8px 10px; color: var(--red); border: 1px solid rgba(224,107,107,.4); border-left: 3px solid var(--red); border-radius: 4px; background: rgba(224,107,107,.06); }
+.eft-log-import-watch { margin-top: 10px; padding: 8px 10px; color: var(--goldtx); border: 1px solid var(--golddim); border-radius: 4px; background: rgba(201,168,76,.05); font-size: 10px; }
+.eft-log-import-watch button { margin-left: auto; }
+.eft-log-import-preview { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--brd); }
+.eft-log-import-summary { display: flex; gap: 12px; flex-wrap: wrap; color: var(--goldtx); font-size: 10px; }
+.eft-log-import-meta,
+.eft-log-import-notes,
+.eft-log-import-muted { color: var(--txd); font-size: 10px; line-height: 1.5; }
+.eft-log-import-field { display: flex; align-items: center; gap: 8px; color: var(--txm); font-size: 10px; }
+.eft-log-import-field select { min-width: 180px; padding: 5px 7px; border: 1px solid var(--brd2); border-radius: 3px; background: var(--sur2); color: var(--tx); font-family: 'Share Tech Mono', monospace; font-size: 10px; }
+.eft-log-import-versions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.eft-log-import-task-list { display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; }
+.eft-log-import-task { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 9px; background: var(--sur2); border: 1px solid var(--brd); border-left: 3px solid var(--golddim); border-radius: 3px; font-size: 12px; }
+.eft-log-import-task > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eft-log-import-task > span:last-child { flex-shrink: 0; color: var(--goldtx); font-size: 9px; }
+.eft-log-import-success { padding: 8px 10px; color: var(--grn); border: 1px solid rgba(102,183,120,.4); border-radius: 3px; font-size: 10px; }
+
 .quest-mode-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 16px; padding: 8px 10px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur); }
 .quest-mode-label { color: var(--txm); font-size: 10px; }
 .quest-mode-options { display: flex; gap: 4px; }
@@ -264,8 +264,6 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .party-list-mode { color: var(--goldtx); font-size: 9px; letter-spacing: .05em; white-space: nowrap; }
 
 @media (max-width: 560px) {
-  .tracker-link-status { align-items: flex-start; flex-direction: column; }
-  .tracker-link-gate { max-width: 34%; }
   .quest-mode-hint { flex-basis: 100%; margin-left: 0; }
 }
 .monitor-link-shell-open { padding: 16px; }
