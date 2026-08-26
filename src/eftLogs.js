@@ -4,6 +4,7 @@ const TASK_ID_RE = /^[a-f0-9]{24}$/i
 // Persisted event keys must satisfy the reconciliation RPC's strict charset.
 const EVENT_KEY_SAFE_RE = /^[A-Za-z0-9][A-Za-z0-9_.:|=-]*$/
 const MAX_EVENT_KEY_LENGTH = 240
+const MAX_PARSE_ERROR_DETAILS = 100
 
 const STATE_BY_MESSAGE_TYPE = {
   10: 'active',
@@ -163,7 +164,13 @@ function findBalancedObjectEnd(text, start) {
 function extractJsonObjects(text) {
   const objects = []
   let parseErrors = 0
+  const malformedRecords = []
   let cursor = 0
+
+  function recordParseError(start, reason) {
+    parseErrors += 1
+    if (malformedRecords.length < MAX_PARSE_ERROR_DETAILS) malformedRecords.push({ start, reason })
+  }
 
   while (cursor < text.length) {
     const start = text.indexOf('{', cursor)
@@ -171,7 +178,7 @@ function extractJsonObjects(text) {
     const end = findBalancedObjectEnd(text, start)
 
     if (end === -1) {
-      parseErrors += 1
+      recordParseError(start, 'TRUNCATED JSON RECORD')
       // A truncated record has no safe closing boundary. EFT writes one record
       // per line in this area, so resume at the next line's opening brace. This
       // both recovers later records and prevents quadratic rescans of huge
@@ -188,10 +195,10 @@ function extractJsonObjects(text) {
     try {
       const value = JSON.parse(candidate)
       if (isPlainObject(value)) objects.push({ value, start, end })
-      else parseErrors += 1
+      else recordParseError(start, 'NON-OBJECT JSON RECORD')
       cursor = end + 1
     } catch {
-      parseErrors += 1
+      recordParseError(start, 'INVALID JSON RECORD')
       // The complete balanced span is the malformed record boundary. Resume
       // after it so malformed JSON cannot prevent an adjacent record from
       // being considered, and avoid retrying every nested brace.
@@ -201,7 +208,7 @@ function extractJsonObjects(text) {
     }
   }
 
-  return { objects, parseErrors }
+  return { objects, parseErrors, malformedRecords }
 }
 
 const NOTIFICATION_MARKER_RE = /chatmessagereceived/i
@@ -498,6 +505,7 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
   const sessions = sessionInfoFor(inputFiles)
   const validFiles = inputFiles.filter(file => isRelevantEftLogFile(file?.name))
   let parseErrors = 0
+  const malformedRecords = []
   let eventsSeen = 0
   const rawEvents = []
 
@@ -505,9 +513,22 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
     for (const file of session.files) {
       if (!file.context && !file.notification) continue
       const text = typeof file.text === 'string' ? file.text : ''
-      if (typeof file.text !== 'string') parseErrors += 1
+      if (typeof file.text !== 'string') {
+        parseErrors += 1
+        if (malformedRecords.length < MAX_PARSE_ERROR_DETAILS) {
+          malformedRecords.push({ file: basename(file.path), line: null, reason: 'FILE CONTENT UNREADABLE' })
+        }
+      }
       const parsed = extractJsonObjects(text)
       parseErrors += parsed.parseErrors
+      for (const detail of parsed.malformedRecords) {
+        if (malformedRecords.length >= MAX_PARSE_ERROR_DETAILS) break
+        malformedRecords.push({
+          file: basename(file.path),
+          line: text.slice(0, detail.start).split(/\r?\n/).length,
+          reason: detail.reason,
+        })
+      }
 
       if (file.context) {
         parsed.objects.forEach(record => {
@@ -584,7 +605,24 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
   }
   deduped.sort(eventCompare)
 
-  const unmatchedTaskIds = uniqueSorted(deduped.filter(event => !knownTaskIds.has(event.taskId)).map(event => event.taskId))
+  const unmatchedEventsByTask = new Map()
+  for (const event of deduped) {
+    if (knownTaskIds.has(event.taskId)) continue
+    const events = unmatchedEventsByTask.get(event.taskId) || []
+    events.push(event)
+    unmatchedEventsByTask.set(event.taskId, events)
+  }
+  const unmatchedTaskIds = uniqueSorted([...unmatchedEventsByTask.keys()])
+  const unmatchedTaskDetails = unmatchedTaskIds.map(taskId => {
+    const events = unmatchedEventsByTask.get(taskId) || []
+    return {
+      taskId,
+      occurrences: events.length,
+      states: uniqueSorted(events.map(event => event.state)),
+      versions: uniqueSorted(events.map(event => event.version)),
+      lastSeen: latestDate(events.map(event => event.occurredAt)),
+    }
+  })
   const matchedEvents = deduped.filter(event => knownTaskIds.has(event.taskId))
   const profileDescriptors = new Map()
   for (const event of deduped) {
@@ -640,6 +678,8 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
     events: deduped,
     matchedEvents,
     unmatchedTaskIds,
+    unmatchedTaskDetails,
+    malformedRecords,
     ambiguousModeEvents: deduped.filter(event => event.gameMode === null).length,
   }
 }

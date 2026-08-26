@@ -97,6 +97,10 @@ describe('parseEftLogFiles', () => {
 
     expect(preview.events.map(event => event.eventKey)).toEqual(['event:after-malformed', 'event:after-truncated'])
     expect(preview.parseErrors).toBeGreaterThan(0)
+    expect(preview.malformedRecords).toEqual([
+      { file: 'notifications.log', line: 1, reason: 'INVALID JSON RECORD' },
+      { file: 'notifications.log', line: 3, reason: 'TRUNCATED JSON RECORD' },
+    ])
   })
 
   it('accepts only the supported notification name, plain message, type, and task shape', () => {
@@ -153,6 +157,13 @@ describe('parseEftLogFiles', () => {
     ].join('\n') }])
 
     expect(preview.unmatchedTaskIds).toEqual([unknownTask])
+    expect(preview.unmatchedTaskDetails).toEqual([{
+      taskId: unknownTask,
+      occurrences: 1,
+      states: ['active'],
+      versions: ['0.16'],
+      lastSeen: '2023-11-14T22:13:20.000Z',
+    }])
     expect(preview.matchedEvents).toHaveLength(1)
     expect(preview.events).toHaveLength(2)
   })
