@@ -1,4 +1,4 @@
-import { parseEftLogFiles } from './eftLogs.js'
+import { parseEftLogAppend, parseEftLogFiles } from './eftLogs.js'
 
 const workerScope = typeof self !== 'undefined' ? self : null
 
@@ -8,9 +8,21 @@ function sanitizedError() {
 
 /** Handle one worker message; exported to make the protocol unit-testable. */
 export function handleEftLogWorkerMessage(data) {
-  if (!data || data.type !== 'parse') return null
+  if (!data || !['parse', 'append'].includes(data.type)) return null
   const requestId = data.requestId ?? null
   try {
+    if (data.type === 'append') {
+      const results = (Array.isArray(data.appendFiles) ? data.appendFiles : []).map(file => parseEftLogAppend({
+        name: file?.name,
+        text: file?.text,
+        pendingText: file?.pendingText,
+        state: file?.state,
+        taskIds: data.taskIds,
+        options: data.options || {},
+      }))
+      return { type: 'result', requestId, results }
+    }
+    if (data.type !== 'parse') return null
     const preview = parseEftLogFiles(data.files, data.taskIds, data.options || {})
     return { type: 'result', requestId, preview }
   } catch {

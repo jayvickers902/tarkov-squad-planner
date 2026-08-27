@@ -74,4 +74,16 @@ describe('eft log handle store', () => {
     expect(sanitiseCheckpoint({ gameMode: 'pvp-season', unknownModeTarget: 'seasonal', files: [{ relativeFilename: '', size: -1 }] }))
       .toMatchObject({ gameMode: null, unknownModeTarget: null, files: [] })
   })
+
+  it('keeps only bounded numeric offsets and file metadata', () => {
+    const checkpoint = sanitiseCheckpoint({
+      files: [{ relativeFilename: 'notifications.log', size: Number.MAX_VALUE, lastModified: Number.MAX_VALUE, parsedOffset: Number.MAX_SAFE_INTEGER }],
+      updatedAt: Number.MAX_VALUE,
+      rawFragment: '{private log data}',
+    })
+    expect(checkpoint.files[0]).toMatchObject({ relativeFilename: 'notifications.log', size: 32 * 1024 * 1024, parsedOffset: 32 * 1024 * 1024 })
+    expect(checkpoint.files[0].rawFragment).toBeUndefined()
+    expect(checkpoint.updatedAt).toBeLessThan(Number.MAX_VALUE)
+    expect(checkpoint.rawFragment).toBeUndefined()
+  })
 })

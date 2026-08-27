@@ -35,6 +35,38 @@ function metadataFor(file, relativeFilename = filePath(file)) {
   }
 }
 
+function safeOffset(value, fallback = 0) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : fallback
+}
+
+/** Compare metadata without reading file contents. */
+export function classifyEftLogFileChange(previous, next) {
+  if (!next || !next.relativeFilename) return 'removed'
+  if (!previous || !previous.relativeFilename) return 'new'
+  if (previous.relativeFilename !== next.relativeFilename) return 'new'
+  const previousSize = safeOffset(previous.size)
+  const nextSize = safeOffset(next.size)
+  if (nextSize < previousSize) return 'shrink'
+  if (nextSize > previousSize) return 'append'
+  if (Number(previous.lastModified || 0) !== Number(next.lastModified || 0)) return 'changed'
+  return 'unchanged'
+}
+
+/**
+ * Return the metadata offset from which an append should be read. A parsed
+ * offset may be behind `size` when the previous poll ended on incomplete JSON;
+ * this is what makes a browser restart safe without storing raw fragments.
+ */
+export function getEftLogReadOffset(metadata, { hasPendingText = false } = {}) {
+  const size = safeOffset(metadata?.size)
+  // While a tab is alive, the parser can supply the unfinished fragment from
+  // memory, so only newly appended bytes are needed. After restart there is
+  // no fragment and we reread from the persisted complete-record boundary.
+  if (hasPendingText) return size
+  const parsedOffset = safeOffset(metadata?.parsedOffset, size)
+  return Math.min(parsedOffset, size)
+}
+
 export function getEftLogRelativeFilename(file) {
   return filePath(file)
 }
@@ -178,6 +210,56 @@ export async function readEnumeratedEftLogFiles(entries, limits) {
   return files
 }
 
+async function readBytes(file, start = 0) {
+  try {
+    if (typeof file === 'string') return start > 0 ? file.slice(start) : file
+    if (typeof file?.slice === 'function' && typeof file?.arrayBuffer === 'function') {
+      const buffer = await file.slice(start).arrayBuffer()
+      return new TextDecoder().decode(buffer)
+    }
+    if (typeof file?.arrayBuffer === 'function') {
+      const buffer = await file.arrayBuffer()
+      const bytes = new Uint8Array(buffer)
+      return new TextDecoder().decode(start > 0 ? bytes.slice(start) : bytes)
+    }
+    const full = await readText(file)
+    return start > 0 ? full.slice(start) : full
+  } catch {
+    throw directoryError('A selected EFT log could not be read.', 'EFT_LOG_FILE_READ')
+  }
+}
+
+/**
+ * Read only appended bytes for a notification log. Context files should use a
+ * normal full read when session identity is needed. Shrinks, rotations, and
+ * same-size rewrites intentionally request a safe full reread.
+ */
+export async function readEftLogAppend(entry, previousMetadata = {}, limits, { hasPendingText = false } = {}) {
+  const metadata = {
+    relativeFilename: entry?.relativeFilename || entry?.name || '',
+    size: Number.isFinite(entry?.size) && entry.size >= 0 ? entry.size : 0,
+    lastModified: Number.isFinite(entry?.lastModified) && entry.lastModified >= 0 ? entry.lastModified : 0,
+  }
+  if (!isRelevantEftLogPath(metadata.relativeFilename)) {
+    throw directoryError('A selected file is not an EFT log.', 'EFT_LOG_FILE_UNSUPPORTED')
+  }
+  validateEftLogLimits([metadata], limits)
+  const change = classifyEftLogFileChange(previousMetadata, metadata)
+  const readOffset = change === 'append' ? getEftLogReadOffset(previousMetadata, { hasPendingText }) : 0
+  const text = await readBytes(entry?.file || entry, readOffset)
+  const bytes = byteLength(text)
+  const maxFileBytes = limits?.maxFileBytes ?? MAX_RELEVANT_FILE_BYTES
+  if (metadata.size > maxFileBytes || bytes > maxFileBytes) throw limitError('file')
+  return {
+    name: metadata.relativeFilename,
+    text,
+    metadata: { ...metadata, readOffset },
+    change,
+    readOffset,
+    requiresFullRead: change !== 'append' && change !== 'unchanged',
+  }
+}
+
 export async function readRelevantEftLogDirectory(directoryHandle, limits) {
   const entries = await enumerateRelevantEftLogFiles(directoryHandle, limits)
   return {
@@ -197,4 +279,12 @@ export function haveEftLogFilesChanged(previousFiles, nextFiles) {
 export function changedEftLogMetadata(previousFiles, nextFiles) {
   const previous = new Map((previousFiles || []).map(file => [file.relativeFilename, `${file.size}:${file.lastModified}`]))
   return (nextFiles || []).filter(file => previous.get(file.relativeFilename) !== `${file.size}:${file.lastModified}`)
+}
+
+export function classifyChangedEftLogMetadata(previousFiles, nextFiles) {
+  const previous = new Map((previousFiles || []).map(file => [file.relativeFilename, file]))
+  return (nextFiles || []).map(file => ({
+    ...file,
+    change: classifyEftLogFileChange(previous.get(file.relativeFilename), file),
+  }))
 }

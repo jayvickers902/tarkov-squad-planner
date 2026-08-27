@@ -7,6 +7,11 @@ const HANDLE_STORE = 'directory-handles'
 const CHECKPOINT_STORE = 'checkpoints'
 const JOB_STORE = 'import-jobs'
 const DEFAULT_KEY = 'default'
+const MAX_CHECKPOINT_FILES = 4096
+const MAX_CHECKPOINT_FILENAME_LENGTH = 512
+const MAX_CHECKPOINT_OFFSET = 32 * 1024 * 1024
+const MAX_CHECKPOINT_FILE_BYTES = 32 * 1024 * 1024
+const MAX_CHECKPOINT_TIMESTAMP = 8640000000000000
 
 const VALID_MODES = new Set(['regular', 'pve'])
 
@@ -46,10 +51,17 @@ function transactionToPromise(transaction, resultPromise) {
 function sanitiseCheckpoint(checkpoint) {
   const input = checkpoint && typeof checkpoint === 'object' ? checkpoint : {}
   const files = Array.isArray(input.files)
-    ? input.files.slice(0, 4096).map(file => ({
-      relativeFilename: String(file?.relativeFilename || '').slice(0, 512),
-      size: Number.isFinite(file?.size) && file.size >= 0 ? file.size : 0,
-      lastModified: Number.isFinite(file?.lastModified) && file.lastModified >= 0 ? file.lastModified : 0,
+    ? input.files.slice(0, MAX_CHECKPOINT_FILES).map(file => ({
+      relativeFilename: String(file?.relativeFilename || '').slice(0, MAX_CHECKPOINT_FILENAME_LENGTH),
+      size: Number.isFinite(file?.size) && file.size >= 0 ? Math.min(file.size, MAX_CHECKPOINT_FILE_BYTES) : 0,
+      lastModified: Number.isFinite(file?.lastModified) && file.lastModified >= 0
+        ? Math.min(file.lastModified, MAX_CHECKPOINT_TIMESTAMP)
+        : 0,
+      // parsedOffset is the last complete UTF-8 byte boundary. It is numeric
+      // metadata only; unfinished JSON stays in memory and is never persisted.
+      ...(Number.isSafeInteger(file?.parsedOffset) && file.parsedOffset >= 0
+        ? { parsedOffset: Math.min(file.parsedOffset, MAX_CHECKPOINT_OFFSET) }
+        : {}),
     })).filter(file => file.relativeFilename)
     : []
 
@@ -69,7 +81,11 @@ function sanitiseCheckpoint(checkpoint) {
     unknownModeTarget,
     gameMode,
     autoSync: input.autoSync === true,
-    updatedAt: Number.isFinite(input.updatedAt) ? input.updatedAt : Date.now(),
+    ...(input.watchSessionKey == null ? {} : { watchSessionKey: String(input.watchSessionKey).slice(0, 160) }),
+    ...(input.watchMap == null ? {} : { watchMap: String(input.watchMap).slice(0, 64) }),
+    updatedAt: Number.isFinite(input.updatedAt)
+      ? Math.min(Math.max(input.updatedAt, 0), MAX_CHECKPOINT_TIMESTAMP)
+      : Date.now(),
   }
 }
 
@@ -198,4 +214,14 @@ export function deleteEftLogCheckpoint(key) {
   return defaultStore.deleteCheckpoint(key)
 }
 
-export { CHECKPOINT_STORE, DB_NAME, HANDLE_STORE, sanitiseCheckpoint }
+export {
+  CHECKPOINT_STORE,
+  DB_NAME,
+  HANDLE_STORE,
+  MAX_CHECKPOINT_FILES,
+  MAX_CHECKPOINT_FILENAME_LENGTH,
+  MAX_CHECKPOINT_OFFSET,
+  MAX_CHECKPOINT_FILE_BYTES,
+  MAX_CHECKPOINT_TIMESTAMP,
+  sanitiseCheckpoint,
+}

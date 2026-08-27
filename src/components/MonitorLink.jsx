@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTarkovMonitor } from '../useTarkovMonitor'
-import { TAP_WINDOW_MS, MAX_TAPS, cadenceOf, floorLabel, elevationLabel } from '../tarkovPings'
+import { cadenceOf } from '../tarkovPings'
 import { displayCharacterSide } from '../tarkovCharacters'
+import { usePositionPingCadence } from '../usePositionPingCadence'
+import { useEftScreenshotSyncContext } from '../EftLogSyncContext'
 
 const STATUS_TEXT = {
   idle:         ['NOT LINKED',   'var(--txd)'],
@@ -56,13 +58,12 @@ const POS_REJECT_TEXT = {
 }
 
 export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, canChangeMap = isLeader, hasPlan, onSelectMap, onAddPing, onCharacterSnapshot, currentCharacterSnapshot = null, onStatus, settings = {}, onSetSetting, detailsOpen = false }) {
+  const localScreenshotSync = useEftScreenshotSyncContext({ optional: true })
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState('')
   const [confirmRegen, setConfirmRegen] = useState(false)
   const [lastAction, setLastAction] = useState(null)  // { value, at, ok, reason }
   const [pendingMap, setPendingMap] = useState(null)  // { map, value, at } — a switch that would destroy work
-  const [lastPing, setLastPing] = useState(null)      // { taps, floor, elev, at }
-  const [pending, setPending] = useState(0)           // taps buffered in the current window
   const [pendingCharacter, setPendingCharacter] = useState(null)
   const [, setTick] = useState(0)
   const characterShareMode = CHARACTER_SHARE_MODES.some(([mode]) => mode === settings.character_share_mode)
@@ -75,9 +76,6 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
   const canChangeMapRef = useRef(canChangeMap); canChangeMapRef.current = canChangeMap
   const selectRef   = useRef(onSelectMap); selectRef.current = onSelectMap
   const hasPlanRef  = useRef(hasPlan);    hasPlanRef.current = hasPlan
-  const userIdRef   = useRef(userId);     userIdRef.current = userId
-  const myNameRef   = useRef(myName);     myNameRef.current = myName
-  const addPingRef  = useRef(onAddPing);  addPingRef.current = onAddPing
   const characterRef = useRef(onCharacterSnapshot); characterRef.current = onCharacterSnapshot
   const statusRef   = useRef(onStatus);   statusRef.current = onStatus
   const shareModeRef = useRef(characterShareMode); shareModeRef.current = characterShareMode
@@ -102,10 +100,13 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
     setPendingCharacter(snapshot)
   }, [])
 
-  // Cadence buffer. Taps arrive ~1s apart as separate messages, so a ping is only
-  // committed once the window closes — 1 tap "I'm here", 2 "contact", 3 "need help".
-  // The last tap wins on position: it is the freshest thing the player saw.
-  const tapRef = useRef({ timer: null, taps: 0, value: null })
+  const {
+    handlePosition,
+    reset: resetPingCadence,
+    clearLastPing,
+    pending,
+    lastPing,
+  } = usePositionPingCadence({ userId, myName, onAddPing })
 
   // `value` is already validated against FEATURED by the hook. This is the only place a
   // socket message can touch party state, and it can only touch the map.
@@ -138,46 +139,6 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
     setLastAction({ value, at, ok: true, reason: 'switched' })
     selectRef.current?.(map)
   }, [])
-
-  // `pos` is already validated and rate-limited by the hook: finite coordinates
-  // inside a FEATURED map's bounds. This and handleMapCommand are the only two
-  // places a socket message can reach party state, and between them they can
-  // touch exactly the map and the pings array.
-  const commitPing = useCallback(() => {
-    const buf = tapRef.current
-    buf.timer = null
-    const taps = Math.min(buf.taps, MAX_TAPS)
-    const value = buf.value
-    buf.taps = 0
-    buf.value = null
-    setPending(0)
-    if (!value) return
-    const name = myNameRef.current
-    if (!name) return
-    const ping = {
-      id: crypto.randomUUID(),
-      user_id: userIdRef.current,
-      user: name,
-      map: value.map,
-      x: value.x, y: value.y, z: value.z,
-      yaw: value.yaw,
-      at: value.at,
-      taps,
-    }
-    setLastPing({ taps, map: value.map, floor: floorLabel(value.y, value.map), elev: elevationLabel(value.y), at: value.at })
-    addPingRef.current?.(ping)
-  }, [])
-
-  const handlePosition = useCallback(pos => {
-    const buf = tapRef.current
-    buf.taps += 1
-    buf.value = pos
-    setPending(Math.min(buf.taps, MAX_TAPS))
-    clearTimeout(buf.timer)
-    buf.timer = setTimeout(commitPing, TAP_WINDOW_MS)
-  }, [commitPing])
-
-  useEffect(() => () => clearTimeout(tapRef.current.timer), [])
 
   // The leader may switch by hand while the prompt is up, or another command may
   // land. Either way a prompt for the map we are already on is noise.
@@ -235,7 +196,12 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
     connect, disconnect, regenerate,
   } = useTarkovMonitor({
     onMap: handleMapCommand,
-    onPosition: handlePosition,
+    // When the browser owns the Screenshots folder it will see the same key
+    // press as TarkovMonitor. Prefer the local source so one screenshot cannot
+    // create two party pings; the relay may still provide map/character data.
+    onPosition: localScreenshotSync?.state === 'watching' && localScreenshotSync?.folderName
+      ? undefined
+      : handlePosition,
     onCharacter: publishCharacter,
     settings,
     onSetSetting,
@@ -302,7 +268,7 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
         <div className="monitor-collapsed">
           <div className="monitor-collapsed-status">
             <span className={`mon-dot ${status === 'connected' ? 'mon-dot-live' : ''}`} style={{ background: statusColor }} />
-            <span className="mono" style={{ color: statusColor, fontSize: 10, letterSpacing: '.08em' }}>{statusLabel}</span>
+            <span className="mono" style={{ color: statusColor, fontSize: 10, letterSpacing: '.08em' }}>TARKOVMONITOR FALLBACK · {statusLabel}</span>
             <span className="mono monitor-collapsed-separator">·</span>
             <code>{code}</code>
             {compactEvent && <span className="mono monitor-collapsed-event">{compactEvent}</span>}
@@ -323,9 +289,8 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {enabled
           ? <button className="btn-ghost btn-sm" onClick={() => {
-              clearTimeout(tapRef.current.timer)
-              tapRef.current = { timer: null, taps: 0, value: null }
-              disconnect(); setLastAction(null); setLastPing(null); setPending(0); setPendingCharacter(null); setConfirmRegen(false); setPendingMap(null)
+              resetPingCadence()
+              disconnect(); setLastAction(null); setPendingCharacter(null); setConfirmRegen(false); setPendingMap(null)
             }}>UNLINK</button>
           : <button className="btn-ghost btn-sm" onClick={connect} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>LINK MONITOR</button>
           }
@@ -353,7 +318,7 @@ export default function MonitorLink({ maps, mapNorm, userId, myName, isLeader, c
             {confirmRegen ? (
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>NEW ID? THE OLD ONE STOPS WORKING.</span>
-                <button className="btn-danger btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => { regenerate(); setLastPing(null); setConfirmRegen(false) }}>YES</button>
+                <button className="btn-danger btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => { regenerate(); clearLastPing(); setConfirmRegen(false) }}>YES</button>
                 <button className="btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => setConfirmRegen(false)}>NO</button>
               </span>
             ) : (

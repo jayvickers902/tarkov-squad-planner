@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { handleEftLogWorkerMessage } from './eftLogWorker.js'
-import { isRelevantEftLogFile, parseEftLogFiles } from './eftLogs.js'
+import { isRelevantEftLogFile, parseEftLogAppend, parseEftLogFiles } from './eftLogs.js'
 import { QUEST_LOG_EVENT_FIELDS, toQuestLogEventPayload } from './questLogState.js'
 
 const fixtureRoot = resolve(process.cwd(), 'src/test/fixtures/eft-logs/Logs')
@@ -74,6 +74,56 @@ describe('EFT log file recognition', () => {
 })
 
 describe('parseEftLogFiles', () => {
+  it('parses appended records and keeps incomplete JSON transiently', () => {
+    const first = jsonNotification({ eventId: 'append-one' })
+    const second = jsonNotification({ eventId: 'append-two', type: 12 })
+    const split = Math.floor(second.length / 2)
+    const firstScan = parseEftLogAppend({
+      name: 'Logs/0.16.9/session/notifications.log',
+      text: `${first}\n${second.slice(0, split)}`,
+      taskIds: [regularTask],
+      state: { parsedOffset: 0 },
+    })
+    expect(firstScan.events.map(event => event.eventKey)).toEqual(['event:append-one'])
+    expect(firstScan.pendingText).toBe(second.slice(0, split))
+    const secondScan = parseEftLogAppend({
+      name: 'Logs/0.16.9/session/notifications.log',
+      text: second.slice(split),
+      pendingText: firstScan.pendingText,
+      taskIds: [regularTask],
+      state: { parsedOffset: firstScan.parsedOffset },
+    })
+    expect(secondScan.events.map(event => event.eventKey)).toEqual(['event:append-two'])
+    expect(secondScan.pendingText).toBe('')
+  })
+
+  it('does not duplicate a complete record at an append boundary', () => {
+    const record = jsonNotification({ eventId: 'boundary' })
+    const first = parseEftLogAppend({ name: 'Logs/0.16.9/notifications.log', text: record, taskIds: [regularTask] })
+    const repeated = parseEftLogAppend({
+      name: 'Logs/0.16.9/notifications.log',
+      text: `${record}\n${record}\n`,
+      taskIds: [regularTask],
+      state: { parsedOffset: first.parsedOffset },
+    })
+    expect(repeated.events).toHaveLength(1)
+    expect(repeated.events[0].eventKey).toBe('event:boundary')
+  })
+
+  it('does not retain a misleading suffix when an incomplete record exceeds the transient cap', () => {
+    const incomplete = `{"chatMessageReceived":true,"payload":"${'x'.repeat(5000)}`
+    const result = parseEftLogAppend({
+      name: 'Logs/0.16.9/notifications.log',
+      text: incomplete,
+      taskIds: [regularTask],
+      state: { parsedOffset: 120 },
+    })
+
+    expect(result.pendingOverflow).toBe(true)
+    expect(result.pendingText).toBe('')
+    expect(result.parsedOffset).toBe(120)
+  })
+
   it('parses multiline JSON, braces, and escaped quotes without confusing strings', () => {
     const text = `prefix ${jsonNotification({ eventId: 'multiline-event', templateId: `${regularTask} {quoted} \"value\"` }).replace('{"type"', '{\n  "type"')}`
     const preview = parse([

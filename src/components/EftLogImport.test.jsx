@@ -36,21 +36,19 @@ const hookState = {
   },
 }
 
-vi.mock('../useEftLogImport', () => ({
-  useEftLogImport: () => ({
-    ...hookState,
-    parseSelectedFiles,
-    connectRememberedFolder: vi.fn(),
-    reconnectRememberedFolder: vi.fn(),
-    setIncludedVersions: vi.fn(),
-    setProfileSelection: vi.fn(),
-    setUnknownModeTarget: vi.fn(),
-    confirmImport,
-    forgetFolder: vi.fn(),
-    reset: vi.fn(),
-    checkNow: vi.fn(),
-  }),
-}))
+const sync = {
+  ...hookState,
+  parseSelectedFiles,
+  connectRememberedFolder: vi.fn(),
+  reconnectRememberedFolder: vi.fn(),
+  setIncludedVersions: vi.fn(),
+  setProfileSelection: vi.fn(),
+  setUnknownModeTarget: vi.fn(),
+  confirmImport,
+  forgetFolder: vi.fn(),
+  reset: vi.fn(),
+  checkNow: vi.fn(),
+}
 
 afterEach(() => {
   cleanup()
@@ -59,7 +57,7 @@ afterEach(() => {
 
 describe('EftLogImport', () => {
   it('opens a local-only preview and confirms only known task changes', async () => {
-    render(<EftLogImport allTasks={[{ id: taskId, name: 'Synthetic Task' }]} gameMode="regular" userId="user-1" onApply={vi.fn()} />)
+    render(<EftLogImport sync={sync} allTasks={[{ id: taskId, name: 'Synthetic Task' }]} gameMode="regular" userId="user-1" onApply={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: 'IMPORT EFT LOGS' }))
 
     expect(screen.getByText(/RAW LOGS ARE NEVER UPLOADED/)).toBeInTheDocument()
@@ -70,7 +68,7 @@ describe('EftLogImport', () => {
   })
 
   it('reports the counts the reconciliation RPC actually returns', async () => {
-    render(<EftLogImport allTasks={[{ id: taskId, name: 'Synthetic Task' }]} gameMode="regular" userId="user-1" onApply={vi.fn()} />)
+    render(<EftLogImport sync={sync} allTasks={[{ id: taskId, name: 'Synthetic Task' }]} gameMode="regular" userId="user-1" onApply={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: 'IMPORT EFT LOGS' }))
     fireEvent.click(screen.getByRole('button', { name: 'CONFIRM IMPORT' }))
 
@@ -80,7 +78,7 @@ describe('EftLogImport', () => {
   })
 
   it('shows the malformed-record count and a plain file fallback', () => {
-    render(<EftLogImport allTasks={[{ id: taskId, name: 'Synthetic Task' }]} gameMode="regular" userId="user-1" onApply={vi.fn()} />)
+    render(<EftLogImport sync={sync} allTasks={[{ id: taskId, name: 'Synthetic Task' }]} gameMode="regular" userId="user-1" onApply={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: 'IMPORT EFT LOGS' }))
 
     // A directory picker that returns no relative paths still needs a way in.

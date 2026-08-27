@@ -556,6 +556,226 @@ describe('useEftLogImport', () => {
     expect(environment.count('window', 'focus')).toBe(0)
   })
 
+  it('uses an injected recursive FileSystemObserver and coalesces relevant hints', async () => {
+    const sourceFile = logFile()
+    const environment = persistentEnvironment(directoryHandle(sourceFile))
+    const observer = {
+      observe: vi.fn(),
+      disconnect: vi.fn(),
+    }
+    let notify
+    const observerFactory = vi.fn(callback => {
+      notify = callback
+      return observer
+    })
+    const onApply = vi.fn(async () => ({ inserted: 1, updated: 0 }))
+    const { result, unmount } = renderHook(() => useEftLogImport({
+      allTasks: [{ id: taskId }],
+      environment,
+      observerFactory,
+      observerDebounceMs: 25,
+      workerFactory: workerFactoryWith(preview()),
+      handleStore: memoryStore(),
+      onApply,
+    }))
+
+    await act(async () => { await result.current.connectRememberedFolder() })
+    await act(async () => { await result.current.confirmImport({ autoSync: true }) })
+    expect(observerFactory).toHaveBeenCalledTimes(1)
+    expect(observer.observe).toHaveBeenCalledWith(expect.anything(), { recursive: true })
+    expect(result.current.state).toBe('watching')
+
+    sourceFile.size = 99
+    sourceFile.lastModified = 2
+    await act(async () => {
+      // Irrelevant paths are ignored, while multiple relevant records share
+      // one debounced scan.
+      notify([
+        { type: 'modified', relativePathComponents: ['session', 'random.txt'] },
+        { type: 'modified', relativePathComponents: ['session', 'notifications.log'] },
+        { type: 'appeared', relativePathComponents: ['session', 'notifications.log'] },
+      ])
+      await new Promise(resolve => setTimeout(resolve, 40))
+    })
+    expect(onApply).toHaveBeenCalledTimes(2)
+
+    unmount()
+    expect(observer.disconnect).toHaveBeenCalledTimes(1)
+  })
+
+  it('tails a notification append from the persisted parsed offset in the worker', async () => {
+    const initialText = '{}'
+    let text = initialText
+    const slices = []
+    const sourceFile = {
+      get size() { return new TextEncoder().encode(text).byteLength },
+      lastModified: 1,
+      async text() { return text },
+      async arrayBuffer() { return new TextEncoder().encode(text).buffer },
+      slice(start) {
+        slices.push(start)
+        const bytes = new TextEncoder().encode(text).slice(start)
+        return { async arrayBuffer() { return bytes.buffer } }
+      },
+      append(next) { text += next; this.lastModified += 1 },
+    }
+    const handle = directoryHandle(sourceFile)
+    const environment = persistentEnvironment(handle)
+    let notify
+    const observer = { observe: vi.fn(), disconnect: vi.fn() }
+    const appendEvent = {
+      eventKey: 'event:incremental', taskId, state: 'completed',
+      occurredAt: '2026-08-26T00:00:00.000Z', gameMode: null,
+      profileKey: null, sessionKey: 'session-local', version: '0.16',
+    }
+    const workerFactory = vi.fn(() => {
+      const worker = {
+        terminate: vi.fn(),
+        postMessage(message) {
+          const data = message.type === 'append'
+            ? { type: 'result', requestId: message.requestId, results: [{ events: [appendEvent], preview: { events: [appendEvent] }, pendingText: '', parsedOffset: sourceFile.size }] }
+            : { type: 'result', requestId: message.requestId, preview: preview() }
+          Promise.resolve().then(() => worker.onmessage?.({ data }))
+        },
+      }
+      return worker
+    })
+    const onApply = vi.fn(async () => ({ inserted: 1, updated: 0 }))
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: [{ id: taskId }],
+      environment,
+      observerFactory: vi.fn(callback => { notify = callback; return observer }),
+      observerDebounceMs: 1,
+      workerFactory,
+      handleStore: memoryStore(),
+      onApply,
+    }))
+    await act(async () => { await result.current.connectRememberedFolder() })
+    await act(async () => { await result.current.confirmImport({ autoSync: true }) })
+    const originalSize = sourceFile.size
+    sourceFile.append('incremental-data')
+    await act(async () => {
+      notify([{ type: 'modified', relativePathComponents: ['session', 'notifications.log'] }])
+      await new Promise(resolve => setTimeout(resolve, 10))
+    })
+    expect(slices).toContain(originalSize)
+    expect(workerFactory.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(onApply).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not commit transient parser state when an incremental apply fails', async () => {
+    let text = '{}'
+    const sourceFile = {
+      get size() { return new TextEncoder().encode(text).byteLength },
+      lastModified: 1,
+      async text() { return text },
+      async arrayBuffer() { return new TextEncoder().encode(text).buffer },
+      slice(start) {
+        const bytes = new TextEncoder().encode(text).slice(start)
+        return { async arrayBuffer() { return bytes.buffer } }
+      },
+      append(next) { text += next; this.lastModified += 1 },
+    }
+    const environment = persistentEnvironment(directoryHandle(sourceFile))
+    const appendPendingInputs = []
+    let notify
+    const event = {
+      eventKey: 'event:retry', taskId, state: 'completed',
+      occurredAt: '2026-08-26T00:00:00.000Z', gameMode: 'regular', version: '0.16',
+    }
+    const workerFactory = () => {
+      const worker = {
+        terminate: vi.fn(),
+        postMessage(message) {
+          if (message.type === 'append') appendPendingInputs.push(message.appendFiles[0].pendingText)
+          const data = message.type === 'append'
+            ? {
+                type: 'result', requestId: message.requestId,
+                results: [{ preview: { events: [event] }, pendingText: '{unfinished', parsedOffset: 2 }],
+              }
+            : { type: 'result', requestId: message.requestId, preview: preview() }
+          Promise.resolve().then(() => worker.onmessage?.({ data }))
+        },
+      }
+      return worker
+    }
+    let rejectIncremental = false
+    const onApply = vi.fn(async () => {
+      if (rejectIncremental) throw new Error('temporary failure')
+      return { inserted: 1, updated: 0 }
+    })
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: [{ id: taskId }],
+      environment,
+      observerFactory: vi.fn(callback => { notify = callback; return { observe: vi.fn(), disconnect: vi.fn() } }),
+      observerDebounceMs: 1,
+      workerFactory,
+      handleStore: memoryStore(),
+      onApply,
+    }))
+
+    await act(async () => { await result.current.connectRememberedFolder() })
+    await act(async () => { await result.current.confirmImport({ autoSync: true }) })
+    sourceFile.append('new-data')
+    rejectIncremental = true
+    await act(async () => {
+      notify([{ type: 'modified', relativePathComponents: ['session', 'notifications.log'] }])
+      await new Promise(resolve => setTimeout(resolve, 10))
+    })
+    rejectIncremental = false
+    await act(async () => {
+      notify([{ type: 'modified', relativePathComponents: ['session', 'notifications.log'] }])
+      await new Promise(resolve => setTimeout(resolve, 10))
+    })
+
+    expect(appendPendingInputs).toEqual(['', ''])
+    expect(onApply).toHaveBeenCalledTimes(3)
+  })
+
+  it('falls back to the existing poll when observer construction is unavailable', async () => {
+    vi.useFakeTimers()
+    const sourceFile = logFile()
+    const environment = persistentEnvironment(directoryHandle(sourceFile))
+    const observerFactory = vi.fn(() => { throw new Error('unsupported') })
+    const onApply = vi.fn(async () => ({ inserted: 1, updated: 0 }))
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: [{ id: taskId }],
+      environment,
+      observerFactory,
+      workerFactory: workerFactoryWith(preview()),
+      handleStore: memoryStore(),
+      onApply,
+      pollIntervalMs: 100,
+    }))
+    await act(async () => { await result.current.connectRememberedFolder() })
+    await act(async () => { await result.current.confirmImport({ autoSync: true }) })
+    sourceFile.size = 99
+    sourceFile.lastModified = 2
+    await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+    expect(onApply).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports observer permission errors and disconnects instead of silently polling', async () => {
+    const sourceFile = logFile()
+    const environment = persistentEnvironment(directoryHandle(sourceFile))
+    let notify
+    const observer = { observe: vi.fn(), disconnect: vi.fn() }
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: [{ id: taskId }],
+      environment,
+      observerFactory: vi.fn(callback => { notify = callback; return observer }),
+      workerFactory: workerFactoryWith(preview()),
+      handleStore: memoryStore(),
+      onApply: vi.fn(),
+    }))
+    await act(async () => { await result.current.connectRememberedFolder() })
+    await act(async () => { await result.current.confirmImport({ autoSync: true }) })
+    act(() => notify([{ type: 'errored', error: { name: 'NotAllowedError' } }]))
+    expect(result.current.state).toBe('permission-needed')
+    expect(result.current.error).toMatch(/permission/i)
+    expect(observer.disconnect).toHaveBeenCalledTimes(1)
+  })
+
   it('reports chunked progress and clears the saved job when the import completes', async () => {
     const count = 250
     const value = previewWithEvents(count)

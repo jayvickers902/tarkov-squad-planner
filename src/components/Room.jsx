@@ -10,6 +10,7 @@ import BossPanel from './BossPanel'
 import TarkovClocks from './TarkovClocks'
 import StartRaidModal from './StartRaidModal'
 import MonitorLink from './MonitorLink'
+import EftScreenshotPings from './EftScreenshotPings'
 import RaidSettings from './RaidSettings'
 import useEphemeralSweep from '../useEphemeralSweep'
 import { resolveSetting } from '../settings'
@@ -353,6 +354,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
             {!isMobile && (
               <>
                 <div className="room-header-monitor" hidden={!settingsOpen}>
+                  <EftScreenshotPings />
                   <MonitorLink
                     maps={maps}
                     mapNorm={party.map_norm}
@@ -434,6 +436,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
 
       {isMobile && (
         <div className="room-settings-panel room-settings-panel-open" hidden={!settingsOpen}>
+          <EftScreenshotPings />
           <MonitorLink
             maps={maps}
             mapNorm={party.map_norm}

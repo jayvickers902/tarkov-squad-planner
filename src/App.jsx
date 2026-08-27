@@ -15,6 +15,7 @@ import { normalizeGameMode, resolvePartyMode } from './gameMode'
 import useDialogFocus from './useDialogFocus'
 import { RELEASE_VERSION } from './whatsNew'
 import { resolveWelcomeVariant, welcomeStamp, WELCOME_SETTINGS_KEY } from './welcome'
+import { EftLogSyncProvider } from './EftLogSyncContext'
 
 const MyQuests = lazy(() => import('./components/MyQuests'))
 const AdminKeyManager = lazy(() => import('./components/AdminKeyManager'))
@@ -279,6 +280,8 @@ export default function App() {
     ? <WelcomeModal variant={welcomeVariant} onDismiss={dismissWelcome} />
     : null
 
+  let signedInView = null
+
   if (authLoading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -374,7 +377,7 @@ export default function App() {
     }
 
     // My Quests while in party — back button returns to room
-    return (
+    signedInView = (
       <>
         <Room
         party={party}
@@ -486,8 +489,8 @@ export default function App() {
     )
   }
 
-  if (route.screen === 'quests' && !route.code) {
-    return (
+  if (!party && route.screen === 'quests' && !route.code) {
+    signedInView = (
       <>
         <Suspense fallback={<AppSpinner />}>
           <MyQuests
@@ -515,7 +518,7 @@ export default function App() {
   }
 
   if (route.screen === 'admin' && !route.code && isAdmin) {
-    return (
+    signedInView = (
       <>
         <Suspense fallback={<AppSpinner />}>
           <AdminKeyManager gameMode={gameMode} onBack={() => navigate({ screen: 'lobby' }, { replace: true })} />
@@ -544,7 +547,8 @@ export default function App() {
     return joined
   }
 
-  return (
+  if (!party && route.screen !== 'quests' && !(route.screen === 'admin' && isAdmin)) {
+    signedInView = (
     <>
       <Lobby
         userId={user.id}
@@ -572,5 +576,20 @@ export default function App() {
       />
       {welcomeLayer}
     </>
+    )
+  }
+
+  return (
+    <EftLogSyncProvider
+      userId={user.id}
+      myName={myName}
+      gameMode={gameMode}
+      onApply={reconcileLogEvents}
+      onAddPing={party ? addPing : null}
+      mapNorm={party?.map_norm || null}
+      partyId={party ? `${party.id || party.code}:${Number(party.raid_id) || 0}` : null}
+    >
+      {signedInView}
+    </EftLogSyncProvider>
   )
 }

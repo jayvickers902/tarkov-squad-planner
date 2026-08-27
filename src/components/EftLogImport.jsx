@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { gameModeLabel } from '../gameMode'
-import { useEftLogImport } from '../useEftLogImport'
 
 const STATE_LABELS = {
   active: 'STARTED',
@@ -59,7 +58,7 @@ function latestByTask(events) {
   return result
 }
 
-export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGetQuestHistory, userQuests = [] }) {
+export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGetQuestHistory, userQuests = [], sync }) {
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
   const [needsFileFallback, setNeedsFileFallback] = useState(false)
@@ -91,7 +90,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
     forgetFolder,
     reset,
     checkNow,
-  } = useEftLogImport({ allTasks, gameMode, userId, onApply })
+  } = sync || {}
 
   // Keyed on whether a preview exists, not on its identity: every version
   // checkbox and profile choice rebuilds the preview object, and depending on

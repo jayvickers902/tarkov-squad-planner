@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  classifyChangedEftLogMetadata,
+  classifyEftLogFileChange,
   changedEftLogMetadata,
   enumerateRelevantEftLogFiles,
   getRelevantEftLogFiles,
   haveEftLogFilesChanged,
   MAX_RELEVANT_FILE_BYTES,
   readRelevantEftLogFiles,
+  readEftLogAppend,
 } from './eftLogDirectory'
 
 function file(name, text = '{}', extra = {}) {
@@ -63,6 +66,36 @@ describe('eft log directory helpers', () => {
       { ...oldFiles[0], size: 3, lastModified: 2 },
       { relativeFilename: 'push-notifications_1.log', size: 4, lastModified: 1 },
     ])).toHaveLength(2)
+  })
+
+  it('classifies unchanged, append, shrink, rotation, and new files', () => {
+    const old = { relativeFilename: 'notifications.log', size: 10, lastModified: 1 }
+    expect(classifyEftLogFileChange(old, old)).toBe('unchanged')
+    expect(classifyEftLogFileChange(old, { ...old, size: 12, lastModified: 2 })).toBe('append')
+    expect(classifyEftLogFileChange(old, { ...old, size: 3, lastModified: 3 })).toBe('shrink')
+    expect(classifyEftLogFileChange(old, { ...old, lastModified: 2 })).toBe('changed')
+    expect(classifyEftLogFileChange(null, old)).toBe('new')
+    expect(classifyChangedEftLogMetadata(old ? [old] : [], [{ ...old, size: 12 }])[0].change).toBe('append')
+  })
+
+  it('reads only appended bytes and falls back to a full read on rotation', async () => {
+    const content = '0123456789abcdef'
+    const current = file('notifications.log', content, { size: content.length, slice(start) {
+      const suffix = content.slice(start)
+      return { async arrayBuffer() { return new TextEncoder().encode(suffix).buffer } }
+    } })
+    const append = await readEftLogAppend({ ...current, relativeFilename: 'notifications.log' }, {
+      relativeFilename: 'notifications.log', size: 10, lastModified: 1,
+    })
+    expect(append.change).toBe('append')
+    expect(append.text).toBe('abcdef')
+    expect(append.readOffset).toBe(10)
+    const rotated = await readEftLogAppend({ ...current, relativeFilename: 'notifications.log' }, {
+      relativeFilename: 'notifications.log', size: 20, lastModified: 1,
+    })
+    expect(rotated.change).toBe('shrink')
+    expect(rotated.requiresFullRead).toBe(true)
+    expect(rotated.text).toBe(content)
   })
 
   it('does not read beyond the total cap when metadata is available', async () => {

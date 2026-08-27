@@ -5,6 +5,11 @@ const TASK_ID_RE = /^[a-f0-9]{24}$/i
 const EVENT_KEY_SAFE_RE = /^[A-Za-z0-9][A-Za-z0-9_.:|=-]*$/
 const MAX_EVENT_KEY_LENGTH = 240
 const MAX_PARSE_ERROR_DETAILS = 100
+// Incremental scans retain only a small in-memory prefix around an unfinished
+// record. It is deliberately never part of a persisted checkpoint.
+const MAX_INCREMENTAL_PENDING_CHARS = 4096
+
+export { MAX_INCREMENTAL_PENDING_CHARS }
 
 const STATE_BY_MESSAGE_TYPE = {
   10: 'active',
@@ -209,6 +214,105 @@ function extractJsonObjects(text) {
   }
 
   return { objects, parseErrors, malformedRecords }
+}
+
+/**
+ * Extract complete JSON records from an append-only chunk. The returned
+ * `pendingText` is a transient parser buffer: callers may keep it for the next
+ * poll, but must not persist it. Keeping the last complete boundary as a byte
+ * offset lets a restarted watcher safely reread the unfinished record.
+ */
+function extractIncrementalJsonObjects(text) {
+  const source = typeof text === 'string' ? text : ''
+  const objects = []
+  let cursor = 0
+  let lastCompleteEnd = -1
+  let trailingStart = -1
+
+  while (cursor < source.length) {
+    const start = source.indexOf('{', cursor)
+    if (start === -1) break
+    const end = findBalancedObjectEnd(source, start)
+    if (end === -1) {
+      trailingStart = start
+      break
+    }
+    const candidate = source.slice(start, end + 1)
+    try {
+      const value = JSON.parse(candidate)
+      if (isPlainObject(value)) objects.push({ value, start, end })
+    } catch {
+      // A balanced malformed record is complete and can be passed to the
+      // normal parser on this poll without blocking later records.
+    }
+    lastCompleteEnd = end
+    cursor = end + 1
+  }
+
+  const completeEnd = lastCompleteEnd + 1
+  // Start exactly at the unfinished object. Including already-consumed line
+  // prefixes here would make the next byte offset double-count those bytes.
+  const remainder = trailingStart >= 0 ? source.slice(trailingStart) : ''
+  const pendingOverflow = remainder.length > MAX_INCREMENTAL_PENDING_CHARS
+  return {
+    objects,
+    completeText: completeEnd > 0 ? source.slice(0, completeEnd) : '',
+    // Never keep a suffix that has lost the opening brace: it could make a
+    // nested object look like a complete top-level notification. The caller
+    // will retain the numeric boundary and use a bounded full reread instead.
+    pendingText: pendingOverflow ? '' : remainder,
+    pendingOverflow,
+    pendingStart: trailingStart,
+    completeChars: completeEnd,
+  }
+}
+
+function utf8ByteLength(value) {
+  if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(value).byteLength
+  return unescape(encodeURIComponent(value)).length
+}
+
+/**
+ * Parse only newly appended notification-log text. `state.pendingText` is
+ * intentionally an in-memory value; persisted state should contain only the
+ * numeric `parsedOffset` in the file metadata.
+ *
+ * The `preview` field has the same shape as parseEftLogFiles, which lets a
+ * watcher feed the result through the existing reconciliation path.
+ */
+export function parseEftLogAppend({
+  name = 'notifications.log',
+  text = '',
+  pendingText = '',
+  state = {},
+  taskIds = [],
+  options = {},
+} = {}) {
+  const transientPending = typeof pendingText === 'string' ? pendingText.slice(-MAX_INCREMENTAL_PENDING_CHARS) : ''
+  const combined = `${transientPending}${typeof text === 'string' ? text : ''}`
+  const parsed = extractIncrementalJsonObjects(combined)
+  const consumedText = parsed.completeText
+  // Advance past non-JSON prefixes too. If a trailing object is incomplete,
+  // the offset stops exactly at its opening brace; after a restart the next
+  // scan can reread that object without retaining its raw bytes in storage.
+  const consumedForOffset = parsed.pendingStart >= 0
+    ? combined.slice(0, parsed.pendingStart)
+    : combined
+  const previousOffset = Number.isFinite(state?.parsedOffset) && state.parsedOffset >= 0 ? state.parsedOffset : 0
+  const consumedBytes = utf8ByteLength(consumedForOffset)
+  const nextParsedOffset = previousOffset + consumedBytes
+  const preview = consumedText
+    ? parseEftLogFiles([{ name, text: consumedText }], taskIds, options)
+    : parseEftLogFiles([], taskIds, options)
+  return {
+    ...preview,
+    preview,
+    pendingText: parsed.pendingText,
+    pendingOverflow: parsed.pendingOverflow,
+    parsedOffset: nextParsedOffset,
+    consumedBytes,
+    recordsParsed: parsed.objects.length,
+  }
 }
 
 const NOTIFICATION_MARKER_RE = /chatmessagereceived/i
@@ -690,6 +794,7 @@ function collectProfileIdsFromText(text, session) {
 
 export const __eftLogInternals = {
   extractJsonObjects,
+  extractIncrementalJsonObjects,
   markerInPrefix,
   logTypeName,
   safeEventKey,

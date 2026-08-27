@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useTasks } from '../useTarkov'
+import { useEftLogSync } from '../EftLogSyncContext'
 import { FEATURED } from '../constants'
 import QuestScanner from './QuestScanner'
 import CatchUp from './CatchUp'
@@ -46,6 +47,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
 
   const gameMode = passedGameMode || resolvePartyMode(null, userSettings)
   const canChangeGameMode = !inParty && !!onSetUserSetting
+  const eftLogSync = useEftLogSync({ optional: true })
 
   const snapKey = userId ? `tarkov_quests_${userId}_${gameMode}` : null
   // Snapshots predating mode scoping were saved unsuffixed, and every quest row
@@ -82,8 +84,9 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
 
   // Load tasks for the currently selected search map
   const { tasks, loading: tasksLoading } = useTasks(searchMap === 'any' ? null : searchMap, gameMode)
-  // Always load all tasks for kappa lookup (uses module-level cache — no extra fetch)
-  const { tasks: allTasks } = useTasks(null, gameMode)
+  // The persistent signed-in sync owner loads the complete task list once;
+  // consume it here so opening/closing this route never creates another sync.
+  const allTasks = eftLogSync?.allTasks || []
   const kappaIds = useMemo(() => new Set(allTasks.filter(t => t.kappaRequired).map(t => t.id)), [allTasks])
 
   const searchHits = useMemo(() => {
@@ -236,6 +239,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
           onGetQuestHistory={onGetQuestHistory}
           gameMode={gameMode}
           onApply={onReconcileLogEvents}
+          sync={eftLogSync}
         />
       </div>
 

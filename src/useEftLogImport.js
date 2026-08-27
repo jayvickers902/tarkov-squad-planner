@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { parseEftLogFiles } from './eftLogs'
 import {
+  classifyChangedEftLogMetadata,
   enumerateRelevantEftLogFiles,
   getRelevantEftLogFiles,
   haveEftLogFilesChanged,
   MAX_RELEVANT_FILE_BYTES,
   MAX_TOTAL_RELEVANT_BYTES,
+  isRelevantEftLogPath,
+  readEftLogAppend,
   readEnumeratedEftLogFiles,
   readRelevantEftLogFiles,
 } from './eftLogDirectory'
@@ -211,12 +214,56 @@ function getWorkerFactory(environment, suppliedFactory) {
   return () => new Worker(new URL('./eftLogWorker.js', import.meta.url), { type: 'module' })
 }
 
-function checkpointFrom(sourceMetadata, preview, selection, autoSync, gameMode) {
+// FileSystemObserver is intentionally injected rather than read directly in
+// the hook. This keeps the browser capability optional and makes the observer
+// lifecycle testable in jsdom (which does not implement it).
+function getFileSystemObserverFactory(environment, suppliedFactory) {
+  if (suppliedFactory) return suppliedFactory
+  const ObserverConstructor = environmentValue(environment, 'FileSystemObserver')
+    || environment?.window?.FileSystemObserver
+  if (typeof ObserverConstructor !== 'function') return null
+  return callback => new ObserverConstructor(callback)
+}
+
+function observerPath(record) {
+  if (Array.isArray(record?.relativePathComponents)) {
+    return record.relativePathComponents.filter(Boolean).join('/')
+  }
+  if (typeof record?.relativePath === 'string') return record.relativePath
+  if (typeof record?.path === 'string') return record.path
+  return record?.changedHandle?.name || ''
+}
+
+function observerError(value) {
+  if (value instanceof Error) return value
+  if (value?.error instanceof Error) return value.error
+  if (value?.type === 'errored' && value?.error) return value.error
+  return null
+}
+
+function eftLogTypeName(path) {
+  const filename = String(path || '').replace(/\\/g, '/').split('/').pop() || ''
+  const space = filename.lastIndexOf(' ')
+  return space === -1 ? filename : filename.slice(space + 1)
+}
+
+function isNotificationLogPath(path) {
+  return /^(?:notifications|push-notifications)(?:[_-]\d+)?\.log$/i.test(eftLogTypeName(path))
+}
+
+function isContextLogPath(path) {
+  return /^(?:backend|application)(?:[_-]\d+)?\.log$/i.test(eftLogTypeName(path))
+}
+
+function checkpointFrom(sourceMetadata, preview, selection, autoSync, gameMode, parsedOffsets = null) {
   return {
     files: sourceMetadata.map(file => ({
       relativeFilename: file.relativeFilename,
       size: file.size || 0,
       lastModified: file.lastModified || 0,
+      ...(isNotificationLogPath(file.relativeFilename)
+        ? { parsedOffset: parsedOffsets?.get(file.relativeFilename) ?? (file.size || 0) }
+        : {}),
     })),
     includedVersions: preview.includedVersions,
     profileKey: selection.profileKey,
@@ -274,11 +321,13 @@ export function useEftLogImport({
   onApply,
   environment,
   workerFactory,
+  observerFactory,
   handleStore,
   storageKey,
   userId,
   accountKey,
   pollIntervalMs = 15000,
+  observerDebounceMs = 200,
   maxFileBytes = MAX_RELEVANT_FILE_BYTES,
   maxTotalBytes = MAX_TOTAL_RELEVANT_BYTES,
 } = {}) {
@@ -319,6 +368,14 @@ export function useEftLogImport({
   const pollInFlightRef = useRef(null)
   const scanInFlightRef = useRef(null)
   const watchingRef = useRef(false)
+  const observerRef = useRef(null)
+  const observerModeRef = useRef(null)
+  const observerDebounceRef = useRef(null)
+  const observerPendingPathsRef = useRef(new Set())
+  const observerRecoveryRef = useRef(false)
+  const observerFlushAfterScanRef = useRef(false)
+  const observerFlushRef = useRef(() => {})
+  const pendingTextRef = useRef(new Map())
   const selectionRef = useRef({ includedVersions: [], profileKey: null, unknownModeTarget: null })
   const documentRef = useRef(documentObject)
   const pollRef = useRef(() => null)
@@ -336,6 +393,7 @@ export function useEftLogImport({
       visibility: () => {
         if (documentRef.current?.visibilityState === 'visible') pollRef.current()
       },
+      pageshow: () => pollRef.current(),
     }
   }
   const allTasksRef = useRef(allTasks)
@@ -347,11 +405,22 @@ export function useEftLogImport({
 
   const stopWatching = useCallback(() => {
     watchingRef.current = false
+    observerModeRef.current = null
+    observerFlushAfterScanRef.current = false
+    observerPendingPathsRef.current.clear()
+    if (observerDebounceRef.current !== null) {
+      clearTimeout(observerDebounceRef.current)
+      observerDebounceRef.current = null
+    }
+    const observer = observerRef.current
+    observerRef.current = null
+    try { observer?.disconnect?.() } catch { /* Observer cleanup is best effort. */ }
     if (pollTimerRef.current !== null) {
       clearInterval(pollTimerRef.current)
       pollTimerRef.current = null
     }
     env.removeEventListener?.('focus', listenersRef.current.focus)
+    env.removeEventListener?.('pageshow', listenersRef.current.pageshow)
     documentObject?.removeEventListener?.('visibilitychange', listenersRef.current.visibility)
   }, [env, documentObject])
 
@@ -363,7 +432,7 @@ export function useEftLogImport({
     pending.reject(reason)
   }, [])
 
-  const parseInWorker = useCallback((files, parseOptions = {}) => {
+  const parseInWorker = useCallback((files, parseOptions = {}, protocol = 'parse', appendFiles = null) => {
     const factory = getWorkerFactory(env, workerFactory)
     if (!factory) return Promise.reject(new Error('This browser cannot run the EFT log parser.'))
     terminateWorker()
@@ -385,15 +454,16 @@ export function useEftLogImport({
       worker.onmessage = event => {
         const message = event?.data || {}
         if (message.requestId !== requestId) return
-        if (message.type === 'result') finish(resolve, message.preview)
+        if (message.type === 'result') finish(resolve, protocol === 'append' ? message.results : message.preview)
         else if (message.type === 'error') finish(reject, new Error('The EFT log parser rejected the selected logs.'))
       }
       worker.onerror = () => finish(reject, new Error('The EFT log parser stopped unexpectedly.'))
       try {
         worker.postMessage({
-          type: 'parse',
+          type: protocol,
           requestId,
           files,
+          appendFiles,
           taskIds: taskIdsFor(allTasksRef.current),
           options: parseOptions,
         })
@@ -402,6 +472,10 @@ export function useEftLogImport({
       }
     })
   }, [env, terminateWorker, workerFactory])
+
+  const parseAppendsInWorker = useCallback((appendFiles, parseOptions = {}) => (
+    parseInWorker([], parseOptions, 'append', appendFiles)
+  ), [parseInWorker])
 
   const readAndParse = useCallback(async (files, sourceMetadata, parseOptions = {}, expectedGeneration = generationRef.current) => {
     // One pass is enough: the parser always returns the complete event corpus
@@ -458,7 +532,11 @@ export function useEftLogImport({
     }
   }, [maxFileBytes, maxTotalBytes, readAndParse, stopWatching, supported])
 
-  const scanDirectory = useCallback((handle, autoApply = false) => {
+  // `changedPaths` is an orchestration seam for incremental readers. The
+  // current reader still performs a bounded full scan, but callers already
+  // receive the normalized paths that caused the scan and can later switch to
+  // tail reads without changing this hook's public lifecycle.
+  const scanDirectory = useCallback((handle, autoApply = false, { changedPaths = [], recovery = false } = {}) => {
     if (scanInFlightRef.current) return scanInFlightRef.current
     const promise = (async () => {
       const scanGeneration = generationRef.current
@@ -469,18 +547,137 @@ export function useEftLogImport({
       const savedMode = checkpointRef.current?.gameMode
       if (autoApply && savedMode && savedMode !== targetModeRef.current) return { changed: false, metadata }
       if (autoApply && !haveEftLogFilesChanged(previous, metadata)) return { changed: false, metadata }
-      const files = await readEnumeratedEftLogFiles(entries, { maxFileBytes, maxTotalBytes })
-      if (generationRef.current !== scanGeneration) throw staleError()
-      const nextPreview = await readAndParse(files, metadata, {}, scanGeneration)
-      if (!autoApply) return { changed: true, metadata, preview: nextPreview }
+
+      const previousByName = new Map(previous.map(file => [file.relativeFilename, file]))
+      const classified = classifyChangedEftLogMetadata(previous, metadata)
+      const currentNames = new Set(metadata.map(file => file.relativeFilename))
+      const hasRemoval = previous.some(file => !currentNames.has(file.relativeFilename))
       const selection = {
-        includedVersions: checkpointRef.current?.includedVersions || nextPreview.includedVersions,
+        includedVersions: checkpointRef.current?.includedVersions || [],
         profileKey: checkpointRef.current?.profileKey || null,
         unknownModeTarget: checkpointRef.current?.unknownModeTarget || null,
       }
       const mode = checkpointRef.current?.gameMode || targetModeRef.current
+
+      // Appends to a known notification file are safe to tail. Any new,
+      // rotated, removed, same-size-rewritten, or context/session file needs
+      // the old bounded full scan so profile and mode discovery stays sound.
+      const requiresFullScan = recovery || hasRemoval || classified.some(change => {
+        if (change.change === 'unchanged') return false
+        if (isNotificationLogPath(change.relativeFilename)) {
+          const previousFile = previousByName.get(change.relativeFilename)
+          const currentEntry = entries.find(entry => entry.relativeFilename === change.relativeFilename)
+          const sourceSupportsByteSlice = typeof currentEntry?.file === 'string'
+            || typeof currentEntry?.file?.slice === 'function'
+            || typeof currentEntry?.file?.arrayBuffer === 'function'
+          return change.change !== 'append'
+            || !previousFile
+            || !Number.isSafeInteger(previousFile.parsedOffset)
+            || !sourceSupportsByteSlice
+            || (previousFile.parsedOffset < (previousFile.size || 0) && !pendingTextRef.current.has(change.relativeFilename))
+        }
+        if (isContextLogPath(change.relativeFilename) && change.change === 'append' && previousByName.has(change.relativeFilename)) return false
+        return true
+      })
+      const appendChanges = classified.filter(change => change.change === 'append' && isNotificationLogPath(change.relativeFilename))
+
+      if (autoApply && !requiresFullScan && appendChanges.length) {
+        const appendFiles = []
+        for (const change of appendChanges) {
+          const entry = entries.find(candidate => candidate.relativeFilename === change.relativeFilename)
+          const previousFile = previousByName.get(change.relativeFilename)
+          const hasPendingText = pendingTextRef.current.has(change.relativeFilename)
+          const append = await readEftLogAppend(entry, previousFile, { maxFileBytes, maxTotalBytes }, { hasPendingText })
+          appendFiles.push({
+            name: append.name,
+            text: append.text,
+            pendingText: pendingTextRef.current.get(change.relativeFilename) || '',
+            state: { parsedOffset: previousFile.parsedOffset },
+          })
+        }
+        const appendResults = await parseAppendsInWorker(appendFiles, {})
+        if (generationRef.current !== scanGeneration) throw staleError()
+        const selectedVersions = new Set(selection.includedVersions)
+        const events = []
+        const nextOffsets = new Map(previous.map(file => [file.relativeFilename, file.parsedOffset]))
+        const stagedPendingText = new Map(pendingTextRef.current)
+        const knownTaskIds = new Set(taskIdsFor(allTasksRef.current))
+        appendResults.forEach((result, index) => {
+          const path = appendFiles[index].name
+          const resultPreview = result?.preview || result || {}
+          const pending = typeof result?.pendingText === 'string' ? result.pendingText : ''
+          if (pending && !result?.pendingOverflow) stagedPendingText.set(path, pending)
+          else stagedPendingText.delete(path)
+          if (Number.isSafeInteger(result?.parsedOffset)) nextOffsets.set(path, result.parsedOffset)
+          const resultEvents = Array.isArray(resultPreview.matchedEvents)
+            ? resultPreview.matchedEvents
+            : (resultPreview.events || []).filter(event => knownTaskIds.has(event?.taskId))
+          for (const sourceEvent of resultEvents) {
+            const event = {
+              ...sourceEvent,
+              gameMode: sourceEvent.gameMode || mode,
+              profileKey: sourceEvent.profileKey || selection.profileKey || null,
+              version: sourceEvent.version || (selection.includedVersions.length === 1 ? selection.includedVersions[0] : null),
+            }
+            if (mode !== event.gameMode) continue
+            if (selection.profileKey && selection.profileKey !== event.profileKey) continue
+            if (selectedVersions.size && !selectedVersions.has(String(event.version || ''))) continue
+            const taskMetadata = taskMetadataFor(allTasksRef.current).get(event.taskId)
+            events.push(taskMetadata ? {
+              ...event,
+              ...(taskMetadata.questName ? { questName: taskMetadata.questName } : {}),
+              ...(taskMetadata.mapNorm ? { mapNorm: taskMetadata.mapNorm } : {}),
+            } : event)
+          }
+        })
+        if (events.length) {
+          const callback = onApplyRef.current
+          if (typeof callback !== 'function') throw new Error('Quest import is not connected.')
+          try {
+            const result = await callback(mode, events)
+            if (result?.error) throw result.error
+          } catch (caughtError) {
+            const applyError = sanitisedError(caughtError, 'The EFT quest update could not be applied.')
+            applyError.code = 'EFT_LOG_APPLY'
+            throw applyError
+          }
+        }
+        if (generationRef.current !== scanGeneration) throw staleError()
+        const nextCheckpoint = checkpointFrom(metadata, { includedVersions: selection.includedVersions }, selection, true, mode, nextOffsets)
+        await store.saveCheckpoint(key, nextCheckpoint)
+        checkpointRef.current = nextCheckpoint
+        // Transient parser state and its durable byte boundary advance as one
+        // commit. A failed apply/checkpoint write must leave both retryable.
+        pendingTextRef.current = stagedPendingText
+        if (mountedRef.current) setLastSuccessfulCheck(new Date().toISOString())
+        if (mountedRef.current) { setError(null); setState('watching') }
+        return { changed: true, metadata, preview: null, events, changedPaths, recovery, incremental: true }
+      }
+
+      if (autoApply && !requiresFullScan) {
+        const nextOffsets = new Map(previous.map(file => [file.relativeFilename, file.parsedOffset]))
+        const nextCheckpoint = checkpointFrom(metadata, { includedVersions: selection.includedVersions }, selection, true, mode, nextOffsets)
+        await store.saveCheckpoint(key, nextCheckpoint)
+        checkpointRef.current = nextCheckpoint
+        if (mountedRef.current) setLastSuccessfulCheck(new Date().toISOString())
+        if (mountedRef.current) { setError(null); setState('watching') }
+        return { changed: true, metadata, preview: null, events: [], changedPaths, recovery, incremental: true }
+      }
+
+      // Context-only appends have no task events to parse. They are still
+      // checkpointed after the successful no-op reconciliation, while a newly
+      // appeared context file reaches this full-read path below.
+      const files = await readEnumeratedEftLogFiles(entries, { maxFileBytes, maxTotalBytes })
+      if (generationRef.current !== scanGeneration) throw staleError()
+      const nextPreview = await readAndParse(files, metadata, { changedPaths, recovery }, scanGeneration)
+      if (!autoApply) return { changed: true, metadata, preview: nextPreview }
+      const nextSelection = {
+        includedVersions: checkpointRef.current?.includedVersions || nextPreview.includedVersions,
+        profileKey: checkpointRef.current?.profileKey || null,
+        unknownModeTarget: checkpointRef.current?.unknownModeTarget || null,
+      }
       if (mode !== targetModeRef.current) return { changed: false, metadata, preview: nextPreview }
-      const events = selectedEvents(nextPreview, selection, mode, taskIdsFor(allTasksRef.current), taskMetadataFor(allTasksRef.current))
+      const events = selectedEvents(nextPreview, nextSelection, mode, taskIdsFor(allTasksRef.current), taskMetadataFor(allTasksRef.current))
       if (events.length) {
         const callback = onApplyRef.current
         if (typeof callback !== 'function') throw new Error('Quest import is not connected.')
@@ -494,23 +691,25 @@ export function useEftLogImport({
         }
       }
       if (generationRef.current !== scanGeneration) throw staleError()
-      const nextCheckpoint = checkpointFrom(metadata, nextPreview, selection, true, mode)
+      const nextOffsets = new Map(metadata.filter(file => isNotificationLogPath(file.relativeFilename)).map(file => [file.relativeFilename, file.size || 0]))
+      pendingTextRef.current.clear()
+      const nextCheckpoint = checkpointFrom(metadata, nextPreview, nextSelection, true, mode, nextOffsets)
       await store.saveCheckpoint(key, nextCheckpoint)
       checkpointRef.current = nextCheckpoint
       if (mountedRef.current) setLastSuccessfulCheck(new Date().toISOString())
       if (mountedRef.current) { setError(null); setState('watching') }
-      return { changed: true, metadata, preview: nextPreview, events }
+      return { changed: true, metadata, preview: nextPreview, events, changedPaths, recovery }
     })()
     scanInFlightRef.current = promise
     return promise.finally(() => {
       if (scanInFlightRef.current === promise) scanInFlightRef.current = null
     })
-  }, [key, maxFileBytes, maxTotalBytes, readAndParse, store])
+  }, [key, maxFileBytes, maxTotalBytes, parseAppendsInWorker, readAndParse, store])
 
-  const runFolderCheck = useCallback((handle, autoApply) => {
+  const runFolderCheck = useCallback((handle, autoApply, scanOptions = {}) => {
     if (!handle || pollInFlightRef.current) return pollInFlightRef.current || null
     const promise = handlePermission(handle)
-      .then(() => scanDirectory(handle, autoApply))
+      .then(() => scanDirectory(handle, autoApply, scanOptions))
       .catch(caughtError => {
         const nextError = sanitisedError(caughtError, 'The remembered EFT folder is no longer available.')
         if (nextError.code === 'EFT_LOG_PERMISSION' || isFilesystemError(nextError)) {
@@ -524,7 +723,15 @@ export function useEftLogImport({
         }
         return null
       })
-      .finally(() => { pollInFlightRef.current = null })
+      .finally(() => {
+        pollInFlightRef.current = null
+        // A filesystem event can arrive while a parse/apply is in flight.
+        // Keep it coalesced and flush it after the single-flight operation.
+        if (watchingRef.current && observerFlushAfterScanRef.current) {
+          observerFlushAfterScanRef.current = false
+          observerFlushRef.current()
+        }
+      })
     pollInFlightRef.current = promise
     return promise
   }, [scanDirectory, stopWatching])
@@ -544,6 +751,93 @@ export function useEftLogImport({
 
   pollRef.current = pollRememberedFolder
 
+  const scheduleObservedScan = useCallback((changedPaths = [], recovery = false) => {
+    if (!watchingRef.current || !directoryHandleRef.current) return
+    for (const path of changedPaths || []) observerPendingPathsRef.current.add(path)
+    observerRecoveryRef.current = observerRecoveryRef.current || recovery
+    if (observerDebounceRef.current !== null) return
+    observerDebounceRef.current = setTimeout(() => {
+      observerDebounceRef.current = null
+      const paths = [...observerPendingPathsRef.current]
+      const needsRecovery = observerRecoveryRef.current
+      observerPendingPathsRef.current.clear()
+      observerRecoveryRef.current = false
+      if (pollInFlightRef.current) {
+        // The active scan will invoke observerFlushRef after it completes.
+        for (const path of paths) observerPendingPathsRef.current.add(path)
+        observerRecoveryRef.current = needsRecovery
+        observerFlushAfterScanRef.current = true
+        return
+      }
+      runFolderCheck(directoryHandleRef.current, true, {
+        changedPaths: paths,
+        recovery: needsRecovery,
+      })
+    }, observerDebounceMs)
+  }, [directoryHandleRef, observerDebounceMs, runFolderCheck])
+
+  // The ref avoids adding the observer callback to the async scan's callback
+  // dependency graph while still allowing a queued event to flush immediately
+  // after a single-flight scan finishes.
+  observerFlushRef.current = () => {
+    if (!watchingRef.current || !directoryHandleRef.current) return
+    if (observerPendingPathsRef.current.size || observerRecoveryRef.current) {
+      scheduleObservedScan()
+    }
+  }
+
+  const fallbackToPolling = useCallback((observer, failure = null) => {
+    if (!watchingRef.current || observerRef.current !== observer) return
+    try { observer?.disconnect?.() } catch { /* Observer cleanup is best effort. */ }
+    observerRef.current = null
+    observerModeRef.current = 'poll'
+    if (failure && (failure.code === 'EFT_LOG_PERMISSION' || failure.name === 'NotAllowedError' || failure.name === 'SecurityError')) {
+      stopWatching()
+      if (mountedRef.current) {
+        const nextError = permissionError()
+        setError(nextError.message)
+        setState('permission-needed')
+      }
+      return
+    }
+    if (pollTimerRef.current === null) {
+      pollTimerRef.current = setInterval(() => { pollRememberedFolder() }, pollIntervalMs)
+    }
+    if (mountedRef.current) setState('watching')
+    pollRememberedFolder()
+  }, [pollIntervalMs, pollRememberedFolder, stopWatching])
+
+  const observerNotification = useCallback((records, callbackError = null) => {
+    if (!watchingRef.current) return
+    const explicitError = observerError(callbackError)
+    if (explicitError) {
+      fallbackToPolling(observerRef.current, explicitError)
+      return
+    }
+    const list = Array.isArray(records) ? records : (records ? [records] : [])
+    const changedPaths = []
+    let recovery = false
+    for (const record of list) {
+      const failure = observerError(record)
+      if (failure || String(record?.type || '').toLowerCase() === 'errored') {
+        fallbackToPolling(observerRef.current, failure)
+        return
+      }
+      const type = String(record?.type || '').toLowerCase()
+      if (!['appeared', 'disappeared', 'modified', 'moved'].includes(type)) {
+        recovery = true
+        continue
+      }
+      const path = observerPath(record)
+      // Known-but-irrelevant files (for example a game log in the same
+      // directory) are intentionally ignored. A missing path cannot be
+      // classified safely, so ask the bounded directory scan to recover.
+      if (!path) recovery = true
+      else if (isRelevantEftLogPath(path)) changedPaths.push(path)
+    }
+    if (changedPaths.length || recovery) scheduleObservedScan(changedPaths, recovery)
+  }, [fallbackToPolling, scheduleObservedScan])
+
   const startWatching = useCallback((pollNow = true) => {
     // Report whether watching actually began. Callers used to assume it did and
     // could strand the panel in its applying state when it did not.
@@ -555,12 +849,34 @@ export function useEftLogImport({
     stopWatching()
     watchingRef.current = true
     env.addEventListener?.('focus', listenersRef.current.focus)
+    env.addEventListener?.('pageshow', listenersRef.current.pageshow)
     documentObject?.addEventListener?.('visibilitychange', listenersRef.current.visibility)
-    pollTimerRef.current = setInterval(() => { pollRememberedFolder() }, pollIntervalMs)
+    const factory = getFileSystemObserverFactory(env, observerFactory)
+    let observerStarted = false
+    if (factory) {
+      try {
+        const observer = factory(observerNotification)
+        if (!observer || typeof observer.observe !== 'function') throw new Error('Observer unavailable')
+        observerRef.current = observer
+        observerModeRef.current = 'observer'
+        const result = observer.observe(directoryHandleRef.current, { recursive: true })
+        observerStarted = true
+        Promise.resolve(result).catch(error => fallbackToPolling(observer, error))
+      } catch {
+        observerRef.current = null
+        observerModeRef.current = null
+      }
+    }
+    // Polling is deliberately only a capability fallback. A working native
+    // observer should not cause a second directory enumeration every 15s.
+    if (!observerStarted) {
+      observerModeRef.current = 'poll'
+      pollTimerRef.current = setInterval(() => { pollRememberedFolder() }, pollIntervalMs)
+    }
     if (mountedRef.current) setState('watching')
-    if (pollNow) pollRememberedFolder()
+    if (pollNow && (!observerStarted || observerModeRef.current === 'observer')) pollRememberedFolder()
     return true
-  }, [documentObject, env, pollIntervalMs, pollRememberedFolder, stopWatching])
+  }, [documentObject, env, observerFactory, observerNotification, fallbackToPolling, pollIntervalMs, pollRememberedFolder, stopWatching])
 
   const connectRememberedFolder = useCallback(async () => {
     if (!persistentSupported) return null
