@@ -101,4 +101,10 @@ describe('SyncStatusBar', () => {
     fireEvent.click(screen.getByRole('button', { name: /Screenshot sync/ }))
     expect(screen.getByRole('dialog').textContent).not.toMatch(/[\\/]/)
   })
+  it('does not claim screenshot pings are flowing without an active party map', () => {
+    vi.mocked(useEftScreenshotSyncContext).mockReturnValue(shotController({ readyForPings: false }))
+    render(<SyncStatusBar onMyQuests={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Screenshot sync/ }))
+    expect(screen.getByRole('dialog').textContent).toMatch(/pings need an active party map/i)
+  })
 })

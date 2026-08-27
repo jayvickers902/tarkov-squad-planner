@@ -85,7 +85,16 @@ export default function SyncStatusBar({ onMyQuests }) {
   const barRef = useRef(null)
   const buttonRefs = useRef({})
   const openerKeyRef = useRef(null)
+  // The chips report "how long since the last check", so they have to re-render
+  // on their own. Without this the relative time freezes at whatever the last
+  // unrelated render produced, which reads as a stalled sync.
+  const [, setTick] = useState(0)
   const now = Date.now()
+
+  useEffect(() => {
+    const id = setInterval(() => setTick(value => value + 1), 30000)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     function onVisibilityChange() {
@@ -177,6 +186,9 @@ export default function SyncStatusBar({ onMyQuests }) {
             <button type="button" className="btn-ghost btn-sm" aria-label="Close shots sync" onClick={() => closePopover()}>✕</button>
           </div>
           <p>{popoverDetail(screenshotStatus)}</p>
+          {screenshotStatus.tone === 'ok' && shots.readyForPings === false && (
+            <p className="mono sync-popover-note">Watching, but pings need an active party map before they can be placed.</p>
+          )}
           {(shots.folderName || shots.rememberedFolderName) && <div className="mono sync-popover-row"><span>FOLDER · {screenshotFolder}</span></div>}
           <div className="mono sync-popover-row"><span>LAST CHECK · {relativeTime(screenshotStatus.lastCheckedMs, now) || 'NOT CHECKED YET'}</span></div>
           {shots.lastScreenshot && <div className="mono sync-popover-row"><span>LAST SCREENSHOT · {relativeTime(timestampMsForScreenshot(shots.lastScreenshot), now) || 'JUST NOW'}</span></div>}

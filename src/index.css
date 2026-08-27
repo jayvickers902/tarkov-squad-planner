@@ -1030,7 +1030,7 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .sync-chip[data-tone="error"] .sync-chip-dot,
 .sync-chip-dot[data-tone="error"] { background: var(--red); }
 .sync-chip[data-tone="idle"] .sync-chip-dot,
-.sync-chip[data-tone="idle"] .sync-chip-dot,
+.sync-chip-dot[data-tone="idle"],
 .sync-chip[data-tone="off"] .sync-chip-dot,
 .sync-chip-dot[data-tone="off"] { background: var(--txm); }
 .sync-chip-meta { color: var(--txm); font-size: 9px; letter-spacing: .05em; }
@@ -1054,3 +1054,5 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .sync-chip[data-channel="monitor"] .sync-chip-meta { display: none; }
   .sync-popover { right: auto; left: 0; }
 }
+
+.sync-popover-note { font-size: 10px; color: var(--txm); line-height: 1.5; }
