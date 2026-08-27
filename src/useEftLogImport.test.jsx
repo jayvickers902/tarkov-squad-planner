@@ -530,6 +530,37 @@ describe('useEftLogImport', () => {
     expect(onApply).not.toHaveBeenCalled()
   })
 
+  it('turns auto-apply off and back on without a second folder pick', async () => {
+    const sourceFile = logFile()
+    const environment = persistentEnvironment(directoryHandle(sourceFile))
+    const store = memoryStore()
+    const onApply = vi.fn(async () => ({ inserted: 1, updated: 0 }))
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: [{ id: taskId }],
+      environment,
+      workerFactory: workerFactoryWith(preview()),
+      handleStore: store,
+      onApply,
+    }))
+    await act(async () => { await result.current.connectRememberedFolder() })
+    await act(async () => { await result.current.confirmImport({ autoSync: true }) })
+    expect(result.current.state).toBe('watching')
+    expect(result.current.autoSync).toBe(true)
+
+    // Turning it off must stop the automatic writes but keep the folder, so the
+    // reader is not sent back through the picker to change one setting.
+    await act(async () => { await result.current.setAutoSync(false) })
+    expect(result.current.autoSync).toBe(false)
+    expect(result.current.state).toBe('idle')
+    expect(result.current.rememberedFolderName).toBeTruthy()
+    expect((await store.loadCheckpoint('default'))?.autoSync).toBe(false)
+
+    await act(async () => { await result.current.setAutoSync(true) })
+    expect(result.current.autoSync).toBe(true)
+    expect(result.current.state).toBe('watching')
+    expect((await store.loadCheckpoint('default'))?.autoSync).toBe(true)
+  })
+
   it('removes focus and visibility listeners it added across re-renders', async () => {
     const sourceFile = logFile()
     const environment = trackingEnvironment(directoryHandle(sourceFile))

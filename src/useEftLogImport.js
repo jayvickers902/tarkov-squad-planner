@@ -349,6 +349,7 @@ export function useEftLogImport({
   const [lastSuccessfulCheck, setLastSuccessfulCheck] = useState(null)
   const [progress, setProgress] = useState(null)
   const [pendingJob, setPendingJob] = useState(null)
+  const [autoSync, setAutoSyncState] = useState(false)
 
   const jobMemoryRef = useRef(null)
   if (!jobMemoryRef.current) jobMemoryRef.current = new Map()
@@ -402,6 +403,14 @@ export function useEftLogImport({
   allTasksRef.current = allTasks
   onApplyRef.current = onApply
   targetModeRef.current = targetMode
+
+  // Every checkpoint write is also the source of truth for the auto-apply
+  // switch the panel renders. Assigning the ref directly leaves that switch
+  // showing the previous answer until some unrelated render happens to run.
+  const commitCheckpoint = useCallback(next => {
+    checkpointRef.current = next
+    if (mountedRef.current) setAutoSyncState(next?.autoSync === true)
+  }, [])
 
   const stopWatching = useCallback(() => {
     watchingRef.current = false
@@ -645,7 +654,7 @@ export function useEftLogImport({
         if (generationRef.current !== scanGeneration) throw staleError()
         const nextCheckpoint = checkpointFrom(metadata, { includedVersions: selection.includedVersions }, selection, true, mode, nextOffsets)
         await store.saveCheckpoint(key, nextCheckpoint)
-        checkpointRef.current = nextCheckpoint
+        commitCheckpoint(nextCheckpoint)
         // Transient parser state and its durable byte boundary advance as one
         // commit. A failed apply/checkpoint write must leave both retryable.
         pendingTextRef.current = stagedPendingText
@@ -658,7 +667,7 @@ export function useEftLogImport({
         const nextOffsets = new Map(previous.map(file => [file.relativeFilename, file.parsedOffset]))
         const nextCheckpoint = checkpointFrom(metadata, { includedVersions: selection.includedVersions }, selection, true, mode, nextOffsets)
         await store.saveCheckpoint(key, nextCheckpoint)
-        checkpointRef.current = nextCheckpoint
+        commitCheckpoint(nextCheckpoint)
         if (mountedRef.current) setLastSuccessfulCheck(new Date().toISOString())
         if (mountedRef.current) { setError(null); setState('watching') }
         return { changed: true, metadata, preview: null, events: [], changedPaths, recovery, incremental: true }
@@ -695,7 +704,7 @@ export function useEftLogImport({
       pendingTextRef.current.clear()
       const nextCheckpoint = checkpointFrom(metadata, nextPreview, nextSelection, true, mode, nextOffsets)
       await store.saveCheckpoint(key, nextCheckpoint)
-      checkpointRef.current = nextCheckpoint
+      commitCheckpoint(nextCheckpoint)
       if (mountedRef.current) setLastSuccessfulCheck(new Date().toISOString())
       if (mountedRef.current) { setError(null); setState('watching') }
       return { changed: true, metadata, preview: nextPreview, events, changedPaths, recovery }
@@ -896,7 +905,7 @@ export function useEftLogImport({
     }
     if (scanInFlightRef.current) await scanInFlightRef.current.catch(() => {})
     directoryHandleRef.current = handle
-    checkpointRef.current = null
+    commitCheckpoint(null)
     if (mountedRef.current) setLastSuccessfulCheck(null)
     let canPersistHandle = true
     try {
@@ -940,7 +949,7 @@ export function useEftLogImport({
         permission = await handle.requestPermission({ mode: 'read' })
       }
       if (permission !== 'granted') throw permissionError()
-      checkpointRef.current = await store.loadCheckpoint(key)
+      commitCheckpoint(await store.loadCheckpoint(key))
       if (checkpointRef.current?.gameMode && checkpointRef.current.gameMode !== targetModeRef.current) return true
       if (!checkpointRef.current?.autoSync) return true
       startWatching()
@@ -1008,7 +1017,7 @@ export function useEftLogImport({
     return jobSummaryRef.current || { inserted: 0, updated: 0, ignored: 0, affected_task_ids: [] }
   }, [])
 
-  const confirmImport = useCallback(async ({ autoSync = false, remember = false } = {}) => {
+  const confirmImport = useCallback(async ({ autoSync = false } = {}) => {
     if (!preview) throw new Error('Choose EFT logs before confirming the import.')
     if (preview.availableVersions.length && !selectionRef.current.includedVersions.length) throw new Error('Include at least one EFT log version.')
     const mode = targetModeRef.current
@@ -1042,13 +1051,13 @@ export function useEftLogImport({
         store: jobStore,
       }))
       if (result?.error) throw result.error
-      // Watching needs an actual directory handle. Treating the REMEMBER
-      // checkbox alone as sufficient left the panel stuck on APPLYING after a
-      // successful universal-picker import, because startWatching bailed.
+      // Watching needs an actual directory handle. Treating the opt-in alone
+      // as sufficient left the panel stuck on APPLYING after a successful
+      // universal-picker import, because startWatching bailed.
       const shouldWatch = Boolean(autoSync && directoryHandleRef.current && persistentSupported)
       const checkpoint = checkpointFrom(preview.sourceMetadata || [], preview, selectionRef.current, shouldWatch, mode)
       if (directoryHandleRef.current && persistentSupported) await store.saveCheckpoint(key, checkpoint)
-      checkpointRef.current = checkpoint
+      commitCheckpoint(checkpoint)
       if (mountedRef.current) setLastSuccessfulCheck(new Date().toISOString())
       if (!shouldWatch || !startWatching(false)) {
         if (mountedRef.current) setState('idle')
@@ -1060,6 +1069,35 @@ export function useEftLogImport({
       throw nextError
     }
   }, [jobStore, key, persistentSupported, preview, runImportJob, startWatching, store])
+
+  // The single switch a connected folder actually has. Auto-apply and watching
+  // are the same setting in this hook -- startWatching refuses to run without
+  // autoSync -- so exposing them as two controls would promise a
+  // watch-but-do-not-write state that does not exist.
+  const setAutoSync = useCallback(async next => {
+    const enabled = Boolean(next)
+    const current = checkpointRef.current
+    if (!current || !directoryHandleRef.current || !persistentSupported) return false
+    if (current.autoSync === enabled) return true
+    const checkpoint = { ...current, autoSync: enabled, updatedAt: Date.now() }
+    try {
+      await store.saveCheckpoint(key, checkpoint)
+    } catch {
+      // A failed write would leave the switch claiming a setting the next
+      // session will not honour. Keep showing the setting that is still true.
+      if (mountedRef.current) setError('The auto-apply setting could not be saved. Try again.')
+      return false
+    }
+    commitCheckpoint(checkpoint)
+    if (mountedRef.current) setError(null)
+    if (!enabled) {
+      stopWatching()
+      if (mountedRef.current) setState('idle')
+      return true
+    }
+    startWatching()
+    return true
+  }, [commitCheckpoint, key, persistentSupported, startWatching, stopWatching, store])
 
   // A job that outlived its tab is discoverable on the next mount, which is what
   // makes "come back later and see where it got to" work. The apply function is
@@ -1127,7 +1165,7 @@ export function useEftLogImport({
     terminateWorker()
     stopWatching()
     directoryHandleRef.current = null
-    checkpointRef.current = null
+    commitCheckpoint(null)
     try {
       await store.forget(key)
     } catch {
@@ -1174,13 +1212,13 @@ export function useEftLogImport({
     }
     let cancelled = false
     directoryHandleRef.current = null
-    checkpointRef.current = null
+    commitCheckpoint(null)
     setRememberedFolderName(null)
     setLastSuccessfulCheck(null)
     Promise.all([store.loadHandle(key), store.loadCheckpoint(key)]).then(([handle, checkpoint]) => {
       if (cancelled || !handle) return
       directoryHandleRef.current = handle
-      checkpointRef.current = checkpoint
+      commitCheckpoint(checkpoint)
       if (mountedRef.current) setRememberedFolderName(handle?.name || 'Remembered EFT folder')
       if (mountedRef.current && checkpoint?.updatedAt) setLastSuccessfulCheck(new Date(checkpoint.updatedAt).toISOString())
       return handlePermission(handle).then(() => {
@@ -1233,5 +1271,7 @@ export function useEftLogImport({
     forgetFolder,
     reset,
     checkNow,
+    autoSync,
+    setAutoSync,
   }
 }

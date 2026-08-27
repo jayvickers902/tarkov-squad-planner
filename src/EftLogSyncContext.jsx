@@ -73,6 +73,8 @@ export function EftLogSyncProvider({
     controller.forgetFolder,
     controller.reset,
     controller.checkNow,
+    controller.autoSync,
+    controller.setAutoSync,
   ])
 
   return (

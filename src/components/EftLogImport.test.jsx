@@ -64,7 +64,9 @@ describe('EftLogImport', () => {
     expect(screen.getByText('Synthetic Task')).toBeInTheDocument()
     expect(screen.queryByText('UNKNOWN TASK')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'CONFIRM IMPORT' }))
-    await waitFor(() => expect(confirmImport).toHaveBeenCalledWith({ autoSync: false, remember: false }))
+    // CONFIRM IMPORT is the reviewed, one-shot path: it must never authorise
+    // later unreviewed writes on its own.
+    await waitFor(() => expect(confirmImport).toHaveBeenCalledWith({ autoSync: false }))
   })
 
   it('reports the counts the reconciliation RPC actually returns', async () => {
@@ -82,7 +84,7 @@ describe('EftLogImport', () => {
     fireEvent.click(screen.getByRole('button', { name: 'IMPORT EFT LOGS' }))
 
     // A directory picker that returns no relative paths still needs a way in.
-    expect(screen.getByRole('button', { name: 'CHOOSE LOG FILES' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'CHOOSE LOG FILES INSTEAD' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'SHOW IMPORT NOTES' }))
     // parseErrors is a count, not an array; reading `.length` always showed 0.
     expect(screen.getByText(/3 MALFORMED RECORDS SKIPPED/)).toBeInTheDocument()
@@ -91,5 +93,44 @@ describe('EftLogImport', () => {
     fireEvent.click(screen.getByText(/3 MALFORMED RECORDS SKIPPED/))
     expect(screen.getByText('notifications.log · LINE 12')).toBeInTheDocument()
     expect(screen.getByText('notifications.log · LINE 15')).toBeInTheDocument()
+  })
+
+  it('offers keep-in-sync only where a watchable folder handle exists', () => {
+    render(<EftLogImport sync={sync} allTasks={[{ id: taskId, name: 'Synthetic Task' }]} gameMode="regular" userId="user-1" onApply={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'IMPORT EFT LOGS' }))
+
+    // Universal-picker imports can never watch, so promising it would strand
+    // the reader on a setting the hook silently refuses.
+    expect(screen.queryByRole('button', { name: 'CONFIRM & KEEP IN SYNC' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /AUTO-APPLY/ })).not.toBeInTheDocument()
+  })
+
+  it('takes the unreviewed-writes opt-in beside the changes it governs', async () => {
+    const connected = { ...sync, persistentSupported: true, rememberedFolderName: 'Logs' }
+    render(<EftLogImport sync={connected} allTasks={[{ id: taskId, name: 'Synthetic Task' }]} gameMode="regular" userId="user-1" onApply={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'OPEN' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'CONFIRM & KEEP IN SYNC' }))
+    await waitFor(() => expect(confirmImport).toHaveBeenCalledWith({ autoSync: true }))
+  })
+
+  it('exposes auto-apply as one switch on the connected folder', () => {
+    const setAutoSync = vi.fn()
+    const connected = { ...sync, persistentSupported: true, rememberedFolderName: 'Logs', autoSync: true, setAutoSync }
+    render(<EftLogImport sync={connected} allTasks={[{ id: taskId, name: 'Synthetic Task' }]} gameMode="regular" userId="user-1" onApply={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'OPEN' }))
+
+    const toggle = screen.getByRole('button', { name: 'AUTO-APPLY ON' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(toggle)
+    expect(setAutoSync).toHaveBeenCalledWith(false)
+  })
+
+  it('shows a connected folder its state without opening the panel', () => {
+    const connected = { ...sync, persistentSupported: true, rememberedFolderName: 'Logs', state: 'watching', autoSync: true }
+    render(<EftLogImport sync={connected} allTasks={[{ id: taskId, name: 'Synthetic Task' }]} gameMode="regular" userId="user-1" onApply={vi.fn()} />)
+
+    expect(screen.getByText(/LOCAL QUEST LOGS · AUTO-APPLY ON/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'IMPORT EFT LOGS' })).not.toBeInTheDocument()
   })
 })

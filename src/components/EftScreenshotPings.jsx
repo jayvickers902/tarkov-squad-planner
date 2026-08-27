@@ -23,16 +23,16 @@ export default function EftScreenshotPings() {
     : STATE_TEXT[sync.state] || 'READY'
 
   return (
-    <div className="card" style={{ padding: '9px 11px', marginBottom: 7 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+    <div className="card sync-strip">
+      <div className="sync-strip-row">
+        <div className="sync-strip-state">
           <span className={watching ? 'mon-dot mon-dot-live' : 'mon-dot'} style={{ background: watching ? 'var(--grn)' : 'var(--txd)' }} />
-          <span className="mono" style={{ fontSize: 10, color: watching ? 'var(--grn)' : 'var(--txm)', letterSpacing: '.06em' }}>
+          <span className={`mono sync-strip-label${watching ? ' sync-strip-label-live' : ''}`}>
             LOCAL SCREENSHOT PINGS · {status}
           </span>
           {sync.pending > 0 && <span className="mono" style={{ color: 'var(--gold)' }}>{'●'.repeat(sync.pending)}</span>}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+        <div className="sync-strip-actions">
           {!sync.folderName && sync.persistentSupported && (
             <button className="btn-gold btn-sm" disabled={busy} onClick={() => { sync.connect().catch(() => {}) }}>
               CHOOSE SCREENSHOTS
@@ -47,14 +47,14 @@ export default function EftScreenshotPings() {
           {sync.folderName && <button className="btn-ghost btn-sm" onClick={() => sync.forget()}>FORGET</button>}
         </div>
       </div>
-      <div className="mono" style={{ marginTop: 5, color: 'var(--txd)', fontSize: 9, lineHeight: 1.5 }}>
+      <div className="mono sync-strip-note">
         {!sync.persistentSupported
           ? 'LOCAL FOLDER WATCHING NEEDS THE DESKTOP VERSION OF CHROME OR EDGE.'
           : sync.folderName
           ? `${sync.folderName} · PRESS EFT'S SCREENSHOT KEY TO PING. ONLY THE FILENAME AND FILE TIME ARE READ; THE IMAGE NEVER LEAVES THIS PC.`
           : 'ONE-TIME SETUP: CHOOSE DOCUMENTS\\ESCAPE FROM TARKOV\\SCREENSHOTS. EXISTING SCREENSHOTS ARE BASELINED, NOT REPLAYED.'}
       </div>
-      {sync.error && <div className="mono" role="alert" style={{ marginTop: 5, color: 'var(--red)', fontSize: 10 }}>{sync.error}</div>}
+      {sync.error && <div className="mono sync-strip-error" role="alert">{sync.error}</div>}
       {cadence && (
         <div className="mono" role="status" style={{ marginTop: 5, color: cadence.color, fontSize: 10 }}>
           PING SENT · {cadence.label}{sync.lastPing.floor ? ` · ${sync.lastPing.floor}` : ''}

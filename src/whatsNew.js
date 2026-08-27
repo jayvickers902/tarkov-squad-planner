@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.11'
+export const RELEASE_VERSION = '2026.12'
 
 export const SETUP_STEPS = [
   {
@@ -24,6 +24,25 @@ export const SETUP_STEPS = [
 ]
 
 export const RELEASES = [
+  {
+    version: '2026.12',
+    date: '2026-08-27',
+    title: 'ONE SWITCH, HONESTLY LABELLED',
+    items: [
+      {
+        title: 'AUTO-APPLY IS NOW ITS OWN SWITCH',
+        body: 'The KEEP CHECKING checkbox controlled more than it said: with it ticked, quest states were written from your logs without a preview. That setting is now an AUTO-APPLY switch on the connected folder itself, and it says what it does. If you had the old checkbox on, nothing changed except that you can now see it and turn it off.',
+      },
+      {
+        title: 'CONNECTING A LOGS FOLDER IS ONE BUTTON',
+        body: 'CONNECT LOGS FOLDER remembers the folder and can keep it in sync. One-time imports moved to a link beside it, so the option that can never sync no longer looks like the one that can. CONFIRM & KEEP IN SYNC sits next to the changes it authorises.',
+      },
+      {
+        title: 'LOG AND SCREENSHOT SYNC LOOK ALIKE',
+        body: 'Both local folder watchers now use the same strip: a status dot, the state in one word, and only the controls that state allows. A connected logs folder shows whether it is syncing without opening anything.',
+      },
+    ],
+  },
   {
     version: '2026.11',
     date: '2026-08-27',

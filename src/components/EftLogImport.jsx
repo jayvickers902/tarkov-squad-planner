@@ -63,7 +63,6 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
   const fileInputRef = useRef(null)
   const [needsFileFallback, setNeedsFileFallback] = useState(false)
   const [open, setOpen] = useState(false)
-  const [remember, setRemember] = useState(false)
   const [busy, setBusy] = useState(false)
   const [applyMessage, setApplyMessage] = useState('')
   const [showUnmatched, setShowUnmatched] = useState(false)
@@ -90,6 +89,8 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
     forgetFolder,
     reset,
     checkNow,
+    autoSync,
+    setAutoSync,
   } = sync || {}
 
   // Keyed on whether a preview exists, not on its identity: every version
@@ -153,7 +154,6 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
   async function handleConnect() {
     setApplyMessage('')
     setOpen(true)
-    setRemember(true)
     try {
       await connectRememberedFolder()
     } catch {
@@ -161,11 +161,11 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
     }
   }
 
-  async function handleConfirm() {
+  async function handleConfirm(keepInSync = false) {
     setBusy(true)
     setApplyMessage('')
     try {
-      const result = await confirmImport({ autoSync: remember, remember })
+      const result = await confirmImport({ autoSync: keepInSync })
       const applied = appliedCount(result, changingTasks.length)
       const ignored = Number(result?.ignored)
       setApplyMessage(`APPLIED ${applied} QUEST STATE${applied === 1 ? '' : 'S'}.`
@@ -205,14 +205,59 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
     setApplyMessage('')
   }
 
+  // The same vocabulary the screenshot strip uses: one word for the state the
+  // folder is actually in. Watching and auto-apply are one setting in the hook,
+  // so the word names the consequence rather than the mechanism.
+  const statusWord = state === 'watching' ? 'AUTO-APPLY ON'
+    : state === 'permission-needed' ? 'PERMISSION NEEDED'
+    : state === 'reading' ? 'CHECKING…'
+    : state === 'applying' ? 'APPLYING…'
+    : state === 'error' ? 'CHECK FAILED'
+    : 'MANUAL'
+
+  const hiddenPickers = (
+    <>
+      <input ref={inputRef} type="file" accept=".log,text/plain" multiple webkitdirectory="" style={{ display: 'none' }} onChange={handleFiles} />
+      <input ref={fileInputRef} type="file" accept=".log,text/plain" multiple style={{ display: 'none' }} onChange={event => handleFiles(event, false)} />
+    </>
+  )
+
+  // A connected folder has a state worth seeing without opening anything, so
+  // collapsed-but-connected borrows the screenshot strip rather than hiding
+  // behind a button that says nothing about whether syncing is running.
+  if (!open && rememberedFolderName) {
+    const watching = state === 'watching'
+    return (
+      <div className="card sync-strip">
+        <div className="sync-strip-row">
+          <div className="sync-strip-state">
+            <span className={watching ? 'mon-dot mon-dot-live' : 'mon-dot'} style={{ background: watching ? 'var(--grn)' : 'var(--txd)' }} />
+            <span className={`mono sync-strip-label${watching ? ' sync-strip-label-live' : ''}`}>
+              LOCAL QUEST LOGS · {statusWord}
+            </span>
+          </div>
+          <div className="sync-strip-actions">
+            <button className="btn-ghost btn-sm" onClick={() => setOpen(true)} aria-expanded="false">OPEN</button>
+          </div>
+        </div>
+        <div className="mono sync-strip-note">
+          {rememberedFolderName} · {watching
+            ? 'NEW QUEST EVENTS APPLY AUTOMATICALLY WHILE THIS SITE IS OPEN.'
+            : 'OPEN TO CHECK FOR NEW QUEST EVENTS. NOTHING IS WRITTEN WITHOUT YOUR REVIEW.'}
+        </div>
+        {error && <div className="mono sync-strip-error" role="alert">{error}</div>}
+        {hiddenPickers}
+      </div>
+    )
+  }
+
   if (!open) {
     return (
       <>
         <button className="btn-gold btn-sm" onClick={() => setOpen(true)} aria-expanded="false">
           IMPORT EFT LOGS
         </button>
-        <input ref={inputRef} type="file" accept=".log,text/plain" multiple webkitdirectory="" style={{ display: 'none' }} onChange={handleFiles} />
-        <input ref={fileInputRef} type="file" accept=".log,text/plain" multiple style={{ display: 'none' }} onChange={event => handleFiles(event, false)} />
+        {hiddenPickers}
       </>
     )
   }
@@ -221,6 +266,10 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
   // A flat folder or a plain file selection detects no version at all. Only an
   // emptied selection out of real choices should block confirmation.
   const versionScopeValid = !preview?.availableVersions?.length || preview.includedVersions?.length > 0
+  const pickerBusy = state === 'reading' || state === 'applying' || busy
+  // Watching needs a real directory handle, so the offer only appears when the
+  // folder actually came from the persistent picker.
+  const canKeepInSync = Boolean(persistentSupported && rememberedFolderName)
   const canConfirm = logModeSupported && preview && changingTasks.length > 0 && state !== 'applying' && state !== 'reading' && versionScopeValid
   const profileChoices = Array.isArray(preview?.discoveredProfiles) ? preview.discoveredProfiles : []
   const ambiguousCount = preview?.ambiguousModeEvents ?? 0
@@ -250,30 +299,40 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
         <button className="eft-log-import-close" onClick={closePanel} aria-label="Close EFT log import">×</button>
       </div>
 
-      <input ref={inputRef} type="file" accept=".log,text/plain" multiple webkitdirectory="" style={{ display: 'none' }} onChange={handleFiles} />
-      <input ref={fileInputRef} type="file" accept=".log,text/plain" multiple style={{ display: 'none' }} onChange={event => handleFiles(event, false)} />
+      {hiddenPickers}
 
+      {/* One primary action, named for what the browser can actually do with it.
+          CHOOSE LOGS FOLDER and REMEMBER THIS FOLDER used to read as peers when
+          only the second can ever sync -- the first is a one-shot dead end. */}
       <div className="eft-log-import-actions">
-        <button className="btn-gold btn-sm" onClick={() => inputRef.current?.click()} disabled={!logModeSupported || state === 'reading' || busy}>
-          {state === 'reading' ? 'READING LOGS...' : 'CHOOSE LOGS FOLDER'}
-        </button>
-        <button className="btn-ghost btn-sm" onClick={() => fileInputRef.current?.click()} disabled={!logModeSupported || state === 'reading' || busy}>
-          CHOOSE LOG FILES
-        </button>
-        {persistentSupported && (
+        {persistentSupported ? (
           <>
-            <button className="btn-ghost btn-sm" onClick={handleConnect} disabled={state === 'reading' || busy}>
-              REMEMBER THIS FOLDER
+            <button className="btn-gold btn-sm" onClick={handleConnect} disabled={!logModeSupported || pickerBusy}>
+              {state === 'reading' ? 'READING LOGS...' : 'CONNECT LOGS FOLDER'}
             </button>
-            <label className="mono eft-log-import-check">
-              <input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /> KEEP CHECKING WHILE THIS SITE IS OPEN
-            </label>
+            <button className="mono sync-link" onClick={() => inputRef.current?.click()} disabled={!logModeSupported || pickerBusy}>
+              ONE-TIME IMPORT INSTEAD
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="btn-gold btn-sm" onClick={() => inputRef.current?.click()} disabled={!logModeSupported || pickerBusy}>
+              {state === 'reading' ? 'READING LOGS...' : 'CHOOSE LOGS FOLDER'}
+            </button>
+            <button className="mono sync-link" onClick={() => fileInputRef.current?.click()} disabled={!logModeSupported || pickerBusy}>
+              CHOOSE LOG FILES INSTEAD
+            </button>
           </>
         )}
       </div>
       {needsFileFallback && (
-        <div className="mono eft-log-import-meta">
-          THIS BROWSER RETURNED NO FOLDER STRUCTURE. USE CHOOSE LOG FILES AND SELECT THE LOG FILES DIRECTLY.
+        <div className="mono eft-log-import-status">
+          THIS BROWSER RETURNED NO FOLDER STRUCTURE. SELECT THE LOG FILES DIRECTLY.
+          <div className="eft-log-import-status-actions">
+            <button className="btn-ghost btn-sm" onClick={() => fileInputRef.current?.click()} disabled={!logModeSupported || pickerBusy}>
+              CHOOSE LOG FILES
+            </button>
+          </div>
         </div>
       )}
 
@@ -281,11 +340,30 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
       {!logModeSupported && <div className="mono eft-log-import-error">SEASONAL LOG IMPORT IS DISABLED UNTIL ITS LOG SIGNALS ARE VERIFIED.</div>}
       {error && <div className="mono eft-log-import-error">{error}</div>}
       {rememberedFolderName && (
-        <div className="mono eft-log-import-watch">
-          {state === 'watching' ? `WATCHING WHILE THIS SITE IS OPEN · LAST CHECK ${safeDateTime(lastSuccessfulCheck)}` : `FOLDER: ${rememberedFolderName}`}
-          <button className="btn-ghost btn-sm" onClick={checkNow} disabled={busy || state === 'reading' || state === 'applying'}>CHECK NOW</button>
-          <button className="btn-ghost btn-sm" onClick={reconnectRememberedFolder} disabled={busy}>RECONNECT</button>
-          <button className="btn-ghost btn-sm" onClick={forgetFolder} disabled={busy}>FORGET FOLDER</button>
+        <div className="mono eft-log-import-status">
+          <span className={state === 'watching' ? 'mon-dot mon-dot-live' : 'mon-dot'} style={{ background: state === 'watching' ? 'var(--grn)' : 'var(--txd)' }} />
+          <span>
+            {rememberedFolderName} · {statusWord}
+            {state === 'watching' ? ` · LAST CHECK ${safeDateTime(lastSuccessfulCheck)}` : ''}
+          </span>
+          <div className="eft-log-import-status-actions">
+            {/* Auto-apply is the one real setting a connected folder has, and it
+                only exists here -- where there is a folder for it to govern. */}
+            {state !== 'permission-needed' && (
+              <button
+                className={`mono autosync-toggle${autoSync ? ' autosync-toggle-on' : ''}`}
+                onClick={() => setAutoSync?.(!autoSync)}
+                disabled={busy || state === 'applying' || typeof setAutoSync !== 'function'}
+                aria-pressed={Boolean(autoSync)}
+              >
+                AUTO-APPLY {autoSync ? 'ON' : 'OFF'}
+              </button>
+            )}
+            {state === 'permission-needed'
+              ? <button className="btn-gold btn-sm" onClick={reconnectRememberedFolder} disabled={busy}>RECONNECT</button>
+              : <button className="btn-ghost btn-sm" onClick={checkNow} disabled={busy || state === 'reading' || state === 'applying'}>CHECK NOW</button>}
+            <button className="btn-ghost btn-sm" onClick={forgetFolder} disabled={busy}>FORGET</button>
+          </div>
         </div>
       )}
 
@@ -429,12 +507,25 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
             </div>
           )}
           {applyMessage && <div className="mono eft-log-import-success">{applyMessage}</div>}
+          {/* The keep-in-sync decision is made here, next to the state changes
+              it will govern, instead of as an abstract checkbox above an empty
+              panel that never said it authorised unreviewed writes. */}
           <div className="eft-log-import-footer">
-            <button className="btn-gold btn-sm" onClick={handleConfirm} disabled={!canConfirm || !onApply || busy}>
+            <button className="btn-gold btn-sm" onClick={() => handleConfirm(false)} disabled={!canConfirm || !onApply || busy}>
               {busy || state === 'applying' ? 'APPLYING...' : 'CONFIRM IMPORT'}
             </button>
+            {canKeepInSync && (
+              <button className="btn-gold btn-sm" onClick={() => handleConfirm(true)} disabled={!canConfirm || !onApply || busy}>
+                CONFIRM & KEEP IN SYNC
+              </button>
+            )}
             <button className="btn-ghost btn-sm" onClick={reset} disabled={busy}>CLEAR PREVIEW</button>
           </div>
+          {canKeepInSync && (
+            <div className="mono eft-log-import-muted">
+              KEEP IN SYNC APPLIES LATER QUEST EVENTS WITHOUT ASKING, WHILE THIS SITE IS OPEN. TURN IT OFF ANY TIME.
+            </div>
+          )}
         </div>
       )}
     </div>
