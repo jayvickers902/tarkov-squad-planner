@@ -11,6 +11,7 @@ import TarkovClocks from './TarkovClocks'
 import StartRaidModal from './StartRaidModal'
 import MonitorLink from './MonitorLink'
 import EftScreenshotPings from './EftScreenshotPings'
+import SyncStatusChips from './SyncStatusChips'
 import RaidSettings from './RaidSettings'
 import useEphemeralSweep from '../useEphemeralSweep'
 import { resolveSetting } from '../settings'
@@ -378,6 +379,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                 {party.map_id && (
                   <button className="btn-ghost btn-sm" onClick={onOpenRaid} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}>⛺ RAID VIEW</button>
                 )}
+                <SyncStatusChips />
                 <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
                   {pendingIn.length > 0 && <span className="mono" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)', color: 'var(--gold)' }}>{pendingIn.length}</span>}
@@ -406,6 +408,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
             {party.map_id && (
               <button className="btn-ghost btn-sm" onClick={onOpenRaid} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}>⛺ RAID VIEW</button>
             )}
+            <SyncStatusChips />
             <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}>
               FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
             </button>

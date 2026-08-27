@@ -16,7 +16,7 @@ export const MAX_SCREENSHOT_TIMESTAMP = 8640000000000000
 // EFT writes decimal coordinates/quaternion components. Precision varies by
 // build, but integer-only coordinate tokens are not screenshot positions.
 const NUMBER = '[+-]?(?:\\d+\\.\\d+|\\.\\d+)'
-const TIMESTAMP_RE = /^(\d{4})-(\d{2})-(\d{2})\[(?:[01]\d|2[0-3])-(?:[0-5]\d)\]/
+const TIMESTAMP_RE = /^(\d{4})-(\d{2})-(\d{2})\[(?:[01]\d|2[0-3])-(?:[0-5]\d)(?:-(?:[0-5]\d))?\]/
 const POSITION_RE = new RegExp(
   `^(${NUMBER}),\\s*(${NUMBER}),\\s*(${NUMBER})_?(${NUMBER}),\\s*(${NUMBER}),\\s*(${NUMBER}),\\s*(${NUMBER})` +
   // Builds have used both " (0)" and "_14.08 (0)" suffixes. The seven
@@ -120,6 +120,19 @@ export function getEftScreenshotMetadata(file) {
 export function screenshotMetadataKey(metadata) {
   const value = metadataFrom(metadata)
   return value ? `${value.filename}:${value.size}:${value.lastModified}` : null
+}
+
+// The same physical screenshot can be observed by the browser and desktop app.
+// Give it the same source id in both clients so the append-only ping RPC's
+// uniqueness constraint treats the second report as an idempotent retry.
+export function screenshotPingSourceId(filename) {
+  const input = String(filename || '').replace(/\\/g, '/').split('/').pop()?.toLowerCase() || ''
+  let hash = 0xcbf29ce484222325n
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= BigInt(input.charCodeAt(index))
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n)
+  }
+  return `eft-shot-${hash.toString(16).padStart(16, '0')}`
 }
 
 export function classifyScreenshotMetadata(previous, next) {

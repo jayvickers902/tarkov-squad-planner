@@ -28,7 +28,7 @@ export function usePositionPingCadence({ userId, myName, onAddPing } = {}) {
     const name = myNameRef.current
     if (!name) return
     const ping = {
-      id: crypto.randomUUID(),
+      id: value.sourceEventId || crypto.randomUUID(),
       user_id: userIdRef.current,
       user: name,
       map: value.map,

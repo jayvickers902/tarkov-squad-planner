@@ -1,0 +1,161 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createCompanionRuntime } from './runtime.js'
+
+function harness(overrides = {}) {
+  const native = {
+    getRoots: vi.fn(async () => ({ logsRoot: 'logs', screenshotsRoot: 'shots' })),
+    loadCheckpoints: vi.fn(async () => ({ version: 1, logs: {}, screenshots: [] })),
+    saveCheckpoints: vi.fn(async () => {}),
+    startWatch: vi.fn(async () => {}),
+    stopWatch: vi.fn(async () => {}),
+    ...(overrides.native || {}),
+  }
+  const auth = { isSignedIn: vi.fn(async () => ({ user: { id: 'user-1' } })), ...(overrides.auth || {}) }
+  const network = { getDesktopSyncContext: vi.fn(async () => ({ userId: 'user-1', gameMode: 'regular' })), ...(overrides.network || {}) }
+  const sync = vi.fn(async () => ({}))
+  const screenshot = vi.fn(async () => ({}))
+  const engine = overrides.engine || { questLogs: { sync }, screenshots: { sync: screenshot, flush: vi.fn(async () => {}) } }
+  const { native: _native, auth: _auth, network: _network, engine: _engine, ...runtimeOptions } = overrides
+  const runtime = createCompanionRuntime({
+    native, auth, network, engine, enabled: true,
+    eventDebounceMs: 20, fallbackIntervalMs: 100, retryBaseMs: 10, retryMaxMs: 25,
+    ...runtimeOptions,
+  })
+  return { runtime, native, auth, network, sync, screenshot }
+}
+
+afterEach(() => { vi.useRealTimers() })
+
+describe('companion runtime', () => {
+  it('coalesces concurrent sync requests and serializes the engine', async () => {
+    vi.useFakeTimers()
+    let release
+    const block = new Promise(resolve => { release = resolve })
+    const sync = vi.fn(() => block)
+    const { runtime } = harness({ engine: { questLogs: { sync }, screenshots: {} } })
+    const started = runtime.start()
+    await vi.waitFor(() => expect(sync).toHaveBeenCalledOnce())
+    const first = runtime.syncNow()
+    const second = runtime.syncNow()
+    expect(first).toBe(second)
+    release({})
+    await started
+    await first
+    expect(sync).toHaveBeenCalledOnce()
+  })
+
+  it('takes an offline screenshot baseline without refreshing or sending network work', async () => {
+    const { runtime, network, screenshot } = harness({ online: false })
+    await runtime.start()
+    expect(network.getDesktopSyncContext).not.toHaveBeenCalled()
+    expect(screenshot).toHaveBeenCalledWith(expect.objectContaining({ online: false }))
+    expect(runtime.getStatus().state).toBe('offline')
+  })
+
+  it('retries transient failures with a bounded backoff', async () => {
+    vi.useFakeTimers()
+    const sync = vi.fn()
+      .mockRejectedValueOnce(new Error('C:\\private\\notifications.log'))
+      .mockResolvedValue({})
+    const { runtime } = harness({ engine: { questLogs: { sync }, screenshots: {} } })
+    await runtime.start()
+    expect(runtime.getStatus().detail).not.toContain('notifications')
+    expect(sync).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(sync).toHaveBeenCalledTimes(2)
+    expect(runtime.getStatus().state).toBe('connected')
+  })
+
+  it('refreshes desktop context immediately before each engine run', async () => {
+    const { runtime, network, sync } = harness()
+    await runtime.start()
+    expect(network.getDesktopSyncContext).toHaveBeenCalledOnce()
+    expect(sync).toHaveBeenCalledWith(expect.objectContaining({ mode: 'regular' }))
+  })
+
+  it('reports configured desktop services and their last successful sync', async () => {
+    const reportSyncClientStatus = vi.fn(async () => {})
+    const { runtime } = harness({ network: { reportSyncClientStatus } })
+    await runtime.start()
+    expect(reportSyncClientStatus).toHaveBeenLastCalledWith([
+      expect.objectContaining({ service: 'logs', configured: true, state: 'watching', last_sync_at: expect.any(String) }),
+      expect.objectContaining({ service: 'pings', configured: true, state: 'watching', last_sync_at: expect.any(String) }),
+    ])
+    await runtime.dispose()
+  })
+
+  it('keeps screenshot pings active without retrying unsupported quest modes', async () => {
+    const { runtime, sync, screenshot } = harness({
+      network: { getDesktopSyncContext: vi.fn(async () => ({ userId: 'user-1', gameMode: 'pvp-season', partyId: 1, partyCode: 'ABCD', raidId: 2, mapNorm: 'customs' })) },
+    })
+    await runtime.start()
+    expect(sync).not.toHaveBeenCalled()
+    expect(screenshot).toHaveBeenCalled()
+    expect(runtime.getStatus()).toMatchObject({ state: 'connected', detail: expect.stringContaining('Position pings active') })
+  })
+
+  it('surfaces engine profile selection and resumes only after explicit choice', async () => {
+    const sync = vi.fn()
+      .mockResolvedValueOnce({ requiresSelection: 'profile', preview: { discoveredProfiles: [{ profileKey: 'profile-0123456789abcdef', label: 'PROFILE 1' }] } })
+      .mockResolvedValue({})
+    const { runtime } = harness({ engine: { questLogs: { sync }, screenshots: {} } })
+    await runtime.start()
+    expect(runtime.getStatus()).toMatchObject({ state: 'error', selectionRequired: 'profile' })
+    expect(runtime.getStatus().selectionOptions).toEqual([{ value: 'profile-0123456789abcdef', label: 'PROFILE 1' }])
+    await runtime.selectProfile('profile-0123456789abcdef')
+    expect(sync).toHaveBeenCalledTimes(2)
+  })
+
+  it('surfaces unknown mode selection without guessing a target', async () => {
+    const sync = vi.fn()
+      .mockResolvedValueOnce({ selectionRequired: 'unknown-mode' })
+      .mockResolvedValue({})
+    const { runtime } = harness({ engine: { questLogs: { sync }, screenshots: {} } })
+    await runtime.start()
+    expect(runtime.getStatus()).toMatchObject({ state: 'error', selectionRequired: 'unknown-mode' })
+    await runtime.selectUnknownMode('pve')
+    expect(sync).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops watchers, timers, and listeners on disposal', async () => {
+    vi.useFakeTimers()
+    let eventListener
+    const cleanup = vi.fn()
+    const { runtime, native } = harness({ native: { registerWatchListener: vi.fn(async fn => { eventListener = fn; return cleanup }) } })
+    await runtime.start()
+    expect(native.registerWatchListener).toHaveBeenCalledOnce()
+    eventListener()
+    await runtime.dispose()
+    expect(native.stopWatch).toHaveBeenCalledOnce()
+    expect(cleanup).toHaveBeenCalledOnce()
+    const calls = native.startWatch.mock.calls.length
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(native.startWatch).toHaveBeenCalledTimes(calls)
+  })
+
+  it('round-trips rich per-user checkpoints without losing selection or raid context', async () => {
+    let options
+    const native = {
+      getRoots: vi.fn(async () => ({ logsRoot: 'logs' })),
+      loadCheckpoints: vi.fn(async () => ({})),
+      saveCheckpoints: vi.fn(async () => {}),
+      startWatch: vi.fn(async () => {}), stopWatch: vi.fn(async () => {}),
+    }
+    const runtime = createCompanionRuntime({
+      native,
+      auth: { getSession: vi.fn(async () => ({ user: { id: 'user-1' } })) },
+      network: { getDesktopSyncContext: vi.fn(async () => ({ userId: 'user-1', gameMode: 'regular' })) },
+      createEngine: vi.fn(async value => { options = value; return { questLogs: { sync: vi.fn(async () => ({})) } } }),
+      enabled: true, fallbackIntervalMs: 0,
+    })
+    await runtime.start()
+    const checkpoint = { version: 1, files: [], profileKey: 'profile-0123456789abcdef', gameMode: 'regular', partyId: 7, raidId: 8 }
+    await options.checkpointStore.saveCheckpoint('eft-quest-log', checkpoint)
+    expect(native.saveCheckpoints).toHaveBeenLastCalledWith({
+      version: 2,
+      users: { 'user-1': { 'eft-quest-log': checkpoint } },
+    })
+    await expect(options.checkpointStore.loadCheckpoint('eft-quest-log')).resolves.toEqual(checkpoint)
+    await runtime.dispose()
+  })
+})

@@ -2,12 +2,14 @@ import { createContext, useContext, useMemo } from 'react'
 import { useTasks } from './useTarkov'
 import { useEftLogImport } from './useEftLogImport'
 import { useEftScreenshotSync as useEftScreenshotController } from './useEftScreenshotSync'
+import { useSyncPresence } from './useSyncPresence'
 
 // The signed-in app owns one sync lifetime. Keeping this boundary above the
 // route views also leaves room for other local-folder sync services (such as
 // screenshots) to share the same authenticated lifetime later.
 const EftLogSyncContext = createContext(null)
 const EftScreenshotSyncContext = createContext(null)
+const SyncPresenceContext = createContext([])
 
 export function EftLogSyncProvider({
   userId,
@@ -30,6 +32,7 @@ export function EftLogSyncProvider({
     mapNorm,
     partyId,
   })
+  const presenceRows = useSyncPresence(controller, screenshotController)
   const screenshotValue = useMemo(() => screenshotController, [
     screenshotController.supported,
     screenshotController.persistentSupported,
@@ -76,10 +79,16 @@ export function EftLogSyncProvider({
   ])
 
   return (
-    <EftScreenshotSyncContext.Provider value={screenshotValue}>
-      <EftLogSyncContext.Provider value={value}>{children}</EftLogSyncContext.Provider>
-    </EftScreenshotSyncContext.Provider>
+    <SyncPresenceContext.Provider value={presenceRows}>
+      <EftScreenshotSyncContext.Provider value={screenshotValue}>
+        <EftLogSyncContext.Provider value={value}>{children}</EftLogSyncContext.Provider>
+      </EftScreenshotSyncContext.Provider>
+    </SyncPresenceContext.Provider>
   )
+}
+
+export function useSyncPresenceContext() {
+  return useContext(SyncPresenceContext)
 }
 
 export function useEftScreenshotSyncContext({ optional = false } = {}) {

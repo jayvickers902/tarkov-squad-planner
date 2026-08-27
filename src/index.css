@@ -95,6 +95,19 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .room-header-monitor[hidden], .room-settings-panel[hidden] { display: none; }
 .room-header-monitor .monitor-link-shell-compact { margin: 0; padding: 4px 6px; }
 .room-header-monitor .monitor-collapsed { min-height: 24px; }
+.sync-status-chips { display: flex; align-items: center; gap: 6px; }
+.sync-status-chip { position: relative; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 9px; border: 1px solid var(--brd2); border-radius: 4px; color: var(--txm); background: var(--sur2); font-family: var(--mono); font-size: 10px; letter-spacing: .05em; white-space: nowrap; cursor: help; }
+.sync-status-summary { color: var(--txd); font-size: 8px; }
+.sync-status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--txd); box-shadow: 0 0 0 2px color-mix(in srgb, var(--txd) 18%, transparent); }
+.sync-status-live { color: var(--grn); border-color: color-mix(in srgb, var(--grn) 36%, var(--brd2)); }
+.sync-status-live .sync-status-dot { background: var(--grn); box-shadow: 0 0 0 2px color-mix(in srgb, var(--grn) 18%, transparent); }
+.sync-status-attention { color: var(--gold); border-color: var(--golddim); }
+.sync-status-attention .sync-status-dot, .sync-status-stale .sync-status-dot { background: var(--gold); box-shadow: 0 0 0 2px rgba(201,168,76,.16); }
+.sync-status-tooltip { position: absolute; z-index: 5000; top: calc(100% + 8px); left: 50%; display: none; width: min(330px, 80vw); padding: 10px 12px; transform: translateX(-50%); border: 1px solid var(--brd2); border-radius: 5px; color: var(--tx); background: #111719; box-shadow: 0 10px 30px rgba(0,0,0,.45); font-family: 'Noto Sans', sans-serif; font-size: 11px; line-height: 1.4; letter-spacing: 0; white-space: normal; }
+.sync-status-tooltip::before { content: ''; position: absolute; bottom: 100%; left: 50%; border: 6px solid transparent; border-bottom-color: var(--brd2); transform: translateX(-50%); }
+.sync-status-tooltip > span { display: block; margin-top: 7px; }
+.sync-status-tooltip small { display: block; margin-top: 2px; color: var(--txm); font-family: var(--mono); font-size: 9px; text-transform: uppercase; }
+.sync-status-chip:hover .sync-status-tooltip, .sync-status-chip:focus-visible .sync-status-tooltip { display: block; }
 .room-mode-badge { margin-top: 3px; color: var(--goldtx); font-size: 10px; letter-spacing: .06em; }
 .room-game-mode-notice { margin-bottom: 14px; padding: 9px 12px; color: var(--gold); border: 1px solid var(--golddim); border-left: 3px solid var(--gold); border-radius: 4px; background: rgba(201,168,76,.06); font-size: 11px; line-height: 1.6; }
 .room-mobile-actions { display: flex; align-items: stretch; gap: 8px; margin-top: 10px; flex-wrap: wrap; }

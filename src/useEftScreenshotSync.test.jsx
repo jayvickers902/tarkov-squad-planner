@@ -109,7 +109,7 @@ describe('useEftScreenshotSync', () => {
 
     expect(onAddPing).toHaveBeenCalledTimes(1)
     expect(onAddPing).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'local-ping', map: 'customs', x: 13.5, z: -9.25, at: clock, taps: 1,
+      id: expect.stringMatching(/^eft-shot-[a-f0-9]{16}$/), map: 'customs', x: 13.5, z: -9.25, at: clock, taps: 1,
     }))
     files[1].size += 25
     files[1].lastModified += 1

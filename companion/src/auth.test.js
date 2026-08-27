@@ -1,0 +1,76 @@
+import { describe, expect, it, vi } from 'vitest'
+import { AUTH_CALLBACK_URL, AuthBoundaryError, createAuthClient, createSecureStorage, isValidCallbackUrl } from './auth.js'
+
+function fakeAuth() {
+  return {
+    signInWithOAuth: vi.fn(async () => ({ data: { url: 'https://accounts.example.test/oauth' }, error: null })),
+    exchangeCodeForSession: vi.fn(async () => ({ data: { session: { user: { id: 'u' } } }, error: null })),
+    getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
+    signOut: vi.fn(async () => ({ error: null })),
+    onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+  }
+}
+
+describe('companion auth boundary', () => {
+  it('uses async credential storage and never a Web Storage fallback', async () => {
+    const calls = []
+    const storage = createSecureStorage({
+      credentialGet: async key => { calls.push(['get', key]); return 'value' },
+      credentialSet: async (key, value) => calls.push(['set', key, value]),
+      credentialDelete: async key => calls.push(['delete', key]),
+    })
+    await expect(storage.getItem('session')).resolves.toBe('value')
+    await storage.setItem('session', 'next')
+    await storage.removeItem('session')
+    expect(calls).toEqual([['get', 'session'], ['set', 'session', 'next'], ['delete', 'session']])
+  })
+
+  it('rejects untrusted callback URLs without exposing their code', async () => {
+    expect(isValidCallbackUrl('https://evil.example/auth/callback?code=secret')).toBe(false)
+    expect(isValidCallbackUrl(`${AUTH_CALLBACK_URL}?code=secret`)).toBe(true)
+    const auth = fakeAuth()
+    const service = createAuthClient({
+      supabaseUrl: 'https://project.supabase.co', anonKey: 'anon', storage: createSecureStorage({ credentialGet: async () => null, credentialSet: async () => {}, credentialDelete: async () => {} }),
+      createClient: () => ({ auth }),
+    })
+    await expect(service.handleCallbackUrl('https://evil.example/auth/callback?code=secret')).rejects.toMatchObject({ code: 'AUTH_CALLBACK_INVALID' })
+    expect(auth.exchangeCodeForSession).not.toHaveBeenCalled()
+  })
+
+  it('selects the validated callback from a multi-url delivery', async () => {
+    const auth = fakeAuth()
+    const service = createAuthClient({
+      supabaseUrl: 'https://project.supabase.co', anonKey: 'anon',
+      storage: createSecureStorage({ credentialGet: async () => null, credentialSet: async () => {}, credentialDelete: async () => {} }),
+      createClient: () => ({ auth }),
+    })
+    await service.handleCallbackUrls(['https://unrelated.example/', `${AUTH_CALLBACK_URL}?code=secret`])
+    expect(auth.exchangeCodeForSession).toHaveBeenCalledWith('secret')
+  })
+
+  it('starts Google OAuth through the injected system browser with PKCE', async () => {
+    const auth = fakeAuth()
+    const openExternal = vi.fn(async () => {})
+    const service = createAuthClient({
+      supabaseUrl: 'https://project.supabase.co', anonKey: 'anon', openExternal,
+      storage: createSecureStorage({ credentialGet: async () => null, credentialSet: async () => {}, credentialDelete: async () => {} }),
+      createClient: () => ({ auth }),
+    })
+    await service.signIn()
+    expect(auth.signInWithOAuth).toHaveBeenCalledWith({ provider: 'google', options: { redirectTo: AUTH_CALLBACK_URL, skipBrowserRedirect: true } })
+    expect(openExternal).toHaveBeenCalledWith('https://accounts.example.test/oauth')
+  })
+
+  it('wraps provider failures in stable errors', async () => {
+    const auth = fakeAuth()
+    auth.signOut.mockRejectedValueOnce(new Error('secret provider detail'))
+    const service = createAuthClient({
+      supabaseUrl: 'https://project.supabase.co', anonKey: 'anon',
+      storage: createSecureStorage({ credentialGet: async () => null, credentialSet: async () => {}, credentialDelete: async () => {} }),
+      createClient: () => ({ auth }),
+    })
+    const failure = service.signOut()
+    await expect(failure).rejects.toBeInstanceOf(AuthBoundaryError)
+    await expect(failure).rejects.toMatchObject({ code: 'AUTH_SIGN_OUT_FAILED' })
+  })
+})
