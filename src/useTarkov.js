@@ -279,7 +279,7 @@ export function useMaps(gameMode = 'regular') {
 
 // Extracts are fetched from the REST map bundle because the GraphQL map query
 // intentionally stays small. The adapter preserves the same world coordinates
-// used by TarkovMonitor, so echo distance is calculated in one coordinate space.
+// used by screenshot pings, so echo distance is calculated in one coordinate space.
 export function useExtracts(mapNorm = null, gameMode = 'regular') {
   const mode = resolveGameMode(gameMode)
   const [seed] = useState(() => cacheSeed(STORAGE_KEYS.extracts, extractCache, extractCacheAt, mode, [], Array.isArray))

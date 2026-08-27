@@ -5,6 +5,7 @@ import { FEATURED } from '../constants'
 import QuestScanner from './QuestScanner'
 import CatchUp from './CatchUp'
 import EftLogImport from './EftLogImport'
+import EftScreenshotPings from './EftScreenshotPings'
 import { GAME_MODES, gameModeLabel, resolvePartyMode } from '../gameMode'
 
 // Small Kappa badge — reused in search results and saved list
@@ -241,6 +242,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
           onApply={onReconcileLogEvents}
           sync={eftLogSync}
         />
+        <EftScreenshotPings />
       </div>
 
       <div className="quest-mode-row">

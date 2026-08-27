@@ -22,57 +22,6 @@ function objectiveLabel(objective) {
   return OBJECTIVE_LABELS[objective.type] || objective.type?.replace(/[A-Z]/g, letter => ` ${letter.toLowerCase()}`) || 'objective'
 }
 
-// Matches MonitorLink's QUIET_MS: a monitor started mid-raid connects fine and then
-// says nothing, so silence past this point is worth calling out rather than showing
-// a reassuring green light over an empty rail.
-const MONITOR_QUIET_MS = 90000
-
-// The rail is the only monitor-link readout visible from inside Raid View, so it has
-// to separate the two ways pings go missing: the relay dropping us (our socket), and
-// the monitor never sending (their end). Nothing here can fix either — it exists so a
-// blank rail is diagnosable at a glance instead of looking like a broken app.
-function MonitorDot({ monitorStatus }) {
-  const [, setTick] = useState(0)
-  const { status, enabled, connectedAt, lastCommandAt } = monitorStatus || {}
-
-  // Only the connected-but-silent verdict is time-dependent, and only until it flips.
-  const awaitingVerdict = status === 'connected' && !lastCommandAt
-  useEffect(() => {
-    if (!awaitingVerdict) return undefined
-    const timer = setInterval(() => setTick(n => n + 1), 10000)
-    return () => clearInterval(timer)
-  }, [awaitingVerdict])
-
-  // Someone who never turned the link on does not need a status light for it.
-  if (!monitorStatus || !enabled) return null
-
-  const quiet = awaitingVerdict && connectedAt && Date.now() - connectedAt > MONITOR_QUIET_MS
-  let tone = 'off'
-  let label = 'LINK OFF'
-  let title = 'Monitor link is not connected.'
-
-  if (status === 'connecting') {
-    tone = 'wait'; label = 'LINKING'
-    title = 'Opening the connection to socket.tarkov.dev.'
-  } else if (status === 'reconnecting') {
-    tone = 'down'; label = 'RELAY LOST'
-    title = 'Disconnected from socket.tarkov.dev and retrying. Screenshot pings cannot arrive while this is showing — this is the relay, not your game or this page.'
-  } else if (quiet) {
-    tone = 'wait'; label = 'NO MONITOR DATA'
-    title = 'Connected to the relay, but TarkovMonitor has sent nothing. It ignores raids it did not see start — restart it outside of a raid.'
-  } else if (status === 'connected') {
-    tone = 'live'; label = 'LISTENING'
-    title = 'Connected. Screenshot pings will arrive here.'
-  }
-
-  return (
-    <span className={`raid-rail-link raid-rail-link-${tone}`} title={title}>
-      <i className="raid-rail-link-dot" />
-      <span className="mono">{label}</span>
-    </span>
-  )
-}
-
 function memberIndex(name, members) {
   const index = members.indexOf(name)
   return index === -1 ? Number.MAX_SAFE_INTEGER : index
@@ -271,7 +220,6 @@ export default function RaidRail({
   onMobileHeight,
   pingCards = [],
   lastKnownCards = [],
-  monitorStatus = null,
   tasks = [],
   memberQuests = [],
   memberNames = [],
@@ -356,7 +304,6 @@ export default function RaidRail({
         <section className="raid-rail-section">
           <div className="mono raid-rail-heading">
             SQUAD ECHO
-            <MonitorDot monitorStatus={monitorStatus} />
           </div>
           {pingCards.length > 0
             ? <div className="raid-ping-list">{pingCards.map(card => (

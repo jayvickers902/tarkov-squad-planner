@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.10'
+export const RELEASE_VERSION = '2026.11'
 
 export const SETUP_STEPS = [
   {
@@ -21,13 +21,24 @@ export const SETUP_STEPS = [
     title: 'GO INTO RAID',
     body: 'START RAID gives the pre-raid brief: boss odds, extracts, keys, in-game time. Raid View is the in-raid layout with the objective rail and live squad pings.',
   },
-  {
-    title: 'OPTIONAL — LINK TARKOV MONITOR',
-    body: 'Run TarkovMonitor next to the game and the squad map follows you into raid. The in-game screenshot key drops your position as a ping.',
-  },
 ]
 
 export const RELEASES = [
+  {
+    version: '2026.11',
+    date: '2026-08-27',
+    title: 'SYNC YOU CAN SEE',
+    items: [
+      {
+        title: 'SYNC STATUS IN THE HEADER',
+        body: 'LOGS, PINGS and MONITOR chips sit in the room header and show what each local folder watcher is doing right now. Open one for the last check, the folder it is watching, and its controls.',
+      },
+      {
+        title: 'TARKOV MONITOR LINK REMOVED',
+        body: 'The companion-app relay is gone. Map switching and screenshot position pings are read from your own EFT folders in the browser, so nothing depends on a third-party socket staying up.',
+      },
+    ],
+  },
   {
     version: '2026.10',
     date: '2026-08-26',
@@ -71,10 +82,6 @@ export const RELEASES = [
       {
         title: 'PING FOCUS',
         body: 'Click a ping to fly to it, and choose whether the map auto-follows ALL pings, ALERTS only, or nothing.',
-      },
-      {
-        title: 'TARKOV MONITOR LINK',
-        body: 'Automatic map switching and screenshot position pings.',
       },
     ],
   },

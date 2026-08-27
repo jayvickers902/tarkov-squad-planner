@@ -22,7 +22,6 @@ export default function RaidView({
   onAddStroke, onClearMyStrokes,
   onAddMarker, onClearMyMarkers,
   onClearPings,
-  monitorStatus = null,
   userSettings = {},
   onSetSetting,
   onClose,
@@ -223,7 +222,6 @@ export default function RaidView({
             onMobileHeight={setMobileRailHeight}
             pingCards={pingState.echoCards}
             lastKnownCards={pingState.lastKnownCards}
-            monitorStatus={monitorStatus}
             tasks={allTasks || tasks || []}
             memberQuests={memberRows}
             memberNames={memberNames}

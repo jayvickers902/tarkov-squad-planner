@@ -9,7 +9,6 @@ import {
   progressOwnerId,
   progressQuestId,
 } from './partyMembers'
-import { normalizeCharacterSnapshot } from './tarkovCharacters'
 import { nextDelay, recordFailure, recordSuccess } from './supabaseHealth'
 
 function saveLastPartyCode(code) {
@@ -445,17 +444,6 @@ export function useParty(userId, userSettings = {}, {
     applyParty({ ...current, members })
     if (persist) updateMemberDB(changes)
   }, [updateMemberDB])
-
-  const syncCharacterSnapshot = useCallback(snapshot => {
-    if (!snapshot) {
-      patchOwnMember({ character_snapshot: null })
-      return null
-    }
-    const safe = normalizeCharacterSnapshot(snapshot, snapshot?.syncedAt)
-    if (!safe) return null
-    patchOwnMember({ character_snapshot: safe })
-    return safe
-  }, [patchOwnMember])
 
   const runAtomicPartyWrite = useCallback(async (rpcName, params, fields) => {
     const fieldNames = Array.isArray(fields) ? fields : [fields]
@@ -1059,6 +1047,5 @@ export function useParty(userId, userSettings = {}, {
     startRaid,
     setRaidSettings,
     sweepEphemeral,
-    syncCharacterSnapshot,
   }
 }

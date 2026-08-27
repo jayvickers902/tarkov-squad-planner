@@ -157,7 +157,7 @@ export default function SyncStatusBar({ onMyQuests }) {
   return (
     <div className="sync-status-bar" ref={barRef}>
       <ChannelChip channel="LOGS" title="Quest log" status={logStatus} now={now} buttonRef={node => { buttonRefs.current.logs = node }} onClick={{ open: openKey === 'logs', handler: () => toggle('logs') }} />
-      <ChannelChip channel="SHOTS" title="Screenshot" status={screenshotStatus} now={now} buttonRef={node => { buttonRefs.current.shots = node }} onClick={{ open: openKey === 'shots', handler: () => toggle('shots') }} />
+      <ChannelChip channel="PINGS" title="Screenshot" status={screenshotStatus} now={now} buttonRef={node => { buttonRefs.current.shots = node }} onClick={{ open: openKey === 'shots', handler: () => toggle('shots') }} />
       <ChannelChip channel="MONITOR" status={health} now={now} monitor buttonRef={node => { buttonRefs.current.monitor = node }} onClick={{ open: openKey === 'monitor', handler: () => toggle('monitor') }} />
 
       {openKey === 'logs' && (
@@ -182,7 +182,7 @@ export default function SyncStatusBar({ onMyQuests }) {
       {openKey === 'shots' && (
         <div className="card sync-popover" role="dialog" aria-modal="false" aria-labelledby="sync-popover-shots-title" id="sync-popover-shots">
           <div className="sync-popover-head">
-            <h2 id="sync-popover-shots-title">SHOTS SYNC</h2>
+            <h2 id="sync-popover-shots-title">PINGS SYNC</h2>
             <button type="button" className="btn-ghost btn-sm" aria-label="Close shots sync" onClick={() => closePopover()}>✕</button>
           </div>
           <p>{popoverDetail(screenshotStatus)}</p>
@@ -209,7 +209,7 @@ export default function SyncStatusBar({ onMyQuests }) {
             <button type="button" className="btn-ghost btn-sm" aria-label="Close monitor" onClick={() => closePopover()}>✕</button>
           </div>
           <PopoverRow label="LOGS" status={logStatus}>Quest log sync is {logStatus.label.toLowerCase()}.</PopoverRow>
-          <PopoverRow label="SHOTS" status={screenshotStatus}>Screenshot sync is {screenshotStatus.label.toLowerCase()}.</PopoverRow>
+          <PopoverRow label="PINGS" status={screenshotStatus}>Screenshot sync is {screenshotStatus.label.toLowerCase()}.</PopoverRow>
           <PopoverRow label="TAB VISIBLE" status={{ tone: visible ? 'ok' : 'warn' }}>{visible ? 'The tab is visible for reliable background checks.' : 'The tab is hidden, so background checks may be delayed.'}</PopoverRow>
           {(logStatus.tone === 'off' || screenshotStatus.tone === 'off') && <p>Local folder sync uses Chromium-only File System Access.</p>}
         </div>

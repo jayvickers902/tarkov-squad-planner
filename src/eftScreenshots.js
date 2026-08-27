@@ -42,8 +42,7 @@ function normalizedFilename(value) {
 }
 
 function normalizeYaw(rx, ry, rz, rw) {
-  // This is TarkovMonitor's QuarternionsToYaw formula, with its call-site
-  // ordering (rx, ry, rz, rw) preserved exactly.
+  // Preserve the game's quaternion ordering (rx, ry, rz, rw) exactly.
   const radians = Math.atan2(2 * (rw * ry + rx * rz), 1 - 2 * (ry * ry + rz * rz))
   const degrees = radians * (180 / Math.PI)
   return ((degrees % 360) + 360) % 360

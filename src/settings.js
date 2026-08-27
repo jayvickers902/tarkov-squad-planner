@@ -8,7 +8,6 @@ export const SYSTEM_DEFAULTS = {
   members_can_change_map: false,
   auto_rejoin: true,
   auto_import_quests: true,
-  character_share_mode: 'full',
 }
 
 function layerValue(key, layer) {

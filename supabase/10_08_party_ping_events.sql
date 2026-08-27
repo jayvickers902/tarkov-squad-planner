@@ -74,7 +74,7 @@ begin
   -- Two tabs can hear the same four-character Remote ID and stamp different
   -- client event ids for the same screenshot. Serialize this user's append
   -- window and reuse an event that is effectively identical within five seconds.
-  -- MonitorLink already folds intentional multi-taps into one event, so this
+  -- The client already folds intentional multi-taps into one event, so this
   -- protects against duplicate tabs without hiding a real later position.
   perform pg_advisory_xact_lock(hashtext(v_party_id::text || ':' || auth.uid()::text));
 

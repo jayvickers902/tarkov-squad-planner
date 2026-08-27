@@ -516,6 +516,13 @@ export default function MapLeaflet({
     lootItems,
     loading: zonesLoading,
   } = useMapZones(mapNorm)
+  // Scav extracts are not useful during a PMC raid. Keep the upstream data
+  // intact for other surfaces, but omit scav-only exits from this map and its
+  // nearby-extract context.
+  const playerExtracts = useMemo(
+    () => zoneExtracts.filter(extract => extract?.faction !== 'scav'),
+    [zoneExtracts],
+  )
   const { isChecked, toggle: toggleChecked, clear: clearChecked, checkedCount, foundToday } =
     useIntelChecklist(mapNorm, raidKey)
 
@@ -546,7 +553,7 @@ export default function MapLeaflet({
     [intelPoints, lootRows, mapNorm],
   )
   const intelCounts = useMemo(() => countByKind(allIntel), [allIntel])
-  const factionCounts = useMemo(() => countFactions(zoneExtracts), [zoneExtracts])
+  const factionCounts = useMemo(() => countFactions(playerExtracts), [playerExtracts])
   const hazardCounts = useMemo(() => hazards.reduce((counts, hazard) => {
     const kind = HAZARD_STYLE[hazard?.hazardType] ? hazard.hazardType : 'other'
     counts[kind] += 1
@@ -603,7 +610,7 @@ export default function MapLeaflet({
     mapKeys,
     autoObjPins,
     allIntel,
-    extracts,
+    extracts: playerExtracts,
     isChecked,
     hideReplay,
     replayEnabled,
@@ -961,7 +968,7 @@ export default function MapLeaflet({
   useMapLayer(mapRef, () => {
     if (!showExits) return []
     const layers = []
-    const visible = extractsFor(zoneExtracts, exitFaction)
+    const visible = extractsFor(playerExtracts, exitFaction)
     const plottedSwitches = new Set()
 
     for (const extract of visible) {
@@ -1019,7 +1026,7 @@ export default function MapLeaflet({
         const switchKey = switchRecord.id || `${switchRecord.position.x}:${switchRecord.position.z}`
         if (plottedSwitches.has(switchKey)) continue
         plottedSwitches.add(switchKey)
-        const openedExtracts = zoneExtracts
+        const openedExtracts = playerExtracts
           .filter(candidate => switchForExtract(candidate, switches).some(record => record.id === switchRecord.id))
           .map(candidate => candidate.name)
           .filter(Boolean)
@@ -1037,7 +1044,7 @@ export default function MapLeaflet({
       }
     }
     return layers
-  }, [showExits, exitFaction, zoneExtracts, switches, mapNorm])
+  }, [showExits, exitFaction, playerExtracts, switches, mapNorm])
 
   useMapLayer(mapRef, () => {
     if (!showTransits) return []
@@ -1859,17 +1866,16 @@ export default function MapLeaflet({
 
                 <LayerToggleRow
                   label="◩ EXITS"
-                  count={zoneExtracts.length}
+                  count={playerExtracts.length}
                   checked={showExits}
                   onChange={() => setShowExits(v => !v)}
-                  disabled={zoneExtracts.length === 0}
+                  disabled={playerExtracts.length === 0}
                 />
-                {showExits && zoneExtracts.length > 0 && (
+                {showExits && playerExtracts.length > 0 && (
                   <div className="map-faction-filter" aria-label="Exit faction filter">
                     {[
-                      ['all', 'ALL', zoneExtracts.length],
+                      ['all', 'ALL', playerExtracts.length],
                       ['pmc', 'PMC', factionCounts.pmc + factionCounts.shared],
-                      ['scav', 'SCAV', factionCounts.scav + factionCounts.shared],
                     ].map(([value, label, count]) => (
                       <button
                         key={value}

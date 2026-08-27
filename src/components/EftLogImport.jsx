@@ -244,7 +244,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
           <div className="lbl">IMPORT EFT LOGS</div>
           <div className="mono eft-log-import-copy">
             NO INSTALL. READ-ONLY FOLDER ACCESS. LOGS ARE PROCESSED LOCALLY; RAW LOGS ARE NEVER UPLOADED.
-            THIS SITE CANNOT MONITOR WHILE CLOSED.
+            THIS SITE CANNOT WATCH LOGS WHILE CLOSED.
           </div>
         </div>
         <button className="eft-log-import-close" onClick={closePanel} aria-label="Close EFT log import">×</button>

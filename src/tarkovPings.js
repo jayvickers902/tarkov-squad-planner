@@ -1,14 +1,14 @@
 // Position pings — Phase 6.
 //
-// Pure helpers shared by the socket hook (validation), MonitorLink (cadence and
-// the party write) and MapLeaflet (rendering). No React, no side effects.
+// Pure helpers shared by the screenshot sync hook (validation/cadence), the party
+// write and MapLeaflet (rendering). No React, no side effects.
 //
 // A stored ping is:
 //   { id, user_id, user, map, x, y, z, yaw, at, taps }
 //
 // `x/y/z` are raw game-world coordinates — the same space PMC spawns already use,
 // so no calibration exists anywhere in this file. `yaw` is degrees, already
-// reduced from the quaternion by TarkovMonitor. `at` is the receiving client's
+// reduced from the screenshot quaternion. `at` is the receiving client's
 // clock at arrival: the screenshot filename is only minute-granular and cannot
 // order taps.
 

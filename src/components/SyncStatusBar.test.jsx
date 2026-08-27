@@ -71,7 +71,7 @@ describe('SyncStatusBar', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Screenshot sync/ }))
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
-    expect(screen.getByRole('dialog', { name: 'SHOTS SYNC' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'PINGS SYNC' })).toBeInTheDocument()
   })
 
   it('closes on Escape and restores focus to the opener', () => {

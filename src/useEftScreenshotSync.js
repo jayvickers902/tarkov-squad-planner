@@ -220,9 +220,8 @@ export function useEftScreenshotSync({
           || file.lastModified > receivedAt + 5000) continue
         const position = toEftScreenshotPosition(file.filename, mapNorm)
         if (!position?.ok) continue
-        // Match the existing monitor contract. Screenshot names are only
-        // minute-granular and file clocks can be skewed, so receive time owns
-        // live ordering and expiry.
+        // Screenshot names are only minute-granular and file clocks can be skewed,
+        // so receive time owns live ordering and expiry.
         handlePosition({ ...position.value, at: receivedAt })
         setLastScreenshot({ filename: file.filename, at: file.lastModified })
         emitted += 1

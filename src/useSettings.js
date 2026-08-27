@@ -3,9 +3,6 @@ import { supabase } from './supabase'
 
 const CACHE_PREFIX = 'tsp.user-settings.'
 const RAIL_KEYS = ['tsp.raidview.rail', 'tsp.raid.rail.open']
-const MONITOR_CODE_KEY = 'tsp.monitor.code'
-const MONITOR_ENABLED_KEY = 'tsp.monitor.enabled'
-const MONITOR_EXPANDED_KEY = 'tsp.monitor.expanded'
 
 function readJson(key, fallback = null) {
   try {
@@ -36,13 +33,6 @@ function readLegacySettings(callsign, userId) {
   const railKey = RAIL_KEYS.find(key => readString(key) !== null)
   if (railKey) migrated.raidview_rail_open = readString(railKey) !== '0'
 
-  const monitorCode = readString(MONITOR_CODE_KEY)
-  if (monitorCode) migrated.monitor_code = monitorCode
-  const monitorEnabled = readString(MONITOR_ENABLED_KEY)
-  if (monitorEnabled !== null) migrated.monitor_enabled = monitorEnabled === '1'
-  const monitorExpanded = readString(MONITOR_EXPANDED_KEY)
-  if (monitorExpanded !== null) migrated.monitor_expanded = monitorExpanded === '1'
-
   if (callsign) {
     const order = readJson(`tarkov_quest_order_${callsign}`)
     if (Array.isArray(order)) migrated.quest_order = { [userId || callsign]: order }
@@ -57,15 +47,6 @@ function writeLegacyCache(settings, userId, callsign) {
     for (const key of RAIL_KEYS) {
       try { localStorage.setItem(key, value) } catch { /* storage is optional */ }
     }
-  }
-  if (settings.monitor_code) {
-    try { localStorage.setItem(MONITOR_CODE_KEY, settings.monitor_code) } catch { /* storage is optional */ }
-  }
-  if (settings.monitor_enabled !== undefined) {
-    try { localStorage.setItem(MONITOR_ENABLED_KEY, settings.monitor_enabled ? '1' : '0') } catch { /* storage is optional */ }
-  }
-  if (settings.monitor_expanded !== undefined) {
-    try { localStorage.setItem(MONITOR_EXPANDED_KEY, settings.monitor_expanded ? '1' : '0') } catch { /* storage is optional */ }
   }
   const order = (userId && settings.quest_order?.[userId])
     || (callsign && settings.quest_order?.[callsign])
