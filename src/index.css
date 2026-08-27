@@ -91,10 +91,7 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .room-header { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--brd); }
 .room-header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .room-header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.room-header-monitor { width: clamp(230px, 20vw, 360px); min-width: 0; }
-.room-header-monitor[hidden], .room-settings-panel[hidden] { display: none; }
-.room-header-monitor .monitor-link-shell-compact { margin: 0; padding: 4px 6px; }
-.room-header-monitor .monitor-collapsed { min-height: 24px; }
+.room-settings-panel[hidden] { display: none; }
 .room-mode-badge { margin-top: 3px; color: var(--goldtx); font-size: 10px; letter-spacing: .06em; }
 .room-game-mode-notice { margin-bottom: 14px; padding: 9px 12px; color: var(--gold); border: 1px solid var(--golddim); border-left: 3px solid var(--gold); border-radius: 4px; background: rgba(201,168,76,.06); font-size: 11px; line-height: 1.6; }
 .room-mobile-actions { display: flex; align-items: stretch; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
@@ -177,53 +174,10 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .raid-settings-source { color: var(--txd); font-size: 9px; letter-spacing: .04em; }
 .raid-settings-control { flex-shrink: 0; }
 
-/* ── TarkovMonitor link panel ─────────────────────────────────────────────── */
+/* ── Local screenshot sync ────────────────────────────────────────────────── */
 .mon-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .mon-dot-live { animation: monPulse 1.8s ease-in-out infinite; }
 @keyframes monPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-
-.mon-note {
-  padding: 8px 10px;
-  border-radius: 4px;
-  border: 1px solid var(--brd2);
-  border-left: 3px solid var(--brd2);
-  background: var(--sur2);
-  color: var(--tx);
-  font-size: 12px;
-  line-height: 1.6;
-}
-.mon-note-ok   { border-color: rgba(74,140,90,0.45); border-left-color: var(--grn); background: rgba(74,140,90,0.07); }
-.mon-note-warn { border-color: var(--golddim); border-left-color: var(--gold); background: rgba(201,168,76,0.06); }
-.mon-note-warn strong { color: var(--goldtx); }
-
-/* ── Position pings ───────────────────────────────────────────────────────── */
-.mon-ping-help {
-  border: 1px solid var(--brd2);
-  border-radius: 4px;
-  background: var(--sur2);
-  padding: 9px 11px;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.mon-ping-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.mon-ping-title { font-size: 10px; color: var(--goldtx); letter-spacing: .1em; }
-.mon-ping-pending { font-size: 10px; color: var(--gold); letter-spacing: .08em; animation: monPulse 1.2s ease-in-out infinite; }
-.mon-cadence { display: flex; gap: 14px; flex-wrap: wrap; }
-.mon-cadence-item { display: flex; align-items: center; gap: 5px; font-size: 10px; letter-spacing: .06em; }
-.mon-character-help { border: 1px solid var(--brd2); border-radius: 4px; background: var(--sur2); padding: 9px 11px; display: flex; flex-direction: column; gap: 7px; }
-.mon-character-current { margin-left: auto; color: var(--txm); font-size: 9px; letter-spacing: .06em; }
-.mon-character-modes { display: flex; gap: 5px; flex-wrap: wrap; }
-.mon-character-modes button { font-size: 10px; padding: 4px 8px; }
-.mon-character-confirm { display: flex; flex-direction: column; gap: 5px; }
-.mon-character-confirm-title { color: var(--goldtx); font-size: 10px; letter-spacing: .08em; }
-.mon-character-confirm-copy { font-size: 12px; line-height: 1.6; }
-.mon-character-confirm-copy strong { color: var(--goldtx); }
-.mon-character-confirm-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.mon-character-confirm-actions button { font-size: 10px; padding: 4px 8px; }
-
-.monitor-link-shell { margin-bottom: 14px; }
-.monitor-link-shell-compact { padding: 6px 10px; }
 
 /* ── Local EFT log import ────────────────────────────────────────────────── */
 .eft-log-import-panel { flex: 1 1 100%; padding: 16px; margin-bottom: 16px; border-color: var(--golddim); }
@@ -283,91 +237,6 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 @media (max-width: 560px) {
   .quest-mode-hint { flex-basis: 100%; margin-left: 0; }
 }
-.monitor-link-shell-open { padding: 16px; }
-.monitor-collapsed { display: flex; align-items: center; gap: 8px; min-height: 26px; }
-.monitor-collapsed-status { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }
-.monitor-collapsed-separator { color: var(--txd); }
-.monitor-collapsed-event {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--txm);
-  font-size: 9px;
-  letter-spacing: .06em;
-}
-.monitor-collapsed code {
-  color: var(--goldtx);
-  background: var(--sur2);
-  border: 1px solid var(--brd2);
-  border-radius: 3px;
-  padding: 3px 7px;
-  letter-spacing: .14em;
-}
-.room-settings-panel-open .monitor-link-shell { margin-bottom: 8px; }
-
-@media (max-width: 768px) {
-  .monitor-collapsed-event { display: none; }
-  .monitor-link-shell-compact { margin-left: -2px; margin-right: -2px; }
-}
-
-/* Synced Tarkov identity/loadout preview in the party rail */
-.member-character-snapshot {
-  margin-top: 7px;
-  padding: 7px;
-  border: 1px solid var(--brd2);
-  border-left: 2px solid var(--golddim);
-  border-radius: 4px;
-  background: var(--sur2);
-}
-.member-character-head,
-.member-character-identity,
-.member-character-item {
-  display: flex;
-  align-items: center;
-}
-.member-character-head { justify-content: space-between; gap: 6px; }
-.member-character-identity { min-width: 0; gap: 6px; }
-.member-character-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 25px;
-  height: 25px;
-  flex-shrink: 0;
-  border: 1px solid var(--golddim);
-  border-radius: 3px;
-  color: var(--goldtx);
-  background: rgba(201,168,76,.08);
-  font: 10px 'Share Tech Mono', monospace;
-}
-.member-character-name,
-.member-character-meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.member-character-name { color: var(--goldtx); font: 11px 'Share Tech Mono', monospace; letter-spacing: .04em; }
-.member-character-meta { color: var(--txm); font: 9px 'Share Tech Mono', monospace; margin-top: 1px; }
-.member-character-toggle { padding: 3px 5px; font-size: 9px; flex-shrink: 0; }
-.member-character-details { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--brd); }
-.member-character-appearance { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.member-character-chip { min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 3px 4px; background: var(--sur3); }
-.member-character-chip span,
-.member-character-section-label,
-.member-character-more,
-.member-character-empty,
-.member-character-sync { color: var(--txd); font-size: 8px; letter-spacing: .05em; }
-.member-character-chip-value { min-width: 0; display: flex; align-items: center; gap: 4px; }
-.member-character-chip-value img,
-.member-character-item-main img { width: 20px; height: 20px; object-fit: contain; flex-shrink: 0; image-rendering: pixelated; border-radius: 2px; background: var(--sur); border: 1px solid var(--brd2); }
-.member-character-chip strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txm); font-size: 9px; font-weight: 400; }
-.member-character-items { margin-top: 7px; }
-.member-character-section-label { margin-bottom: 3px; color: var(--goldtx); }
-.member-character-item { justify-content: space-between; gap: 7px; padding: 3px 0; border-bottom: 1px solid var(--brd); color: var(--txm); font-size: 10px; }
-.member-character-item-main { min-width: 0; display: flex; align-items: center; gap: 5px; overflow: hidden; }
-.member-character-item-main img { width: 22px; height: 22px; }
-.member-character-item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.member-character-item > span:last-child { flex-shrink: 0; color: var(--txd); font-size: 8px; }
-.member-character-more { margin-top: 4px; }
-.member-character-empty { color: var(--txm); }
-.member-character-sync { margin-top: 6px; text-align: right; }
 
 .ping-strip {
   margin-top: 10px;
@@ -564,24 +433,6 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .raid-rail-heading { display: flex; align-items: center; gap: 7px; margin: 0 2px 6px; color: var(--gold); font-size: 9px; letter-spacing: .12em; }
 .raid-rail-heading .raid-rail-count { margin-left: auto; }
 .raid-rail-empty { padding: 9px 4px; color: var(--txd); font-size: 10px; letter-spacing: .05em; }
-.raid-rail-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  font-size: 9px;
-  letter-spacing: .07em;
-  cursor: help;
-}
-.raid-rail-link-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: currentColor; }
-.raid-rail-link-live { color: var(--grn); }
-.raid-rail-link-wait { color: var(--goldtx); }
-.raid-rail-link-off  { color: var(--txd); }
-.raid-rail-link-down { color: var(--red); }
-/* Only the failure state animates — a steady green light should not compete with
-   the map for attention, but a dropped relay is the whole reason this exists. */
-.raid-rail-link-down .raid-rail-link-dot { animation: rail-link-pulse 1.4s ease-in-out infinite; }
-@keyframes rail-link-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
 .raid-ping-list { display: flex; flex-direction: column; gap: 5px; }
 .last-known-list { display: flex; flex-direction: column; gap: 5px; }
 .last-known-card {
@@ -1166,4 +1017,40 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   .welcome-header h2 { font-size: 23px; }
   .welcome-body { padding: 16px 16px 2px; }
   .welcome-actions { padding: 14px 16px 16px; }
+}
+
+/* ── Local sync status cluster ───────────────────────────────────────────── */
+.sync-status-bar { position: relative; display: flex; align-items: center; gap: 6px; }
+.sync-chip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.sync-chip-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--txm); }
+.sync-chip[data-tone="ok"] .sync-chip-dot,
+.sync-chip-dot[data-tone="ok"] { background: var(--gold); }
+.sync-chip[data-tone="warn"] .sync-chip-dot,
+.sync-chip-dot[data-tone="warn"] { background: #d9a441; }
+.sync-chip[data-tone="error"] .sync-chip-dot,
+.sync-chip-dot[data-tone="error"] { background: var(--red); }
+.sync-chip[data-tone="idle"] .sync-chip-dot,
+.sync-chip[data-tone="idle"] .sync-chip-dot,
+.sync-chip[data-tone="off"] .sync-chip-dot,
+.sync-chip-dot[data-tone="off"] { background: var(--txm); }
+.sync-chip-meta { color: var(--txm); font-size: 9px; letter-spacing: .05em; }
+.sync-popover { position: absolute; top: calc(100% + 8px); right: 0; z-index: 1100; width: min(360px, calc(100vw - 24px)); padding: 13px; background: var(--sur2); border-color: var(--brd2); }
+.sync-popover h2 { color: var(--goldtx); font-size: 18px; }
+.sync-popover p { margin-top: 7px; color: var(--txm); font-size: 12px; line-height: 1.55; }
+.sync-popover-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sync-popover-head button { padding: 3px 7px; }
+.sync-popover-row { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: var(--txm); font-size: 10px; line-height: 1.45; }
+.sync-popover-row > span:last-child { color: var(--tx); font-family: 'Noto Sans', sans-serif; font-size: 11px; }
+.sync-popover-row > span:first-child:only-child { color: var(--txm); font-family: 'Share Tech Mono', monospace; font-size: 10px; }
+.sync-popover-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
+.sync-popover-link { color: var(--goldtx); }
+
+@media (max-width: 1439px) {
+  .sync-chip:not([data-channel="monitor"]) .sync-chip-meta { display: none; }
+}
+
+@media (max-width: 768px) {
+.sync-chip[data-channel="monitor"] .sync-chip-label,
+.sync-chip[data-channel="monitor"] .sync-chip-meta { display: none; }
+  .sync-popover { right: auto; left: 0; }
 }
