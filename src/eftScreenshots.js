@@ -16,7 +16,7 @@ export const MAX_SCREENSHOT_TIMESTAMP = 8640000000000000
 // EFT writes decimal coordinates/quaternion components. Precision varies by
 // build, but integer-only coordinate tokens are not screenshot positions.
 const NUMBER = '[+-]?(?:\\d+\\.\\d+|\\.\\d+)'
-const TIMESTAMP_RE = /^(\d{4})-(\d{2})-(\d{2})\[(?:[01]\d|2[0-3])-(?:[0-5]\d)\]/
+const TIMESTAMP_RE = /^(\d{4})-(\d{2})-(\d{2})\[(?:[01]\d|2[0-3])-(?:[0-5]\d)(?:-(?:[0-5]\d))?\]/
 const POSITION_RE = new RegExp(
   `^(${NUMBER}),\\s*(${NUMBER}),\\s*(${NUMBER})_?(${NUMBER}),\\s*(${NUMBER}),\\s*(${NUMBER}),\\s*(${NUMBER})` +
   // Builds have used both " (0)" and "_14.08 (0)" suffixes. The seven

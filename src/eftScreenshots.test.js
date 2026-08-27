@@ -13,12 +13,14 @@ import {
 } from './eftScreenshots'
 
 const current = '2026-08-26[12-34]_12.50, 0.00, -8.25_0.000, 0.000, 0.000, 1.000 (1).png'
+const secondsTimestamp = '2026-08-27[16-30-41]_411.52, -9.90, -338.02_0.04508, 0.13101, -0.00596, 0.99034_19.57.png'
 const legacy = '2026-08-26[12-34]v0.16.9_12.5, 0.0, -8.25_0.0, 0.7071068, 0.0, 0.7071068_copy.png'
 const legacyScreenshotExample = '2023-09-22[13-00]_-49.9, 12.1, -51.8_0.0, -0.8, 0.1, -0.5_14.08 (0).png'
 
 describe('EFT screenshot foundation', () => {
   it('parses current and legacy decimal/suffix formats without reading image bytes', () => {
     expect(parseEftScreenshotFilename(current)).toMatchObject({ x: 12.5, y: 0, z: -8.25, yaw: 0 })
+    expect(parseEftScreenshotFilename(secondsTimestamp)).toMatchObject({ x: 411.52, y: -9.9, z: -338.02 })
     const parsed = parseEftScreenshotFilename(legacy)
     expect(parsed).toMatchObject({ x: 12.5, y: 0, z: -8.25 })
     expect(parsed.yaw).toBeCloseTo(90, 4)
@@ -38,6 +40,7 @@ describe('EFT screenshot foundation', () => {
 
   it('routes candidates through canonical map and bounds validation', () => {
     expect(createScreenshotPositionCandidate(current, 'customs')).toMatchObject({ ok: true, value: { map: 'customs', x: 12.5, z: -8.25 } })
+    expect(toEftScreenshotPosition(secondsTimestamp, 'shoreline')).toMatchObject({ ok: true, value: { map: 'shoreline', x: 411.52, z: -338.02 } })
     expect(toEftScreenshotPosition(current, 'not-a-map', 'customs')).toMatchObject({ ok: false, reason: 'map' })
     expect(toEftScreenshotPosition('2026-08-26[12-34]9999.00, 0.00, 9999.00_0.0, 0.0, 0.0, 1.0.png', 'customs')).toMatchObject({ ok: false, reason: 'bounds' })
     expect(toEftScreenshotPosition(current, null, 'customs').ok).toBe(true)
