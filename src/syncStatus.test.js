@@ -1,84 +1,35 @@
 import { describe, expect, it } from 'vitest'
-import { channelStatus, companionChannelStatus, monitorHealth } from './syncStatus'
+import { browserSyncRows, mergeSyncRows, relativeSyncLabel, syncChip } from './syncStatus'
 
-const now = Date.parse('2026-08-27T12:00:00.000Z')
-
-describe('channelStatus', () => {
-  it('reports unsupported browsers without blaming the user', () => {
-    expect(channelStatus({ supported: false, state: 'idle' }, { now })).toMatchObject({
-      tone: 'off',
-      label: 'UNSUPPORTED',
-      detail: expect.stringContaining('Chromium browsers only'),
-    })
+describe('unified sync status', () => {
+  it('prefers live browser state while retaining desktop state for the tooltip', () => {
+    const local = browserSyncRows(
+      { state: 'watching', rememberedFolderName: 'Logs', lastSuccessfulCheck: '2026-08-27T12:00:00Z' },
+      { state: 'permission-needed', folderName: 'Screenshots', lastSuccessfulCheck: '2026-08-27T11:00:00Z' },
+      '2026-08-27T12:00:01Z',
+    )
+    const rows = mergeSyncRows([
+      { client_source: 'desktop', service: 'logs', configured: true, state: 'watching', detail: 'Sync up to date', last_sync_at: '2026-08-27T12:00:02Z', last_seen_at: '2026-08-27T12:00:03Z', is_live: true },
+    ], local)
+    expect(syncChip('logs', rows, Date.parse('2026-08-27T12:00:04Z'))).toMatchObject({ summary: 'LIVE', tone: 'live' })
+    expect(syncChip('logs', rows).rows.map(row => row.client_source).sort()).toEqual(['browser', 'desktop'])
+    expect(syncChip('pings', rows)).toMatchObject({ summary: 'NEEDS ACCESS', tone: 'attention' })
   })
 
-  it('reports lost folder permission as a warning', () => {
-    expect(channelStatus({
-      supported: true,
-      state: 'permission-needed',
-      error: 'Folder permission is needed.',
-      rememberedFolderName: 'Screenshots',
-    }, { now })).toMatchObject({ tone: 'warn', label: 'NEEDS ACCESS' })
+  it('shows the newest last-sync age when no configured client is live', () => {
+    const chip = syncChip('pings', [{
+      client_source: 'desktop', service: 'pings', configured: true, state: 'offline', detail: 'Stopped',
+      last_sync_at: '2026-08-27T09:00:00Z', last_seen_at: '2026-08-27T09:00:00Z', is_live: false,
+    }], Date.parse('2026-08-27T12:30:00Z'))
+    expect(chip).toMatchObject({ summary: '3H AGO', tone: 'stale' })
+    expect(relativeSyncLabel(null)).toBe('NO SYNC YET')
   })
 
-  it('reports a connected channel with an old check as stale', () => {
-    expect(channelStatus({
-      supported: true,
-      state: 'watching',
-      rememberedFolderName: 'EFT Logs',
-      lastSuccessfulCheck: '2026-08-27T11:50:00.000Z',
-    }, { now })).toMatchObject({ tone: 'warn', label: 'STALE', stale: true })
-  })
-
-  it('reports controller errors as a plain error sentence', () => {
-    const status = channelStatus({ supported: true, state: 'error', error: new Error('Folder C:\\EFT\\Logs could not be read.') }, { now })
-    expect(status).toMatchObject({ tone: 'error', label: 'ERROR' })
-    expect(status.detail).not.toMatch(/[\\/]/)
-  })
-})
-
-describe('monitorHealth', () => {
-  it('rolls up hidden tabs as a warning and keeps per-channel tones', () => {
-    const result = monitorHealth({
-      logs: { supported: true, state: 'watching', rememberedFolderName: 'Logs' },
-      shots: { supported: true, state: 'idle' },
-      now,
-      visible: false,
-    })
-    expect(result).toMatchObject({ tone: 'warn', label: 'TAB HIDDEN', channels: { logs: 'ok', screenshots: 'idle' } })
-  })
-
-  it('uses companion-reported service states when supplied', () => {
-    const result = monitorHealth({
-      statuses: {
-        logs: companionChannelStatus({ service: 'logs', configured: true, state: 'watching', updatedAt: '2026-08-27T12:00:00.000Z', detail: 'Connected' }, { now }),
-        pings: companionChannelStatus({ service: 'pings', configured: true, state: 'error', updatedAt: '2026-08-27T12:00:00.000Z', detail: 'Retrying' }, { now }),
-      },
-      now,
-      visible: true,
-    })
-    expect(result).toMatchObject({ tone: 'error', channels: { logs: 'ok', screenshots: 'error' } })
-
-    const connected = monitorHealth({
-      statuses: {
-        logs: companionChannelStatus({ configured: true, state: 'watching', updatedAt: '2026-08-27T12:00:00.000Z' }, { now }),
-        pings: companionChannelStatus({ configured: true, state: 'idle', updatedAt: '2026-08-27T12:00:00.000Z' }, { now }),
-      },
-      now,
-      visible: false,
-    })
-    expect(connected).toMatchObject({ tone: 'ok', label: 'CONNECTED' })
-  })
-})
-
-describe('companionChannelStatus', () => {
-  it('maps the companion heartbeat to a watching status', () => {
-    expect(companionChannelStatus({ configured: true, state: 'watching', updatedAt: '2026-08-27T12:00:00.000Z', detail: 'Connected' }, { now }))
-      .toMatchObject({ source: 'companion', tone: 'ok', label: 'CONNECTED', lastCheckedMs: now })
-  })
-
-  it('marks an old companion heartbeat stale', () => {
-    expect(companionChannelStatus({ configured: true, state: 'watching', updatedAt: '2026-08-27T11:50:00.000Z' }, { now }))
-      .toMatchObject({ tone: 'warn', label: 'STALE', stale: true })
+  it('shows healthy when either client is syncing even if the other needs attention', () => {
+    const chip = syncChip('logs', [
+      { client_source: 'browser', service: 'logs', configured: true, state: 'needs_access', is_live: true },
+      { client_source: 'desktop', service: 'logs', configured: true, state: 'watching', is_live: true },
+    ])
+    expect(chip).toMatchObject({ summary: 'LIVE', tone: 'live' })
   })
 })
