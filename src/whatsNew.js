@@ -1,9 +1,9 @@
-export const RELEASE_VERSION = '2026.11'
+export const RELEASE_VERSION = '2026.12'
 
 export const SETUP_STEPS = [
   {
     title: 'LOAD YOUR QUESTS',
-    body: 'Quest Manager holds your active task list. Import your EFT Logs folder locally, drop in a screenshot of your in-game quest list, or search and add tasks by hand.',
+    body: 'Quest Manager holds your active task list. Choose GET YOUR QUESTS IN to import your EFT Logs folder locally, scan a screenshot, catch up by trader, or search and add tasks by hand.',
   },
   {
     title: 'PICK YOUR GAME MODE',
@@ -21,9 +21,32 @@ export const SETUP_STEPS = [
     title: 'GO INTO RAID',
     body: 'START RAID gives the pre-raid brief: boss odds, extracts, keys, in-game time. Raid View is the in-raid layout with the objective rail and live squad pings.',
   },
+  {
+    title: 'SYNC IN THE BACKGROUND',
+    body: 'The desktop companion keeps quests and screenshot pings in sync while this site is closed. Sign in to it with the same Google account you use here.',
+  },
 ]
 
 export const RELEASES = [
+  {
+    version: '2026.12',
+    date: '2026-08-27',
+    title: 'GETTING STARTED, GUIDED',
+    items: [
+      {
+        title: 'GUIDED QUEST IMPORT',
+        body: 'GET YOUR QUESTS IN opens a guided import hub with a recommended route for your browser and situation.',
+      },
+      {
+        title: 'STEP-BY-STEP LOG IMPORT',
+        body: 'EFT log import now takes you through the required steps and says in plain words why it cannot continue.',
+      },
+      {
+        title: 'DESKTOP APP DISCOVERY',
+        body: 'A new desktop app card explains how to keep quests and screenshot pings in sync in the background.',
+      },
+    ],
+  },
   {
     version: '2026.11',
     date: '2026-08-27',

@@ -21,7 +21,7 @@ npm run preview  # preview production build
 data: its `prebuild` step rewrites `src/data/prebaked/*.json` from tarkov.dev and
 dumps unrelated churn into the diff.
 
-No test suite, no linter, no TypeScript. Build warnings are acceptable.
+No linter, no TypeScript. Vitest suite — run `npm test`. Build warnings are acceptable.
 
 ## Project Structure
 
@@ -54,7 +54,6 @@ src/
   useMapLayer.js       # Leaflet layer state
   useIntel.js / useIntelChecklist.js
   useTarkov.js         # tarkov.dev GraphQL (quests, items, maps, bosses)
-  useTarkovMonitor.js  # Tarkov Monitor companion-app link
   useIsMobile.js       # viewport detection
 
   components/
@@ -75,7 +74,13 @@ src/
     KeysList.jsx       # keys needed for current map
     BossPanel.jsx      # boss info for current map
     TodoList.jsx       # in-raid objective checklist
-    MonitorLink.jsx    # Tarkov Monitor connection UI
+    EftLogImport.jsx    # guided EFT quest-log importer
+    EftScreenshotPings.jsx # screenshot position ping sync
+    SyncStatusBar.jsx   # local and companion sync status
+    CatchUp.jsx         # trader catch-up quest importer
+    WelcomeModal.jsx    # onboarding and release notes
+    QuestImportHub.jsx  # guided quest import route picker
+    DesktopAppCard.jsx  # desktop companion discovery and status
     StartRaidModal.jsx # pre-raid config modal
     TarkovClocks.jsx   # in-game time display
     AdminKeyManager.jsx # admin-only key priority/location editor
@@ -119,6 +124,10 @@ quest events reach Supabase. Seasonal logs, objective counters, inventory, hideo
 sync while the site is closed are not supported.
 
 The REST dataset supports `regular`, `pve`, and `pvp-season`. The active game mode is a resolved setting rather than a module constant. Prebaked JSON is only a valid floor for the mode recorded in its stamp, and another mode must wait for its REST response.
+
+## Quest onboarding
+
+Quest Manager starts with a `GET YOUR QUESTS IN` hub that recommends an import route. Selecting a route opens its importer; EFT log imports guide the user through a step rail and explain plainly when a required choice is missing. The desktop companion pairs by signing in with the same Google account used on the site, and keeps quests and screenshot pings in sync while the site is closed.
 
 ## Game Mode
 

@@ -1,12 +1,12 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useTasks } from '../useTarkov'
 import { useEftLogSync } from '../EftLogSyncContext'
 import { FEATURED } from '../constants'
-import QuestScanner from './QuestScanner'
-import CatchUp from './CatchUp'
-import EftLogImport from './EftLogImport'
+import QuestImportHub from './QuestImportHub'
 import EftScreenshotPings from './EftScreenshotPings'
+import DesktopAppCard from './DesktopAppCard'
 import { GAME_MODES, gameModeLabel, resolvePartyMode } from '../gameMode'
+import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
 
 // Small Kappa badge — reused in search results and saved list
 function KappaBadge() {
@@ -34,6 +34,9 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
   const [confirmClear, setConfirmClear] = useState(false)
   const [recentlyAdded, setRecentlyAdded] = useState(new Set())
   const [questOrder, setQuestOrder] = useState(() => userQuests.map(q => q.quest_id))
+  const [hubOpen, setHubOpen] = useState(false)
+  const searchInputRef = useRef(null)
+  const savedQuestsRef = useRef(null)
 
   // Sync questOrder when userQuests changes externally (restore, clear, done)
   useEffect(() => {
@@ -49,6 +52,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
   const gameMode = passedGameMode || resolvePartyMode(null, userSettings)
   const canChangeGameMode = !inParty && !!onSetUserSetting
   const eftLogSync = useEftLogSync({ optional: true })
+  const companion = useCompanionSyncStatus({ optional: true })
 
   const snapKey = userId ? `tarkov_quests_${userId}_${gameMode}` : null
   // Snapshots predating mode scoping were saved unsuffixed, and every quest row
@@ -165,6 +169,27 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
     }, 2800)
   }
 
+  function focusManualSearch() {
+    setSearchOpen(true)
+    searchInputRef.current?.focus()
+    searchInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
+  function handleImportComplete(importedIds = []) {
+    setHubOpen(false)
+    savedQuestsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const ids = Array.isArray(importedIds) ? importedIds.filter(Boolean) : []
+    if (!ids.length) return
+    setRecentlyAdded(prev => new Set([...prev, ...ids]))
+    setTimeout(() => {
+      setRecentlyAdded(prev => {
+        const next = new Set(prev)
+        ids.forEach(id => next.delete(id))
+        return next
+      })
+    }, 2800)
+  }
+
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '20px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
@@ -229,21 +254,25 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
         </div>
       )}
 
-      {/* Quest import routes */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
-        <QuestScanner allTasks={allTasks} userQuests={userQuests} onAdd={onAdd} />
-        <CatchUp allTasks={allTasks} userQuests={userQuests} onBulkAdd={onBulkAdd} userId={userId} />
-        <EftLogImport
+      {/* With zero quests the empty state owns the CTA, avoiding two gold buttons. */}
+      {(hubOpen || userQuests.length > 0) && (
+        <QuestImportHub
+          open={hubOpen}
+          onOpenChange={setHubOpen}
           allTasks={allTasks}
           userQuests={userQuests}
           userId={userId}
-          onGetQuestHistory={onGetQuestHistory}
           gameMode={gameMode}
+          onAdd={onAdd}
+          onBulkAdd={onBulkAdd}
+          onGetQuestHistory={onGetQuestHistory}
           onApply={onReconcileLogEvents}
           sync={eftLogSync}
+          onFocusManualSearch={focusManualSearch}
+          onImportComplete={handleImportComplete}
         />
-        <EftScreenshotPings />
-      </div>
+      )}
+      <DesktopAppCard companion={companion} />
 
       <div className="quest-mode-row">
         <span className="mono quest-mode-label">GAME MODE</span>
@@ -262,6 +291,9 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
         </div>
         <span className="mono quest-mode-hint">TASK DATA · {gameMode.toUpperCase()}</span>
       </div>
+
+      <div className="lbl quest-pings-label">LIVE POSITION PINGS</div>
+      <EftScreenshotPings />
 
       {/* Add quest section */}
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
@@ -287,6 +319,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
           {tasksLoading && searchMap !== 'any'
             ? <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', padding: '8px 0' }}>LOADING QUESTS...</div>
             : <input
+                ref={searchInputRef}
                 aria-label="Search saved quests"
                 placeholder={`Search quests${searchMap !== 'any' ? ` for ${MAP_NAMES[searchMap] || searchMap}` : ' (any map)'}...`}
                 value={searchQ}
@@ -348,7 +381,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
       `}</style>
 
       {/* Saved quests */}
-      <div className="card" style={{ padding: 16 }}>
+      <div className="card" ref={savedQuestsRef} style={{ padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
           {[
             { key: 'all', label: `ALL (${mapCounts.all})` },
@@ -386,7 +419,16 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
         {!filtered.length ? (
           <div style={{ textAlign: 'center', padding: '32px 0' }}>
             <div className="mono" style={{ fontSize: 12, color: 'var(--txd)' }}>
-              {userQuests.length === 0 ? 'NO SAVED QUESTS YET — SEARCH ABOVE TO ADD SOME' : 'NO QUESTS FOR THIS FILTER'}
+              {userQuests.length === 0 ? (
+                <div className="quest-empty-state">
+                  <h3>NO QUESTS YET</h3>
+                  <p>Import your quest list to get started — it takes about a minute.</p>
+                  <div className="quest-empty-actions">
+                    {!hubOpen && <button className="btn-gold" onClick={() => setHubOpen(true)}>GET YOUR QUESTS IN</button>}
+                    <button className="btn-ghost btn-sm" onClick={focusManualSearch}>ADD ONE MANUALLY</button>
+                  </div>
+                </div>
+              ) : 'NO QUESTS FOR THIS FILTER'}
             </div>
           </div>
         ) : (
@@ -405,8 +447,10 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                 <button
                   onClick={() => onToggleImportant(q.quest_id)}
                   title="Mark as important — will be starred when joining a party"
+                  aria-label={q.important ? `Remove important from ${q.quest_name}` : `Mark ${q.quest_name} as important`}
+                  aria-pressed={!!q.important}
                   style={{
-                    background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0,
+                    background: 'none', border: 'none', padding: '4px 6px', minWidth: 24, minHeight: 24, cursor: 'pointer', flexShrink: 0,
                     fontSize: 15, lineHeight: 1, color: q.important ? 'var(--gold)' : 'var(--txd)',
                     transition: 'color .15s',
                   }}>★</button>

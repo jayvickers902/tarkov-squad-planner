@@ -131,7 +131,25 @@ export function CompanionSyncStatusProvider({ userId, children }) {
     }
   }, [userId])
 
-  const value = useMemo(() => snapshot, [snapshot])
+  const value = useMemo(() => {
+    const statuses = Object.values(snapshot.statuses)
+    let desktopLastSeen = null
+    let newestTime = -Infinity
+    for (const status of statuses) {
+      for (const timestamp of [status.lastSyncAt, status.updatedAt]) {
+        const time = Date.parse(timestamp || '')
+        if (Number.isFinite(time) && time > newestTime) {
+          newestTime = time
+          desktopLastSeen = timestamp
+        }
+      }
+    }
+    return {
+      ...snapshot,
+      desktopConnected: Object.keys(snapshot.statuses).length > 0,
+      desktopLastSeen,
+    }
+  }, [snapshot])
   return <CompanionSyncStatusContext.Provider value={value}>{children}</CompanionSyncStatusContext.Provider>
 }
 

@@ -8,8 +8,8 @@ const STAGE_LABEL = {
   reading:   'READING SCREENSHOT...',
 }
 
-export default function QuestScanner({ allTasks, userQuests, onAdd }) {
-  const [open,       setOpen]       = useState(false)
+export default function QuestScanner({ allTasks, userQuests, onAdd, defaultOpen = false }) {
+  const [open,       setOpen]       = useState(defaultOpen)
   const [scanning,   setScanning]   = useState(false)
   const [stage,      setStage]      = useState('preparing')
   const [progress,   setProgress]   = useState(0)

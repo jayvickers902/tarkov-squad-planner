@@ -58,14 +58,44 @@ function latestByTask(events) {
   return result
 }
 
-export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGetQuestHistory, userQuests = [], sync }) {
+const NO_CHANGES_REASON = 'Your saved quests already match these logs. Nothing to import.'
+
+export function blockingReason({ logModeSupported, preview, versionScopeValid, profileRequired, changingCount } = {}) {
+  if (!logModeSupported) return 'Seasonal mode cannot be imported from logs yet. Switch to PVP or PVE to import.'
+  if (!preview) return null
+  if (profileRequired && !preview.selectedProfileKey) return 'Select which profile these logs belong to.'
+  if (!versionScopeValid) return 'Select at least one wipe/version to import from.'
+  if (preview.ambiguousModeEvents > 0 && !preview.unknownModeTarget) return 'Choose whether the unknown-mode events are PVP or PVE.'
+  if (changingCount === 0) return NO_CHANGES_REASON
+  return null
+}
+
+export function deriveImportSteps(preview) {
+  const profileRequired = (preview?.discoveredProfiles || []).length > 1
+  const scopeRequired = (preview?.availableVersions || []).length > 0
+  const modeRequired = (preview?.ambiguousModeEvents || 0) > 0
+  const steps = [{ key: 'folder', label: 'FOLDER', done: Boolean(preview) }]
+  if (profileRequired) steps.push({ key: 'profile', label: 'PROFILE', done: Boolean(preview.selectedProfileKey) })
+  if (scopeRequired) steps.push({ key: 'scope', label: 'SCOPE', done: (preview.includedVersions || []).length > 0 })
+  if (modeRequired) steps.push({ key: 'mode', label: 'MODE', done: Boolean(preview.unknownModeTarget) })
+  steps.push({ key: 'review', label: 'REVIEW', done: false })
+
+  const currentIndex = steps.findIndex(step => !step.done)
+  return steps.map((step, index) => ({
+    ...step,
+    state: index < currentIndex ? 'done' : index === currentIndex ? 'current' : 'upcoming',
+  }))
+}
+
+export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGetQuestHistory, userQuests = [], sync, onImportComplete, defaultOpen = false }) {
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
   const [needsFileFallback, setNeedsFileFallback] = useState(false)
-  const [open, setOpen] = useState(false)
-  const [remember, setRemember] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
+  const [remember, setRemember] = useState(true)
   const [busy, setBusy] = useState(false)
   const [applyMessage, setApplyMessage] = useState('')
+  const [applySucceeded, setApplySucceeded] = useState(false)
   const [showUnmatched, setShowUnmatched] = useState(false)
   const [questHistory, setQuestHistory] = useState([])
   const {
@@ -141,6 +171,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
     // Surface the plain multi-file path so the user is not left guessing.
     if (fromDirectory) setNeedsFileFallback(!files.some(file => file.webkitRelativePath))
     setApplyMessage('')
+    setApplySucceeded(false)
     setOpen(true)
     try {
       await parseSelectedFiles(files)
@@ -152,6 +183,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
 
   async function handleConnect() {
     setApplyMessage('')
+    setApplySucceeded(false)
     setOpen(true)
     setRemember(true)
     try {
@@ -164,12 +196,19 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
   async function handleConfirm() {
     setBusy(true)
     setApplyMessage('')
+    setApplySucceeded(false)
     try {
-      const result = await confirmImport({ autoSync: remember, remember })
+      // `remember` now defaults on, but the checkbox only renders when the
+      // browser can persist a folder handle. Without this guard an unsupported
+      // browser would send an intent the user was never given a chance to set.
+      const shouldRemember = persistentSupported ? remember : false
+      const result = await confirmImport({ autoSync: shouldRemember, remember: shouldRemember })
       const applied = appliedCount(result, changingTasks.length)
       const ignored = Number(result?.ignored)
       setApplyMessage(`APPLIED ${applied} QUEST STATE${applied === 1 ? '' : 'S'}.`
         + (Number.isFinite(ignored) && ignored > 0 ? ` ${ignored} ALREADY UP TO DATE.` : ''))
+      setApplySucceeded(true)
+      onImportComplete?.(changingTasks.map(({ taskId }) => taskId))
     } catch {
       setApplyMessage('IMPORT FAILED — YOUR PREVIEW IS STILL AVAILABLE. RETRY WHEN READY.')
     } finally {
@@ -180,6 +219,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
   async function handleResume() {
     setBusy(true)
     setApplyMessage('')
+    setApplySucceeded(false)
     try {
       const result = await resumeImport()
       const applied = appliedCount(result, 0)
@@ -193,6 +233,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
 
   async function handleDiscard() {
     setApplyMessage('')
+    setApplySucceeded(false)
     await discardPendingJob()
   }
 
@@ -203,6 +244,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
     if (state === 'applying' || busy) return
     setOpen(false)
     setApplyMessage('')
+    setApplySucceeded(false)
   }
 
   if (!open) {
@@ -223,6 +265,10 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
   const versionScopeValid = !preview?.availableVersions?.length || preview.includedVersions?.length > 0
   const canConfirm = logModeSupported && preview && changingTasks.length > 0 && state !== 'applying' && state !== 'reading' && versionScopeValid
   const profileChoices = Array.isArray(preview?.discoveredProfiles) ? preview.discoveredProfiles : []
+  const profileRequired = profileChoices.length > 1
+  const blockedReason = blockingReason({ logModeSupported, preview, versionScopeValid, profileRequired, changingCount: changingTasks.length })
+  const importSteps = deriveImportSteps(preview)
+  const currentStep = importSteps.findIndex(step => step.state === 'current')
   const ambiguousCount = preview?.ambiguousModeEvents ?? 0
   const unmatchedTaskIds = Array.isArray(preview?.unmatchedTaskIds) ? preview.unmatchedTaskIds : []
   const unmatchedTaskDetails = Array.isArray(preview?.unmatchedTaskDetails) && preview.unmatchedTaskDetails.length
@@ -247,7 +293,13 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
             THIS SITE CANNOT WATCH LOGS WHILE CLOSED.
           </div>
         </div>
-        <button className="eft-log-import-close" onClick={closePanel} aria-label="Close EFT log import">×</button>
+        <button
+          className="eft-log-import-close"
+          onClick={closePanel}
+          aria-label="Close EFT log import"
+          disabled={state === 'applying' || busy}
+          title={state === 'applying' || busy ? 'Import in progress — this finishes on its own.' : undefined}
+        >×</button>
       </div>
 
       <input ref={inputRef} type="file" accept=".log,text/plain" multiple webkitdirectory="" style={{ display: 'none' }} onChange={handleFiles} />
@@ -266,7 +318,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
               REMEMBER THIS FOLDER
             </button>
             <label className="mono eft-log-import-check">
-              <input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /> KEEP CHECKING WHILE THIS SITE IS OPEN
+              <input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} /> Keep my quests in sync while this tab is open
             </label>
           </>
         )}
@@ -277,9 +329,9 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
         </div>
       )}
 
-      {!supported && <div className="mono eft-log-import-error">FILE PICKER SUPPORT IS UNAVAILABLE IN THIS BROWSER.</div>}
-      {!logModeSupported && <div className="mono eft-log-import-error">SEASONAL LOG IMPORT IS DISABLED UNTIL ITS LOG SIGNALS ARE VERIFIED.</div>}
-      {error && <div className="mono eft-log-import-error">{error}</div>}
+      {!supported && <div className="mono eft-log-import-error" role="alert">FILE PICKER SUPPORT IS UNAVAILABLE IN THIS BROWSER.</div>}
+      {!logModeSupported && <div className="mono eft-log-import-error" role="alert">SEASONAL LOG IMPORT IS DISABLED UNTIL ITS LOG SIGNALS ARE VERIFIED.</div>}
+      {error && <div className="mono eft-log-import-error" role="alert">{error}</div>}
       {rememberedFolderName && (
         <div className="mono eft-log-import-watch">
           {state === 'watching' ? `WATCHING WHILE THIS SITE IS OPEN · LAST CHECK ${safeDateTime(lastSuccessfulCheck)}` : `FOLDER: ${rememberedFolderName}`}
@@ -323,6 +375,18 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
           </div>
         </div>
       )}
+
+      <div className="eft-log-import-rail" aria-label={`Step ${currentStep + 1} of ${importSteps.length}`}>
+        <div className="mono eft-log-import-rail-count">Step {currentStep + 1} of {importSteps.length}</div>
+        <div className="eft-log-import-rail-steps">
+          {importSteps.map((step, index) => (
+            <div className={`eft-log-import-step eft-log-import-step-${step.state}`} key={step.key}>
+              <span className="mono eft-log-import-step-number">{step.state === 'done' ? '✓' : index + 1}</span>
+              <span className="mono">{step.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {preview && (
         <div className="eft-log-import-preview">
@@ -380,7 +444,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
                 <span>{task?.name || 'UNKNOWN TASK'}</span>
                 <span className="mono">{current ? `${STATE_LABELS[current] || current} → ` : ''}{STATE_LABELS[event.state] || event.state}</span>
               </div>
-            )) : <div className="mono eft-log-import-muted">NO NEW STATE CHANGES.</div>}
+            )) : blockedReason === NO_CHANGES_REASON ? <div className="mono eft-log-import-muted">NO NEW STATE CHANGES.</div> : null}
           </div>
           {hasImportNotes && (
             <button className="btn-ghost btn-sm" onClick={() => setShowUnmatched(value => !value)}>
@@ -428,11 +492,13 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
               )}
             </div>
           )}
-          {applyMessage && <div className="mono eft-log-import-success">{applyMessage}</div>}
+          {applyMessage && <div className="mono eft-log-import-success" role="status">{applyMessage}</div>}
           <div className="eft-log-import-footer">
+            {blockedReason && <p className="mono eft-log-import-blocked" role="status">{blockedReason}</p>}
             <button className="btn-gold btn-sm" onClick={handleConfirm} disabled={!canConfirm || !onApply || busy}>
               {busy || state === 'applying' ? 'APPLYING...' : 'CONFIRM IMPORT'}
             </button>
+            {applySucceeded && <button className="btn-ghost btn-sm" onClick={() => onImportComplete?.()}>VIEW MY QUESTS</button>}
             <button className="btn-ghost btn-sm" onClick={reset} disabled={busy}>CLEAR PREVIEW</button>
           </div>
         </div>

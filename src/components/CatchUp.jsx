@@ -23,8 +23,8 @@ function taskMapName(task) {
     : 'ANY MAP'
 }
 
-export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId }) {
-  const [open, setOpen] = useState(false)
+export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen)
   const [picks, setPicks] = useState(() => readPicks(userId))
   const [maxLevel, setMaxLevel] = useState('')
   const [selectedIds, setSelectedIds] = useState(new Set())

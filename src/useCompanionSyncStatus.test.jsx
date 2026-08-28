@@ -64,5 +64,19 @@ describe('companion sync status data layer', () => {
     )
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent(/"available":true/))
     expect(query).toHaveBeenCalledWith('user_id', 'user-1')
+    expect(screen.getByTestId('status')).toHaveTextContent(/"desktopConnected":true/)
+    expect(screen.getByTestId('status')).toHaveTextContent(/"desktopLastSeen":"2026-08-27T12:00:00.000Z"/)
+  })
+
+  it('reports no connected desktop when no companion rows exist', async () => {
+    query.mockResolvedValue({ data: [], error: null })
+    render(
+      <CompanionSyncStatusProvider userId="user-1">
+        <Probe />
+      </CompanionSyncStatusProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent(/"loading":false/))
+    expect(screen.getByTestId('status')).toHaveTextContent(/"desktopConnected":false/)
+    expect(screen.getByTestId('status')).toHaveTextContent(/"desktopLastSeen":null/)
   })
 })

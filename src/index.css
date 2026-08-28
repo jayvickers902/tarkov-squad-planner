@@ -952,7 +952,10 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   overflow: auto;
   overflow-wrap: anywhere;
   word-break: break-word;
-  white-space: normal;
+  /* Leaflet's stylesheet sets `white-space: nowrap` on `.leaflet-tooltip`.
+     Keep objective descriptions inside the bounded card instead of letting
+     that rule clip the right edge of long text. */
+  white-space: normal !important;
   filter: none !important;
 }
 .tac-tooltip > div {
@@ -1056,3 +1059,60 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 }
 
 .sync-popover-note { font-size: 10px; color: var(--txm); line-height: 1.5; }
+
+/* ── Guided quest onboarding ─────────────────────────────────────────────── */
+.quest-import-hub { margin: 0 0 16px; padding: 16px; }
+.quest-import-hub-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.quest-import-hub-intro { margin-top: 5px; color: var(--txm); font-size: 12px; line-height: 1.5; }
+.quest-import-routes { display: flex; flex-direction: column; gap: 7px; }
+.quest-import-route {
+  display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 11px 12px;
+  border: 1px solid var(--brd); border-left: 3px solid var(--brd); border-radius: 4px;
+  background: var(--sur2); color: var(--tx); text-align: left; cursor: pointer;
+}
+.quest-import-route:hover:not(:disabled), .quest-import-route:focus-visible { border-color: var(--brd2); border-left-color: var(--gold); }
+.quest-import-route.is-selected { border-left-color: var(--gold); background: var(--sur3); }
+.quest-import-route:disabled { cursor: not-allowed; opacity: .6; }
+.quest-import-route-marker { width: 12px; flex: 0 0 12px; color: var(--gold); font-size: 16px; line-height: 1.2; }
+.quest-import-route-body { display: flex; flex-direction: column; min-width: 0; gap: 3px; }
+.quest-import-route-title { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: var(--goldtx); font-size: 14px; font-weight: 600; }
+.quest-import-route-blurb { color: var(--txm); font-size: 12px; line-height: 1.45; }
+.quest-import-route-best { color: var(--txd); font-size: 10px; }
+.quest-import-route-reason { color: var(--red); font-size: 11px; line-height: 1.4; }
+.quest-import-recommended { padding: 2px 5px; border: 1px solid var(--golddim); border-radius: 3px; color: var(--gold); background: rgba(201,168,76,.12); font-size: 9px; letter-spacing: .06em; }
+.eft-log-import-rail { margin: 14px 0; padding: 10px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur2); }
+.eft-log-import-rail-count { margin-bottom: 8px; color: var(--goldtx); font-size: 10px; letter-spacing: .06em; }
+.eft-log-import-rail-steps { display: flex; flex-wrap: wrap; gap: 6px; }
+.eft-log-import-step { display: inline-flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid var(--brd); border-radius: 3px; color: var(--txd); font-size: 10px; }
+.eft-log-import-step-number { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; color: var(--txd); }
+.eft-log-import-step-done { border-color: var(--golddim); color: var(--goldtx); }
+.eft-log-import-step-done .eft-log-import-step-number { color: var(--grn); }
+.eft-log-import-step-current { border-color: var(--gold); color: var(--goldtx); background: var(--sur3); }
+.eft-log-import-step-current .eft-log-import-step-number { color: var(--gold); }
+.eft-log-import-blocked { margin: 0; flex-basis: 100%; color: var(--goldtx); font-size: 11px; line-height: 1.5; }
+.quest-pings-label { margin: 0 0 6px; }
+.quest-empty-state h3 { color: var(--goldtx); font-size: 18px; }
+.quest-empty-state p { margin-top: 6px; color: var(--txm); font-size: 12px; line-height: 1.5; }
+.quest-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
+
+@media (max-width: 560px) {
+  .quest-import-hub-head { align-items: stretch; }
+  .quest-import-hub-head > .btn-ghost { align-self: flex-start; }
+  .quest-import-route { padding: 10px; }
+}
+
+/* ── Desktop companion discovery ─────────────────────────────────────────── */
+.desktop-app-card { margin-top: 12px; padding: 14px 16px; }
+.desktop-app-card h3 { color: var(--goldtx); font-size: 16px; letter-spacing: .04em; }
+.desktop-app-card p { max-width: 680px; margin-top: 7px; color: var(--txm); font-size: 12px; line-height: 1.55; }
+.desktop-app-card ol { margin: 10px 0 13px 20px; padding: 0; color: var(--txm); font-size: 12px; line-height: 1.7; }
+.desktop-app-card[data-state="connected"] { display: flex; align-items: center; gap: 9px; }
+.desktop-app-card-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--grn); }
+.desktop-app-card-label { color: var(--grn); font-size: 11px; letter-spacing: .06em; }
+.desktop-app-card-last-sync { margin-left: auto; color: var(--txm); font-size: 11px; }
+.desktop-app-card button:disabled { cursor: not-allowed; opacity: .5; }
+
+@media (max-width: 560px) {
+  .desktop-app-card[data-state="connected"] { align-items: flex-start; flex-wrap: wrap; }
+  .desktop-app-card-last-sync { width: 100%; margin-left: 17px; }
+}
