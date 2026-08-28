@@ -73,7 +73,9 @@ describe('MyQuests import receipt', () => {
     expect(screen.getByText(/1 quest state updated · 1 started/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'UNDO IMPORT' }))
 
-    await waitFor(() => expect(onRestore).toHaveBeenCalledWith(history))
+    // 'all' scope: the undo point is the complete history, so rows absent
+    // from it were created by the import and must be pruned.
+    await waitFor(() => expect(onRestore).toHaveBeenCalledWith(history, { scope: 'all' }))
     expect(screen.getByText('IMPORT UNDONE')).toBeInTheDocument()
     expect(screen.getByText(/Restored 2 quest records/)).toBeInTheDocument()
   })

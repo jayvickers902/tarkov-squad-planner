@@ -38,6 +38,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
   const [importReceipt, setImportReceipt] = useState(null)
   const [importRestorePoint, setImportRestorePoint] = useState(null)
   const [undoingImport, setUndoingImport] = useState(false)
+  const [undoError, setUndoError] = useState('')
   const searchInputRef = useRef(null)
   const savedQuestsRef = useRef(null)
 
@@ -62,6 +63,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
     // into another mode after the user switches tabs.
     setImportReceipt(null)
     setImportRestorePoint(null)
+    setUndoError('')
   }, [gameMode])
 
   const snapKey = userId ? `tarkov_quests_${userId}_${gameMode}` : null
@@ -82,6 +84,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
   }, [snapKey, legacySnapKey])
   const [confirmRestore, setConfirmRestore] = useState(false)
   const [restoring, setRestoring] = useState(false)
+  const [restoreError, setRestoreError] = useState('')
 
   function handleSaveSnapshot() {
     if (!snapKey) return
@@ -92,9 +95,17 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
 
   async function handleRestore() {
     setRestoring(true)
-    await onRestore(snapshot.quests)
-    setConfirmRestore(false)
-    setRestoring(false)
+    setRestoreError('')
+    try {
+      // A saved snapshot holds the active list only, so it must not be treated
+      // as authority over completed/failed history.
+      await onRestore(snapshot.quests, { scope: 'active' })
+      setConfirmRestore(false)
+    } catch {
+      setRestoreError('The snapshot could not be restored. Your saved quests are unchanged — try again.')
+    } finally {
+      setRestoring(false)
+    }
   }
 
   // Load tasks for the currently selected search map
@@ -228,11 +239,17 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
   async function handleUndoImport() {
     if (!importRestorePoint || typeof onRestore !== 'function') return
     setUndoingImport(true)
+    setUndoError('')
     try {
-      await onRestore(importRestorePoint)
+      // The undo point came from getQuestHistory, so it describes every row in
+      // this mode and anything absent from it belongs to the import.
+      await onRestore(importRestorePoint, { scope: 'all' })
       setHubOpen(false)
       setImportReceipt(receipt => receipt ? { ...receipt, undone: true, restoredCount: importRestorePoint.length } : null)
       setImportRestorePoint(null)
+    } catch {
+      // The restore point is deliberately kept so the user can retry.
+      setUndoError('The import could not be undone. Your quests were not changed — try again.')
     } finally {
       setUndoingImport(false)
     }
@@ -342,6 +359,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
               <button className="btn-ghost btn-sm" onClick={() => setConfirmRestore(false)} style={{ fontSize: 11 }}>CANCEL</button>
             </>
           )}
+          {restoreError && <span className="mono eft-log-import-error" role="alert" style={{ fontSize: 10 }}>{restoreError}</span>}
         </div>
       )}
 
@@ -362,8 +380,9 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                 {undoingImport ? 'RESTORING...' : 'UNDO IMPORT'}
               </button>
             )}
-            <button className="btn-ghost btn-sm" onClick={() => { setImportReceipt(null); setImportRestorePoint(null) }}>DISMISS</button>
+            <button className="btn-ghost btn-sm" onClick={() => { setImportReceipt(null); setImportRestorePoint(null); setUndoError('') }}>DISMISS</button>
           </div>
+          {undoError && <p className="mono eft-log-import-error" role="alert">{undoError}</p>}
         </div>
       )}
 

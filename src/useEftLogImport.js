@@ -364,6 +364,9 @@ export function useEftLogImport({
   const pendingWorkerRef = useRef(null)
   const directoryHandleRef = useRef(null)
   const checkpointRef = useRef(null)
+  // True while the current preview came from a native file/folder picker, which
+  // grants no persistent handle and therefore owns no checkpoint.
+  const previewFromPickerRef = useRef(false)
   const pollTimerRef = useRef(null)
   const pollInFlightRef = useRef(null)
   const scanInFlightRef = useRef(null)
@@ -512,6 +515,7 @@ export function useEftLogImport({
       return null
     }
     stopWatching()
+    previewFromPickerRef.current = true
     if (scanInFlightRef.current) await scanInFlightRef.current.catch(() => {})
     const requestGeneration = generationRef.current
     if (mountedRef.current) { setError(null); setState('reading') }
@@ -539,6 +543,7 @@ export function useEftLogImport({
   const scanDirectory = useCallback((handle, autoApply = false, { changedPaths = [], recovery = false } = {}) => {
     if (scanInFlightRef.current) return scanInFlightRef.current
     const promise = (async () => {
+      previewFromPickerRef.current = false
       const scanGeneration = generationRef.current
       const entries = await enumerateRelevantEftLogFiles(handle, { maxFileBytes, maxTotalBytes })
       if (generationRef.current !== scanGeneration) throw staleError()
@@ -1045,12 +1050,23 @@ export function useEftLogImport({
       // Watching needs an actual directory handle. Treating the REMEMBER
       // checkbox alone as sufficient left the panel stuck on APPLYING after a
       // successful universal-picker import, because startWatching bailed.
-      const shouldWatch = Boolean(autoSync && directoryHandleRef.current && persistentSupported)
-      const checkpoint = checkpointFrom(preview.sourceMetadata || [], preview, selectionRef.current, shouldWatch, mode)
-      if (directoryHandleRef.current && persistentSupported) await store.saveCheckpoint(key, checkpoint)
-      checkpointRef.current = checkpoint
+      const oneTimeImport = previewFromPickerRef.current
+      // A picker preview carries no handle of its own, so it must not write the
+      // connected folder's checkpoint. Doing so both cleared autoSync and left
+      // the remembered watch believing it had already read a tail it never saw.
+      const protectRemembered = oneTimeImport && Boolean(checkpointRef.current) && Boolean(directoryHandleRef.current)
+      const shouldWatch = Boolean(autoSync && directoryHandleRef.current && persistentSupported && !oneTimeImport)
+      if (!protectRemembered) {
+        const checkpoint = checkpointFrom(preview.sourceMetadata || [], preview, selectionRef.current, shouldWatch, mode)
+        if (directoryHandleRef.current && persistentSupported) await store.saveCheckpoint(key, checkpoint)
+        checkpointRef.current = checkpoint
+      }
       if (mountedRef.current) setLastSuccessfulCheck(new Date().toISOString())
-      if (!shouldWatch || !startWatching(false)) {
+      // parseSelectedFiles stopped the watch to read the picked files. Resume it
+      // when the remembered folder is still connected and was watching.
+      const resumeWatch = shouldWatch
+        || (protectRemembered && persistentSupported && checkpointRef.current?.autoSync === true)
+      if (!resumeWatch || !startWatching(false)) {
         if (mountedRef.current) setState('idle')
       }
       return result

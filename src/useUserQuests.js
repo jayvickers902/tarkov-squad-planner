@@ -5,6 +5,7 @@ import { activeQuestRows, manualQuestStatePatch, toQuestLogEventPayload } from '
 
 const LOG_IMPORT_MODES = new Set(['regular', 'pve'])
 export const QUEST_LOG_CHUNK_SIZE = 200
+export const QUEST_PRUNE_CHUNK_SIZE = 100
 
 function throwIfError(error) {
   if (error) throw error
@@ -189,11 +190,16 @@ export function useUserQuests(userId, gameMode = 'regular') {
     if (activeModeRef.current === mode) setQuests([])
   }, [userId, mode])
 
-  // Restore quests from a snapshot — clears existing and re-inserts all
-  const restoreSnapshot = useCallback(async (snapshotQuests) => {
+  // Restore quests from a snapshot.
+  //
+  // `scope` says how much of the mode the snapshot actually describes. An
+  // import-undo snapshot comes from getQuestHistory and covers every row, so
+  // anything missing from it can be pruned ('all'). A localStorage snapshot
+  // holds the active list only, so pruning terminal rows on its word would
+  // delete the completed/failed guards that stop an older "started" event
+  // resurrecting a quest the player has already handed in ('active').
+  const restoreSnapshot = useCallback(async (snapshotQuests, { scope = 'active' } = {}) => {
     if (!userId || !Array.isArray(snapshotQuests)) return
-    const deleted = await supabase.from('user_quests').delete().eq('user_id', userId).eq('game_mode', mode)
-    throwIfError(deleted.error)
     const rows = snapshotQuests.map(q => {
       const preservedState = ['active', 'failed', 'completed'].includes(q.state) ? q.state : null
       const statePatch = preservedState
@@ -216,12 +222,36 @@ export function useUserQuests(userId, gameMode = 'regular') {
         ...statePatch,
       }
     })
-    const { data, error } = rows.length
-      ? await supabase.from('user_quests').insert(rows).select().order('created_at')
-      : { data: [] }
-    throwIfError(error)
-    if (activeModeRef.current === mode) setQuests(data || [])
-  }, [userId, mode])
+    // Write first, prune second. Deleting the mode up front and then failing
+    // the insert left the character with no quests at all and no way back; a
+    // failed prune only leaves extra rows behind, which the user can clear.
+    for (let offset = 0; offset < rows.length; offset += QUEST_LOG_CHUNK_SIZE) {
+      const { error } = await supabase
+        .from('user_quests')
+        .upsert(rows.slice(offset, offset + QUEST_LOG_CHUNK_SIZE), { onConflict: 'user_id,game_mode,quest_id' })
+      throwIfError(error)
+    }
+
+    const keep = new Set(rows.map(row => row.quest_id))
+    const existing = await supabase.from('user_quests').select('quest_id, state').eq('user_id', userId).eq('game_mode', mode)
+    throwIfError(existing.error)
+    const stale = (Array.isArray(existing.data) ? existing.data : [])
+      .filter(row => !keep.has(row.quest_id) && (scope === 'all' || row.state === 'active'))
+      .map(row => row.quest_id)
+    // Chunked so the delete filter never outgrows a request URL.
+    for (let offset = 0; offset < stale.length; offset += QUEST_PRUNE_CHUNK_SIZE) {
+      const { error } = await supabase
+        .from('user_quests')
+        .delete()
+        .eq('user_id', userId)
+        .eq('game_mode', mode)
+        .in('quest_id', stale.slice(offset, offset + QUEST_PRUNE_CHUNK_SIZE))
+      throwIfError(error)
+    }
+
+    const refreshed = await loadMode(userId, mode)
+    if (activeModeRef.current === mode) setQuests(refreshed)
+  }, [userId, mode, loadMode])
 
   // History is bounded and deliberately scoped to one mode. It is used by the
   // local import preview, never sent back to the browser for another user.

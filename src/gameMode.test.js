@@ -12,9 +12,11 @@ vi.mock('./supabase', () => ({ supabase: { from: db.from } }))
 
 function createQueryBuilder() {
   const filters = {}
+  const inFilters = []
   let operation = 'select'
   let payload = null
   const matches = row => Object.entries(filters).every(([key, value]) => row[key] === value)
+    && inFilters.every(([key, values]) => values.has(row[key]))
   function applyMutation() {
     if (operation === 'upsert') {
       for (const row of payload) {
@@ -33,6 +35,7 @@ function createQueryBuilder() {
   const builder = {
     select() { return builder },
     eq(column, value) { filters[column] = value; return builder },
+    in(column, values) { inFilters.push([column, new Set(values)]); return builder },
     order() { return builder },
     upsert(next) { operation = 'upsert'; payload = Array.isArray(next) ? next : [next]; return builder },
     insert(next) { operation = 'insert'; payload = next; return builder },
@@ -142,5 +145,38 @@ describe('game mode contract', () => {
       { id: 'before-active', state: 'active', source: 'manual', eventKey: null },
       { id: 'before-complete', state: 'completed', source: 'log_import', eventKey: 'event-1' },
     ])
+  })
+
+  it('keeps terminal history a snapshot never described and prunes only what it claims', async () => {
+    db.rows.push(
+      { user_id: 'user-1', game_mode: 'pve', quest_id: 'stale-active', quest_name: 'Stale active', state: 'active' },
+      { user_id: 'user-1', game_mode: 'pve', quest_id: 'handed-in', quest_name: 'Handed in', state: 'completed' },
+    )
+    const { result } = renderHook(() => useUserQuests('user-1', 'pve'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // The default 'active' scope is what a localStorage snapshot gets: it holds
+    // the active list only, so it has no authority to delete the completed row
+    // that stops an older "started" event resurrecting a handed-in quest.
+    await act(async () => {
+      await result.current.restoreSnapshot([
+        { quest_id: 'kept', quest_name: 'Kept', state: 'active' },
+      ])
+    })
+
+    expect(db.rows.filter(row => row.game_mode === 'pve').map(row => [row.quest_id, row.state])).toEqual([
+      ['handed-in', 'completed'],
+      ['kept', 'active'],
+    ])
+
+    // 'all' is the import-undo scope, where the snapshot is the whole history.
+    await act(async () => {
+      await result.current.restoreSnapshot([
+        { quest_id: 'kept', quest_name: 'Kept', state: 'active' },
+      ], { scope: 'all' })
+    })
+
+    expect(db.rows.filter(row => row.game_mode === 'pve').map(row => row.quest_id)).toEqual(['kept'])
+    expect(db.rows.filter(row => row.game_mode === 'regular').map(row => row.quest_id)).toEqual(['regular-1'])
   })
 })

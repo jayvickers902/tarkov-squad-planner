@@ -484,6 +484,34 @@ describe('useEftLogImport', () => {
     expect(result.current.state).toBe('idle')
   })
 
+  it('leaves a remembered folder watching after a one-time picker import', async () => {
+    const sourceFile = logFile()
+    const environment = persistentEnvironment(directoryHandle(sourceFile))
+    const store = memoryStore()
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: [{ id: taskId }],
+      environment,
+      workerFactory: workerFactoryWith(preview()),
+      handleStore: store,
+      onApply: vi.fn(async () => ({ inserted: 1, updated: 0 })),
+    }))
+
+    await act(async () => { await result.current.connectRememberedFolder() })
+    await act(async () => { await result.current.confirmImport({ autoSync: true }) })
+    expect(result.current.state).toBe('watching')
+    expect(store.saveCheckpoint).toHaveBeenCalledTimes(1)
+
+    // A native picker grants no handle, so the panel sends autoSync:false. That
+    // used to overwrite the connected folder's checkpoint with the picked
+    // files' offsets and clear autoSync, silently ending the remembered sync.
+    await act(async () => { await result.current.parseSelectedFiles([logFile('other/notifications.log')]) })
+    await act(async () => { await result.current.confirmImport({ autoSync: false, remember: false }) })
+
+    expect(store.saveCheckpoint).toHaveBeenCalledTimes(1)
+    expect((await store.loadCheckpoint()).autoSync).toBe(true)
+    expect(result.current.state).toBe('watching')
+  })
+
   it('keeps a live poll after clearing the preview instead of only claiming to watch', async () => {
     const sourceFile = logFile()
     const environment = persistentEnvironment(directoryHandle(sourceFile))
