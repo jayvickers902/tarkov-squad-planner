@@ -82,10 +82,17 @@ export default function QuestImportHub({
     onImportComplete?.(receipt)
   }
 
-  async function handleScreenshotAdd(task, mapNorm) {
-    await beginImport('screenshot')
-    await onAdd?.(task, mapNorm)
-    completeImport({ source: 'screenshot', questIds: [task.id], added: 1 })
+  // QuestScanner adds its selection concurrently, so onAdd fires once per quest.
+  // Emitting a receipt from each call made the reported count depend on a merge
+  // downstream; batch the ids and report the selection once instead.
+  function handleScreenshotAdd(task, mapNorm) {
+    return beginImport('screenshot').then(() => onAdd?.(task, mapNorm))
+  }
+
+  function handleScreenshotAdded(tasks) {
+    const questIds = (Array.isArray(tasks) ? tasks : []).map(task => task.id).filter(Boolean)
+    if (!questIds.length) return
+    completeImport({ source: 'screenshot', questIds, added: questIds.length })
   }
 
   async function handleCatchUpAdd(tasks) {
@@ -174,7 +181,7 @@ export default function QuestImportHub({
           defaultOpen
         />
       )}
-      {selectedRoute?.key === 'screenshot' && <QuestScanner allTasks={allTasks} userQuests={userQuests} onAdd={handleScreenshotAdd} defaultOpen />}
+      {selectedRoute?.key === 'screenshot' && <QuestScanner allTasks={allTasks} userQuests={userQuests} onAdd={handleScreenshotAdd} onAdded={handleScreenshotAdded} defaultOpen />}
       {selectedRoute?.key === 'catchup' && <CatchUp allTasks={allTasks} userQuests={userQuests} onBulkAdd={handleCatchUpAdd} userId={userId} defaultOpen />}
     </div>
   )

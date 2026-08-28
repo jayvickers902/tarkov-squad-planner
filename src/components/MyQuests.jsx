@@ -215,11 +215,9 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
       ? { source: 'logs', questIds: result, applied: result.length }
       : result
     const ids = Array.isArray(receipt?.questIds) ? receipt.questIds.filter(Boolean) : []
-    setImportReceipt(previous => {
-      if (previous?.source !== 'screenshot' || receipt?.source !== 'screenshot') return { ...receipt, questIds: ids }
-      const questIds = [...new Set([...(previous.questIds || []), ...ids])]
-      return { ...receipt, questIds, added: questIds.length }
-    })
+    // Every source now reports its batch once, so a receipt describes exactly
+    // the import that produced it rather than accumulating across calls.
+    setImportReceipt({ ...receipt, questIds: ids })
     if (!ids.length) return
     setRecentlyAdded(prev => new Set([...prev, ...ids]))
     setTimeout(() => {

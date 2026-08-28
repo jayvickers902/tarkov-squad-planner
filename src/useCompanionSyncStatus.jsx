@@ -13,6 +13,7 @@ function emptySnapshot(userId = null) {
     error: null,
     userId,
     statuses: {},
+    fetchedAt: null,
   }
 }
 
@@ -66,17 +67,25 @@ function newestTimestamp(statuses, fields) {
   return newest
 }
 
-export function deriveDesktopSummary(statusesByService, { now = Date.now(), freshAfterMs = DESKTOP_FRESH_AFTER_MS } = {}) {
+export function deriveDesktopSummary(statusesByService, { now = Date.now(), fetchedAt = null, freshAfterMs = DESKTOP_FRESH_AFTER_MS } = {}) {
   const statuses = Object.values(statusesByService || {})
   const configured = statuses.filter(status => status.configured)
   const desktopLastSeen = newestTimestamp(statuses, ['lastSeenAt', 'updatedAt'])
   const desktopLastSuccessfulSync = newestTimestamp(statuses, ['lastSyncAt'])
 
+  // `fetchedAt` and `now` are both client clock readings, so their difference is
+  // skew-free. Comparing a server timestamp against the client clock is not:
+  // a viewer whose clock runs minutes fast would see a live companion as
+  // offline. Trust the server's is_live and only bound how old that answer is.
+  const answerAgeMs = fetchedAt === null ? 0 : Math.max(0, now - fetchedAt)
+
   let desktopState = 'not-setup'
   if (configured.length) {
-    const fresh = configured.filter(status => {
+    const fresh = answerAgeMs > freshAfterMs ? [] : configured.filter(status => {
+      if (typeof status.isLive === 'boolean') return status.isLive
+      // Pre-is_live rows leave no server verdict, so fall back to the clock.
       const lastSeen = Date.parse(status.lastSeenAt || status.updatedAt || '')
-      return status.isLive !== false && Number.isFinite(lastSeen) && now - lastSeen <= freshAfterMs
+      return Number.isFinite(lastSeen) && now - lastSeen <= freshAfterMs
     })
     const unhealthy = fresh.filter(status => ['error', 'needs_access', 'disabled', 'idle'].includes(status.state))
     const offline = fresh.filter(status => status.state === 'offline')
@@ -100,7 +109,6 @@ export function CompanionSyncStatusProvider({ userId, children }) {
   useEffect(() => {
     let cancelled = false
     let pollId = null
-    let channel = null
 
     setSnapshot(emptySnapshot(userId))
     if (!userId) return () => { cancelled = true }
@@ -132,58 +140,31 @@ export function CompanionSyncStatusProvider({ userId, children }) {
         error: null,
         userId,
         statuses,
+        fetchedAt: Date.now(),
       })
     }
 
     load()
     pollId = setInterval(load, POLL_INTERVAL_MS)
-    channel = supabase
-      .channel(`companion-sync-status-${userId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'sync_client_status', filter: `user_id=eq.${userId}` },
-        payload => {
-          if (cancelled) return
-          if (payload.eventType === 'DELETE') {
-            const clientSource = String(payload.old?.client_source || payload.old?.clientSource || 'desktop').toLowerCase()
-            if (clientSource !== 'desktop') return
-            const service = String(payload.old?.service || '').toLowerCase()
-            if (!service) return
-            setSnapshot(current => {
-              const statuses = { ...current.statuses }
-              delete statuses[service]
-              return { ...current, available: Object.keys(statuses).length > 0, statuses }
-            })
-            return
-          }
-          const row = normalizeRow(payload.new)
-          if (!row) return
-          setSnapshot(current => ({
-            ...current,
-            available: true,
-            loading: false,
-            error: null,
-            statuses: { ...current.statuses, [row.service]: row },
-          }))
-        },
-      )
-      .subscribe(status => {
-        if (cancelled || status !== 'CHANNEL_ERROR') return
-        // Presence polling uses the authenticated RPC and remains authoritative
-        // when Realtime cannot subscribe to the RPC-only status table.
-      })
+    // No Realtime subscription here on purpose. `sync_client_status` is
+    // RPC-only: 10_20/10_22 revoke every table privilege from `authenticated`
+    // and re-grant execute on get_sync_client_status alone, so a postgres_changes
+    // subscription authorizes per row against a role with no SELECT and
+    // delivers nothing. The table is still in the supabase_realtime publication
+    // from 10_19, which made the dead channel look live. Desktop status
+    // therefore moves at POLL_INTERVAL_MS; restoring push means granting a
+    // membership-scoped SELECT back, not re-adding the channel.
 
     return () => {
       cancelled = true
       if (pollId !== null) clearInterval(pollId)
-      if (channel) supabase.removeChannel(channel)
     }
   }, [userId])
 
   const value = useMemo(() => {
     return {
       ...snapshot,
-      ...deriveDesktopSummary(snapshot.statuses),
+      ...deriveDesktopSummary(snapshot.statuses, { fetchedAt: snapshot.fetchedAt ?? null }),
     }
   }, [snapshot])
   return <CompanionSyncStatusContext.Provider value={value}>{children}</CompanionSyncStatusContext.Provider>

@@ -211,7 +211,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
         : changingTasks.map(({ taskId }) => taskId)
       const affectedSet = new Set(affectedIds)
       const appliedStates = changingTasks.reduce((summary, { taskId, event }) => {
-        if (affectedSet.has(taskId) && event?.state in summary) summary[event.state] += 1
+        if (affectedSet.has(taskId) && Object.hasOwn(summary, event?.state ?? '')) summary[event.state] += 1
         return summary
       }, { active: 0, failed: 0, completed: 0 })
       setApplyMessage(`APPLIED ${applied} QUEST STATE${applied === 1 ? '' : 'S'}.`

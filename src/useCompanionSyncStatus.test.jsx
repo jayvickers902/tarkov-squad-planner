@@ -33,6 +33,7 @@ afterEach(() => {
   cleanup()
   rpc.mockReset()
   removeChannel.mockReset()
+  channel.mockClear()
 })
 
 describe('companion sync status data layer', () => {
@@ -62,6 +63,10 @@ describe('companion sync status data layer', () => {
     )
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent(/"available":true/))
     expect(rpc).toHaveBeenCalledWith('get_sync_client_status')
+    // sync_client_status is RPC-only — `authenticated` holds no SELECT on the
+    // table, so a postgres_changes channel would subscribe and then deliver
+    // nothing. Polling is the mechanism, not a fallback.
+    expect(channel).not.toHaveBeenCalled()
     expect(screen.getByTestId('status')).toHaveTextContent(/"desktopState":"connected"/)
     expect(screen.getByTestId('status')).toHaveTextContent(/"desktopConnected":true/)
     expect(screen.getByTestId('status')).toHaveTextContent(new RegExp(`"desktopLastSeen":"${reportedAt}"`))
@@ -92,6 +97,23 @@ describe('companion sync status data layer', () => {
       desktopLastSeen: '2026-08-27T12:00:00.000Z',
       desktopLastSuccessfulSync: '2026-08-27T11:58:00.000Z',
     })
+  })
+
+  it('trusts the server is_live verdict over a skewed client clock', () => {
+    // The viewer's clock runs ten minutes fast. last_seen_at is a server
+    // timestamp, so a client-side subtraction would call this companion
+    // offline; the server already said it reported within 90 seconds.
+    expect(deriveDesktopSummary({
+      logs: { configured: true, state: 'watching', lastSeenAt: '2026-08-27T12:00:00.000Z', isLive: true },
+    }, { now: Date.parse('2026-08-27T12:10:00.000Z'), fetchedAt: Date.parse('2026-08-27T12:10:00.000Z') }))
+      .toMatchObject({ desktopState: 'connected', desktopConnected: true })
+  })
+
+  it('stops trusting a stale is_live answer once polling falls behind', () => {
+    expect(deriveDesktopSummary({
+      logs: { configured: true, state: 'watching', lastSeenAt: '2026-08-27T12:00:00.000Z', isLive: true },
+    }, { now: Date.parse('2026-08-27T12:10:00.000Z'), fetchedAt: Date.parse('2026-08-27T12:05:00.000Z') }))
+      .toMatchObject({ desktopState: 'offline', desktopConnected: false })
   })
 
   it('marks a fresh unhealthy report as needing attention', () => {

@@ -8,7 +8,7 @@ const STAGE_LABEL = {
   reading:   'READING SCREENSHOT...',
 }
 
-export default function QuestScanner({ allTasks, userQuests, onAdd, defaultOpen = false }) {
+export default function QuestScanner({ allTasks, userQuests, onAdd, onAdded, defaultOpen = false }) {
   const [open,       setOpen]       = useState(defaultOpen)
   const [scanning,   setScanning]   = useState(false)
   const [stage,      setStage]      = useState('preparing')
@@ -114,6 +114,8 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, defaultOpen 
     setError(null)
     try {
       await Promise.all(chosen.map(task => onAdd({ id: task.id, name: task.name }, task.detectedMap ?? null)))
+      // Only after every write settles, so a partial failure reports no import.
+      onAdded?.(chosen)
       reset()
     } catch {
       setError('The selected quests could not all be saved. Review your list and retry the remaining quests.')
