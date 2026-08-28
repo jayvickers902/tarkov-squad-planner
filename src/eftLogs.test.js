@@ -272,7 +272,10 @@ describe('parseEftLogFiles', () => {
       { name: 'Logs/0.16.9/mixed/backend.log', text: '{"profileId":"profile-one"}\n{"profileId":"profile-two"}' },
     ])
 
-    expect(preview.discoveredProfiles).toHaveLength(2)
+    // IDs seen only in context logs are not importable candidates. The event
+    // cannot be attributed to either identity, so neither false profile is
+    // offered in the chooser.
+    expect(preview.discoveredProfiles).toHaveLength(0)
     expect(preview.events[0].profileKey).toBeNull()
   })
 
@@ -304,6 +307,106 @@ describe('parseEftLogFiles', () => {
     const one = parse(files, [regularTask], { includedVersions: ['0.16'] })
     const two = parse([...files].reverse(), [regularTask], { includedVersions: ['0.16'] })
     expect(two).toEqual(one)
+  })
+
+  it('merges overlapping account/profile evidence across sessions without exposing IDs', () => {
+    const files = [
+      { name: 'Logs/0.16.9/permanent-a/notifications.log', text: jsonNotification({ eventId: 'perm-a', dt: 1700000000 }) },
+      { name: 'Logs/0.16.9/permanent-a/backend.log', text: '{"sessionMode":"PVP","accountId":"account-secret","profileId":"permanent-old"}' },
+      { name: 'Logs/0.16.9/permanent-b/notifications.log', text: jsonNotification({ eventId: 'perm-b', dt: 1700000100 }) },
+      { name: 'Logs/0.16.9/permanent-b/backend.log', text: '{"sessionMode":"PVP","accountId":"account-secret","profileId":"permanent-current"}' },
+      // A context-only identity is historical noise and must not become a
+      // selectable profile with zero importable evidence.
+      { name: 'Logs/0.15.9/old/backend.log', text: '{"sessionMode":"PVP","accountId":"old-only","profileId":"old-only-profile"}' },
+    ]
+    const preview = parse(files, [regularTask], { gameMode: 'regular' })
+
+    expect(preview.discoveredProfiles).toHaveLength(1)
+    expect(preview.discoveredProfiles[0]).toMatchObject({
+      mode: 'regular',
+      gameMode: 'regular',
+      sessionCount: 2,
+      eventCount: 2,
+      matchedEventCount: 2,
+      currentVersion: '0.16',
+      recommended: true,
+    })
+    expect(preview.discoveredProfiles[0].description).toContain('PvP Permanent')
+    expect(JSON.stringify(preview)).not.toContain('account-secret')
+    expect(JSON.stringify(preview)).not.toContain('old-only-profile')
+  })
+
+  it('does not merge unrelated sibling identities from one context response', () => {
+    const files = [
+      {
+        name: 'Logs/0.16.9/current/notifications.log',
+        text: JSON.stringify({ ...JSON.parse(jsonNotification({ eventId: 'current', dt: 1700000000 })), profileId: 'current-profile' }),
+      },
+      {
+        name: 'Logs/0.16.9/current/backend.log',
+        text: JSON.stringify({
+          sessionMode: 'PVP',
+          accountId: 'current-account',
+          profileId: 'current-profile',
+          historicalProfiles: [
+            { accountId: 'old-account', profileId: 'old-profile' },
+            { accountId: 'season-account', profileId: 'season-profile' },
+          ],
+        }),
+      },
+    ]
+    const preview = parse(files, [regularTask], { gameMode: 'regular' })
+
+    expect(preview.discoveredProfiles).toHaveLength(1)
+    expect(preview.discoveredProfiles[0]).toMatchObject({ mode: 'regular', eventCount: 1 })
+    expect(preview.sessionsScanned).toBe(1)
+  })
+
+  it('keeps Permanent, Seasonal, and PvE candidates separate when account IDs overlap', () => {
+    const files = [
+      { name: 'Logs/0.16.9/permanent/notifications.log', text: jsonNotification({ eventId: 'permanent', dt: 1700000000 }) },
+      { name: 'Logs/0.16.9/permanent/backend.log', text: '{"sessionMode":"PVP","accountId":"same-account","profileId":"permanent-profile"}' },
+      { name: 'Logs/0.16.9/seasonal/notifications.log', text: jsonNotification({ eventId: 'seasonal', dt: 1700000010 }) },
+      { name: 'Logs/0.16.9/seasonal/backend.log', text: '{"sessionMode":"PVP-SEASON","accountId":"same-account","profileId":"seasonal-profile"}' },
+      { name: 'Logs/0.16.9/pve/notifications.log', text: jsonNotification({ eventId: 'pve', dt: 1700000020 }) },
+      { name: 'Logs/0.16.9/pve/backend.log', text: '{"sessionMode":"PVE","accountId":"same-account","profileId":"pve-profile"}' },
+    ]
+    const preview = parse(files, [regularTask], { gameMode: 'regular' })
+    expect(preview.discoveredProfiles.map(profile => profile.mode).sort()).toEqual(['pve', 'pvp-season', 'regular'])
+    expect(new Set(preview.discoveredProfiles.map(profile => profile.profileKey)).size).toBe(3)
+    expect(preview.recommendedProfile.mode).toBe('regular')
+    expect(preview.discoveredProfiles.find(profile => profile.mode === 'pvp-season')).toMatchObject({
+      displayName: 'PvP Seasonal',
+      gameModes: ['pvp-season'],
+      matchedEventCount: 1,
+    })
+    const seasonalEvent = preview.events.find(event => event.eventKey === 'event:seasonal')
+    expect(seasonalEvent.gameMode).toBe('pvp-season')
+  })
+
+  it('ranks the requested planner mode ahead of newer activity in another mode', () => {
+    const files = [
+      { name: 'Logs/0.16.9/regular/notifications.log', text: jsonNotification({ eventId: 'regular', dt: 1700000000 }) },
+      { name: 'Logs/0.16.9/regular/backend.log', text: '{"sessionMode":"PVP","profileId":"regular-profile"}' },
+      { name: 'Logs/0.16.9/seasonal/notifications.log', text: jsonNotification({ eventId: 'seasonal-newer', dt: 1800000000 }) },
+      { name: 'Logs/0.16.9/seasonal/backend.log', text: '{"sessionMode":"SEASONAL","profileId":"seasonal-profile"}' },
+    ]
+    const preview = parse(files, [regularTask], { plannerMode: 'regular' })
+    expect(preview.recommendedProfileKey).toBe(preview.discoveredProfiles.find(profile => profile.mode === 'regular').profileKey)
+    expect(preview.discoveredProfiles[0].recommendationInputs).toMatchObject({ requestedMode: 'regular', modeMatch: true })
+    expect(preview.discoveredProfiles[0].recommendationReasons).toContain('matches planner mode')
+  })
+
+  it('uses event volume as the primary-mode signal when no planner mode is supplied', () => {
+    const regularEvents = Array.from({ length: 9 }, (_, index) => jsonNotification({ eventId: `regular-${index}`, dt: 1700000000 + index }))
+    const files = [
+      { name: 'Logs/0.16.9/regular/notifications.log', text: regularEvents.join('\n') },
+      { name: 'Logs/0.16.9/regular/backend.log', text: '{"sessionMode":"PVP","profileId":"regular-profile"}' },
+      { name: 'Logs/0.16.9/seasonal/notifications.log', text: jsonNotification({ eventId: 'seasonal-latest', dt: 1800000000 }) },
+      { name: 'Logs/0.16.9/seasonal/backend.log', text: '{"sessionMode":"SEASONAL","profileId":"seasonal-profile"}' },
+    ]
+    const preview = parse(files, [regularTask])
+    expect(preview.recommendedProfile).toMatchObject({ mode: 'regular', eventCount: 9, activityShare: 0.9 })
   })
 
   it('parses the sanitized synthetic fixture folder end-to-end', () => {

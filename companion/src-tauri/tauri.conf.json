@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Tarkov Squad Planner Companion",
+  "version": "0.2.0",
+  "identifier": "net.dudgy.tarkov-squad-planner-companion",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Tarkov Squad Planner Companion",
+        "width": 560,
+        "height": 690,
+        "minWidth": 360,
+        "minHeight": 560,
+        "resizable": true,
+        "visible": true,
+        "center": true,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' asset:; connect-src 'self' ipc: http://ipc.localhost https://*.supabase.co wss://*.supabase.co; script-src 'self'; style-src 'self'; img-src 'self' asset: data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    },
+    "trayIcon": { "iconPath": "icons/icon.png", "tooltip": "Tarkov Squad Planner Companion" }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "windows": { "webviewInstallMode": { "type": "embedBootstrapper" } }
+  },
+  "plugins": {
+    "deep-link": { "desktop": { "schemes": ["tarkov-squad-planner"] } },
+    "updater": {
+      "pubkey": "SET_TAURI_UPDATER_PUBLIC_KEY_AT_RELEASE",
+      "endpoints": []
+    }
+  }
+}

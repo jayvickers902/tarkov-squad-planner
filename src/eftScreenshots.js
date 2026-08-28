@@ -121,6 +121,19 @@ export function screenshotMetadataKey(metadata) {
   return value ? `${value.filename}:${value.size}:${value.lastModified}` : null
 }
 
+// The same physical screenshot can be observed by the browser and desktop app.
+// Give it the same source id in both clients so the append-only ping RPC's
+// uniqueness constraint treats the second report as an idempotent retry.
+export function screenshotPingSourceId(filename) {
+  const input = String(filename || '').replace(/\\/g, '/').split('/').pop()?.toLowerCase() || ''
+  let hash = 0xcbf29ce484222325n
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= BigInt(input.charCodeAt(index))
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n)
+  }
+  return `eft-shot-${hash.toString(16).padStart(16, '0')}`
+}
+
 export function classifyScreenshotMetadata(previous, next) {
   const current = metadataFrom(next)
   if (!current) return 'invalid'

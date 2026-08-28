@@ -9,6 +9,7 @@ import {
   parseEftScreenshotFilename,
   sanitiseEftScreenshotCheckpoint,
   screenshotMetadataKey,
+  screenshotPingSourceId,
   toEftScreenshotPosition,
 } from './eftScreenshots'
 
@@ -18,6 +19,11 @@ const legacy = '2026-08-26[12-34]v0.16.9_12.5, 0.0, -8.25_0.0, 0.7071068, 0.0, 0
 const legacyScreenshotExample = '2023-09-22[13-00]_-49.9, 12.1, -51.8_0.0, -0.8, 0.1, -0.5_14.08 (0).png'
 
 describe('EFT screenshot foundation', () => {
+  it('derives the same safe ping source id from browser and Windows paths', () => {
+    const name = '2026-08-27[12-00]_1.0, 2.0, 3.0_0.0.png'
+    expect(screenshotPingSourceId(name)).toBe(screenshotPingSourceId(`C:\\EFT\\Screenshots\\${name}`))
+    expect(screenshotPingSourceId(name)).toMatch(/^eft-shot-[a-f0-9]{16}$/)
+  })
   it('parses current and legacy decimal/suffix formats without reading image bytes', () => {
     expect(parseEftScreenshotFilename(current)).toMatchObject({ x: 12.5, y: 0, z: -8.25, yaw: 0 })
     expect(parseEftScreenshotFilename(secondsTimestamp)).toMatchObject({ x: 411.52, y: -9.9, z: -338.02 })
