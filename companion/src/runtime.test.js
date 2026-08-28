@@ -84,14 +84,14 @@ describe('companion runtime', () => {
     await runtime.dispose()
   })
 
-  it('keeps screenshot pings active without retrying unsupported quest modes', async () => {
+  it('syncs Seasonal quests while keeping screenshot pings active', async () => {
     const { runtime, sync, screenshot } = harness({
       network: { getDesktopSyncContext: vi.fn(async () => ({ userId: 'user-1', gameMode: 'pvp-season', partyId: 1, partyCode: 'ABCD', raidId: 2, mapNorm: 'customs' })) },
     })
     await runtime.start()
-    expect(sync).not.toHaveBeenCalled()
+    expect(sync).toHaveBeenCalledWith(expect.objectContaining({ mode: 'pvp-season' }))
     expect(screenshot).toHaveBeenCalled()
-    expect(runtime.getStatus()).toMatchObject({ state: 'connected', detail: expect.stringContaining('Position pings active') })
+    expect(runtime.getStatus()).toMatchObject({ state: 'connected' })
   })
 
   it('surfaces engine profile selection and resumes only after explicit choice', async () => {
@@ -115,6 +115,19 @@ describe('companion runtime', () => {
     expect(runtime.getStatus()).toMatchObject({ state: 'error', selectionRequired: 'unknown-mode' })
     await runtime.selectUnknownMode('pve')
     expect(sync).toHaveBeenCalledTimes(2)
+  })
+
+  it('makes full rescan and character recovery explicit and forceful', async () => {
+    const reset = vi.fn(async () => {})
+    const sync = vi.fn(async () => ({ scanMetrics: { filesScanned: 2, eventsSeen: 0, matchedEvents: 0, profilesFound: 1, mode: 'regular' } }))
+    const resetImports = vi.fn(async () => ({ deleted: 3 }))
+    const { runtime } = harness({ engine: { questLogs: { sync, reset }, screenshots: {} }, network: { resetUserQuestLogImports: resetImports } })
+    await runtime.start()
+    await runtime.fullRescan()
+    expect(resetImports).toHaveBeenCalledWith('regular')
+    expect(reset).toHaveBeenCalledWith(expect.objectContaining({ preserveSelections: true, clearMode: null }))
+    expect(sync.mock.calls.at(-1)[0]).toMatchObject({ mode: 'regular', force: true })
+    expect(runtime.getStatus().detail).toContain('No quest events found')
   })
 
   it('stops watchers, timers, and listeners on disposal', async () => {

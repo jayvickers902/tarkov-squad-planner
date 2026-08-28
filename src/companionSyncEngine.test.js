@@ -125,12 +125,64 @@ describe('native-agnostic companion sync engine', () => {
     expect(checkpoints.saves).toHaveLength(1)
   })
 
-  it('rejects unsupported quest modes before touching adapters', async () => {
+  it('auto-selects the only eligible current-mode candidate and explains the choice', async () => {
+    const notificationFor = (id, profileId) => JSON.stringify({
+      type: 'ChatMessageReceived', eventId: id, profileId,
+      message: { type: 12, templateId: `${taskId} quest`, dt: '2026-08-27T12:00:00Z' },
+    })
+    const files = [
+      file('Logs/0.16.9/regular/notifications.log', [notificationFor('one', 'regular-account')].join('\n')),
+      file('Logs/0.16.9/regular/backend.log', '{"profileId":"regular-account","Session mode":"PVP"}'),
+      file('Logs/0.16.8/seasonal/notifications.log', [notificationFor('two', 'seasonal-account')].join('\n')),
+      file('Logs/0.16.8/seasonal/backend.log', '{"profileId":"seasonal-account","Session mode":"SEASONAL"}'),
+    ]
+    const checkpoints = store()
+    const apply = vi.fn(async (_mode, events) => ({ inserted: events.length }))
+    const controller = createQuestLogSyncController({
+      filesystem: { async list() { return files } }, checkpointStore: checkpoints,
+      network: { applyQuestLogEvents: apply }, taskIds: [taskId], gameMode: 'regular',
+    })
+
+    const result = await controller.sync()
+
+    expect(result.events).toHaveLength(1)
+    expect(result.scanMetrics).toMatchObject({ eventsSeen: 2, matchedEvents: 1, mode: 'regular' })
+    expect(result.preview.discoveredProfiles.find(profile => profile.profileKey === result.checkpoint.profileKey).label)
+      .toContain('PvP Permanent')
+    expect(result.checkpoint.selectionsByMode.regular.profileKey).toBe(result.checkpoint.profileKey)
+
+    const unchanged = await controller.sync()
+    expect(unchanged).toMatchObject({ fullScan: false, changed: false })
+    expect(unchanged.scanMetrics).toMatchObject({ eventsSeen: 2, matchedEvents: 1, appliedEvents: 1, scannerVersion: '0.2.0' })
+  })
+
+  it('honors an explicit change-character request instead of auto-selecting', async () => {
+    const notificationFor = (id, profileId) => JSON.stringify({
+      type: 'ChatMessageReceived', eventId: id, profileId,
+      message: { type: 12, templateId: `${taskId} quest`, dt: '2026-08-27T12:00:00Z' },
+    })
+    const files = [
+      file('Logs/0.16.9/a/notifications.log', notificationFor('a', 'profile-a')),
+      file('Logs/0.16.9/a/backend.log', '{"profileId":"profile-a","Session mode":"PVP"}'),
+      file('Logs/0.16.9/b/notifications.log', notificationFor('b', 'profile-b')),
+      file('Logs/0.16.9/b/backend.log', '{"profileId":"profile-b","Session mode":"PVP"}'),
+    ]
+    const controller = createQuestLogSyncController({
+      filesystem: { async list() { return files } }, checkpointStore: store(),
+      network: { applyQuestLogEvents: vi.fn() }, taskIds: [taskId], gameMode: 'regular',
+    })
+
+    const result = await controller.sync({ parser: { requireProfileChoice: true } })
+    expect(result.selectionRequired).toBe('profile')
+    expect(result.candidates).toHaveLength(2)
+  })
+
+  it('rejects unknown quest modes before touching adapters', async () => {
     const list = vi.fn()
     const controller = createQuestLogSyncController({
-      filesystem: { list }, checkpointStore: store(), network: { apply() {} }, gameMode: 'pvp-season',
+      filesystem: { list }, checkpointStore: store(), network: { apply() {} }, gameMode: 'arena',
     })
-    await expect(controller.sync()).rejects.toThrow(/Regular and PvE/)
+    await expect(controller.sync()).rejects.toThrow(/PvP Permanent/)
     expect(list).not.toHaveBeenCalled()
   })
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { NetworkBoundaryError, createNetworkAdapter, normalizeSyncContext, sanitizeSyncStatuses } from './network.js'
+import { NetworkBoundaryError, createNetworkAdapter, normalizeSyncContext, sanitizeScanMetrics, sanitizeSyncStatuses } from './network.js'
 
 const taskId = '507f1f77bcf86cd799439011'
 const ping = { id: 'ping-1', map: 'Customs', x: 1, y: 2, z: 3, yaw: 90, at: 1000, taps: 1, path: 'C:\\secret.log', logText: 'do not send' }
@@ -46,5 +46,37 @@ describe('companion network boundary', () => {
       p_statuses: [{ service: 'logs', configured: true, state: 'watching', detail: 'Sync up to date', last_sync_at: '2026-08-27T12:00:00.000Z' }],
     })
     expect(() => sanitizeSyncStatuses([{ service: 'logs', state: 'watching' }, { service: 'logs', state: 'watching' }])).toThrow(NetworkBoundaryError)
+  })
+
+  it('reports only bounded privacy-safe scan metrics and accepts Seasonal reconciliation', async () => {
+    const rpc = vi.fn(async (name) => name === 'reconcile_user_quest_log_events'
+      ? { data: { inserted: 0, updated: 0, ignored: 0, affected_task_ids: [] }, error: null }
+      : { data: null, error: null })
+    const network = createNetworkAdapter({ supabase: { rpc } })
+    await network.reportSyncClientStatus([{
+      service: 'logs', configured: true, state: 'watching',
+      scanMetrics: {
+        files: 42, sessions: 3, candidates: 3, matched: 221, applied: 118, active: 103,
+        selection: 'auto', scannerVersion: '0.2.0', profileId: 'must-not-send', path: 'C:\\private',
+      },
+    }])
+    expect(rpc).toHaveBeenCalledWith('report_sync_client_status', {
+      p_client_source: 'desktop',
+      p_statuses: [{
+        service: 'logs', configured: true, state: 'watching', detail: '', last_sync_at: null,
+        scan_metrics: { files: 42, sessions: 3, candidates: 3, matched: 221, applied: 118, active: 103, selection: 'auto', scanner_version: '0.2.0' },
+      }],
+    })
+    await expect(network.reconcileUserQuestLogEvents('pvp-season', [])).resolves.toEqual({ inserted: 0, updated: 0, ignored: 0, affectedTaskIds: [] })
+    rpc.mockResolvedValueOnce({ data: 12, error: null })
+    await expect(network.resetUserQuestLogImports('pvp-season')).resolves.toEqual({ deleted: 12 })
+    expect(rpc).toHaveBeenLastCalledWith('reset_user_quest_log_imports', { p_game_mode: 'pvp-season' })
+  })
+
+  it('rejects invalid scan counters and selection values before RPC', () => {
+    expect(() => sanitizeScanMetrics({ files: -1 })).toThrow(NetworkBoundaryError)
+    expect(() => sanitizeScanMetrics({ matched: 1.5 })).toThrow(NetworkBoundaryError)
+    expect(() => sanitizeScanMetrics({ selection: 'profile-raw-id' })).toThrow(NetworkBoundaryError)
+    expect(() => sanitizeScanMetrics({ scannerVersion: 'C:\\private\\scanner.exe' })).toThrow(NetworkBoundaryError)
   })
 })

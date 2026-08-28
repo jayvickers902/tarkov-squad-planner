@@ -80,7 +80,7 @@ export default function App() {
           <p className="eyebrow">WINDOWS COMPANION</p>
           <h1>Tarkov Squad Planner</h1>
         </div>
-        <button className="icon-button" onClick={refresh} disabled={busy || !view.authenticated} aria-label="Sync now" title="Sync now">↻</button>
+        <button className="icon-button" onClick={refresh} disabled={busy || !view.authenticated} aria-label="Sync now" title="Check for new log entries">↻</button>
       </header>
 
       <section className={`status-card status-${status.state}`} aria-live="polite">
@@ -117,11 +117,12 @@ export default function App() {
 
       {view.status?.selectionRequired === 'profile' && (
         <section className="choice-card">
-          <p className="eyebrow">PROFILE REQUIRED</p>
-          <h2>Which local EFT profile is yours?</h2>
+          <p className="eyebrow">CHARACTER REQUIRED</p>
+          <h2>Which character matches this planner mode?</h2>
+          <p>Choose the mode you play now. The recommended option is based on recent activity, version, and quest events.</p>
           <div className="choice-buttons">
             {(view.status.selectionOptions || []).map(option => (
-              <button key={option.value} className="secondary-button" onClick={() => run(() => service.selectProfile(option.value), 'Profile selection failed.')}>{option.label}</button>
+              <button key={option.value} className={`secondary-button choice-button ${option.recommended ? 'is-recommended' : ''}`} onClick={() => run(() => service.selectProfile(option.value), 'Character selection failed.')}>{option.recommended && <span className="recommend-badge">Recommended</span>}{option.label}</button>
             ))}
           </div>
         </section>
@@ -133,8 +134,20 @@ export default function App() {
           <h2>Apply unlabelled events to which mode?</h2>
           <div className="choice-buttons">
             <button className="secondary-button" onClick={() => run(() => service.selectUnknownMode('regular'), 'Mode selection failed.')}>Regular</button>
+            <button className="secondary-button" onClick={() => run(() => service.selectUnknownMode('pvp-season'), 'Mode selection failed.')}>PvP Seasonal</button>
             <button className="secondary-button" onClick={() => run(() => service.selectUnknownMode('pve'), 'Mode selection failed.')}>PvE</button>
           </div>
+        </section>
+      )}
+
+      {status.activeProfile && (
+        <section className="choice-card active-profile" aria-label="Active EFT character">
+          <div>
+            <p className="eyebrow">CURRENT CHARACTER</p>
+            <h2>{status.activeProfile.label}</h2>
+            <p>This is the character being imported for this planner mode.</p>
+          </div>
+          <button className="secondary-button" onClick={() => run(() => service.changeProfile(), 'The character could not be changed.')} disabled={busy}>Change character</button>
         </section>
       )}
 
@@ -142,6 +155,17 @@ export default function App() {
         <div className="metric"><span>Last sync</span><strong>{formatSyncTime(status.lastSyncAt)}</strong></div>
         <div className="metric"><span>Queue</span><strong>{status.pendingCount ? `${status.pendingCount} item${status.pendingCount === 1 ? '' : 's'}` : 'Clear'}</strong></div>
       </section>
+
+      {view.authenticated && roots.logsRoot && (
+        <section className="settings-card rescan-card">
+          <div>
+            <p className="eyebrow">RECOVERY</p>
+            <h2>Rebuild quest imports</h2>
+            <p>Use this after changing characters or if a previous selection imported zero events. It rereads your relevant logs.</p>
+          </div>
+          <button className="secondary-button" onClick={() => run(() => service.fullRescan(), 'The full rescan could not be started.')} disabled={busy}>Full rescan</button>
+        </section>
+      )}
 
       <section className="settings-card folder-settings">
         <div className="settings-heading">

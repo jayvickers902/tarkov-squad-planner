@@ -39,12 +39,43 @@ export const SCREENSHOT_FRESHNESS_MS = 2 * 60 * 1000
 export const MAX_SCREENSHOT_CATCHUP_MS = SCREENSHOT_FRESHNESS_MS
 export const SCREENSHOT_PINGS_PER_MINUTE = 20
 export const PING_RATE_LIMIT_PER_MINUTE = SCREENSHOT_PINGS_PER_MINUTE
+export const QUEST_LOG_SCANNER_VERSION = '0.2.0'
 
-const VALID_MODES = new Set(['regular', 'pve'])
+const VALID_MODES = new Set(['regular', 'pve', 'pvp-season'])
 const MAX_SAFE_ID = 128
+const SELECTION_STATES = new Set(['none', 'auto', 'confirmed', 'required', 'unknown'])
 
 function finite(value, fallback = null) {
   return Number.isFinite(value) ? value : fallback
+}
+
+function safeScanMetrics(value = {}) {
+  const counter = key => Math.max(0, Math.floor(Number(value?.[key]) || 0))
+  return {
+    filesScanned: counter('filesScanned'),
+    filesParsed: counter('filesParsed'),
+    sessionsScanned: counter('sessionsScanned'),
+    eventsSeen: counter('eventsSeen'),
+    matchedEvents: counter('matchedEvents'),
+    appliedEvents: counter('appliedEvents'),
+    activeEvents: counter('activeEvents'),
+    profilesFound: counter('profilesFound'),
+    selection: SELECTION_STATES.has(value?.selection) ? value.selection : 'unknown',
+    scannerVersion: QUEST_LOG_SCANNER_VERSION,
+  }
+}
+
+function currentActiveEvents(events) {
+  const latest = new Map()
+  for (const event of events || []) {
+    const prior = latest.get(event.taskId)
+    const eventAt = Date.parse(event.occurredAt || '') || 0
+    const priorAt = Date.parse(prior?.occurredAt || '') || 0
+    if (!prior || eventAt > priorAt || (eventAt === priorAt && String(event.eventKey).localeCompare(String(prior.eventKey)) > 0)) {
+      latest.set(event.taskId, event)
+    }
+  }
+  return [...latest.values()].filter(event => event.state === 'active').length
 }
 
 function encodedByteLength(value) {
@@ -163,16 +194,156 @@ function checkpointForLogs(input = {}) {
     })
     .filter(Boolean)
     .sort((left, right) => left.relativeFilename.localeCompare(right.relativeFilename))
+  const selectionsByMode = input.selectionsByMode && typeof input.selectionsByMode === 'object'
+    ? Object.fromEntries(Object.entries(input.selectionsByMode).filter(([mode]) => VALID_MODES.has(mode)).map(([mode, value]) => [mode, {
+      ...(value?.profileKey ? { profileKey: String(value.profileKey).slice(0, MAX_SAFE_ID) } : {}),
+      ...(value?.profileLabel ? { profileLabel: String(value.profileLabel).slice(0, 160) } : {}),
+      ...(value?.unknownModeTarget && VALID_MODES.has(value.unknownModeTarget) ? { unknownModeTarget: value.unknownModeTarget } : {}),
+      ...(SELECTION_STATES.has(value?.selectionState) ? { selectionState: value.selectionState } : {}),
+    }])) : null
+  const scanMetricsByMode = input.scanMetricsByMode && typeof input.scanMetricsByMode === 'object'
+    ? Object.fromEntries(Object.entries(input.scanMetricsByMode)
+      .filter(([mode]) => VALID_MODES.has(mode))
+      .map(([mode, value]) => [mode, safeScanMetrics(value)]))
+    : null
   return {
-    version: 1,
+    version: 2,
     files,
     includedVersions: Array.isArray(input.includedVersions)
       ? [...new Set(input.includedVersions.map(String).filter(Boolean))].slice(0, 64) : [],
     profileKey: input.profileKey == null ? null : String(input.profileKey).slice(0, MAX_SAFE_ID),
+    ...(input.profileLabel ? { profileLabel: String(input.profileLabel).slice(0, 160) } : {}),
     unknownModeTarget: VALID_MODES.has(input.unknownModeTarget) ? input.unknownModeTarget : null,
     gameMode: VALID_MODES.has(input.gameMode) ? input.gameMode : null,
+    ...(selectionsByMode && Object.keys(selectionsByMode).length ? { selectionsByMode } : {}),
+    ...(scanMetricsByMode && Object.keys(scanMetricsByMode).length ? { scanMetricsByMode } : {}),
+    scannerVersion: QUEST_LOG_SCANNER_VERSION,
     updatedAt: finite(input.updatedAt, Date.now()),
   }
+}
+
+function selectedProfileForMode(checkpoint, mode) {
+  return checkpoint?.selectionsByMode?.[mode]?.profileKey
+    || (checkpoint?.gameMode === mode ? checkpoint?.profileKey : null)
+    || null
+}
+
+function selectedProfileLabelForMode(checkpoint, mode) {
+  return checkpoint?.selectionsByMode?.[mode]?.profileLabel
+    || (checkpoint?.gameMode === mode ? checkpoint?.profileLabel : null)
+    || null
+}
+
+function selectedUnknownModeForMode(checkpoint, mode) {
+  return checkpoint?.selectionsByMode?.[mode]?.unknownModeTarget
+    || (checkpoint?.gameMode === mode ? checkpoint?.unknownModeTarget : null)
+    || null
+}
+
+function canonicalMode(value) {
+  const mode = String(value || '').toLowerCase()
+  if (mode === 'pvp' || mode === 'permanent' || mode === 'regular') return 'regular'
+  if (mode === 'seasonal' || mode === 'pvp-season' || mode === 'season') return 'pvp-season'
+  if (mode === 'pve') return 'pve'
+  return null
+}
+
+function latestVersion(versions) {
+  return (Array.isArray(versions) ? versions : []).map(String).filter(Boolean).sort((left, right) => {
+    const a = left.split('.').map(Number)
+    const b = right.split('.').map(Number)
+    for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+      const delta = (Number(b[index]) || 0) - (Number(a[index]) || 0)
+      if (delta) return delta
+    }
+    return right.localeCompare(left)
+  })[0] || null
+}
+
+function formatCandidateMode(candidate, targetMode) {
+  const modes = Array.isArray(candidate?.gameModes) ? candidate.gameModes : []
+  const mode = canonicalMode(candidate?.gameMode) || canonicalMode(modes[0]) || canonicalMode(targetMode)
+  if (mode === 'pve') return 'PvE'
+  if (mode === 'pvp-season') return 'PvP Seasonal'
+  if (mode === 'regular') return 'PvP Permanent'
+  return 'EFT'
+}
+
+function candidateDetails(preview, { mode, taskIds }) {
+  const profiles = profileCandidates(preview)
+  const known = taskIds ? new Set([...taskIds].map(String)) : null
+  const events = Array.isArray(preview?.events) ? preview.events : []
+  const currentVersion = latestVersion(preview?.availableVersions)
+  const targetMode = canonicalMode(mode)
+  const eventByProfile = new Map()
+  for (const event of events) {
+    if (!event?.profileKey) continue
+    const list = eventByProfile.get(event.profileKey) || []
+    if (!known || known.has(String(event.taskId || ''))) list.push(event)
+    eventByProfile.set(event.profileKey, list)
+  }
+  return profiles.map(profile => {
+    const profileEvents = eventByProfile.get(profile.profileKey) || []
+    const modes = (Array.isArray(profile.gameModes) ? profile.gameModes : []).map(canonicalMode).filter(Boolean)
+    const candidateMode = canonicalMode(profile.gameMode) || modes[0] || null
+    const hasTargetMode = candidateMode === targetMode || modes.includes(targetMode)
+    const versions = (Array.isArray(profile.versions) ? profile.versions : []).map(String)
+    const current = Boolean(currentVersion && versions.includes(currentVersion))
+    const lastSeen = profile.lastSeen || profileEvents.map(event => event.occurredAt).filter(Boolean).sort().pop() || null
+    const eventCount = profileEvents.length || Number(profile.matchedEventCount ?? profile.eventCount ?? 0)
+    const score = (hasTargetMode ? 1000 : candidateMode ? -400 : 0)
+      + (current ? 300 : 0) + Math.min(eventCount, 200)
+      + (lastSeen ? Math.min(new Date(lastSeen).getTime() / 86400000, 100000) / 100 : 0)
+    const versionLabel = current ? 'current version' : versions.length ? `version ${versions[versions.length - 1]}` : 'version unknown'
+    const seenLabel = lastSeen ? `last seen ${new Date(lastSeen).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })}` : 'last seen unknown'
+    const label = `${formatCandidateMode({ ...profile, gameMode: candidateMode, gameModes: modes }, targetMode)} · ${seenLabel} · ${versionLabel} · ${eventCount} quest events`
+    return {
+      ...profile,
+      mode: candidateMode,
+      targetMode,
+      eventCount,
+      currentVersion: current ? currentVersion : null,
+      eligible: hasTargetMode && eventCount > 0,
+      recommended: false,
+      label,
+      displayName: label,
+      score,
+    }
+  }).sort((left, right) => right.score - left.score || String(left.profileKey).localeCompare(String(right.profileKey)))
+}
+
+function profileCandidates(preview) {
+  return Array.isArray(preview?.discoveredProfiles)
+    ? preview.discoveredProfiles
+    : (Array.isArray(preview?.characterCandidates) ? preview.characterCandidates : [])
+}
+
+function chooseCandidate(preview, { mode, checkpoint, parser, taskIds }) {
+  const selected = selectedProfileForMode(checkpoint, mode)
+  if (selected || parser?.profileKey) return { selected, candidates: candidateDetails(preview, { mode, taskIds }) }
+  const candidates = candidateDetails(preview, { mode, taskIds })
+  const eligible = candidates.filter(candidate => candidate.eligible)
+  const visible = candidates.filter(candidate => candidate.eventCount > 0)
+  if (!eligible.length) return { selected: null, candidates: visible }
+  const top = eligible[0]
+  const next = eligible[1]
+  // Auto-select only when evidence is unambiguous. Equal mode/version/event
+  // candidates remain a user choice, avoiding another silent mis-import.
+  const strong = !parser?.requireProfileChoice
+    && (eligible.length === 1 || top.score - (next?.score || 0) >= 120)
+  if (strong) {
+    top.recommended = true
+    return { selected: top.profileKey, candidates: visible }
+  }
+  top.recommended = true
+  return { selected: null, candidates: visible }
+}
+
+function choiceLabel(preview, profileKey) {
+  if (!profileKey) return null
+  const candidate = (Array.isArray(preview?.discoveredProfiles) ? preview.discoveredProfiles : [])
+    .find(profile => profile?.profileKey === profileKey)
+  return candidate?.label || candidate?.description || candidate?.displayName || null
 }
 
 function filesFromCheckpoint(checkpoint) {
@@ -217,10 +388,10 @@ function selectedEvents(preview, { mode, checkpoint, taskIds, parser = {} }) {
   if (!versions.size && Array.isArray(preview?.includedVersions)) {
     preview.includedVersions.forEach(version => versions.add(String(version)))
   }
-  const profileKey = checkpoint?.profileKey || parser?.profileKey || null
+  const profileKey = selectedProfileForMode(checkpoint, mode) || parser?.profileKey || null
   // Multiple local profiles are intentionally never guessed. The UI/native
   // host can persist profileKey in the checkpoint and retry once selected.
-  if (Array.isArray(preview?.discoveredProfiles) && preview.discoveredProfiles.length > 1
+  if (profileCandidates(preview).length > 1
     && !profileKey) return []
   const source = Array.isArray(preview?.matchedEvents) ? preview.matchedEvents : (preview?.events || [])
   return source.filter(event => {
@@ -228,7 +399,7 @@ function selectedEvents(preview, { mode, checkpoint, taskIds, parser = {} }) {
     if (mode && event?.gameMode && event.gameMode !== mode) return false
     if (mode && !event?.gameMode
       && checkpoint?.gameMode !== mode
-      && checkpoint?.unknownModeTarget !== mode
+      && selectedUnknownModeForMode(checkpoint, mode) !== mode
       && parser?.unknownModeTarget !== mode) return false
     if (versions.size && event?.version && !versions.has(String(event.version))) return false
     if (profileKey && event?.profileKey !== profileKey) return false
@@ -242,8 +413,9 @@ function selectedEvents(preview, { mode, checkpoint, taskIds, parser = {} }) {
 }
 
 function selectionRequirement(preview, { mode, checkpoint, parser = {}, taskIds }) {
-  const profileKey = checkpoint?.profileKey || parser?.profileKey || null
-  if (Array.isArray(preview?.discoveredProfiles) && preview.discoveredProfiles.length > 1 && !profileKey) {
+  const profileKey = selectedProfileForMode(checkpoint, mode) || parser?.profileKey || null
+  const chosen = chooseCandidate(preview, { mode, checkpoint, parser, taskIds })
+  if (profileCandidates(preview).length > 1 && !profileKey && !chosen.selected) {
     return 'profile'
   }
   const known = taskIds ? new Set([...taskIds].map(String)) : null
@@ -252,7 +424,7 @@ function selectionRequirement(preview, { mode, checkpoint, parser = {}, taskIds 
     if (known && !known.has(String(event?.taskId || ''))) return false
     return !event?.gameMode
       && checkpoint?.gameMode !== mode
-      && checkpoint?.unknownModeTarget !== mode
+      && selectedUnknownModeForMode(checkpoint, mode) !== mode
       && parser?.unknownModeTarget !== mode
   })
   return hasAmbiguousMode ? 'unknown-mode' : null
@@ -321,7 +493,7 @@ export function createQuestLogSyncController({
   }
 
   async function sync({ force = false, mode = gameMode, taskIds: ids = taskIds, parser = parserOptions } = {}) {
-    if (!VALID_MODES.has(mode)) throw new Error('Quest log sync supports Regular and PvE only.')
+    if (!VALID_MODES.has(mode)) throw new Error('Quest log sync supports PvP Permanent, PvP Seasonal, and PvE.')
     if (inFlight) return inFlight
     inFlight = (async () => {
       checkpoint = checkpoint || await loadCheckpoint(checkpointStore, checkpointKey)
@@ -334,7 +506,7 @@ export function createQuestLogSyncController({
       const removed = previous.some(file => !currentByName.has(file.relativeFilename))
       const changes = current.map(file => ({ ...file, change: classifyEftLogFileChange(previousByName.get(file.relativeFilename), file) }))
       const changed = changes.filter(file => file.change !== 'unchanged')
-      const fullScan = force || !previous.length || removed || changed.some(file => {
+      const fullScan = force || checkpoint?.scannerVersion !== QUEST_LOG_SCANNER_VERSION || !previous.length || removed || (checkpoint?.gameMode && checkpoint.gameMode !== mode) || changed.some(file => {
         if (contextLog(file.relativeFilename)) {
           const old = previousByName.get(file.relativeFilename)
           return file.change !== 'append' || !old
@@ -361,6 +533,11 @@ export function createQuestLogSyncController({
           if (notificationLog(entry.relativeFilename)) nextOffsets.set(entry.relativeFilename, actualBytes)
         }
         preview = parseEftLogFiles(files, ids, parser)
+        const choice = chooseCandidate(preview, { mode, checkpoint, parser, taskIds: ids })
+        preview = { ...preview, discoveredProfiles: choice.candidates }
+        if (choice.selected && !checkpoint?.profileKey && !parser?.profileKey) {
+          parser = { ...parser, profileKey: choice.selected, selectionState: 'auto' }
+        }
         const requiresSelection = selectionRequirement(preview, { mode, checkpoint, parser, taskIds: ids })
         if (requiresSelection) return {
           changed: changed.length > 0 || force,
@@ -369,7 +546,22 @@ export function createQuestLogSyncController({
           selectionRequired: requiresSelection,
           events: [],
           metadata: current,
-          preview,
+          preview: { ...preview, discoveredProfiles: choice.candidates },
+          candidates: choice.candidates,
+          scanMetrics: {
+            filesScanned: Number(preview?.filesScanned || current.length),
+            filesParsed: Number(preview?.filesParsed || current.length),
+            sessionsScanned: Number(preview?.sessionsScanned || 0),
+            eventsSeen: Number(preview?.eventsSeen || 0),
+            matchedEvents: 0,
+            appliedEvents: 0,
+            activeEvents: 0,
+            profilesFound: choice.candidates.length,
+            selectedProfile: null,
+            selection: 'required',
+            scannerVersion: QUEST_LOG_SCANNER_VERSION,
+            mode,
+          },
           checkpoint: clone(checkpoint),
         }
         events.push(...selectedEvents(preview, { mode, checkpoint, taskIds: ids, parser }))
@@ -426,15 +618,57 @@ export function createQuestLogSyncController({
         summary = summaryAdd(summary, result)
       }
 
+      const previousMetrics = safeScanMetrics(checkpoint?.scanMetricsByMode?.[mode])
+      const selectionState = SELECTION_STATES.has(parser?.selectionState)
+        ? parser.selectionState
+        : (checkpoint?.selectionsByMode?.[mode]?.selectionState || (selectedProfileForMode(checkpoint, mode) ? 'confirmed' : 'none'))
+      const scanMetrics = fullScan
+        ? safeScanMetrics({
+          filesScanned: preview?.filesScanned || current.length,
+          filesParsed: preview?.filesParsed || current.length,
+          sessionsScanned: preview?.sessionsScanned || 0,
+          eventsSeen: preview?.eventsSeen || 0,
+          matchedEvents: payload.length,
+          appliedEvents: Number(summary.inserted || 0) + Number(summary.updated || 0),
+          activeEvents: currentActiveEvents(events),
+          profilesFound: profileCandidates(preview).length,
+          selection: selectionState,
+        })
+        : safeScanMetrics({
+          ...previousMetrics,
+          eventsSeen: previousMetrics.eventsSeen + payload.length,
+          matchedEvents: previousMetrics.matchedEvents + payload.length,
+          appliedEvents: previousMetrics.appliedEvents + Number(summary.inserted || 0) + Number(summary.updated || 0),
+          selection: selectionState,
+        })
+
       // Commit source offsets only after every network chunk succeeds. A failed
       // apply therefore rereads the same suffix and relies on event_key
       // idempotency instead of losing local events.
       const next = checkpointForLogs({
         files: current.map(file => ({ ...file, ...(nextOffsets.has(file.relativeFilename) ? { parsedOffset: nextOffsets.get(file.relativeFilename) } : {}) })),
         includedVersions: preview?.includedVersions || checkpoint?.includedVersions || parser?.includedVersions || [],
-        profileKey: checkpoint?.profileKey || parser?.profileKey,
+        profileKey: selectedProfileForMode(checkpoint, mode) || parser?.profileKey,
+        profileLabel: choiceLabel(preview, selectedProfileForMode(checkpoint, mode) || parser?.profileKey)
+          || selectedProfileLabelForMode(checkpoint, mode),
         unknownModeTarget: checkpoint?.unknownModeTarget || parser?.unknownModeTarget,
         gameMode: mode,
+        selectionsByMode: {
+          ...(checkpoint?.selectionsByMode || {}),
+          [mode]: {
+            ...(selectedProfileForMode(checkpoint, mode) || parser?.profileKey ? { profileKey: selectedProfileForMode(checkpoint, mode) || parser?.profileKey } : {}),
+            ...(choiceLabel(preview, selectedProfileForMode(checkpoint, mode) || parser?.profileKey)
+              || selectedProfileLabelForMode(checkpoint, mode)
+              ? { profileLabel: choiceLabel(preview, selectedProfileForMode(checkpoint, mode) || parser?.profileKey) || selectedProfileLabelForMode(checkpoint, mode) }
+              : {}),
+            ...(selectedUnknownModeForMode(checkpoint, mode) || parser?.unknownModeTarget ? { unknownModeTarget: selectedUnknownModeForMode(checkpoint, mode) || parser?.unknownModeTarget } : {}),
+            ...(selectionState ? { selectionState } : {}),
+          },
+        },
+        scanMetricsByMode: {
+          ...(checkpoint?.scanMetricsByMode || {}),
+          [mode]: scanMetrics,
+        },
         updatedAt: now(),
       })
       await saveCheckpoint(checkpointStore, checkpointKey, next)
@@ -448,6 +682,11 @@ export function createQuestLogSyncController({
         summary,
         metadata: current,
         preview,
+        scanMetrics: {
+          ...scanMetrics,
+          selectedProfile: (checkpoint?.gameMode === mode ? checkpoint?.profileKey : null) || parser?.profileKey || null,
+          mode,
+        },
         checkpoint: clone(next),
       }
     })()
@@ -459,11 +698,23 @@ export function createQuestLogSyncController({
     synchronize: sync,
     load: async () => { checkpoint = await loadCheckpoint(checkpointStore, checkpointKey); return clone(checkpoint) },
     getCheckpoint: () => clone(checkpoint),
-    reset: async () => {
+    reset: async ({ preserveSelections = false, clearMode = null } = {}) => {
+      if (preserveSelections && checkpoint === null) checkpoint = await loadCheckpoint(checkpointStore, checkpointKey)
+      const selectionsByMode = preserveSelections && checkpoint?.selectionsByMode
+        ? { ...checkpoint.selectionsByMode } : null
+      if (clearMode && selectionsByMode) delete selectionsByMode[clearMode]
       checkpoint = null
       pendingText.clear()
       const remove = checkpointDelete(checkpointStore)
       if (remove) await remove.call(checkpointStore, checkpointKey)
+      if (preserveSelections && selectionsByMode && Object.keys(selectionsByMode).length) {
+        checkpoint = checkpointForLogs({
+          files: [], includedVersions: [], profileKey: null, unknownModeTarget: null,
+          gameMode: null, selectionsByMode, scanMetricsByMode: checkpoint?.scanMetricsByMode,
+          updatedAt: now(),
+        })
+        await saveCheckpoint(checkpointStore, checkpointKey, checkpoint)
+      }
     },
   }
 }

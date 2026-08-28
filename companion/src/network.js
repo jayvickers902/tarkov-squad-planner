@@ -1,11 +1,24 @@
 const CONTEXT_GAME_MODES = new Set(['regular', 'pve', 'pvp-season'])
-const RECONCILE_GAME_MODES = new Set(['regular', 'pve'])
+const RECONCILE_GAME_MODES = new Set(['regular', 'pve', 'pvp-season'])
 const MAPS = new Set(['customs', 'woods', 'interchange', 'shoreline', 'factory', 'lighthouse', 'streets-of-tarkov', 'reserve', 'ground-zero', 'the-lab'])
 const TASK_ID = /^[a-f0-9]{24}$/i
 const EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9_.:|=-]{0,239}$/
 const PING_ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/
 const SYNC_SERVICES = new Set(['logs', 'pings'])
 const SYNC_STATES = new Set(['watching', 'syncing', 'idle', 'needs_access', 'offline', 'error', 'disabled'])
+// Scan metrics are deliberately coarse operational counters. Keep this
+// allowlist here because the desktop process can access local paths and
+// profile identifiers that must never cross the network boundary.
+const SCAN_SELECTIONS = new Set(['none', 'auto', 'confirmed', 'required', 'unknown'])
+const SCAN_VERSION = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$/
+const SCAN_COUNTERS = Object.freeze({
+  files: 100000,
+  sessions: 10000,
+  candidates: 1000,
+  matched: 1000000,
+  applied: 1000000,
+  active: 1000000,
+})
 
 export class NetworkBoundaryError extends Error {
   constructor(code, message = code) {
@@ -28,6 +41,51 @@ function safeTimestamp(value) {
   if (value == null) return null
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(value) || Number.isNaN(Date.parse(value))) return null
   return value
+}
+
+function boundedCounter(value, maximum) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= maximum ? value : null
+}
+
+/**
+ * Normalize the optional local scan summary into a privacy-safe wire shape.
+ * Unknown keys (including profile IDs, paths, filenames, and log contents) are
+ * intentionally ignored. Counters are rejected rather than rounded so a
+ * malformed native payload cannot look like a valid scan to the website.
+ */
+export function sanitizeScanMetrics(value) {
+  if (value == null) return null
+  if (typeof value !== 'object' || Array.isArray(value)) throw boundaryError('NETWORK_INVALID_SCAN_METRICS')
+  const metrics = value
+  const aliases = {
+    files: ['files', 'fileCount', 'filesScanned', 'scanFiles', 'scan_files'],
+    sessions: ['sessions', 'sessionCount', 'sessionsScanned', 'scanSessions', 'scan_sessions'],
+    candidates: ['candidates', 'candidateCount', 'profilesFound', 'scanCandidates', 'scan_candidates'],
+    matched: ['matched', 'matchedCount', 'matchedEvents', 'scanMatched', 'scan_matched'],
+    applied: ['applied', 'appliedCount', 'appliedEvents', 'importedEvents', 'scanApplied', 'scan_applied'],
+    active: ['active', 'activeCount', 'activeQuests', 'scanActive', 'scan_active'],
+  }
+  const output = {}
+  for (const [key, maximum] of Object.entries(SCAN_COUNTERS)) {
+    const sourceKey = aliases[key].find(alias => Object.prototype.hasOwnProperty.call(metrics, alias))
+    if (!sourceKey) continue
+    const count = boundedCounter(metrics[sourceKey], maximum)
+    if (count == null) throw boundaryError('NETWORK_INVALID_SCAN_METRICS')
+    output[key] = count
+  }
+  const selection = metrics.selection ?? metrics.selectionState ?? metrics.selection_state ?? metrics.profileSelection
+  if (selection != null) {
+    const normalized = boundedText(selection, 16)?.toLowerCase()
+    if (!normalized || !SCAN_SELECTIONS.has(normalized)) throw boundaryError('NETWORK_INVALID_SCAN_METRICS')
+    output.selection = normalized
+  }
+  const scannerVersion = metrics.scannerVersion ?? metrics.scanner_version ?? metrics.version
+  if (scannerVersion != null) {
+    const normalized = boundedText(scannerVersion, 32, SCAN_VERSION)
+    if (!normalized) throw boundaryError('NETWORK_INVALID_SCAN_METRICS')
+    output.scanner_version = normalized
+  }
+  return Object.keys(output).length ? output : null
 }
 
 export function sanitizeQuestLogEvent(value) {
@@ -94,7 +152,12 @@ export function sanitizeSyncStatuses(value) {
     seen.add(service)
     const timestamp = lastSyncAt == null ? null : safeTimestamp(lastSyncAt)
     if (lastSyncAt != null && !timestamp) throw boundaryError('NETWORK_INVALID_SYNC_STATUS')
-    return { service, configured: Boolean(item?.configured), state, detail, last_sync_at: timestamp }
+    const scanValue = item?.scanMetrics ?? item?.scan_metrics ?? item?.metrics ?? item?.scan
+    const scanMetrics = service === 'logs' ? sanitizeScanMetrics(scanValue) : null
+    return {
+      service, configured: Boolean(item?.configured), state, detail, last_sync_at: timestamp,
+      ...(scanMetrics ? { scan_metrics: scanMetrics } : {}),
+    }
   })
 }
 
@@ -174,6 +237,13 @@ export function createNetworkAdapter({ supabase } = {}) {
       if (gameMode && typeof gameMode === 'object') ({ gameMode, events } = gameMode)
       if (typeof gameMode !== 'string' || !RECONCILE_GAME_MODES.has(gameMode)) throw boundaryError('NETWORK_INVALID_GAME_MODE')
       return normalizeReconcileResult(await rpc('reconcile_user_quest_log_events', { p_game_mode: gameMode, p_events: sanitizeQuestLogEvents(events) }, 'NETWORK_RECONCILE_FAILED'))
+    },
+    async resetUserQuestLogImports(gameMode) {
+      if (typeof gameMode !== 'string' || !RECONCILE_GAME_MODES.has(gameMode)) throw boundaryError('NETWORK_INVALID_GAME_MODE')
+      const value = await rpc('reset_user_quest_log_imports', { p_game_mode: gameMode }, 'NETWORK_RESET_IMPORTS_FAILED')
+      const deleted = Number(Array.isArray(value) ? value[0] : value)
+      if (!Number.isSafeInteger(deleted) || deleted < 0) throw boundaryError('NETWORK_INVALID_RESULT')
+      return { deleted }
     },
     async appendPartyPing(code, raidId, ping) {
       if (code && typeof code === 'object') {

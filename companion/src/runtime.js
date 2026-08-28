@@ -14,7 +14,7 @@ export const DEFAULT_RUNTIME_OPTIONS = Object.freeze({
 })
 
 const STATES = new Set(['offline', 'connecting', 'connected', 'error'])
-const MODES = new Set(['regular', 'pve'])
+const MODES = new Set(['regular', 'pve', 'pvp-season'])
 
 const safeText = (value, fallback = '') => typeof value === 'string' ? value : fallback
 const firstFunction = (...values) => values.find(value => typeof value === 'function')
@@ -41,8 +41,33 @@ function safeStatus(status) {
     ...(Array.isArray(status?.selectionOptions) ? {
       selectionOptions: status.selectionOptions.slice(0, 16).map(option => ({
         value: safeText(option?.value).slice(0, 128),
-        label: safeText(option?.label, 'EFT profile').slice(0, 64),
+        label: safeText(option?.label, 'EFT profile').slice(0, 160),
+        ...(safeText(option?.mode) ? { mode: safeText(option.mode).slice(0, 32) } : {}),
+        ...(option?.recommended ? { recommended: true } : {}),
       })).filter(option => option.value),
+    } : {}),
+    ...(status?.activeProfile && typeof status.activeProfile === 'object' ? {
+      activeProfile: {
+        label: safeText(status.activeProfile.label, 'EFT profile').slice(0, 160),
+        value: safeText(status.activeProfile.value).slice(0, 128),
+        mode: safeText(status.activeProfile.mode).slice(0, 32),
+        recommended: Boolean(status.activeProfile.recommended),
+      },
+    } : {}),
+    ...(status?.scanMetrics && typeof status.scanMetrics === 'object' ? {
+      scanMetrics: {
+        filesScanned: Math.max(0, Math.floor(Number(status.scanMetrics.filesScanned) || 0)),
+        filesParsed: Math.max(0, Math.floor(Number(status.scanMetrics.filesParsed) || 0)),
+        sessionsScanned: Math.max(0, Math.floor(Number(status.scanMetrics.sessionsScanned) || 0)),
+        eventsSeen: Math.max(0, Math.floor(Number(status.scanMetrics.eventsSeen) || 0)),
+        matchedEvents: Math.max(0, Math.floor(Number(status.scanMetrics.matchedEvents) || 0)),
+        appliedEvents: Math.max(0, Math.floor(Number(status.scanMetrics.appliedEvents) || 0)),
+        activeEvents: Math.max(0, Math.floor(Number(status.scanMetrics.activeEvents) || 0)),
+        profilesFound: Math.max(0, Math.floor(Number(status.scanMetrics.profilesFound) || 0)),
+        selection: safeText(status.scanMetrics.selection, 'unknown').slice(0, 16),
+        scannerVersion: safeText(status.scanMetrics.scannerVersion).slice(0, 32),
+        mode: safeText(status.scanMetrics.mode).slice(0, 32),
+      },
     } : {}),
   })
 }
@@ -218,7 +243,8 @@ export function createCompanionRuntime({
   let authCleanup = null
   let connectivityCleanup = null
   let presenceTimer = null
-  let selection = { profileKey: null, unknownModeTarget: null }
+  let selectionByMode = Object.create(null)
+  let forceNextScan = false
   let lifecycleGeneration = 0
   let status = safeStatus({ state: 'offline', detail: 'Sign in to enable sync', lastSyncAt: null, pendingCount: 0 })
   const listeners = new Set()
@@ -239,12 +265,18 @@ export function createCompanionRuntime({
       state: configured ? state : 'idle',
       detail: configured ? status.detail : `No ${service === 'logs' ? 'Logs' : 'Screenshots'} folder is configured`,
       last_sync_at: status.lastSyncAt,
+      ...(status.scanMetrics && service === 'logs' ? { scan_metrics: {
+        files: status.scanMetrics.filesScanned,
+        sessions: status.scanMetrics.sessionsScanned,
+        candidates: status.scanMetrics.profilesFound,
+        matched: status.scanMetrics.matchedEvents,
+        applied: status.scanMetrics.appliedEvents,
+        active: status.scanMetrics.activeEvents,
+        selection: status.scanMetrics.selection,
+        scanner_version: status.scanMetrics.scannerVersion,
+      } } : {}),
     })
     const logs = row('logs', Boolean(roots.logsRoot))
-    if (logs.configured && context?.gameMode === 'pvp-season') {
-      logs.state = 'disabled'
-      logs.detail = 'Quest log sync supports Regular and PvE; screenshot pings remain active'
-    }
     return [logs, row('pings', Boolean(roots.screenshotsRoot))]
   }
   function reportPresence() {
@@ -370,29 +402,36 @@ export function createCompanionRuntime({
       return false
     }
     if (!active()) return false
-    setStatus({ state: 'connecting', detail: 'Syncing EFT data', pendingCount: 1, selectionRequired: null })
+    setStatus({ state: 'connecting', detail: 'Syncing EFT data', pendingCount: 1, selectionRequired: null, selectionOptions: [] })
     await refreshContext()
     const host = await ensureEngine()
     if (!active()) return false
     const mode = context?.gameMode || gameMode
     const ids = typeof taskIds === 'function' ? taskIds(context) : (context?.taskIds || taskIds)
-    const parser = { ...parserOptions, ...selection }
+    const modeSelection = selectionByMode[mode] || {}
+    const parser = { ...parserOptions, ...modeSelection }
     const quest = host?.questLogs || host?.quest
     const screenshots = host?.screenshots || host?.screenshotPings
     let result = null
     const questModeSupported = MODES.has(mode)
-    if (quest?.sync && roots.logsRoot && questModeSupported) result = await quest.sync({ mode, taskIds: ids, parser })
+    if (quest?.sync && roots.logsRoot && questModeSupported) {
+      result = await quest.sync({ mode, taskIds: ids, parser, force: forceNextScan })
+    }
     if (!active()) return false
     if (result?.requiresSelection || result?.selectionRequired) {
       const required = result.requiresSelection || result.selectionRequired
-      selection = { ...selection, ...(required === 'profile' ? { profileKey: null } : { unknownModeTarget: null }) }
+      if (required === 'profile') selectionByMode[mode] = { ...modeSelection, profileKey: null }
+      else selectionByMode[mode] = { ...modeSelection, unknownModeTarget: null }
+      const candidates = result?.candidates || result?.preview?.discoveredProfiles || result?.preview?.characterCandidates || result?.characterCandidates || []
       const options = required === 'profile'
-        ? (result?.preview?.discoveredProfiles || []).map(profile => ({
+        ? candidates.map(profile => ({
           value: profile?.profileKey,
           label: profile?.label || profile?.displayName || 'EFT profile',
+          mode: profile?.mode || profile?.gameMode || null,
+          recommended: Boolean(profile?.recommended),
         }))
         : []
-      setStatus({ state: 'error', detail: required === 'profile' ? 'Select an EFT profile to continue' : 'Choose Regular or PvE for events without a clear mode', selectionRequired: required, selectionOptions: options, pendingCount: 0 })
+      setStatus({ state: 'error', detail: required === 'profile' ? 'Choose the character that matches your current EFT mode' : 'Choose Regular, PvP Seasonal, or PvE for events without a clear mode', selectionRequired: required, selectionOptions: options, scanMetrics: result?.scanMetrics, pendingCount: 0 })
       return false
     }
     if (screenshots?.sync && roots.screenshotsRoot) await screenshots.sync({ context: { ...context, online: true }, online: true })
@@ -400,13 +439,40 @@ export function createCompanionRuntime({
     retryAttempt = 0
     const stamp = new Date(now()).toISOString()
     const pending = Number(screenshots?.getPending?.() ? 1 : 0)
+    const selectedKey = result?.scanMetrics?.selectedProfile || result?.checkpoint?.profileKey || modeSelection.profileKey || null
+    const candidates = result?.candidates || result?.preview?.discoveredProfiles || result?.preview?.characterCandidates || result?.characterCandidates || []
+    const candidate = candidates.find(item => item?.profileKey === selectedKey)
+    if (selectedKey) selectionByMode[mode] = { ...modeSelection, profileKey: selectedKey }
+    const metrics = result?.scanMetrics || { filesScanned: 0, filesParsed: 0, sessionsScanned: 0, eventsSeen: 0, matchedEvents: 0, appliedEvents: 0, activeEvents: 0, profilesFound: 0, selection: 'none', scannerVersion: '', mode }
+    const zeroEvents = questModeSupported && roots.logsRoot && metrics.eventsSeen === 0
+    const zeroMatch = questModeSupported && roots.logsRoot && metrics.eventsSeen > 0 && metrics.matchedEvents === 0
+    const modeLabel = mode === 'pve' ? 'PvE' : mode === 'pvp-season' ? 'PvP Seasonal' : 'PvP Permanent'
+    const detail = zeroEvents
+      ? `No quest events found for ${mode === 'pve' ? 'PvE' : mode === 'pvp-season' ? 'PvP Seasonal' : 'PvP Permanent'}. Choose another character or run a full rescan.`
+      : zeroMatch
+        ? `Found ${metrics.eventsSeen} quest events, but none matched the selected ${modeLabel} character. Change character or run a full rescan.`
+        : questModeSupported && !roots.logsRoot
+          ? 'Position pings active; configure a Logs folder to import quests'
+        : questModeSupported && !result?.changed && !result?.fullScan
+          ? `Watching ${modeLabel} · ${metrics.matchedEvents} matching quest events on file`
+        : questModeSupported
+        ? `Scanned ${metrics.filesScanned} files · ${metrics.matchedEvents} matching quest events · ${metrics.appliedEvents} applied`
+        : 'Position pings active; quest log sync is not enabled for this mode'
+    forceNextScan = false
     setStatus({
       state: 'connected',
-      detail: questModeSupported ? 'Sync up to date' : 'Position pings active; quest log sync supports Regular and PvE',
+      detail,
       lastSyncAt: stamp,
       pendingCount: pending,
       selectionRequired: null,
       selectionOptions: [],
+      activeProfile: candidate ? {
+        value: candidate.profileKey,
+        label: candidate.label || candidate.displayName || 'EFT profile',
+        mode: candidate.mode || candidate.gameMode || mode,
+        recommended: Boolean(candidate.recommended),
+      } : (selectedKey ? { value: selectedKey, label: result?.checkpoint?.profileLabel || 'Selected EFT character', mode } : undefined),
+      scanMetrics: metrics,
     })
     return true
   }
@@ -439,9 +505,10 @@ export function createCompanionRuntime({
     return getStatus()
   }
 
-  function requestSync(reason = 'event') {
+  function requestSync(reason = 'event', options = {}) {
+    if (options.force) forceNextScan = true
     if (!ready()) { const prereq = prerequisitesStatus(); if (prereq) setStatus(prereq); return Promise.resolve(getStatus()) }
-    if (runPromise) { if (reason !== 'manual') rerunRequested = true; return runPromise }
+    if (runPromise) { if (reason !== 'manual' || options.force) rerunRequested = true; return runPromise }
     runPromise = executeLoop()
     return runPromise
   }
@@ -504,7 +571,8 @@ export function createCompanionRuntime({
       createdEngine = null
       checkpointStore = null
       context = null
-      selection = { profileKey: null, unknownModeTarget: null }
+      selectionByMode = Object.create(null)
+      forceNextScan = false
     }
     if (!signedIn) { await stopWatch(); clearTimers(); setStatus({ state: 'offline', detail: 'Sign in to enable sync', pendingCount: 0 }); return }
     if (started) await becomeReady()
@@ -584,16 +652,46 @@ export function createCompanionRuntime({
     listeners.clear()
   }
 
-  function chooseProfile(profileKey) {
+  async function resetQuestLogs(mode = context?.gameMode || gameMode || 'regular', { clearSelection = true } = {}) {
+    const host = await ensureEngine()
+    const quest = host?.questLogs || host?.quest
+    await quest?.reset?.({ preserveSelections: true, clearMode: clearSelection ? mode : null })
+  }
+
+  async function chooseProfile(profileKey) {
     const value = profileKey == null ? null : String(profileKey)
-    if (value !== null && !/^profile-[0-9a-f]{16}$/i.test(value)) return Promise.resolve(getStatus())
-    selection = { ...selection, profileKey: value }
-    return requestSync('manual')
+    if (value !== null && !/^[A-Za-z0-9._:-]{1,128}$/.test(value)) return getStatus()
+    const mode = context?.gameMode || gameMode || 'regular'
+    const resetImports = method(network, 'resetUserQuestLogImports', 'resetQuestLogImports')
+    if (resetImports) await resetImports(mode)
+    await resetQuestLogs(mode)
+    selectionByMode[mode] = { ...(selectionByMode[mode] || {}), profileKey: value, selectionState: 'confirmed', requireProfileChoice: false }
+    forceNextScan = true
+    return requestSync('selection', { force: true })
   }
   function chooseMode(mode) {
     if (!MODES.has(mode)) return Promise.resolve(getStatus())
-    selection = { ...selection, unknownModeTarget: mode }
-    return requestSync('manual')
+    const targetMode = context?.gameMode || gameMode || 'regular'
+    selectionByMode[targetMode] = { ...(selectionByMode[targetMode] || {}), unknownModeTarget: mode }
+    forceNextScan = true
+    return requestSync('selection', { force: true })
+  }
+
+  async function fullRescan() {
+    const mode = context?.gameMode || gameMode || 'regular'
+    const resetImports = method(network, 'resetUserQuestLogImports', 'resetQuestLogImports')
+    if (resetImports) await resetImports(mode)
+    await resetQuestLogs(mode, { clearSelection: false })
+    forceNextScan = true
+    return requestSync('force', { force: true })
+  }
+
+  async function changeProfile() {
+    const mode = context?.gameMode || gameMode || 'regular'
+    await resetQuestLogs(mode)
+    selectionByMode[mode] = { ...(selectionByMode[mode] || {}), profileKey: null, selectionState: 'none', requireProfileChoice: true }
+    forceNextScan = true
+    return requestSync('change-profile', { force: true })
   }
 
   return {
@@ -601,6 +699,11 @@ export function createCompanionRuntime({
     syncNow: () => requestSync('manual'),
     sync: () => requestSync('manual'),
     synchronize: () => requestSync('manual'),
+    fullRescan,
+    rescan: fullRescan,
+    changeProfile,
+    changeCharacter: changeProfile,
+    rebuildImportedQuests: fullRescan,
     requestSync,
     subscribe,
     onStatusChange: subscribe,

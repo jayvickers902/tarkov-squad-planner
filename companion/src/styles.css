@@ -20,6 +20,12 @@ h1, h2, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 19px; letter-spac
 .primary-button:disabled, .secondary-button:disabled { opacity: .45; cursor: default; }
 .choice-card { padding: 19px 20px; border-radius: 13px; }
 .choice-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.choice-button { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; text-align: left; }
+.choice-button.is-recommended { border-color: #e7b34b88; background: #e7b34b14; }
+.recommend-badge { color: #e7b34b; font-size: 10px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
+.active-profile { align-items: flex-start; }
+.active-profile h2 { max-width: 450px; line-height: 1.25; }
+.rescan-card { align-items: flex-start; }
 .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .metric { padding: 15px 16px; border-radius: 11px; } .metric span { display: block; margin-bottom: 7px; color: #80939d; font-size: 11px; } .metric strong { display: block; color: #e1e8eb; font-size: 14px; font-weight: 600; }
 .settings-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 19px 20px; border-radius: 13px; } .settings-card h2 { font-size: 16px; } .settings-card p:not(.eyebrow) { max-width: 430px; font-size: 12px; }
 .folder-settings { display: block; }

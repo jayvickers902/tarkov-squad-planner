@@ -42,11 +42,33 @@ export function normalizeStatus(value) {
   const state = ['offline', 'connecting', 'connected', 'error'].includes(candidate.state)
     ? candidate.state
     : DEFAULT_STATUS.state
+  const activeProfile = candidate.activeProfile && typeof candidate.activeProfile === 'object'
+    ? {
+      value: typeof candidate.activeProfile.value === 'string' ? candidate.activeProfile.value.slice(0, 128) : '',
+      label: typeof candidate.activeProfile.label === 'string' ? candidate.activeProfile.label.slice(0, 160) : 'EFT profile',
+      mode: typeof candidate.activeProfile.mode === 'string' ? candidate.activeProfile.mode.slice(0, 32) : '',
+      recommended: Boolean(candidate.activeProfile.recommended),
+    } : null
+  const rawMetrics = candidate.scanMetrics && typeof candidate.scanMetrics === 'object' ? candidate.scanMetrics : null
   return {
     state,
     detail: typeof candidate.detail === 'string' ? candidate.detail : DEFAULT_STATUS.detail,
     lastSyncAt: typeof candidate.lastSyncAt === 'string' ? candidate.lastSyncAt : null,
     pendingCount: Number.isFinite(candidate.pendingCount) ? Math.max(0, Number(candidate.pendingCount)) : 0,
+    ...(activeProfile?.value ? { activeProfile } : {}),
+    ...(rawMetrics ? { scanMetrics: {
+      filesScanned: Math.max(0, Math.floor(Number(rawMetrics.filesScanned) || 0)),
+      filesParsed: Math.max(0, Math.floor(Number(rawMetrics.filesParsed) || 0)),
+      sessionsScanned: Math.max(0, Math.floor(Number(rawMetrics.sessionsScanned) || 0)),
+      eventsSeen: Math.max(0, Math.floor(Number(rawMetrics.eventsSeen) || 0)),
+      matchedEvents: Math.max(0, Math.floor(Number(rawMetrics.matchedEvents) || 0)),
+      appliedEvents: Math.max(0, Math.floor(Number(rawMetrics.appliedEvents) || 0)),
+      activeEvents: Math.max(0, Math.floor(Number(rawMetrics.activeEvents) || 0)),
+      profilesFound: Math.max(0, Math.floor(Number(rawMetrics.profilesFound) || 0)),
+      selection: typeof rawMetrics.selection === 'string' ? rawMetrics.selection.slice(0, 16) : 'unknown',
+      scannerVersion: typeof rawMetrics.scannerVersion === 'string' ? rawMetrics.scannerVersion.slice(0, 32) : '',
+      mode: typeof rawMetrics.mode === 'string' ? rawMetrics.mode.slice(0, 32) : '',
+    } } : {}),
   }
 }
 
