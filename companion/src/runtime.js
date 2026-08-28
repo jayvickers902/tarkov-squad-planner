@@ -15,6 +15,8 @@ export const DEFAULT_RUNTIME_OPTIONS = Object.freeze({
 
 const STATES = new Set(['offline', 'connecting', 'connected', 'error'])
 const MODES = new Set(['regular', 'pve', 'pvp-season'])
+const EVENT_STATES = new Set(['active', 'failed', 'completed'])
+const TASK_ID_PATTERN = /^[0-9a-f]{24}$/i
 
 const safeText = (value, fallback = '') => typeof value === 'string' ? value : fallback
 const firstFunction = (...values) => values.find(value => typeof value === 'function')
@@ -53,6 +55,25 @@ function safeStatus(status) {
         mode: safeText(status.activeProfile.mode).slice(0, 32),
         recommended: Boolean(status.activeProfile.recommended),
       },
+    } : {}),
+    ...(Array.isArray(status?.knownProfiles) ? {
+      knownProfiles: status.knownProfiles.slice(0, 16).map(profile => ({
+        value: safeText(profile?.value).slice(0, 128),
+        label: safeText(profile?.label, 'EFT profile').slice(0, 160),
+        mode: safeText(profile?.mode).slice(0, 32) || null,
+        recommended: Boolean(profile?.recommended),
+        active: Boolean(profile?.active),
+      })).filter(profile => profile.value),
+    } : {}),
+    ...(Array.isArray(status?.recentEvents) ? {
+      recentEvents: status.recentEvents.slice(0, 25).filter(event => (
+        TASK_ID_PATTERN.test(safeText(event?.taskId)) && EVENT_STATES.has(event?.state)
+      )).map(event => ({
+        taskId: safeText(event.taskId),
+        state: event.state,
+        occurredAt: typeof event.occurredAt === 'string' ? event.occurredAt.slice(0, 64) : null,
+        applied: Boolean(event.applied),
+      })),
     } : {}),
     ...(status?.scanMetrics && typeof status.scanMetrics === 'object' ? {
       scanMetrics: {
@@ -442,6 +463,19 @@ export function createCompanionRuntime({
     const selectedKey = result?.scanMetrics?.selectedProfile || result?.checkpoint?.profileKey || modeSelection.profileKey || null
     const candidates = result?.candidates || result?.preview?.discoveredProfiles || result?.preview?.characterCandidates || result?.characterCandidates || []
     const candidate = candidates.find(item => item?.profileKey === selectedKey)
+    const affectedTaskIds = [
+      ...(Array.isArray(result?.summary?.affectedTaskIds) ? result.summary.affectedTaskIds : []),
+      ...(Array.isArray(result?.summary?.affected_task_ids) ? result.summary.affected_task_ids : []),
+      ...(Array.isArray(result?.affectedTaskIds) ? result.affectedTaskIds : []),
+    ]
+    const appliedIds = new Set(affectedTaskIds.map(taskId => safeText(taskId).toLowerCase()))
+    const rawRecentEvents = result?.events || result?.preview?.events || []
+    const recentEvents = (Array.isArray(rawRecentEvents) ? rawRecentEvents : []).slice(-25).map(event => ({
+      taskId: event?.taskId ?? event?.task_id,
+      state: event?.state,
+      occurredAt: event?.occurredAt ?? event?.occurred_at ?? null,
+      applied: appliedIds.has(safeText(event?.taskId ?? event?.task_id).toLowerCase()),
+    }))
     if (selectedKey) selectionByMode[mode] = { ...modeSelection, profileKey: selectedKey }
     const metrics = result?.scanMetrics || { filesScanned: 0, filesParsed: 0, sessionsScanned: 0, eventsSeen: 0, matchedEvents: 0, appliedEvents: 0, activeEvents: 0, profilesFound: 0, selection: 'none', scannerVersion: '', mode }
     const zeroEvents = questModeSupported && roots.logsRoot && metrics.eventsSeen === 0
@@ -472,6 +506,14 @@ export function createCompanionRuntime({
         mode: candidate.mode || candidate.gameMode || mode,
         recommended: Boolean(candidate.recommended),
       } : (selectedKey ? { value: selectedKey, label: result?.checkpoint?.profileLabel || 'Selected EFT character', mode } : undefined),
+      knownProfiles: candidates.slice(0, 16).map(profile => ({
+        value: profile?.profileKey,
+        label: profile?.label || profile?.displayName || 'EFT profile',
+        mode: profile?.mode || profile?.gameMode || null,
+        recommended: Boolean(profile?.recommended),
+        active: profile?.profileKey === selectedKey,
+      })),
+      recentEvents,
       scanMetrics: metrics,
     })
     return true

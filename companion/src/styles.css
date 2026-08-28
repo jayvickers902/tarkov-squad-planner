@@ -36,3 +36,21 @@ h1, h2, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 19px; letter-spac
 .toggle { width: 42px; height: 24px; flex: 0 0 auto; padding: 3px; border: 0; border-radius: 30px; background: #304049; cursor: pointer; transition: background .18s ease; } .toggle span:first-child { display: block; width: 18px; height: 18px; border-radius: 50%; background: #b9c5c9; transition: transform .18s ease; } .toggle.is-on { background: #438960; } .toggle.is-on span:first-child { transform: translateX(18px); background: #fff; }
 footer { margin-top: auto; padding-top: 26px; color: #657780; text-align: center; font-size: 11px; } footer span { padding: 0 5px; color: #a0834a; } .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 460px) { .shell { padding: 28px 18px 20px; } .status-card { padding: 19px 16px; } .status-pill { font-size: 10px; } .action-card { align-items: flex-start; flex-direction: column; } }
+
+.scan-report { display: block; }
+.scan-report .settings-heading { margin-bottom: 10px; }
+.scan-report-disclosures { display: grid; gap: 8px; }
+.scan-report-disclosure { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 12px; border: 1px solid #ffffff18; border-radius: 8px; color: #dbe4e7; background: #ffffff08; cursor: pointer; text-align: left; font-size: 12px; font-weight: 700; }
+.scan-report-disclosure:hover { background: #ffffff12; }
+.scan-report-detail { padding: 4px 10px 8px; border-left: 2px solid #e7b34b66; }
+.scan-report-detail h3 { margin: 8px 0 5px; color: #8a9ca4; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.scan-report-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.scan-report-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px 10px; color: #9cacb4; font-size: 11px; }
+.scan-report-list strong { color: #e1e8eb; font-size: 12px; }
+.scan-report-list time { margin-left: auto; color: #80939d; }
+.scan-report-event-state { color: #d1b86f; }
+.scan-report-tag, .scan-report-active { padding: 2px 5px; border-radius: 4px; font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.scan-report-tag { color: #e7b34b; background: #e7b34b18; }
+.scan-report-active { color: #75ca8a; background: #75ca8a18; }
+.scan-report-empty, .scan-report-footnote { color: #80939d; font-size: 11px; }
+.scan-report-footnote { margin-top: 11px; }

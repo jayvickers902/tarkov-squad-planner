@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { version as appVersion } from '../package.json'
 import { DEFAULT_STATUS, normalizeStatus } from './adapter.js'
 import { getCompanionService } from './service.js'
 import { quitCompanion, readAutostart, setAutostart } from './tauri.js'
+import { buildEventRows, loadTaskNames } from './scanReport.js'
 
 const STATUS_LABELS = {
   offline: 'Offline',
@@ -29,13 +30,41 @@ function FolderSetting({ title, configured, onChoose, disabled }) {
   )
 }
 
+function EventRows({ rows }) {
+  if (rows.length === 0) return <p className="scan-report-empty">No events in the recent scan.</p>
+  return (
+    <ul className="scan-report-list">
+      {rows.map((row, index) => (
+        <li key={`${row.taskId}-${row.occurredAt || index}`}>
+          <strong>{row.name}</strong>
+          <span className="scan-report-event-state">State: {row.state}</span>
+          {row.occurredAt && <time dateTime={row.occurredAt}>{formatSyncTime(row.occurredAt)}</time>}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export default function App() {
   const [service] = useState(() => getCompanionService())
   const [view, setView] = useState(() => service.getSnapshot())
   const [autostart, setAutostartState] = useState(false)
   const [busy, setBusy] = useState(true)
   const [actionNotice, setActionNotice] = useState('')
+  const [profilesOpen, setProfilesOpen] = useState(false)
+  const [eventsOpen, setEventsOpen] = useState(false)
+  const [taskNames, setTaskNames] = useState(() => new Map())
   const status = normalizeStatus(view.status || DEFAULT_STATUS)
+  const knownProfiles = status.knownProfiles || []
+  const recentEvents = status.recentEvents || []
+  const eventRows = useMemo(() => buildEventRows(recentEvents, taskNames), [recentEvents, taskNames])
+
+  useEffect(() => {
+    if (recentEvents.length === 0 || taskNames.size > 0) return undefined
+    let active = true
+    void loadTaskNames().then(names => { if (active) setTaskNames(names) }).catch(() => {})
+    return () => { active = false }
+  }, [recentEvents.length, taskNames.size])
 
   useEffect(() => {
     let active = true
@@ -154,6 +183,17 @@ export default function App() {
       <section className="metrics" aria-label="Sync metrics">
         <div className="metric"><span>Last sync</span><strong>{formatSyncTime(status.lastSyncAt)}</strong></div>
         <div className="metric"><span>Queue</span><strong>{status.pendingCount ? `${status.pendingCount} item${status.pendingCount === 1 ? '' : 's'}` : 'Clear'}</strong></div>
+        {/* adapter.js guarantees finite metric values; absence is represented by scanMetrics itself. */}
+        {status.scanMetrics && [
+          ['Files scanned', status.scanMetrics.filesScanned],
+          ['Quest events seen', status.scanMetrics.eventsSeen],
+          ['Matched', status.scanMetrics.matchedEvents],
+          ['Applied', status.scanMetrics.appliedEvents],
+          ['Profiles found', status.scanMetrics.profilesFound],
+        ].map(([label, value]) => (
+          <div className="metric" key={label}><span>{label}</span><strong>{value}</strong></div>
+        ))}
+        {status.scanMetrics?.mode && <div className="metric"><span>Character mode</span><strong>{status.scanMetrics.mode}</strong></div>}
       </section>
 
       {view.authenticated && roots.logsRoot && (
@@ -177,6 +217,61 @@ export default function App() {
         <FolderSetting title="Screenshots" configured={Boolean(roots.screenshotsRoot)} onChoose={() => run(() => service.configureScreenshotsRoot(), 'The Screenshots folder could not be configured.')} disabled={busy} />
       </section>
 
+      {(status.scanMetrics || knownProfiles.length || recentEvents.length) ? (
+        <section className="settings-card scan-report">
+          <div className="settings-heading">
+            <p className="eyebrow">DIAGNOSTICS</p>
+            <h2>What the companion sees</h2>
+          </div>
+          <div className="scan-report-disclosures">
+            <button
+              className="scan-report-disclosure"
+              type="button"
+              aria-expanded={profilesOpen}
+              aria-controls="scan-report-profiles"
+              onClick={() => setProfilesOpen(value => !value)}
+            >
+              Characters found ({knownProfiles.length}) <span aria-hidden="true">{profilesOpen ? '⌃' : '⌄'}</span>
+            </button>
+            {profilesOpen && (
+              <div id="scan-report-profiles" className="scan-report-detail" role="region" aria-label="Characters found">
+                {knownProfiles.length === 0 ? <p className="scan-report-empty">No characters detected yet — run a sync or a full rescan.</p> : (
+                  <ul className="scan-report-list">
+                    {knownProfiles.map(profile => (
+                      <li key={profile.value}>
+                        <strong>{profile.label}</strong>
+                        <span>{profile.mode || 'Mode unavailable'}</span>
+                        {profile.recommended && <span className="scan-report-tag">Recommended</span>}
+                        {profile.active && <span className="scan-report-active">Active</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            <button
+              className="scan-report-disclosure"
+              type="button"
+              aria-expanded={eventsOpen}
+              aria-controls="scan-report-events"
+              onClick={() => setEventsOpen(value => !value)}
+            >
+              Recent quest events ({recentEvents.length}) <span aria-hidden="true">{eventsOpen ? '⌃' : '⌄'}</span>
+            </button>
+            {eventsOpen && (
+              <div id="scan-report-events" className="scan-report-detail" role="region" aria-label="Recent quest events">
+                <h3>Applied on last sync</h3>
+                <EventRows rows={eventRows.applied} />
+                <h3>Not yet applied</h3>
+                <EventRows rows={eventRows.pending} />
+              </div>
+            )}
+          </div>
+          <p className="scan-report-footnote">Showing the 25 most recent events from the last scan.</p>
+        </section>
+      ) : null}
+
       <section className="settings-card">
         <div>
           <p className="eyebrow">SETTINGS</p>
@@ -198,7 +293,7 @@ export default function App() {
         <button className="secondary-button" onClick={() => run(() => quitCompanion(), 'The companion could not be closed.')} disabled={busy}>Quit</button>
       </section>
 
-      <footer>Version {appVersion} <span>•</span> Runs quietly in your system tray</footer>
+      <footer>Version {appVersion}{status.scanMetrics?.scannerVersion && <> <span>•</span> Scanner {status.scanMetrics.scannerVersion}</>} <span>•</span> Runs quietly in your system tray</footer>
     </main>
   )
 }

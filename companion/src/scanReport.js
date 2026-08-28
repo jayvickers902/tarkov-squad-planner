@@ -1,0 +1,36 @@
+const TASK_ID_PATTERN = /^[0-9a-f]{24}$/i
+
+/**
+ * Load quest names only when the diagnostics disclosure needs them. The
+ * catalog is deliberately kept out of the initial tray render.
+ */
+export async function loadTaskNames(loader = () => import('../../src/data/prebaked/tasks.json')) {
+  const module = await loader()
+  const payload = module?.default ?? module
+  const tasks = Array.isArray(payload?.data) ? payload.data : []
+  return new Map(tasks
+    .filter(task => (
+      TASK_ID_PATTERN.test(typeof task?.id === 'string' ? task.id.trim() : '')
+      && typeof task?.name === 'string'
+      && task.name.trim().length > 0
+    ))
+    .map(task => [task.id.trim(), task.name.trim()]))
+}
+
+/** @param {unknown} recentEvents @param {Map<string, string>} taskNames */
+export function buildEventRows(recentEvents, taskNames = new Map()) {
+  const names = taskNames instanceof Map ? taskNames : new Map()
+  const rows = (Array.isArray(recentEvents) ? recentEvents : [])
+    .filter(event => event && typeof event === 'object' && typeof event.taskId === 'string')
+    .map(event => ({
+      taskId: event.taskId,
+      name: names.get(event.taskId) || event.taskId,
+      state: event.state,
+      occurredAt: event.occurredAt || null,
+      applied: event.applied === true,
+    }))
+  return {
+    applied: rows.filter(row => row.applied),
+    pending: rows.filter(row => !row.applied),
+  }
+}
