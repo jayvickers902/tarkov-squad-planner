@@ -5,8 +5,12 @@ vi.mock('../EftLogSyncContext', () => ({
   useEftLogSync: vi.fn(),
   useEftScreenshotSyncContext: vi.fn(),
 }))
+vi.mock('../useCompanionSyncStatus', () => ({
+  useCompanionSyncStatus: vi.fn(),
+}))
 
 import { useEftLogSync, useEftScreenshotSyncContext } from '../EftLogSyncContext'
+import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
 import SyncStatusBar from './SyncStatusBar'
 
 const logCheckNow = vi.fn()
@@ -23,7 +27,7 @@ function logController(overrides = {}) {
     state: 'watching',
     error: null,
     rememberedFolderName: 'EFT Logs',
-    lastSuccessfulCheck: '2026-08-27T11:59:00.000Z',
+    lastSuccessfulCheck: new Date().toISOString(),
     pendingJob: null,
     checkNow: logCheckNow,
     reconnectRememberedFolder: logReconnect,
@@ -41,7 +45,7 @@ function shotController(overrides = {}) {
     error: null,
     folderName: 'EFT Screenshots',
     rememberedFolderName: 'EFT Screenshots',
-    lastSuccessfulCheck: '2026-08-27T11:58:00.000Z',
+    lastSuccessfulCheck: new Date().toISOString(),
     lastScreenshot: null,
     pending: 0,
     lastPing: null,
@@ -56,6 +60,7 @@ function shotController(overrides = {}) {
 beforeEach(() => {
   vi.mocked(useEftLogSync).mockReturnValue(logController())
   vi.mocked(useEftScreenshotSyncContext).mockReturnValue(shotController())
+  vi.mocked(useCompanionSyncStatus).mockReturnValue(null)
 })
 
 afterEach(() => {
@@ -106,5 +111,21 @@ describe('SyncStatusBar', () => {
     render(<SyncStatusBar onMyQuests={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /Screenshot sync/ }))
     expect(screen.getByRole('dialog').textContent).toMatch(/pings need an active party map/i)
+  })
+
+  it('labels fresh companion heartbeats as connected', () => {
+    const updatedAt = new Date().toISOString()
+    vi.mocked(useCompanionSyncStatus).mockReturnValue({
+      available: true,
+      statuses: {
+        logs: { configured: true, state: 'watching', detail: 'Sync up to date', updatedAt },
+        pings: { configured: true, state: 'watching', detail: 'Sync up to date', updatedAt },
+      },
+    })
+    render(<SyncStatusBar onMyQuests={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: /Quest log sync: connected/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Screenshot sync: connected/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Local sync monitor: connected/ })).toBeInTheDocument()
   })
 })

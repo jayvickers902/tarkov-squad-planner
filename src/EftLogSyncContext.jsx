@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo } from 'react'
 import { useTasks } from './useTarkov'
 import { useEftLogImport } from './useEftLogImport'
 import { useEftScreenshotSync as useEftScreenshotController } from './useEftScreenshotSync'
+import { CompanionSyncStatusProvider } from './useCompanionSyncStatus'
 
 // The signed-in app owns one sync lifetime. Keeping this boundary above the
 // route views also leaves room for other local-folder sync services (such as
@@ -76,9 +77,11 @@ export function EftLogSyncProvider({
   ])
 
   return (
-    <EftScreenshotSyncContext.Provider value={screenshotValue}>
-      <EftLogSyncContext.Provider value={value}>{children}</EftLogSyncContext.Provider>
-    </EftScreenshotSyncContext.Provider>
+    <CompanionSyncStatusProvider userId={userId}>
+      <EftScreenshotSyncContext.Provider value={screenshotValue}>
+        <EftLogSyncContext.Provider value={value}>{children}</EftLogSyncContext.Provider>
+      </EftScreenshotSyncContext.Provider>
+    </CompanionSyncStatusProvider>
   )
 }
 

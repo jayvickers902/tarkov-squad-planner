@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEftLogSync, useEftScreenshotSyncContext } from '../EftLogSyncContext'
-import { channelStatus, monitorHealth, relativeTime } from '../syncStatus'
+import { channelStatus, companionChannelStatus, monitorHealth, relativeTime } from '../syncStatus'
+import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
 
 function safeFolderName(value) {
   const parts = String(value || '').split(/[\\/]/).filter(Boolean)
@@ -37,7 +38,9 @@ function relativeAccessible(timestamp, now) {
 function ChannelChip({ channel, title, status, now, onClick, buttonRef, monitor = false }) {
   const meta = monitor
     ? status.label
-    : (status.lastCheckedMs === null ? status.label : relativeTime(status.lastCheckedMs, now))
+    : (status.source === 'companion' || status.lastCheckedMs === null
+      ? status.label
+      : relativeTime(status.lastCheckedMs, now))
   const ariaState = status.label.toLowerCase()
   const ariaLabel = monitor
     ? `Local sync monitor: ${ariaState}`
@@ -80,6 +83,7 @@ function timestampMsForScreenshot(screenshot) {
 export default function SyncStatusBar({ onMyQuests }) {
   const logs = useEftLogSync({ optional: true })
   const shots = useEftScreenshotSyncContext({ optional: true })
+  const companion = useCompanionSyncStatus({ optional: true })
   const [openKey, setOpenKey] = useState(null)
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden')
   const barRef = useRef(null)
@@ -129,9 +133,17 @@ export default function SyncStatusBar({ onMyQuests }) {
 
   if (!logs || !shots) return null
 
-  const logStatus = channelStatus(logs, { now })
-  const screenshotStatus = channelStatus(shots, { now })
-  const health = monitorHealth({ logs, shots, now, visible })
+  const companionLogStatus = companion?.available ? companionChannelStatus(companion.statuses.logs, { now }) : null
+  const companionScreenshotStatus = companion?.available ? companionChannelStatus(companion.statuses.pings, { now }) : null
+  const logStatus = companionLogStatus || channelStatus(logs, { now })
+  const screenshotStatus = companionScreenshotStatus || channelStatus(shots, { now })
+  const health = monitorHealth({
+    logs,
+    shots,
+    now,
+    visible,
+    statuses: companion?.available ? { logs: logStatus, pings: screenshotStatus } : null,
+  })
 
   function closePopover(restoreFocus = true) {
     const opener = openerKeyRef.current

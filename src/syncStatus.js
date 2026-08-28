@@ -128,30 +128,78 @@ export function channelStatus(controller, { now, staleAfterMs = FIVE_MINUTES } =
   }
 }
 
-export function monitorHealth({ logs, shots, now, visible } = {}) {
-  const logStatus = channelStatus(logs, { now })
-  const screenshotStatus = channelStatus(shots, { now })
+// The Windows companion reports one status row per service. Keep this
+// translation separate from channelStatus so local File System Access state
+// retains its existing semantics and remains a fallback on older projects.
+export function companionChannelStatus(row, { now, staleAfterMs = FIVE_MINUTES } = {}) {
+  if (!row) return null
+  const lastCheckedMs = timestampMs(row.updatedAt || row.updated_at)
+  const stale = lastCheckedMs !== null && now - lastCheckedMs > staleAfterMs
+  const detail = row.detail || 'The Windows companion reported no additional detail.'
+  const state = String(row.state || '').toLowerCase()
+
+  if (!row.configured || state === 'idle') {
+    return { source: 'companion', tone: 'idle', label: 'NOT SET UP', detail: detail || 'No companion folder is configured.', lastCheckedMs, stale: false }
+  }
+  if (state === 'needs_access') {
+    return { source: 'companion', tone: 'warn', label: 'NEEDS ACCESS', detail, lastCheckedMs, stale }
+  }
+  if (state === 'error') {
+    return { source: 'companion', tone: 'error', label: 'ERROR', detail, lastCheckedMs, stale }
+  }
+  if (state === 'disabled') {
+    return { source: 'companion', tone: 'idle', label: 'DISABLED', detail, lastCheckedMs, stale: false }
+  }
+  if (state === 'offline') {
+    return { source: 'companion', tone: 'warn', label: 'OFFLINE', detail, lastCheckedMs, stale }
+  }
+  if (stale) {
+    return { source: 'companion', tone: 'warn', label: 'STALE', detail: 'The companion has not reported recently.', lastCheckedMs, stale: true }
+  }
+  if (state === 'syncing' || state === 'connecting') {
+    return { source: 'companion', tone: 'ok', label: 'SYNCING', detail, lastCheckedMs, stale: false }
+  }
+  return { source: 'companion', tone: 'ok', label: 'CONNECTED', detail, lastCheckedMs, stale: false }
+}
+
+export function monitorHealth({ logs, shots, now, visible, statuses } = {}) {
+  const companionBacked = Boolean(statuses)
+  const logStatus = statuses?.logs || channelStatus(logs, { now })
+  const screenshotStatus = statuses?.screenshots
+    || (statuses?.pings?.tone ? statuses.pings : companionChannelStatus(statuses?.pings, { now }))
+    || channelStatus(shots, { now })
   const tones = [logStatus.tone, screenshotStatus.tone]
   const channels = { logs: logStatus.tone, screenshots: screenshotStatus.tone }
+  const visibilityWarning = visible === false && !companionBacked
 
   if (tones.every(tone => tone === 'off')) {
-    return { tone: 'off', label: 'UNSUPPORTED', detail: 'Local folder sync is not supported in this browser.', channels }
+    return {
+      tone: 'off',
+      label: 'UNSUPPORTED',
+      detail: companionBacked ? 'The Windows companion is unavailable.' : 'Local folder sync is not supported in this browser.',
+      channels,
+    }
   }
   if (tones.includes('error')) {
     return { tone: 'error', label: 'ERROR', detail: 'One or more local sync channels reported an error.', channels }
   }
-  if (tones.includes('warn') || visible === false) {
+  if (tones.includes('warn') || visibilityWarning) {
     return {
       tone: 'warn',
-      label: visible === false ? 'TAB HIDDEN' : 'ATTENTION',
-      detail: visible === false
+      label: visibilityWarning ? 'TAB HIDDEN' : 'ATTENTION',
+      detail: visibilityWarning
         ? 'The tab is hidden, so background checks may be delayed.'
         : 'One or more local sync channels need attention.',
       channels,
     }
   }
   if (tones.includes('ok')) {
-    return { tone: 'ok', label: 'WATCHING', detail: 'At least one local sync channel is watching.', channels }
+    return {
+      tone: 'ok',
+      label: companionBacked ? 'CONNECTED' : 'WATCHING',
+      detail: companionBacked ? 'The Windows companion is connected.' : 'At least one local sync channel is watching.',
+      channels,
+    }
   }
   return { tone: 'idle', label: 'NOT SET UP', detail: 'No local sync channel is set up yet.', channels }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { channelStatus, monitorHealth } from './syncStatus'
+import { channelStatus, companionChannelStatus, monitorHealth } from './syncStatus'
 
 const now = Date.parse('2026-08-27T12:00:00.000Z')
 
@@ -46,5 +46,39 @@ describe('monitorHealth', () => {
       visible: false,
     })
     expect(result).toMatchObject({ tone: 'warn', label: 'TAB HIDDEN', channels: { logs: 'ok', screenshots: 'idle' } })
+  })
+
+  it('uses companion-reported service states when supplied', () => {
+    const result = monitorHealth({
+      statuses: {
+        logs: companionChannelStatus({ service: 'logs', configured: true, state: 'watching', updatedAt: '2026-08-27T12:00:00.000Z', detail: 'Connected' }, { now }),
+        pings: companionChannelStatus({ service: 'pings', configured: true, state: 'error', updatedAt: '2026-08-27T12:00:00.000Z', detail: 'Retrying' }, { now }),
+      },
+      now,
+      visible: true,
+    })
+    expect(result).toMatchObject({ tone: 'error', channels: { logs: 'ok', screenshots: 'error' } })
+
+    const connected = monitorHealth({
+      statuses: {
+        logs: companionChannelStatus({ configured: true, state: 'watching', updatedAt: '2026-08-27T12:00:00.000Z' }, { now }),
+        pings: companionChannelStatus({ configured: true, state: 'idle', updatedAt: '2026-08-27T12:00:00.000Z' }, { now }),
+      },
+      now,
+      visible: false,
+    })
+    expect(connected).toMatchObject({ tone: 'ok', label: 'CONNECTED' })
+  })
+})
+
+describe('companionChannelStatus', () => {
+  it('maps the companion heartbeat to a watching status', () => {
+    expect(companionChannelStatus({ configured: true, state: 'watching', updatedAt: '2026-08-27T12:00:00.000Z', detail: 'Connected' }, { now }))
+      .toMatchObject({ source: 'companion', tone: 'ok', label: 'CONNECTED', lastCheckedMs: now })
+  })
+
+  it('marks an old companion heartbeat stale', () => {
+    expect(companionChannelStatus({ configured: true, state: 'watching', updatedAt: '2026-08-27T11:50:00.000Z' }, { now }))
+      .toMatchObject({ tone: 'warn', label: 'STALE', stale: true })
   })
 })
