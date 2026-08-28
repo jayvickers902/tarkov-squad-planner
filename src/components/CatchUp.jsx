@@ -28,6 +28,8 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
   const [picks, setPicks] = useState(() => readPicks(userId))
   const [maxLevel, setMaxLevel] = useState('')
   const [selectedIds, setSelectedIds] = useState(new Set())
+  const [adding, setAdding] = useState(false)
+  const [addError, setAddError] = useState('')
   const previousAvailableIds = useRef(new Set())
 
   const graph = useMemo(() => buildQuestGraph(allTasks), [allTasks])
@@ -99,14 +101,22 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
     setPicks({})
   }
 
-  function confirm() {
+  async function confirm() {
     if (selectedTasks.length === 0) return
-    onBulkAdd(selectedTasks.map(task => ({
-      id: task.id,
-      name: task.name,
-      mapNorm: task.map?.normalizedName ?? null,
-    })))
-    setOpen(false)
+    setAdding(true)
+    setAddError('')
+    try {
+      await onBulkAdd(selectedTasks.map(task => ({
+        id: task.id,
+        name: task.name,
+        mapNorm: task.map?.normalizedName ?? null,
+      })))
+      setOpen(false)
+    } catch {
+      setAddError('The catch-up quests could not be saved. Your selections are still here; try again.')
+    } finally {
+      setAdding(false)
+    }
   }
 
   if (!graphReady) {
@@ -219,14 +229,15 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
         </div>
       )}
 
+      {addError && <div className="mono eft-log-import-error" role="alert" style={{ marginBottom: 10 }}>{addError}</div>}
       <div style={{ display: 'flex', gap: 8 }}>
         <button
           className="btn-gold btn-sm"
           onClick={confirm}
-          disabled={selectedTasks.length === 0}
+          disabled={selectedTasks.length === 0 || adding}
           style={{ fontSize: 12, opacity: selectedTasks.length === 0 ? .4 : 1 }}
         >
-          ADD {selectedTasks.length} QUEST{selectedTasks.length === 1 ? '' : 'S'}
+          {adding ? 'ADDING...' : `ADD ${selectedTasks.length} QUEST${selectedTasks.length === 1 ? '' : 'S'}`}
         </button>
         <button className="btn-ghost btn-sm" onClick={reset} style={{ fontSize: 12 }}>RESET</button>
       </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { buildEventRows, loadTaskNames } from './scanReport.js'
+import { buildEventRows, buildSuccessfulScanRows, loadTaskNames } from './scanReport.js'
 
 describe('companion scan report helpers', () => {
   it('loads task names lazily from the prebaked catalog and skips unknown ids', async () => {
@@ -25,5 +25,16 @@ describe('companion scan report helpers', () => {
     ], new Map([[taskId, 'Aid Stations']]))
     expect(rows.applied).toEqual([{ taskId, name: 'Aid Stations', state: 'completed', occurredAt: '2026-08-27T12:00:00Z', applied: true }])
     expect(rows.pending).toEqual([{ taskId: unknownId, name: unknownId, state: 'active', occurredAt: null, applied: false }])
+  })
+
+  it('keeps successful scan events in their reported order', () => {
+    const taskId = '59c9392986f7742f6923add2'
+    expect(buildSuccessfulScanRows([
+      { taskId, state: 'active', occurredAt: '2026-08-27T12:00:00Z' },
+      { taskId, state: 'completed', occurredAt: '2026-08-27T13:00:00Z' },
+    ], new Map([[taskId, 'Aid Stations']]))).toEqual([
+      { taskId, name: 'Aid Stations', state: 'active', occurredAt: '2026-08-27T12:00:00Z' },
+      { taskId, name: 'Aid Stations', state: 'completed', occurredAt: '2026-08-27T13:00:00Z' },
+    ])
   })
 })

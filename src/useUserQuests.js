@@ -173,10 +173,18 @@ export function useUserQuests(userId, gameMode = 'regular') {
     if (activeModeRef.current === mode) setQuests(prev => prev.filter(q => q.quest_id !== questId))
   }, [userId, mode])
 
-  // Delete all quests for this user
+  // Clear the visible planner without deleting terminal history. Imported log
+  // events are monotonic only while completed/failed rows remain available as
+  // guards; deleting those rows lets an older "started" event resurrect a
+  // quest the player has already handed in.
   const clearAllQuests = useCallback(async () => {
     if (!userId) return
-    const { error } = await supabase.from('user_quests').delete().eq('user_id', userId).eq('game_mode', mode)
+    const { error } = await supabase
+      .from('user_quests')
+      .delete()
+      .eq('user_id', userId)
+      .eq('game_mode', mode)
+      .eq('state', 'active')
     throwIfError(error)
     if (activeModeRef.current === mode) setQuests([])
   }, [userId, mode])
@@ -186,17 +194,28 @@ export function useUserQuests(userId, gameMode = 'regular') {
     if (!userId || !Array.isArray(snapshotQuests)) return
     const deleted = await supabase.from('user_quests').delete().eq('user_id', userId).eq('game_mode', mode)
     throwIfError(deleted.error)
-    const rows = snapshotQuests.map(q => ({
-      user_id:    userId,
-      game_mode:  mode,
-      quest_id:   q.quest_id,
-      quest_name: q.quest_name,
-      map_norm:   q.map_norm || null,
-      important:  q.important || false,
-      skipped:    q.skipped || false,
-      obj_progress: q.obj_progress || {},
-      ...manualQuestStatePatch('active'),
-    }))
+    const rows = snapshotQuests.map(q => {
+      const preservedState = ['active', 'failed', 'completed'].includes(q.state) ? q.state : null
+      const statePatch = preservedState
+        ? {
+            state: preservedState,
+            state_at: q.state_at || new Date().toISOString(),
+            state_source: ['manual', 'log_import', 'live', 'system'].includes(q.state_source) ? q.state_source : 'manual',
+            source_event_key: q.source_event_key || null,
+          }
+        : manualQuestStatePatch('active')
+      return {
+        user_id:    userId,
+        game_mode:  mode,
+        quest_id:   q.quest_id,
+        quest_name: q.quest_name,
+        map_norm:   q.map_norm || null,
+        important:  q.important || false,
+        skipped:    q.skipped || false,
+        obj_progress: q.obj_progress || {},
+        ...statePatch,
+      }
+    })
     const { data, error } = rows.length
       ? await supabase.from('user_quests').insert(rows).select().order('created_at')
       : { data: [] }

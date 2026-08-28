@@ -20,6 +20,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, defaultOpen 
   const [rawText,    setRawText]    = useState('')    // shown when a scan finds nothing
   const [showRaw,    setShowRaw]    = useState(false)
   const [showUpload, setShowUpload] = useState(true)
+  const [saving,     setSaving]     = useState(false)
   const fileRef = useRef()
   const busyRef = useRef(false)   // the paste listener stays live during a scan
 
@@ -106,13 +107,19 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, defaultOpen 
     })
   }
 
-  function handleAddSelected() {
-    for (const task of results) {
-      if (selected.has(task.id)) {
-        onAdd({ id: task.id, name: task.name }, task.detectedMap ?? null)
-      }
+  async function handleAddSelected() {
+    const chosen = results.filter(task => selected.has(task.id))
+    if (!chosen.length) return
+    setSaving(true)
+    setError(null)
+    try {
+      await Promise.all(chosen.map(task => onAdd({ id: task.id, name: task.name }, task.detectedMap ?? null)))
+      reset()
+    } catch {
+      setError('The selected quests could not all be saved. Review your list and retry the remaining quests.')
+    } finally {
+      setSaving(false)
     }
-    reset()
   }
 
   function reset() {
@@ -306,12 +313,12 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, defaultOpen 
                 <button
                   className="btn-gold btn-sm"
                   onClick={handleAddSelected}
-                  disabled={selectedCount === 0}
+                  disabled={selectedCount === 0 || saving}
                   style={{ fontSize: 12, opacity: selectedCount === 0 ? .4 : 1 }}
                 >
-                  ADD {selectedCount > 0 ? selectedCount : ''} QUEST{selectedCount !== 1 ? 'S' : ''}
+                  {saving ? 'SAVING...' : `ADD ${selectedCount > 0 ? selectedCount : ''} QUEST${selectedCount !== 1 ? 'S' : ''}`}
                 </button>
-                <button className="btn-ghost btn-sm" onClick={scanAnother} style={{ fontSize: 12 }}>
+                <button className="btn-ghost btn-sm" onClick={scanAnother} disabled={saving} style={{ fontSize: 12 }}>
                   SCAN ANOTHER
                 </button>
               </div>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEftLogSync, useEftScreenshotSyncContext } from '../EftLogSyncContext'
-import { channelStatus, companionChannelStatus, monitorHealth, relativeTime } from '../syncStatus'
+import { channelStatus, companionChannelStatus, healthiestChannelStatus, monitorHealth, relativeTime, sourceLabel } from '../syncStatus'
 import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
 
 function safeFolderName(value) {
@@ -38,13 +38,17 @@ function relativeAccessible(timestamp, now) {
 function ChannelChip({ channel, title, status, now, onClick, buttonRef, monitor = false }) {
   const meta = monitor
     ? status.label
-    : (status.source === 'companion' || status.lastCheckedMs === null
+    : (status.source === 'desktop' || status.lastCheckedMs === null
       ? status.label
       : relativeTime(status.lastCheckedMs, now))
   const ariaState = status.label.toLowerCase()
+  const source = status.source ? ` via ${sourceLabel(status.source)}` : ''
+  const timing = status.source === 'desktop'
+    ? `, last report ${relativeAccessible(status.lastReportedMs, now)}, last successful check ${relativeAccessible(status.lastCheckedMs, now)}`
+    : `, last successful check ${relativeAccessible(status.lastCheckedMs, now)}`
   const ariaLabel = monitor
     ? `Local sync monitor: ${ariaState}`
-    : `${title} sync: ${ariaState}, last checked ${relativeAccessible(status.lastCheckedMs, now)}`
+    : `${title} sync: ${ariaState}${source}${timing}`
   return (
     <button
       ref={buttonRef}
@@ -78,6 +82,20 @@ function timestampMsForScreenshot(screenshot) {
   if (typeof screenshot?.at === 'number') return screenshot.at
   const time = Date.parse(screenshot?.at || '')
   return Number.isFinite(time) ? time : null
+}
+
+function TimingRows({ status, changeLabel = 'LAST DATA CHANGE', now }) {
+  return (
+    <>
+      {status.source === 'desktop' && (
+        <div className="mono sync-popover-row"><span>LAST REPORT · {relativeTime(status.lastReportedMs, now) || 'NOT REPORTED YET'}</span></div>
+      )}
+      <div className="mono sync-popover-row"><span>LAST SUCCESSFUL CHECK · {relativeTime(status.lastCheckedMs, now) || 'NOT CHECKED YET'}</span></div>
+      {status.lastChangedMs !== null && status.lastChangedMs !== undefined && (
+        <div className="mono sync-popover-row"><span>{changeLabel} · {relativeTime(status.lastChangedMs, now) || 'JUST NOW'}</span></div>
+      )}
+    </>
+  )
 }
 
 export default function SyncStatusBar({ onMyQuests }) {
@@ -133,16 +151,18 @@ export default function SyncStatusBar({ onMyQuests }) {
 
   if (!logs || !shots) return null
 
+  const localLogStatus = channelStatus(logs, { now })
+  const localScreenshotStatus = channelStatus(shots, { now })
   const companionLogStatus = companion?.available ? companionChannelStatus(companion.statuses.logs, { now }) : null
   const companionScreenshotStatus = companion?.available ? companionChannelStatus(companion.statuses.pings, { now }) : null
-  const logStatus = companionLogStatus || channelStatus(logs, { now })
-  const screenshotStatus = companionScreenshotStatus || channelStatus(shots, { now })
+  const logStatus = healthiestChannelStatus(localLogStatus, companionLogStatus)
+  const screenshotStatus = healthiestChannelStatus(localScreenshotStatus, companionScreenshotStatus)
   const health = monitorHealth({
     logs,
     shots,
     now,
     visible,
-    statuses: companion?.available ? { logs: logStatus, pings: screenshotStatus } : null,
+    statuses: { logs: logStatus, pings: screenshotStatus },
   })
 
   function closePopover(restoreFocus = true) {
@@ -165,6 +185,11 @@ export default function SyncStatusBar({ onMyQuests }) {
   const logReconnect = logs.state === 'permission-needed'
     || Boolean(logs.rememberedFolderName && logs.state !== 'watching' && logs.state !== 'reading')
   const shotConnectLabel = shots.folderName || shots.rememberedFolderName ? 'RECONNECT' : 'CONNECT'
+  const localLogSupported = logs.supported !== false && logs.persistentSupported !== false
+  const localLogConfigured = localLogSupported && Boolean(logs.rememberedFolderName)
+  const localScreenshotSupported = shots.supported !== false
+  const localScreenshotConfigured = localScreenshotSupported && Boolean(shots.folderName || shots.rememberedFolderName)
+  const browserSelected = logStatus.source === 'browser' || screenshotStatus.source === 'browser'
 
   return (
     <div className="sync-status-bar" ref={barRef}>
@@ -179,13 +204,16 @@ export default function SyncStatusBar({ onMyQuests }) {
             <button type="button" className="btn-ghost btn-sm" aria-label="Close logs sync" onClick={() => closePopover()}>✕</button>
           </div>
           <p>{popoverDetail(logStatus)}</p>
-          {logs.rememberedFolderName && <div className="mono sync-popover-row"><span>FOLDER · {logFolder}</span></div>}
-          <div className="mono sync-popover-row"><span>LAST CHECK · {relativeTime(logStatus.lastCheckedMs, now) || 'NOT CHECKED YET'}</span></div>
-          {logs.pendingJob && <div className="mono sync-popover-row"><span>UNFINISHED IMPORT · {logs.pendingJob.applied || 0}/{logs.pendingJob.total || 0} EVENTS APPLIED</span></div>}
+          <div className="mono sync-popover-row"><span>ACTIVE SOURCE · {sourceLabel(logStatus.source).toUpperCase()}</span></div>
+          <TimingRows status={logStatus} changeLabel="LAST QUEST CHANGE" now={now} />
+          {localLogConfigured && <div className="mono sync-popover-row"><span>WEBSITE FOLDER · {logFolder}</span></div>}
+          {localLogConfigured && logs.pendingJob && <div className="mono sync-popover-row"><span>UNFINISHED WEBSITE IMPORT · {logs.pendingJob.applied || 0}/{logs.pendingJob.total || 0} EVENTS APPLIED</span></div>}
+          {logStatus.source === 'desktop' && !localLogConfigured && <p>The desktop app manages this channel. You can also connect a website folder as a fallback while this tab is open.</p>}
           <div className="sync-popover-actions">
-            <button type="button" className="btn-ghost btn-sm" onClick={() => runAction(logs.checkNow)} disabled={logs.state === 'reading' || logs.state === 'applying'}>CHECK NOW</button>
-            {logReconnect && <button type="button" className="btn-ghost btn-sm" onClick={() => runAction(logs.reconnectRememberedFolder)}>RECONNECT</button>}
-            <button type="button" className="btn-danger btn-sm" onClick={() => runAction(logs.forgetFolder)} disabled={!logs.rememberedFolderName}>FORGET FOLDER</button>
+            {localLogConfigured && <button type="button" className="btn-ghost btn-sm" onClick={() => runAction(logs.checkNow)} disabled={logs.state === 'reading' || logs.state === 'applying'}>CHECK WEBSITE FOLDER</button>}
+            {localLogSupported && !localLogConfigured && <button type="button" className="btn-ghost btn-sm" onClick={() => runAction(logs.connectRememberedFolder)}>CONNECT WEBSITE FOLDER</button>}
+            {localLogConfigured && logReconnect && <button type="button" className="btn-ghost btn-sm" onClick={() => runAction(logs.reconnectRememberedFolder)}>RECONNECT WEBSITE FOLDER</button>}
+            {localLogConfigured && <button type="button" className="btn-danger btn-sm" onClick={() => runAction(logs.forgetFolder)}>FORGET WEBSITE FOLDER</button>}
             <button type="button" className="btn-ghost btn-sm sync-popover-link" onClick={() => { onMyQuests?.(); closePopover(false) }}>QUEST MANAGER →</button>
           </div>
         </div>
@@ -198,18 +226,21 @@ export default function SyncStatusBar({ onMyQuests }) {
             <button type="button" className="btn-ghost btn-sm" aria-label="Close shots sync" onClick={() => closePopover()}>✕</button>
           </div>
           <p>{popoverDetail(screenshotStatus)}</p>
-          {screenshotStatus.tone === 'ok' && shots.readyForPings === false && (
+          <div className="mono sync-popover-row"><span>ACTIVE SOURCE · {sourceLabel(screenshotStatus.source).toUpperCase()}</span></div>
+          <TimingRows status={screenshotStatus} now={now} />
+          {screenshotStatus.source === 'browser' && screenshotStatus.tone === 'ok' && shots.readyForPings === false && (
             <p className="mono sync-popover-note">Watching, but pings need an active party map before they can be placed.</p>
           )}
-          {(shots.folderName || shots.rememberedFolderName) && <div className="mono sync-popover-row"><span>FOLDER · {screenshotFolder}</span></div>}
-          <div className="mono sync-popover-row"><span>LAST CHECK · {relativeTime(screenshotStatus.lastCheckedMs, now) || 'NOT CHECKED YET'}</span></div>
-          {shots.lastScreenshot && <div className="mono sync-popover-row"><span>LAST SCREENSHOT · {relativeTime(timestampMsForScreenshot(shots.lastScreenshot), now) || 'JUST NOW'}</span></div>}
-          {shots.lastPing && <div className="mono sync-popover-row"><span>LAST PING · {shots.lastPing.map || 'UNKNOWN MAP'}{shots.lastPing.floor ? ` · ${shots.lastPing.floor}` : ''}</span></div>}
-          {shots.pending > 0 && <div className="mono sync-popover-row"><span>PENDING · {shots.pending}</span></div>}
+          {(shots.folderName || shots.rememberedFolderName) && <div className="mono sync-popover-row"><span>WEBSITE FOLDER · {screenshotFolder}</span></div>}
+          {localScreenshotConfigured && shots.lastScreenshot && <div className="mono sync-popover-row"><span>LAST WEBSITE SCREENSHOT · {relativeTime(timestampMsForScreenshot(shots.lastScreenshot), now) || 'JUST NOW'}</span></div>}
+          {localScreenshotConfigured && shots.lastPing && <div className="mono sync-popover-row"><span>LAST WEBSITE PING · {shots.lastPing.map || 'UNKNOWN MAP'}{shots.lastPing.floor ? ` · ${shots.lastPing.floor}` : ''}</span></div>}
+          {localScreenshotConfigured && shots.pending > 0 && <div className="mono sync-popover-row"><span>WEBSITE PENDING · {shots.pending}</span></div>}
+          {screenshotStatus.source === 'desktop' && !localScreenshotConfigured && <p>The desktop app manages this channel. You can also connect a website screenshot folder while this tab is open.</p>}
           <div className="sync-popover-actions">
-            <button type="button" className="btn-ghost btn-sm" onClick={() => runAction(shots.checkNow)} disabled={!shots.supported}>CHECK NOW</button>
-            <button type="button" className="btn-ghost btn-sm" onClick={() => runAction(shots.folderName || shots.rememberedFolderName ? shots.reconnect : shots.connect)} disabled={!shots.supported}>{shotConnectLabel}</button>
-            <button type="button" className="btn-danger btn-sm" onClick={() => runAction(shots.forget)} disabled={!shots.folderName && !shots.rememberedFolderName}>FORGET FOLDER</button>
+            {localScreenshotConfigured && <button type="button" className="btn-ghost btn-sm" onClick={() => runAction(shots.checkNow)}>CHECK WEBSITE FOLDER</button>}
+            {localScreenshotSupported && <button type="button" className="btn-ghost btn-sm" onClick={() => runAction(localScreenshotConfigured ? shots.reconnect : shots.connect)}>{shotConnectLabel} WEBSITE FOLDER</button>}
+            {localScreenshotConfigured && <button type="button" className="btn-danger btn-sm" onClick={() => runAction(shots.forget)}>FORGET WEBSITE FOLDER</button>}
+            <button type="button" className="btn-ghost btn-sm sync-popover-link" onClick={() => { onMyQuests?.(); closePopover(false) }}>QUEST MANAGER →</button>
           </div>
         </div>
       )}
@@ -220,9 +251,9 @@ export default function SyncStatusBar({ onMyQuests }) {
             <h2 id="sync-popover-monitor-title">MONITOR</h2>
             <button type="button" className="btn-ghost btn-sm" aria-label="Close monitor" onClick={() => closePopover()}>✕</button>
           </div>
-          <PopoverRow label="LOGS" status={logStatus}>Quest log sync is {logStatus.label.toLowerCase()}.</PopoverRow>
-          <PopoverRow label="PINGS" status={screenshotStatus}>Screenshot sync is {screenshotStatus.label.toLowerCase()}.</PopoverRow>
-          <PopoverRow label="TAB VISIBLE" status={{ tone: visible ? 'ok' : 'warn' }}>{visible ? 'The tab is visible for reliable background checks.' : 'The tab is hidden, so background checks may be delayed.'}</PopoverRow>
+          <PopoverRow label="LOGS" status={logStatus}>Quest log sync is {logStatus.label.toLowerCase()} via {sourceLabel(logStatus.source)}.</PopoverRow>
+          <PopoverRow label="PINGS" status={screenshotStatus}>Screenshot sync is {screenshotStatus.label.toLowerCase()} via {sourceLabel(screenshotStatus.source)}.</PopoverRow>
+          <PopoverRow label="WEBSITE TAB" status={{ tone: browserSelected ? (visible ? 'ok' : 'warn') : 'idle' }}>{browserSelected ? (visible ? 'The tab is visible for website folder checks.' : 'The tab is hidden, so website folder checks may be delayed.') : 'The active desktop sources do not depend on this tab.'}</PopoverRow>
           {(logStatus.tone === 'off' || screenshotStatus.tone === 'off') && <p>Local folder sync uses Chromium-only File System Access.</p>}
         </div>
       )}

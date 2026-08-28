@@ -69,6 +69,32 @@ export function normalizeStatus(value) {
       applied: Boolean(event.applied),
     }))
     : null
+  const rawSuccessfulScan = candidate.lastSuccessfulScan && typeof candidate.lastSuccessfulScan === 'object'
+    ? candidate.lastSuccessfulScan : null
+  const successfulScanTime = typeof rawSuccessfulScan?.completedAt === 'string'
+    && Number.isFinite(Date.parse(rawSuccessfulScan.completedAt))
+    ? new Date(rawSuccessfulScan.completedAt).toISOString() : null
+  const successfulScanMode = ['regular', 'pve', 'pvp-season'].includes(rawSuccessfulScan?.mode)
+    ? rawSuccessfulScan.mode : null
+  const lastSuccessfulScan = successfulScanTime && successfulScanMode ? {
+    completedAt: successfulScanTime,
+    mode: successfulScanMode,
+    filesScanned: Math.max(0, Math.floor(Number(rawSuccessfulScan.filesScanned) || 0)),
+    eventsIncluded: Math.max(0, Math.floor(Number(rawSuccessfulScan.eventsIncluded) || 0)),
+    plannerChanges: Math.max(0, Math.floor(Number(rawSuccessfulScan.plannerChanges) || 0)),
+    events: (Array.isArray(rawSuccessfulScan.events) ? rawSuccessfulScan.events : [])
+      .slice(-25)
+      .filter(event => (
+        typeof event?.taskId === 'string' && /^[0-9a-f]{24}$/i.test(event.taskId)
+        && ['active', 'failed', 'completed'].includes(event.state)
+      ))
+      .map(event => ({
+        taskId: event.taskId,
+        state: event.state,
+        occurredAt: typeof event.occurredAt === 'string' && Number.isFinite(Date.parse(event.occurredAt))
+          ? new Date(event.occurredAt).toISOString() : null,
+      })),
+  } : null
   const rawMetrics = candidate.scanMetrics && typeof candidate.scanMetrics === 'object' ? candidate.scanMetrics : null
   return {
     state,
@@ -78,6 +104,7 @@ export function normalizeStatus(value) {
     ...(activeProfile?.value ? { activeProfile } : {}),
     ...(knownProfiles ? { knownProfiles } : {}),
     ...(recentEvents ? { recentEvents } : {}),
+    ...(lastSuccessfulScan ? { lastSuccessfulScan } : {}),
     ...(rawMetrics ? { scanMetrics: {
       filesScanned: Math.max(0, Math.floor(Number(rawMetrics.filesScanned) || 0)),
       filesParsed: Math.max(0, Math.floor(Number(rawMetrics.filesParsed) || 0)),

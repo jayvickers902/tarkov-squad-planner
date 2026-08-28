@@ -35,6 +35,9 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
   const [recentlyAdded, setRecentlyAdded] = useState(new Set())
   const [questOrder, setQuestOrder] = useState(() => userQuests.map(q => q.quest_id))
   const [hubOpen, setHubOpen] = useState(false)
+  const [importReceipt, setImportReceipt] = useState(null)
+  const [importRestorePoint, setImportRestorePoint] = useState(null)
+  const [undoingImport, setUndoingImport] = useState(false)
   const searchInputRef = useRef(null)
   const savedQuestsRef = useRef(null)
 
@@ -53,6 +56,13 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
   const canChangeGameMode = !inParty && !!onSetUserSetting
   const eftLogSync = useEftLogSync({ optional: true })
   const companion = useCompanionSyncStatus({ optional: true })
+
+  useEffect(() => {
+    // An undo point belongs to one character mode and must never be replayed
+    // into another mode after the user switches tabs.
+    setImportReceipt(null)
+    setImportRestorePoint(null)
+  }, [gameMode])
 
   const snapKey = userId ? `tarkov_quests_${userId}_${gameMode}` : null
   // Snapshots predating mode scoping were saved unsuffixed, and every quest row
@@ -175,10 +185,30 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
     searchInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
-  function handleImportComplete(importedIds = []) {
-    setHubOpen(false)
-    savedQuestsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    const ids = Array.isArray(importedIds) ? importedIds.filter(Boolean) : []
+  async function handleImportStart() {
+    let restoreRows = userQuests
+    if (typeof onGetQuestHistory === 'function') {
+      try {
+        const history = await onGetQuestHistory(1000)
+        if (Array.isArray(history) && (history.length > 0 || userQuests.length === 0)) restoreRows = history
+      } catch {
+        // The active list is still a safe fallback when history is unavailable.
+      }
+    }
+    setImportRestorePoint(restoreRows.map(quest => ({ ...quest })))
+    setImportReceipt(null)
+  }
+
+  function handleImportComplete(result = {}) {
+    const receipt = Array.isArray(result)
+      ? { source: 'logs', questIds: result, applied: result.length }
+      : result
+    const ids = Array.isArray(receipt?.questIds) ? receipt.questIds.filter(Boolean) : []
+    setImportReceipt(previous => {
+      if (previous?.source !== 'screenshot' || receipt?.source !== 'screenshot') return { ...receipt, questIds: ids }
+      const questIds = [...new Set([...(previous.questIds || []), ...ids])]
+      return { ...receipt, questIds, added: questIds.length }
+    })
     if (!ids.length) return
     setRecentlyAdded(prev => new Set([...prev, ...ids]))
     setTimeout(() => {
@@ -189,6 +219,36 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
       })
     }, 2800)
   }
+
+  function handleViewQuests() {
+    setHubOpen(false)
+    savedQuestsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
+  async function handleUndoImport() {
+    if (!importRestorePoint || typeof onRestore !== 'function') return
+    setUndoingImport(true)
+    try {
+      await onRestore(importRestorePoint)
+      setHubOpen(false)
+      setImportReceipt(receipt => receipt ? { ...receipt, undone: true, restoredCount: importRestorePoint.length } : null)
+      setImportRestorePoint(null)
+    } finally {
+      setUndoingImport(false)
+    }
+  }
+
+  const ongoingSyncConfigured = companion?.desktopState === 'connected'
+    || eftLogSync?.state === 'watching'
+    || Boolean(eftLogSync?.rememberedFolderName)
+  const receiptCount = importReceipt?.applied ?? importReceipt?.added ?? importReceipt?.questIds?.length ?? 0
+  const receiptStateParts = importReceipt?.states
+    ? [
+        importReceipt.states.active ? `${importReceipt.states.active} started` : null,
+        importReceipt.states.completed ? `${importReceipt.states.completed} completed` : null,
+        importReceipt.states.failed ? `${importReceipt.states.failed} failed` : null,
+      ].filter(Boolean)
+    : []
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '20px 16px' }}>
@@ -213,6 +273,37 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
           fontSize: 11, color: 'var(--gold)', letterSpacing: '.04em',
         }}>
           ◆ YOUR PARTY IS STILL ACTIVE — CHANGES HERE WON'T AFFECT THE CURRENT RAID
+        </div>
+      )}
+
+      <div className="quest-mode-row">
+        <span className="mono quest-mode-label">CHARACTER MODE</span>
+        <div className="quest-mode-options" role="group" aria-label="Character game mode">
+          {GAME_MODES.map(value => (
+            <button
+              key={value}
+              className={gameMode === value ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
+              onClick={() => onSetUserSetting?.('game_mode', value)}
+              disabled={!canChangeGameMode}
+              aria-pressed={gameMode === value}
+            >
+              {gameModeLabel(value)}
+            </button>
+          ))}
+        </div>
+        <span className="mono quest-mode-hint">IMPORTS AND QUEST DATA · {gameMode.toUpperCase()}</span>
+      </div>
+
+      {userQuests.length === 0 && (
+        <div className="quest-setup-checklist" aria-label="Quest setup progress">
+          <div className="mono quest-setup-checklist-title">QUEST SETUP</div>
+          <div className="quest-setup-checklist-items">
+            <span className="mono is-done"><span aria-hidden="true">✓</span> {gameModeLabel(gameMode)} selected</span>
+            <span className="mono"><span aria-hidden="true">2</span> Import quests</span>
+            <span className={`mono${ongoingSyncConfigured ? ' is-done' : ' is-optional'}`}>
+              <span aria-hidden="true">{ongoingSyncConfigured ? '✓' : '3'}</span> {ongoingSyncConfigured ? 'Ongoing sync connected' : 'Ongoing sync · optional'}
+            </span>
+          </div>
         </div>
       )}
 
@@ -254,6 +345,28 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
         </div>
       )}
 
+      {importReceipt && (
+        <div className={`quest-import-receipt${importReceipt.undone ? ' is-undone' : ''}`} role="status">
+          <div className="quest-import-receipt-copy">
+            <div className="mono quest-import-receipt-title">{importReceipt.undone ? 'IMPORT UNDONE' : 'IMPORT COMPLETE'}</div>
+            <p>
+              {importReceipt.undone
+                ? `Restored ${importReceipt.restoredCount ?? userQuests.length} quest records from before the import.`
+                : `${receiptCount} quest state${receiptCount === 1 ? '' : 's'} updated${receiptStateParts.length ? ` · ${receiptStateParts.join(' · ')}` : ''}.${importReceipt.syncEnabled ? ' Browser sync is on while this tab stays open.' : ''}`}
+            </p>
+          </div>
+          <div className="quest-import-receipt-actions">
+            {!importReceipt.undone && <button className="btn-ghost btn-sm" onClick={handleViewQuests}>VIEW MY QUESTS</button>}
+            {!importReceipt.undone && importRestorePoint && (
+              <button className="btn-ghost btn-sm" onClick={handleUndoImport} disabled={undoingImport}>
+                {undoingImport ? 'RESTORING...' : 'UNDO IMPORT'}
+              </button>
+            )}
+            <button className="btn-ghost btn-sm" onClick={() => { setImportReceipt(null); setImportRestorePoint(null) }}>DISMISS</button>
+          </div>
+        </div>
+      )}
+
       {/* With zero quests the empty state owns the CTA, avoiding two gold buttons. */}
       {(hubOpen || userQuests.length > 0) && (
         <QuestImportHub
@@ -268,29 +381,14 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
           onGetQuestHistory={onGetQuestHistory}
           onApply={onReconcileLogEvents}
           sync={eftLogSync}
+          companion={companion}
           onFocusManualSearch={focusManualSearch}
+          onImportStart={handleImportStart}
           onImportComplete={handleImportComplete}
+          onViewQuests={handleViewQuests}
         />
       )}
       <DesktopAppCard companion={companion} />
-
-      <div className="quest-mode-row">
-        <span className="mono quest-mode-label">GAME MODE</span>
-        <div className="quest-mode-options" role="group" aria-label="Game mode">
-          {GAME_MODES.map(value => (
-            <button
-              key={value}
-              className={gameMode === value ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-              onClick={() => onSetUserSetting?.('game_mode', value)}
-              disabled={!canChangeGameMode}
-              aria-pressed={gameMode === value}
-            >
-              {gameModeLabel(value)}
-            </button>
-          ))}
-        </div>
-        <span className="mono quest-mode-hint">TASK DATA · {gameMode.toUpperCase()}</span>
-      </div>
 
       <div className="lbl quest-pings-label">LIVE POSITION PINGS</div>
       <EftScreenshotPings />

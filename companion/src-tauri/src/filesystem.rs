@@ -196,7 +196,15 @@ fn walk_logs(
             walk_logs(root, &path, result)?;
         } else if link_metadata.is_file() && relevant_log_name(&entry.file_name().to_string_lossy())
         {
-            let canonical = match confined_path(root, &path) {
+            // `confined_path` deliberately rejects absolute input received at
+            // the command boundary. `read_dir` yields absolute paths here, so
+            // translate the trusted walker result back to a relative child
+            // before applying the same containment and reparse checks.
+            let relative = match path.strip_prefix(root) {
+                Ok(relative) => relative,
+                Err(_) => continue,
+            };
+            let canonical = match confined_path(root, relative) {
                 Ok(path) => path,
                 Err(_) => continue,
             };
@@ -265,9 +273,12 @@ pub fn valid_screenshot_filename(name: &str) -> bool {
     let minute = stem[14..16].parse::<u32>().unwrap_or(99);
     let (timestamp_end, second) = match bytes[16] {
         b']' => (17, 0),
-        b'-' if bytes.len() >= 20 && bytes[19] == b']'
+        b'-' if bytes.len() >= 20
+            && bytes[19] == b']'
             && stem[17..19].chars().all(|c| c.is_ascii_digit()) =>
-            (20, stem[17..19].parse::<u32>().unwrap_or(99)),
+        {
+            (20, stem[17..19].parse::<u32>().unwrap_or(99))
+        }
         _ => return false,
     };
     let year = stem[0..4].parse::<i32>().unwrap_or(0);
@@ -314,7 +325,11 @@ fn walk_screenshots(root: &Path, result: &mut Vec<FileMetadata>) -> Result<(), N
         if !valid_screenshot_filename(&name) || link_metadata.len() > MAX_SCREENSHOT_FILE_BYTES {
             continue;
         }
-        let canonical = match confined_path(root, &path) {
+        let relative = match path.strip_prefix(root) {
+            Ok(relative) => relative,
+            Err(_) => continue,
+        };
+        let canonical = match confined_path(root, relative) {
             Ok(path) => path,
             Err(_) => continue,
         };
@@ -405,6 +420,55 @@ pub fn read_logs_at_offsets(
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn enumeration_keeps_confined_files_found_by_the_native_walker() {
+        let directory = tempfile::tempdir().unwrap();
+        let session = directory
+            .path()
+            .join("log_2026.08.28_12-32-39_1.1.0.1.46911");
+        std::fs::create_dir(&session).unwrap();
+        std::fs::write(
+            session.join("2026.08.28_12-32-39_1.1.0.1.46911 push-notifications_000.log"),
+            b"notification",
+        )
+        .unwrap();
+        std::fs::write(
+            session.join("2026.08.28_12-32-39_1.1.0.1.46911 backend_000.log"),
+            b"context",
+        )
+        .unwrap();
+        std::fs::write(session.join("output_000.log"), b"ignored").unwrap();
+
+        let scan = enumerate_logs(directory.path()).unwrap();
+
+        assert_eq!(scan.files.len(), 2);
+        assert_eq!(scan.total_bytes, 19);
+        assert!(scan
+            .files
+            .iter()
+            .all(|file| !Path::new(&file.path).is_absolute()));
+        assert!(scan.files.iter().all(|file| file
+            .path
+            .starts_with("log_2026.08.28_12-32-39_1.1.0.1.46911/")));
+    }
+
+    #[test]
+    fn screenshot_enumeration_keeps_a_confined_top_level_image() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory
+                .path()
+                .join("2026-08-27[12-34-56]1.2,3.4,5.6_0.1,0.2,0.3,0.4.png"),
+            b"png",
+        )
+        .unwrap();
+
+        let scan = enumerate_screenshots(directory.path()).unwrap();
+
+        assert_eq!(scan.len(), 1);
+        assert!(!Path::new(&scan[0].path).is_absolute());
+    }
 
     #[test]
     fn screenshot_validation_never_needs_image_bytes() {

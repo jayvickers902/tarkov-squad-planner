@@ -1,15 +1,15 @@
 export const IMPORT_ROUTES = [
   {
     key: 'logs',
-    title: 'Import EFT logs',
+    title: 'Import or sync EFT logs',
     recommended: true,
-    blurb: 'Reads your Tarkov Logs folder in this browser. Most complete — picks up started, failed and completed tasks.',
-    bestWhen: 'Best if you have played on this PC.',
+    blurb: 'Use your Tarkov logs for the most complete quest history, including started, failed and completed tasks.',
+    bestWhen: 'Connect a folder to sync in this tab, or choose files for a one-time import.',
     requiresChromium: true,
   },
   {
     key: 'screenshot',
-    title: 'Scan a screenshot',
+    title: 'Import from a screenshot',
     recommended: false,
     blurb: 'Reads a screenshot of your in-game quest list. Runs entirely in your browser.',
     bestWhen: 'Best on a phone, or if log import is unavailable.',
@@ -17,7 +17,7 @@ export const IMPORT_ROUTES = [
   },
   {
     key: 'catchup',
-    title: 'Catch up by trader',
+    title: 'Rebuild progress by trader',
     recommended: false,
     blurb: 'Pick the last task you finished for each trader and it infers everything before it.',
     bestWhen: 'Best if you know roughly where you are.',
@@ -33,8 +33,29 @@ export const IMPORT_ROUTES = [
   },
 ]
 
-export function recommendedRoute({ logsSupported } = {}) {
-  return logsSupported
-    ? { key: 'logs', reason: '' }
-    : { key: 'screenshot', reason: 'Log import needs Chrome or Edge on desktop.' }
+export function recommendedRoute({
+  gameMode,
+  logsSupported = false,
+  persistentSupported = false,
+  desktopConnected = false,
+  desktopFresh = false,
+  mobileLikely = false,
+} = {}) {
+  if (gameMode === 'pvp-season') {
+    return { key: 'screenshot', reason: 'Seasonal quest logs are not supported yet. Import a screenshot instead.' }
+  }
+  if (mobileLikely) {
+    return { key: 'screenshot', reason: 'A screenshot is the simplest import on this device.' }
+  }
+  if (!logsSupported) {
+    return { key: 'screenshot', reason: 'Log import needs Chrome or Edge on desktop.' }
+  }
+  return {
+    key: 'logs',
+    reason: desktopConnected && desktopFresh
+      ? 'Desktop log sync is already connected. Use this for an immediate one-time check or a browser fallback.'
+      : persistentSupported
+        ? 'Connect your logs folder to keep quests synced while this tab is open.'
+        : 'Import your logs once from this PC.',
+  }
 }

@@ -3,7 +3,7 @@ import { version as appVersion } from '../package.json'
 import { DEFAULT_STATUS, normalizeStatus } from './adapter.js'
 import { getCompanionService } from './service.js'
 import { quitCompanion, readAutostart, setAutostart } from './tauri.js'
-import { buildEventRows, loadTaskNames } from './scanReport.js'
+import { buildSuccessfulScanRows, loadTaskNames } from './scanReport.js'
 
 const STATUS_LABELS = {
   offline: 'Offline',
@@ -18,20 +18,111 @@ function formatSyncTime(value) {
   return Number.isNaN(parsed.valueOf()) ? 'Unknown' : parsed.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-function FolderSetting({ title, configured, onChoose, disabled }) {
+function FolderSetting({ title, configured, optional = false, onChoose, disabled }) {
   return (
     <div className="folder-row">
       <div>
-        <h3>{title}</h3>
-        <p>{configured ? 'Configured locally' : 'Not configured'}</p>
+        <h3>{title}{optional && <span className="optional-label">OPTIONAL</span>}</h3>
+        <p>{configured ? 'Folder selected on this PC' : optional ? 'Not configured — position pings stay off' : 'Required for quest import'}</p>
       </div>
-      <button className="secondary-button" onClick={onChoose} disabled={disabled}>Choose folder</button>
+      <button className="secondary-button" onClick={onChoose} disabled={disabled}>{configured ? 'Change folder' : 'Choose folder'}</button>
     </div>
   )
 }
 
+export function getSetupProgress(view, status, roots) {
+  const authenticated = Boolean(view.authenticated)
+  const logsConfigured = Boolean(roots.logsRoot)
+  const selectionRequired = status.selectionRequired === 'profile' || status.selectionRequired === 'unknown-mode'
+  const hasCompletedCheck = Boolean(status.lastSyncAt)
+  const characterResolved = logsConfigured && !selectionRequired && hasCompletedCheck
+  const syncHealthy = authenticated && logsConfigured && characterResolved && status.state === 'connected'
+  const incomplete = !authenticated || !logsConfigured || selectionRequired || !hasCompletedCheck
+
+  return {
+    authenticated,
+    logsConfigured,
+    selectionRequired,
+    hasCompletedCheck,
+    characterResolved,
+    syncHealthy,
+    incomplete,
+  }
+}
+
+function SetupProgress({ setup, status, configured, busy, onSignIn, onSignOut, onChooseLogs, onSync }) {
+  const accountState = setup.authenticated ? 'complete' : 'current'
+  const logsState = setup.logsConfigured ? 'complete' : setup.authenticated ? 'current' : 'upcoming'
+  const characterState = setup.characterResolved
+    ? 'complete'
+    : setup.selectionRequired || (setup.logsConfigured && setup.authenticated) ? 'current' : 'upcoming'
+  const syncState = setup.syncHealthy
+    ? 'complete'
+    : setup.characterResolved ? 'current' : 'upcoming'
+  const statusLabel = value => value === 'complete' ? 'DONE' : value === 'current' ? 'NEXT' : 'LATER'
+
+  return (
+    <section className={`setup-card ${setup.syncHealthy ? 'is-complete' : ''}`} aria-labelledby="setup-title">
+      <div className="setup-heading">
+        <div>
+          <p className="eyebrow">SETUP PROGRESS</p>
+          <h2 id="setup-title">{setup.syncHealthy ? 'Companion ready' : setup.incomplete ? 'Finish companion setup' : 'Sync needs attention'}</h2>
+          <p>{setup.syncHealthy ? 'Your quest logs are connected and the latest sync check completed.' : setup.incomplete ? 'Complete these steps once, then the companion keeps working from the system tray.' : 'Setup is saved. Use the current status and actions below to restore a healthy sync.'}</p>
+        </div>
+        <span className="setup-count">{setup.syncHealthy ? '4 OF 4' : `${[setup.authenticated, setup.logsConfigured, setup.characterResolved, setup.syncHealthy].filter(Boolean).length} OF 4`}</span>
+      </div>
+
+      <ol className="setup-steps">
+        <li className={`setup-step is-${accountState}`} aria-current={accountState === 'current' ? 'step' : undefined}>
+          <span className="setup-index" aria-hidden="true">{accountState === 'complete' ? '✓' : '1'}</span>
+          <div className="setup-step-copy">
+            <div className="setup-step-title"><strong>Sign in</strong><span>{statusLabel(accountState)}</span></div>
+            <p>{setup.authenticated ? 'Your Dudgy.net account is connected.' : 'Connect your planner in the system browser. Credentials stay in Windows Credential Manager.'}</p>
+          </div>
+          {!setup.authenticated && <button className="primary-button setup-action" onClick={onSignIn} disabled={busy || !configured}>Sign in</button>}
+          {setup.authenticated && setup.incomplete && <button className="secondary-button setup-action" onClick={onSignOut} disabled={busy}>Sign out</button>}
+        </li>
+
+        <li className={`setup-step is-${logsState}`} aria-current={logsState === 'current' ? 'step' : undefined}>
+          <span className="setup-index" aria-hidden="true">{logsState === 'complete' ? '✓' : '2'}</span>
+          <div className="setup-step-copy">
+            <div className="setup-step-title"><strong>Configure Logs</strong><span>{statusLabel(logsState)}</span></div>
+            <p>{setup.logsConfigured ? 'The Logs folder is selected on this PC.' : 'Choose your Escape from Tarkov Logs folder for quest import.'}</p>
+          </div>
+          {setup.authenticated && !setup.logsConfigured && <button className="primary-button setup-action" onClick={onChooseLogs} disabled={busy}>Choose Logs folder</button>}
+        </li>
+
+        <li className={`setup-step is-${characterState}`} aria-current={characterState === 'current' ? 'step' : undefined}>
+          <span className="setup-index" aria-hidden="true">{characterState === 'complete' ? '✓' : '3'}</span>
+          <div className="setup-step-copy">
+            <div className="setup-step-title"><strong>Confirm character and mode</strong><span>{statusLabel(characterState)}</span></div>
+            <p>{setup.selectionRequired ? 'Choose the matching character or mode below.' : setup.characterResolved ? 'The first scan confirmed the character and mode.' : setup.logsConfigured ? 'The first scan checks whether a choice is needed.' : 'This is checked after the Logs folder is configured.'}</p>
+          </div>
+          {characterState === 'current' && !setup.selectionRequired && <button className="secondary-button setup-action" onClick={onSync} disabled={busy}>Scan Logs</button>}
+        </li>
+
+        <li className={`setup-step is-${syncState}`} aria-current={syncState === 'current' ? 'step' : undefined}>
+          <span className="setup-index" aria-hidden="true">{syncState === 'complete' ? '✓' : '4'}</span>
+          <div className="setup-step-copy">
+            <div className="setup-step-title"><strong>Confirm healthy sync</strong><span>{statusLabel(syncState)}</span></div>
+            <p>{setup.syncHealthy ? `Last checked ${formatSyncTime(status.lastSyncAt)}.` : setup.selectionRequired ? 'Resolve the required choice before checking sync.' : setup.logsConfigured ? status.detail : 'A sync check runs after the required setup is complete.'}</p>
+          </div>
+          {syncState === 'current' && <button className="secondary-button setup-action" onClick={onSync} disabled={busy}>Check sync</button>}
+        </li>
+      </ol>
+    </section>
+  )
+}
+
+function formatMode(value) {
+  if (value === 'pve') return 'PvE'
+  if (value === 'pvp-season') return 'PvP Seasonal'
+  if (value === 'regular') return 'PvP Permanent'
+  return 'Unknown mode'
+}
+
 function EventRows({ rows }) {
-  if (rows.length === 0) return <p className="scan-report-empty">No events in the recent scan.</p>
+  if (rows.length === 0) return <p className="scan-report-empty">No retained event details are available.</p>
   return (
     <ul className="scan-report-list">
       {rows.map((row, index) => (
@@ -54,17 +145,19 @@ export default function App() {
   const [profilesOpen, setProfilesOpen] = useState(false)
   const [eventsOpen, setEventsOpen] = useState(false)
   const [taskNames, setTaskNames] = useState(() => new Map())
-  const status = normalizeStatus(view.status || DEFAULT_STATUS)
+  const rawStatus = view.status || DEFAULT_STATUS
+  const status = normalizeStatus(rawStatus)
   const knownProfiles = status.knownProfiles || []
-  const recentEvents = status.recentEvents || []
-  const eventRows = useMemo(() => buildEventRows(recentEvents, taskNames), [recentEvents, taskNames])
+  const lastSuccessfulScan = status.lastSuccessfulScan || null
+  const successfulEvents = lastSuccessfulScan?.events || []
+  const eventRows = useMemo(() => buildSuccessfulScanRows(successfulEvents, taskNames), [successfulEvents, taskNames])
 
   useEffect(() => {
-    if (recentEvents.length === 0 || taskNames.size > 0) return undefined
+    if (successfulEvents.length === 0 || taskNames.size > 0) return undefined
     let active = true
     void loadTaskNames().then(names => { if (active) setTaskNames(names) }).catch(() => {})
     return () => { active = false }
-  }, [recentEvents.length, taskNames.size])
+  }, [successfulEvents.length, taskNames.size])
 
   useEffect(() => {
     let active = true
@@ -100,6 +193,7 @@ export default function App() {
 
   const notice = actionNotice || view.notice
   const roots = view.roots || {}
+  const setup = getSetupProgress(view, rawStatus, roots)
 
   return (
     <main className="shell">
@@ -124,25 +218,16 @@ export default function App() {
 
       {notice && <p className="notice" role="status">{notice}</p>}
 
-      {!view.authenticated ? (
-        <section className="action-card">
-          <div>
-            <p className="eyebrow">DUDGY.NET ACCOUNT</p>
-            <h2>Connect your planner</h2>
-            <p>Sign in through your system browser. Session credentials stay in Windows Credential Manager.</p>
-          </div>
-          <button className="primary-button" onClick={() => run(() => service.signIn(), 'Secure sign-in could not be started.')} disabled={busy || !view.configured}>Sign in</button>
-        </section>
-      ) : (
-        <section className="action-card">
-          <div>
-            <p className="eyebrow">SIGNED IN</p>
-            <h2>{view.user?.email || 'Dudgy.net account'}</h2>
-            <p>Quest logs and screenshot pings sync while this window is hidden.</p>
-          </div>
-          <button className="secondary-button" onClick={() => run(() => service.signOut(), 'Sign-out could not be completed.')} disabled={busy}>Sign out</button>
-        </section>
-      )}
+      <SetupProgress
+        setup={setup}
+        status={status}
+        configured={view.configured}
+        busy={busy}
+        onSignIn={() => run(() => service.signIn(), 'Secure sign-in could not be started.')}
+        onSignOut={() => run(() => service.signOut(), 'Sign-out could not be completed.')}
+        onChooseLogs={() => run(() => service.configureLogsRoot(), 'The Logs folder could not be configured.')}
+        onSync={refresh}
+      />
 
       {view.status?.selectionRequired === 'profile' && (
         <section className="choice-card">
@@ -169,6 +254,27 @@ export default function App() {
         </section>
       )}
 
+      {!setup.incomplete && view.authenticated && (
+        <section className="action-card">
+          <div>
+            <p className="eyebrow">SIGNED IN</p>
+            <h2>{view.user?.email || 'Dudgy.net account'}</h2>
+            <p>Quest logs and screenshot pings sync while this window is hidden.</p>
+          </div>
+          <button className="secondary-button" onClick={() => run(() => service.signOut(), 'Sign-out could not be completed.')} disabled={busy}>Sign out</button>
+        </section>
+      )}
+
+      <section className={`settings-card folder-settings ${setup.logsConfigured ? '' : 'is-setup-priority'}`}>
+        <div className="settings-heading">
+          <p className="eyebrow">LOCAL EFT DATA</p>
+          <h2>Watched folders</h2>
+          <p>Choose folders directly from this PC. Quest sync requires Logs; Screenshots is optional for position pings. Screenshot image bytes are never read.</p>
+        </div>
+        <FolderSetting title="Logs" configured={setup.logsConfigured} onChoose={() => run(() => service.configureLogsRoot(), 'The Logs folder could not be configured.')} disabled={busy} />
+        <FolderSetting title="Screenshots" optional configured={Boolean(roots.screenshotsRoot)} onChoose={() => run(() => service.configureScreenshotsRoot(), 'The Screenshots folder could not be configured.')} disabled={busy} />
+      </section>
+
       {status.activeProfile && (
         <section className="choice-card active-profile" aria-label="Active EFT character">
           <div>
@@ -180,7 +286,7 @@ export default function App() {
         </section>
       )}
 
-      <section className="metrics" aria-label="Sync metrics">
+      {!setup.incomplete && <section className="metrics" aria-label="Sync metrics">
         <div className="metric"><span>Last sync</span><strong>{formatSyncTime(status.lastSyncAt)}</strong></div>
         <div className="metric"><span>Queue</span><strong>{status.pendingCount ? `${status.pendingCount} item${status.pendingCount === 1 ? '' : 's'}` : 'Clear'}</strong></div>
         {/* adapter.js guarantees finite metric values; absence is represented by scanMetrics itself. */}
@@ -194,9 +300,9 @@ export default function App() {
           <div className="metric" key={label}><span>{label}</span><strong>{value}</strong></div>
         ))}
         {status.scanMetrics?.mode && <div className="metric"><span>Character mode</span><strong>{status.scanMetrics.mode}</strong></div>}
-      </section>
+      </section>}
 
-      {view.authenticated && roots.logsRoot && (
+      {!setup.incomplete && view.authenticated && roots.logsRoot && (
         <section className="settings-card rescan-card">
           <div>
             <p className="eyebrow">RECOVERY</p>
@@ -207,35 +313,41 @@ export default function App() {
         </section>
       )}
 
-      <section className="settings-card folder-settings">
-        <div className="settings-heading">
-          <p className="eyebrow">LOCAL EFT DATA</p>
-          <h2>Watched folders</h2>
-          <p>Only bounded log text and screenshot filenames are parsed. Screenshot image bytes are never read.</p>
-        </div>
-        <FolderSetting title="Logs" configured={Boolean(roots.logsRoot)} onChoose={() => run(() => service.configureLogsRoot(), 'The Logs folder could not be configured.')} disabled={busy} />
-        <FolderSetting title="Screenshots" configured={Boolean(roots.screenshotsRoot)} onChoose={() => run(() => service.configureScreenshotsRoot(), 'The Screenshots folder could not be configured.')} disabled={busy} />
-      </section>
-
-      {(status.scanMetrics || knownProfiles.length || recentEvents.length) ? (
+      {!setup.incomplete && (status.scanMetrics || knownProfiles.length || lastSuccessfulScan) ? (
         <section className="settings-card scan-report">
           <div className="settings-heading">
             <p className="eyebrow">DIAGNOSTICS</p>
-            <h2>What the companion sees</h2>
+            <h2>Last successful quest scan</h2>
           </div>
+          {lastSuccessfulScan ? (
+            <>
+              <p className="scan-report-timestamp">
+                <time dateTime={lastSuccessfulScan.completedAt}>{formatSyncTime(lastSuccessfulScan.completedAt)}</time>
+                <span aria-hidden="true"> · </span>{formatMode(lastSuccessfulScan.mode)}
+              </p>
+              <div className="scan-report-summary" aria-label="Successful scan summary">
+                <div><span>Files scanned</span><strong>{lastSuccessfulScan.filesScanned}</strong></div>
+                <div><span>Quest events included</span><strong>{lastSuccessfulScan.eventsIncluded}</strong></div>
+                <div><span>Planner changes</span><strong>{lastSuccessfulScan.plannerChanges}</strong></div>
+              </div>
+            </>
+          ) : (
+            <p className="scan-report-empty">No quest-bearing scan has completed yet. This card will retain the next successful result.</p>
+          )}
           <div className="scan-report-disclosures">
-            <button
-              className="scan-report-disclosure"
-              type="button"
-              aria-expanded={profilesOpen}
-              aria-controls="scan-report-profiles"
-              onClick={() => setProfilesOpen(value => !value)}
-            >
-              Characters found ({knownProfiles.length}) <span aria-hidden="true">{profilesOpen ? '⌃' : '⌄'}</span>
-            </button>
-            {profilesOpen && (
-              <div id="scan-report-profiles" className="scan-report-detail" role="region" aria-label="Characters found">
-                {knownProfiles.length === 0 ? <p className="scan-report-empty">No characters detected yet — run a sync or a full rescan.</p> : (
+            {knownProfiles.length > 0 && (
+              <>
+                <button
+                  className="scan-report-disclosure"
+                  type="button"
+                  aria-expanded={profilesOpen}
+                  aria-controls="scan-report-profiles"
+                  onClick={() => setProfilesOpen(value => !value)}
+                >
+                  Characters found ({knownProfiles.length}) <span aria-hidden="true">{profilesOpen ? '⌃' : '⌄'}</span>
+                </button>
+                {profilesOpen && (
+                  <div id="scan-report-profiles" className="scan-report-detail" role="region" aria-label="Characters found">
                   <ul className="scan-report-list">
                     {knownProfiles.map(profile => (
                       <li key={profile.value}>
@@ -246,31 +358,44 @@ export default function App() {
                       </li>
                     ))}
                   </ul>
+                  </div>
                 )}
-              </div>
+              </>
             )}
 
-            <button
-              className="scan-report-disclosure"
-              type="button"
-              aria-expanded={eventsOpen}
-              aria-controls="scan-report-events"
-              onClick={() => setEventsOpen(value => !value)}
-            >
-              Recent quest events ({recentEvents.length}) <span aria-hidden="true">{eventsOpen ? '⌃' : '⌄'}</span>
-            </button>
-            {eventsOpen && (
-              <div id="scan-report-events" className="scan-report-detail" role="region" aria-label="Recent quest events">
-                <h3>Applied on last sync</h3>
-                <EventRows rows={eventRows.applied} />
-                <h3>Not yet applied</h3>
-                <EventRows rows={eventRows.pending} />
-              </div>
+            {lastSuccessfulScan && (
+              <>
+                <button
+                  className="scan-report-disclosure"
+                  type="button"
+                  aria-expanded={eventsOpen}
+                  aria-controls="scan-report-events"
+                  onClick={() => setEventsOpen(value => !value)}
+                >
+                  Quest events included ({lastSuccessfulScan.eventsIncluded}) <span aria-hidden="true">{eventsOpen ? '⌃' : '⌄'}</span>
+                </button>
+                {eventsOpen && (
+                  <div id="scan-report-events" className="scan-report-detail" role="region" aria-label="Quest events included in the last successful scan">
+                    <EventRows rows={eventRows} />
+                  </div>
+                )}
+              </>
             )}
           </div>
-          <p className="scan-report-footnote">Showing the 25 most recent events from the last scan.</p>
+          {lastSuccessfulScan && <p className="scan-report-footnote">Showing {eventRows.length} of {lastSuccessfulScan.eventsIncluded} included events. New no-change checks will not replace this result.</p>}
         </section>
       ) : null}
+
+      {setup.incomplete && (status.scanMetrics || knownProfiles.length || lastSuccessfulScan) && (
+        <details className="deferred-tools">
+          <summary>Diagnostics from the latest scan</summary>
+          <div className="deferred-tools-copy">
+            <p>Setup actions above are the fastest way to clear the current blocker.</p>
+            {status.scanMetrics && <p>{status.scanMetrics.filesScanned} files scanned · {status.scanMetrics.eventsSeen} quest events seen · {status.scanMetrics.appliedEvents} applied</p>}
+            {lastSuccessfulScan && <p>Last successful quest scan: {formatSyncTime(lastSuccessfulScan.completedAt)}.</p>}
+          </div>
+        </details>
+      )}
 
       <section className="settings-card">
         <div>

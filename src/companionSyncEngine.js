@@ -39,11 +39,13 @@ export const SCREENSHOT_FRESHNESS_MS = 2 * 60 * 1000
 export const MAX_SCREENSHOT_CATCHUP_MS = SCREENSHOT_FRESHNESS_MS
 export const SCREENSHOT_PINGS_PER_MINUTE = 20
 export const PING_RATE_LIMIT_PER_MINUTE = SCREENSHOT_PINGS_PER_MINUTE
-export const QUEST_LOG_SCANNER_VERSION = '0.2.0'
+export const QUEST_LOG_SCANNER_VERSION = '0.2.1'
 
 const VALID_MODES = new Set(['regular', 'pve', 'pvp-season'])
 const MAX_SAFE_ID = 128
 const SELECTION_STATES = new Set(['none', 'auto', 'confirmed', 'required', 'unknown'])
+const EVENT_STATES = new Set(['active', 'failed', 'completed'])
+const TASK_ID_PATTERN = /^[0-9a-f]{24}$/i
 
 function finite(value, fallback = null) {
   return Number.isFinite(value) ? value : fallback
@@ -76,6 +78,35 @@ function currentActiveEvents(events) {
     }
   }
   return [...latest.values()].filter(event => event.state === 'active').length
+}
+
+function safeSuccessfulScan(value) {
+  if (!value || typeof value !== 'object') return null
+  const completedAt = typeof value.completedAt === 'string' && Number.isFinite(Date.parse(value.completedAt))
+    ? new Date(value.completedAt).toISOString() : null
+  const mode = VALID_MODES.has(value.mode) ? value.mode : null
+  if (!completedAt || !mode) return null
+  const count = key => Math.max(0, Math.floor(Number(value?.[key]) || 0))
+  const events = (Array.isArray(value.events) ? value.events : [])
+    .filter(event => TASK_ID_PATTERN.test(String(event?.taskId ?? event?.task_id ?? '')) && EVENT_STATES.has(event?.state))
+    .slice(-25)
+    .map(event => {
+      const occurredAt = event?.occurredAt ?? event?.occurred_at
+      return {
+        taskId: String(event.taskId ?? event.task_id),
+        state: event.state,
+        occurredAt: typeof occurredAt === 'string' && Number.isFinite(Date.parse(occurredAt))
+          ? new Date(occurredAt).toISOString() : null,
+      }
+    })
+  return {
+    completedAt,
+    mode,
+    filesScanned: count('filesScanned'),
+    eventsIncluded: count('eventsIncluded'),
+    plannerChanges: count('plannerChanges'),
+    events,
+  }
 }
 
 function encodedByteLength(value) {
@@ -206,6 +237,12 @@ function checkpointForLogs(input = {}) {
       .filter(([mode]) => VALID_MODES.has(mode))
       .map(([mode, value]) => [mode, safeScanMetrics(value)]))
     : null
+  const lastSuccessfulScansByMode = input.lastSuccessfulScansByMode && typeof input.lastSuccessfulScansByMode === 'object'
+    ? Object.fromEntries(Object.entries(input.lastSuccessfulScansByMode)
+      .filter(([mode]) => VALID_MODES.has(mode))
+      .map(([mode, value]) => [mode, safeSuccessfulScan(value)])
+      .filter(([, value]) => value))
+    : null
   return {
     version: 2,
     files,
@@ -217,6 +254,7 @@ function checkpointForLogs(input = {}) {
     gameMode: VALID_MODES.has(input.gameMode) ? input.gameMode : null,
     ...(selectionsByMode && Object.keys(selectionsByMode).length ? { selectionsByMode } : {}),
     ...(scanMetricsByMode && Object.keys(scanMetricsByMode).length ? { scanMetricsByMode } : {}),
+    ...(lastSuccessfulScansByMode && Object.keys(lastSuccessfulScansByMode).length ? { lastSuccessfulScansByMode } : {}),
     scannerVersion: QUEST_LOG_SCANNER_VERSION,
     updatedAt: finite(input.updatedAt, Date.now()),
   }
@@ -641,6 +679,17 @@ export function createQuestLogSyncController({
           appliedEvents: previousMetrics.appliedEvents + Number(summary.inserted || 0) + Number(summary.updated || 0),
           selection: selectionState,
         })
+      const priorSuccessfulScans = checkpoint?.lastSuccessfulScansByMode || {}
+      const lastSuccessfulScan = payload.length > 0
+        ? safeSuccessfulScan({
+          completedAt: new Date(now()).toISOString(),
+          mode,
+          filesScanned: current.length,
+          eventsIncluded: payload.length,
+          plannerChanges: Number(summary.inserted || 0) + Number(summary.updated || 0),
+          events: payload,
+        })
+        : safeSuccessfulScan(priorSuccessfulScans[mode])
 
       // Commit source offsets only after every network chunk succeeds. A failed
       // apply therefore rereads the same suffix and relies on event_key
@@ -669,6 +718,10 @@ export function createQuestLogSyncController({
           ...(checkpoint?.scanMetricsByMode || {}),
           [mode]: scanMetrics,
         },
+        lastSuccessfulScansByMode: {
+          ...priorSuccessfulScans,
+          ...(lastSuccessfulScan ? { [mode]: lastSuccessfulScan } : {}),
+        },
         updatedAt: now(),
       })
       await saveCheckpoint(checkpointStore, checkpointKey, next)
@@ -687,6 +740,7 @@ export function createQuestLogSyncController({
           selectedProfile: (checkpoint?.gameMode === mode ? checkpoint?.profileKey : null) || parser?.profileKey || null,
           mode,
         },
+        lastSuccessfulScan,
         checkpoint: clone(next),
       }
     })()
@@ -702,7 +756,10 @@ export function createQuestLogSyncController({
       if (preserveSelections && checkpoint === null) checkpoint = await loadCheckpoint(checkpointStore, checkpointKey)
       const selectionsByMode = preserveSelections && checkpoint?.selectionsByMode
         ? { ...checkpoint.selectionsByMode } : null
+      const lastSuccessfulScansByMode = preserveSelections && checkpoint?.lastSuccessfulScansByMode
+        ? { ...checkpoint.lastSuccessfulScansByMode } : null
       if (clearMode && selectionsByMode) delete selectionsByMode[clearMode]
+      if (clearMode && lastSuccessfulScansByMode) delete lastSuccessfulScansByMode[clearMode]
       checkpoint = null
       pendingText.clear()
       const remove = checkpointDelete(checkpointStore)
@@ -711,6 +768,7 @@ export function createQuestLogSyncController({
         checkpoint = checkpointForLogs({
           files: [], includedVersions: [], profileKey: null, unknownModeTarget: null,
           gameMode: null, selectionsByMode, scanMetricsByMode: checkpoint?.scanMetricsByMode,
+          lastSuccessfulScansByMode,
           updatedAt: now(),
         })
         await saveCheckpoint(checkpointStore, checkpointKey, checkpoint)

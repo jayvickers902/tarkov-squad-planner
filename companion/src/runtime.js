@@ -21,6 +21,29 @@ const TASK_ID_PATTERN = /^[0-9a-f]{24}$/i
 const safeText = (value, fallback = '') => typeof value === 'string' ? value : fallback
 const firstFunction = (...values) => values.find(value => typeof value === 'function')
 
+function safeSuccessfulScan(value) {
+  if (!value || typeof value !== 'object') return null
+  const completedAt = safeText(value.completedAt)
+  const mode = safeText(value.mode)
+  if (!Number.isFinite(Date.parse(completedAt)) || !MODES.has(mode)) return null
+  const count = key => Math.max(0, Math.floor(Number(value?.[key]) || 0))
+  return {
+    completedAt: new Date(completedAt).toISOString(),
+    mode,
+    filesScanned: count('filesScanned'),
+    eventsIncluded: count('eventsIncluded'),
+    plannerChanges: count('plannerChanges'),
+    events: (Array.isArray(value.events) ? value.events : []).slice(-25).filter(event => (
+      TASK_ID_PATTERN.test(safeText(event?.taskId)) && EVENT_STATES.has(event?.state)
+    )).map(event => ({
+      taskId: safeText(event.taskId),
+      state: event.state,
+      occurredAt: Number.isFinite(Date.parse(safeText(event.occurredAt)))
+        ? new Date(event.occurredAt).toISOString() : null,
+    })),
+  }
+}
+
 function clone(value) {
   if (value == null) return value
   if (typeof structuredClone === 'function') return structuredClone(value)
@@ -75,6 +98,9 @@ function safeStatus(status) {
         applied: Boolean(event.applied),
       })),
     } : {}),
+    ...(safeSuccessfulScan(status?.lastSuccessfulScan)
+      ? { lastSuccessfulScan: safeSuccessfulScan(status.lastSuccessfulScan) }
+      : {}),
     ...(status?.scanMetrics && typeof status.scanMetrics === 'object' ? {
       scanMetrics: {
         filesScanned: Math.max(0, Math.floor(Number(status.scanMetrics.filesScanned) || 0)),
@@ -478,10 +504,16 @@ export function createCompanionRuntime({
     }))
     if (selectedKey) selectionByMode[mode] = { ...modeSelection, profileKey: selectedKey }
     const metrics = result?.scanMetrics || { filesScanned: 0, filesParsed: 0, sessionsScanned: 0, eventsSeen: 0, matchedEvents: 0, appliedEvents: 0, activeEvents: 0, profilesFound: 0, selection: 'none', scannerVersion: '', mode }
-    const zeroEvents = questModeSupported && roots.logsRoot && metrics.eventsSeen === 0
+    const lastSuccessfulScan = result?.lastSuccessfulScan
+      || result?.checkpoint?.lastSuccessfulScansByMode?.[mode]
+      || status.lastSuccessfulScan
+    const zeroFiles = questModeSupported && roots.logsRoot && result?.scanMetrics && metrics.filesScanned === 0
+    const zeroEvents = questModeSupported && roots.logsRoot && metrics.filesScanned > 0 && metrics.eventsSeen === 0
     const zeroMatch = questModeSupported && roots.logsRoot && metrics.eventsSeen > 0 && metrics.matchedEvents === 0
     const modeLabel = mode === 'pve' ? 'PvE' : mode === 'pvp-season' ? 'PvP Seasonal' : 'PvP Permanent'
-    const detail = zeroEvents
+    const detail = zeroFiles
+      ? 'No supported EFT log files were found. Check the Logs folder or install the latest companion update.'
+      : zeroEvents
       ? `No quest events found for ${mode === 'pve' ? 'PvE' : mode === 'pvp-season' ? 'PvP Seasonal' : 'PvP Permanent'}. Choose another character or run a full rescan.`
       : zeroMatch
         ? `Found ${metrics.eventsSeen} quest events, but none matched the selected ${modeLabel} character. Change character or run a full rescan.`
@@ -494,7 +526,7 @@ export function createCompanionRuntime({
         : 'Position pings active; quest log sync is not enabled for this mode'
     forceNextScan = false
     setStatus({
-      state: 'connected',
+      state: zeroFiles ? 'error' : 'connected',
       detail,
       lastSyncAt: stamp,
       pendingCount: pending,
@@ -514,6 +546,7 @@ export function createCompanionRuntime({
         active: profile?.profileKey === selectedKey,
       })),
       recentEvents,
+      lastSuccessfulScan,
       scanMetrics: metrics,
     })
     return true

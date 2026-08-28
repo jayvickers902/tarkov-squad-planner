@@ -55,7 +55,7 @@ db.from.mockImplementation(() => createQueryBuilder())
 
 describe('game mode contract', () => {
   beforeEach(() => {
-    db.rows = [{ user_id: 'user-1', game_mode: 'regular', quest_id: 'regular-1', quest_name: 'Regular quest', completed: false }]
+    db.rows = [{ user_id: 'user-1', game_mode: 'regular', quest_id: 'regular-1', quest_name: 'Regular quest', state: 'active' }]
   })
 
   it('round-trips every mode through its display label', () => {
@@ -102,13 +102,45 @@ describe('game mode contract', () => {
     expect(result.current.quests.map(quest => quest.quest_id)).toEqual(['regular-1', 'regular-2'])
   })
 
-  it('clears only the active mode', async () => {
-    db.rows.push({ user_id: 'user-1', game_mode: 'pve', quest_id: 'pve-1', quest_name: 'PVE quest', completed: false })
+  it('clears active quests only in the active mode and preserves terminal history', async () => {
+    db.rows.push(
+      { user_id: 'user-1', game_mode: 'pve', quest_id: 'pve-1', quest_name: 'PVE quest', state: 'active' },
+      { user_id: 'user-1', game_mode: 'pve', quest_id: 'pve-complete', quest_name: 'Completed PVE quest', state: 'completed' },
+      { user_id: 'user-1', game_mode: 'pve', quest_id: 'pve-failed', quest_name: 'Failed PVE quest', state: 'failed' },
+    )
     const { result } = renderHook(() => useUserQuests('user-1', 'pve'))
     await waitFor(() => expect(result.current.loading).toBe(false))
     await act(async () => { await result.current.clearAllQuests() })
 
-    expect(db.rows.filter(row => row.game_mode === 'pve')).toEqual([])
+    expect(db.rows.filter(row => row.game_mode === 'pve').map(row => [row.quest_id, row.state])).toEqual([
+      ['pve-complete', 'completed'],
+      ['pve-failed', 'failed'],
+    ])
     expect(db.rows.filter(row => row.game_mode === 'regular').map(row => row.quest_id)).toEqual(['regular-1'])
+    expect(result.current.quests).toEqual([])
+  })
+
+  it('restores an import undo point without flattening terminal history to active', async () => {
+    db.rows.push({ user_id: 'user-1', game_mode: 'pve', quest_id: 'post-import', quest_name: 'Post import', state: 'active' })
+    const { result } = renderHook(() => useUserQuests('user-1', 'pve'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const stateAt = '2026-08-27T12:00:00.000Z'
+
+    await act(async () => {
+      await result.current.restoreSnapshot([
+        { quest_id: 'before-active', quest_name: 'Before active', state: 'active', state_at: stateAt, state_source: 'manual' },
+        { quest_id: 'before-complete', quest_name: 'Before complete', state: 'completed', state_at: stateAt, state_source: 'log_import', source_event_key: 'event-1' },
+      ])
+    })
+
+    expect(db.rows.filter(row => row.game_mode === 'pve').map(row => ({
+      id: row.quest_id,
+      state: row.state,
+      source: row.state_source,
+      eventKey: row.source_event_key,
+    }))).toEqual([
+      { id: 'before-active', state: 'active', source: 'manual', eventKey: null },
+      { id: 'before-complete', state: 'completed', source: 'log_import', eventKey: 'event-1' },
+    ])
   })
 })

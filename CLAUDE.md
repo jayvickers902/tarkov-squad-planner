@@ -115,19 +115,27 @@ user UUID.
 
 ## EFT log import
 
-Quest log import is browser-local. A user selects the EFT `Logs` directory with the native file
-picker, reviews normalized started/failed/completed task events, and explicitly confirms an
-import. Chromium browsers may retain a read-only directory handle in IndexedDB for incremental
-checks while the site is open; other browsers use the universal picker each time. Raw log text,
-paths, filenames, profile IDs, and account IDs never leave the browser. Only bounded normalized
-quest events reach Supabase. Seasonal logs, objective counters, inventory, hideout progress, and
-sync while the site is closed are not supported.
+Quest log import is processed locally. A user can connect the EFT `Logs` directory for website
+checks, or choose a folder/files for a one-time import, then reviews normalized
+started/failed/completed task events and explicitly confirms the changes. Chromium browsers may
+retain a read-only directory handle in IndexedDB for incremental checks while the site is open;
+other browsers use the universal picker each time. Raw log text, paths, filenames, profile IDs,
+and account IDs never leave the device. Only bounded normalized quest events reach Supabase.
+Seasonal logs, objective counters, inventory, and hideout progress are not supported. The Windows
+companion is the separate path for continuing folder checks after the website closes.
 
 The REST dataset supports `regular`, `pve`, and `pvp-season`. The active game mode is a resolved setting rather than a module constant. Prebaked JSON is only a valid floor for the mode recorded in its stamp, and another mode must wait for its REST response.
 
 ## Quest onboarding
 
-Quest Manager starts with a `GET YOUR QUESTS IN` hub that recommends an import route. Selecting a route opens its importer; EFT log imports guide the user through a step rail and explain plainly when a required choice is missing. The desktop companion pairs by signing in with the same Google account used on the site, and keeps quests and screenshot pings in sync while the site is closed.
+Quest Manager starts with character mode, a short setup checklist, and a `GET YOUR QUESTS IN` hub
+that recommends a route from device and browser capabilities. Selecting a route replaces the route
+list with that importer; EFT log imports reveal only the next required profile/scope/mode choice,
+then a review step. Successful imports leave a receipt with affected-state counts, a saved-list
+destination, and an undo action backed by the complete pre-import quest history. Sync status keeps
+website and desktop sources distinct and reports last heartbeat separately from the last successful
+folder check. The desktop companion pairs by signing in with the same Google account used on the
+site and keeps quests and screenshot pings in sync while the site is closed.
 
 ## Game Mode
 

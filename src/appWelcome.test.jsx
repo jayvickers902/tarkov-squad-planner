@@ -33,6 +33,7 @@ vi.mock('./useFriends', () => ({
 
 vi.mock('./components/AuthScreen', () => ({ default: () => <div>AUTH SCREEN</div> }))
 vi.mock('./components/Room', () => ({ default: () => <div>ROOM</div> }))
+vi.mock('./components/MyQuests', () => ({ default: () => <div>QUEST MANAGER</div> }))
 vi.mock('./components/Lobby', () => ({
   default: ({ onOpenGuide }) => (
     <div>
@@ -177,7 +178,7 @@ describe('App welcome dismissal', () => {
     const setSetting = setSettings({}, { setSetting: vi.fn().mockResolvedValue({}) })
     render(<App />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'GET STARTED' }))
+    fireEvent.click(screen.getByRole('button', { name: 'SET UP QUESTS' }))
 
     await waitFor(() => expect(setSetting).toHaveBeenCalledTimes(1))
     const [, stamped] = setSetting.mock.calls[0]
@@ -195,7 +196,7 @@ describe('App welcome dismissal', () => {
     })
     render(<App />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'GET STARTED' }))
+    fireEvent.click(screen.getByRole('button', { name: 'SET UP QUESTS' }))
 
     await waitFor(() => expect(setSetting).toHaveBeenCalledTimes(1))
     await Promise.resolve()
@@ -234,9 +235,20 @@ describe('App welcome guide button', () => {
 
     expect(setupHeading()).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'GET STARTED' }))
+    fireEvent.click(screen.getByRole('button', { name: 'SET UP QUESTS' }))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(setSetting).not.toHaveBeenCalled()
+  })
+
+  it('takes a new profile directly to Quest Manager', async () => {
+    setAuth({ isNewProfile: true })
+    setSettings({}, { setSetting: vi.fn().mockResolvedValue({}) })
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'SET UP QUESTS' }))
+
+    await waitFor(() => expect(screen.getByText('QUEST MANAGER')).toBeInTheDocument())
+    expect(window.location.pathname).toBe('/quests')
   })
 })

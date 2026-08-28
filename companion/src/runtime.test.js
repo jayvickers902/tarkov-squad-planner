@@ -130,6 +130,40 @@ describe('companion runtime', () => {
     expect(runtime.getStatus().detail).toContain('No quest events found')
   })
 
+  it('does not report a successful connection when the native scan found zero log files', async () => {
+    const sync = vi.fn(async () => ({
+      scanMetrics: { filesScanned: 0, eventsSeen: 0, matchedEvents: 0, profilesFound: 0, mode: 'regular' },
+    }))
+    const { runtime } = harness({ engine: { questLogs: { sync }, screenshots: {} } })
+
+    await runtime.start()
+
+    expect(runtime.getStatus()).toMatchObject({
+      state: 'error',
+      detail: expect.stringContaining('No supported EFT log files were found'),
+    })
+  })
+
+  it('retains the last successful quest scan across frequent no-change checks', async () => {
+    const taskId = '59c9392986f7742f6923add2'
+    const lastSuccessfulScan = {
+      completedAt: '2026-08-28T16:46:18Z', mode: 'regular', filesScanned: 185,
+      eventsIncluded: 479, plannerChanges: 5,
+      events: [{ taskId, state: 'active', occurredAt: '2026-08-28T16:40:00Z' }],
+    }
+    const sync = vi.fn()
+      .mockResolvedValueOnce({ lastSuccessfulScan })
+      .mockResolvedValueOnce({ events: [], scanMetrics: { filesScanned: 185, eventsSeen: 596 } })
+    const { runtime } = harness({ engine: { questLogs: { sync }, screenshots: {} } })
+
+    await runtime.start()
+    const first = runtime.getStatus().lastSuccessfulScan
+    await runtime.syncNow()
+
+    expect(runtime.getStatus().lastSuccessfulScan).toEqual(first)
+    expect(runtime.getStatus().lastSuccessfulScan).toMatchObject({ eventsIncluded: 479, plannerChanges: 5 })
+  })
+
   it('stops watchers, timers, and listeners on disposal', async () => {
     vi.useFakeTimers()
     let eventListener

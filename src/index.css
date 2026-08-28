@@ -187,6 +187,7 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .eft-log-import-actions,
 .eft-log-import-footer,
 .eft-log-import-watch { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.eft-log-import-action-note { margin-top: 7px; color: var(--txm); font-size: 11px; line-height: 1.5; }
 .eft-log-import-check { display: inline-flex; align-items: center; gap: 5px; color: var(--txm); font-size: 10px; }
 .eft-log-import-check input { margin: 0; accent-color: var(--gold); }
 .eft-log-import-error { margin-top: 10px; padding: 8px 10px; color: var(--red); border: 1px solid rgba(224,107,107,.4); border-left: 3px solid var(--red); border-radius: 4px; background: rgba(224,107,107,.06); }
@@ -1012,7 +1013,7 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   text-underline-offset: 3px;
 }
 .welcome-link:hover { color: var(--gold); }
-.welcome-actions { display: flex; justify-content: flex-end; flex: 0 0 auto; padding: 16px 24px 22px; }
+.welcome-actions { display: flex; justify-content: flex-end; gap: 8px; flex: 0 0 auto; padding: 16px 24px 22px; }
 
 @media (max-width: 560px) {
   .welcome-backdrop { padding: 12px; }
@@ -1080,6 +1081,13 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .quest-import-route-best { color: var(--txd); font-size: 10px; }
 .quest-import-route-reason { color: var(--red); font-size: 11px; line-height: 1.4; }
 .quest-import-recommended { padding: 2px 5px; border: 1px solid var(--golddim); border-radius: 3px; color: var(--gold); background: rgba(201,168,76,.12); font-size: 9px; letter-spacing: .06em; }
+.quest-import-active-route { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; }
+.quest-import-active-route-copy { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: 1px solid var(--brd2); border-left: 3px solid var(--gold); border-radius: 4px; background: var(--sur3); }
+.quest-import-active-route-copy > span:last-child { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.quest-import-active-route-copy strong { color: var(--goldtx); font-size: 14px; }
+.quest-import-active-route-copy .mono { color: var(--txm); font-size: 9px; letter-spacing: .05em; }
+.quest-import-hub .eft-log-import-panel,
+.quest-import-hub > .card { margin-top: 12px; margin-bottom: 0; }
 .eft-log-import-rail { margin: 14px 0; padding: 10px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur2); }
 .eft-log-import-rail-count { margin-bottom: 8px; color: var(--goldtx); font-size: 10px; letter-spacing: .06em; }
 .eft-log-import-rail-steps { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1094,11 +1102,28 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .quest-empty-state h3 { color: var(--goldtx); font-size: 18px; }
 .quest-empty-state p { margin-top: 6px; color: var(--txm); font-size: 12px; line-height: 1.5; }
 .quest-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
+.quest-setup-checklist { margin: -6px 0 16px; padding: 10px 12px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur); }
+.quest-setup-checklist-title { margin-bottom: 8px; color: var(--txm); font-size: 10px; letter-spacing: .06em; }
+.quest-setup-checklist-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.quest-setup-checklist-items > span { display: inline-flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid var(--brd); border-radius: 3px; color: var(--goldtx); font-size: 10px; }
+.quest-setup-checklist-items > span > span { display: inline-flex; align-items: center; justify-content: center; min-width: 15px; color: var(--gold); }
+.quest-setup-checklist-items > .is-done { color: var(--txm); }
+.quest-setup-checklist-items > .is-done > span { color: var(--grn); }
+.quest-setup-checklist-items > .is-optional { color: var(--txd); }
+.quest-import-receipt { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; padding: 11px 12px; border: 1px solid var(--golddim); border-left: 3px solid var(--grn); border-radius: 4px; background: var(--sur2); }
+.quest-import-receipt.is-undone { border-left-color: var(--gold); }
+.quest-import-receipt-copy { min-width: 0; }
+.quest-import-receipt-title { color: var(--grn); font-size: 10px; letter-spacing: .06em; }
+.quest-import-receipt.is-undone .quest-import-receipt-title { color: var(--gold); }
+.quest-import-receipt p { margin-top: 4px; color: var(--txm); font-size: 11px; line-height: 1.45; }
+.quest-import-receipt-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 6px; }
 
 @media (max-width: 560px) {
   .quest-import-hub-head { align-items: stretch; }
   .quest-import-hub-head > .btn-ghost { align-self: flex-start; }
   .quest-import-route { padding: 10px; }
+  .quest-import-receipt { align-items: flex-start; flex-direction: column; }
+  .quest-import-receipt-actions { width: 100%; }
 }
 
 /* ── Desktop companion discovery ─────────────────────────────────────────── */
@@ -1106,13 +1131,19 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .desktop-app-card h3 { color: var(--goldtx); font-size: 16px; letter-spacing: .04em; }
 .desktop-app-card p { max-width: 680px; margin-top: 7px; color: var(--txm); font-size: 12px; line-height: 1.55; }
 .desktop-app-card ol { margin: 10px 0 13px 20px; padding: 0; color: var(--txm); font-size: 12px; line-height: 1.7; }
+.desktop-app-card[data-state="coming-soon"] { padding-block: 11px; }
+.desktop-app-card[data-state="coming-soon"] h3 { color: var(--txm); font-size: 12px; }
+.desktop-app-card[data-state="coming-soon"] p { margin: 5px 0 9px; }
 .desktop-app-card[data-state="connected"] { display: flex; align-items: center; gap: 9px; }
 .desktop-app-card-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--grn); }
 .desktop-app-card-label { color: var(--grn); font-size: 11px; letter-spacing: .06em; }
-.desktop-app-card-last-sync { margin-left: auto; color: var(--txm); font-size: 11px; }
+.desktop-app-card-last-sync { color: var(--txm); font-size: 11px; }
+.desktop-app-card[data-state="connected"] .desktop-app-card-last-sync { margin-left: auto; }
+.desktop-app-card[data-state="attention"] .desktop-app-card-last-sync,
+.desktop-app-card[data-state="offline"] .desktop-app-card-last-sync { display: block; margin-top: 8px; }
 .desktop-app-card button:disabled { cursor: not-allowed; opacity: .5; }
 
 @media (max-width: 560px) {
   .desktop-app-card[data-state="connected"] { align-items: flex-start; flex-wrap: wrap; }
-  .desktop-app-card-last-sync { width: 100%; margin-left: 17px; }
+  .desktop-app-card[data-state="connected"] .desktop-app-card-last-sync { width: 100%; margin-left: 17px; }
 }

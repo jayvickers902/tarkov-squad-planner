@@ -275,9 +275,14 @@ export default function App() {
     Promise.resolve(setUserSetting(WELCOME_SETTINGS_KEY, stamped)).catch(() => {})
   }
 
+  function startQuestSetup() {
+    dismissWelcome()
+    navigate(party ? { screen: 'quests', code: party.code } : { screen: 'quests' })
+  }
+
   const welcomeLayer = user && profile && welcomeVariant && !welcomeDismissed
     && !authLoading && !settingsLoading && !welcomeJoinPending
-    ? <WelcomeModal variant={welcomeVariant} onDismiss={dismissWelcome} />
+    ? <WelcomeModal variant={welcomeVariant} onDismiss={dismissWelcome} onStartQuestSetup={startQuestSetup} />
     : null
 
   let signedInView = null

@@ -25,42 +25,77 @@ function connected(controller) {
 export function channelStatus(controller, { now = Date.now(), staleAfterMs = FIVE_MINUTES } = {}) {
   const value = controller || {}
   const lastCheckedMs = timestampMs(value.lastSuccessfulCheck)
+  const lastChangedMs = timestampMs(value.lastQuestChangeAt ?? value.lastDataChangeAt ?? value.lastChangeAt)
   const stale = lastCheckedMs !== null && now - lastCheckedMs > staleAfterMs
-  if (value.supported === false) return { tone: 'off', label: 'UNSUPPORTED', detail: 'This browser cannot use local folder sync. Chromium browsers only.', lastCheckedMs, stale: false }
-  if (value.state === 'permission-needed') return { tone: 'warn', label: 'NEEDS ACCESS', detail: 'Folder permission is needed. Choose RECONNECT to allow read-only access.', lastCheckedMs, stale }
-  if (value.state === 'error' || value.error) return { tone: 'error', label: 'ERROR', detail: errorText(value.error), lastCheckedMs, stale }
-  if (stale && connected(value)) return { tone: 'warn', label: 'STALE', detail: 'This folder has not been checked recently.', lastCheckedMs, stale: true }
-  if (value.state === 'watching') return { tone: 'ok', label: 'WATCHING', detail: 'This folder is being checked while this site is open.', lastCheckedMs, stale: false }
-  if (value.state === 'reading') return { tone: 'ok', label: 'READING', detail: 'This folder is being checked now.', lastCheckedMs, stale: false }
-  if (connected(value)) return { tone: 'idle', label: String(value.state || 'IDLE').toUpperCase(), detail: 'The folder is connected, but automatic checking is not active.', lastCheckedMs, stale: false }
-  return { tone: 'idle', label: 'NOT SET UP', detail: 'No local folder is connected yet.', lastCheckedMs, stale: false }
+  const common = {
+    source: 'browser',
+    configured: connected(value),
+    lastCheckedMs,
+    lastChangedMs,
+    lastReportedMs: null,
+  }
+  if (value.supported === false) return { ...common, tone: 'off', label: 'UNSUPPORTED', detail: 'This browser cannot use local folder sync. Chromium browsers only.', stale: false }
+  if (value.state === 'permission-needed') return { ...common, tone: 'warn', label: 'NEEDS ACCESS', detail: 'Folder permission is needed. Choose RECONNECT to allow read-only access.', stale }
+  if (value.state === 'error' || value.error) return { ...common, tone: 'error', label: 'ERROR', detail: errorText(value.error), stale }
+  if (stale && connected(value)) return { ...common, tone: 'warn', label: 'STALE', detail: 'This folder has not been checked recently.', stale: true }
+  if (value.state === 'watching') return { ...common, tone: 'ok', label: 'WATCHING', detail: 'This folder is being checked while this site is open.', stale: false }
+  if (value.state === 'reading') return { ...common, tone: 'ok', label: 'READING', detail: 'This folder is being checked now.', stale: false }
+  if (connected(value)) return { ...common, tone: 'idle', label: String(value.state || 'IDLE').toUpperCase(), detail: 'The folder is connected, but automatic checking is not active.', stale: false }
+  return { ...common, tone: 'idle', label: 'NOT SET UP', detail: 'No local folder is connected yet.', stale: false }
 }
 
 export function companionChannelStatus(row, { now = Date.now(), staleAfterMs = FIVE_MINUTES } = {}) {
   if (!row) return null
-  const lastCheckedMs = timestampMs(row.updatedAt || row.updated_at)
-  const stale = lastCheckedMs !== null && now - lastCheckedMs > staleAfterMs
+  const lastReportedMs = timestampMs(row.lastSeenAt ?? row.last_seen_at ?? row.updatedAt ?? row.updated_at)
+  const lastCheckedMs = timestampMs(row.lastSyncAt ?? row.last_sync_at)
+  const lastChangedMs = timestampMs(row.lastChangeAt ?? row.last_change_at)
+  const stale = row.isLive === false || lastReportedMs === null || now - lastReportedMs > staleAfterMs
   const detail = row.detail || 'The Windows companion reported no additional detail.'
   const state = String(row.state || '').toLowerCase()
-  if (!row.configured || state === 'idle') return { source: 'companion', tone: 'idle', label: 'NOT SET UP', detail, lastCheckedMs, stale: false }
-  if (state === 'needs_access') return { source: 'companion', tone: 'warn', label: 'NEEDS ACCESS', detail, lastCheckedMs, stale }
-  if (state === 'error') return { source: 'companion', tone: 'error', label: 'ERROR', detail, lastCheckedMs, stale }
-  if (state === 'disabled') return { source: 'companion', tone: 'idle', label: 'DISABLED', detail, lastCheckedMs, stale: false }
-  if (state === 'offline') return { source: 'companion', tone: 'warn', label: 'OFFLINE', detail, lastCheckedMs, stale }
-  if (stale) return { source: 'companion', tone: 'warn', label: 'STALE', detail: 'The companion has not reported recently.', lastCheckedMs, stale: true }
-  return { source: 'companion', tone: 'ok', label: state === 'syncing' || state === 'connecting' ? 'SYNCING' : 'CONNECTED', detail, lastCheckedMs, stale: false }
+  const common = {
+    source: 'desktop',
+    configured: Boolean(row.configured),
+    lastCheckedMs,
+    lastChangedMs,
+    lastReportedMs,
+  }
+  if (!row.configured || state === 'idle') return { ...common, tone: 'idle', label: 'NOT SET UP', detail, stale: false }
+  if (state === 'needs_access') return { ...common, tone: 'warn', label: 'NEEDS ACCESS', detail, stale }
+  if (state === 'error') return { ...common, tone: 'error', label: 'ERROR', detail, stale }
+  if (state === 'disabled') return { ...common, tone: 'idle', label: 'DISABLED', detail, stale: false }
+  if (state === 'offline') return { ...common, tone: 'warn', label: 'OFFLINE', detail, stale }
+  if (stale) return { ...common, tone: 'warn', label: 'STALE', detail: 'The desktop app has not reported recently.', stale: true }
+  return { ...common, tone: 'ok', label: state === 'syncing' || state === 'connecting' ? 'SYNCING' : 'CONNECTED', detail, stale: false }
+}
+
+function statusPriority(status) {
+  if (!status) return -1
+  if (status.tone === 'ok') return 50
+  if (status.tone === 'error' || status.tone === 'warn') return 30
+  if (status.tone === 'idle' && status.configured) return 20
+  if (status.tone === 'idle') return 10
+  return 0
+}
+
+// Prefer the source that is currently healthiest. The desktop app wins an
+// equal state because it can continue after this tab closes.
+export function healthiestChannelStatus(browserStatus, desktopStatus) {
+  if (!desktopStatus) return browserStatus
+  if (!browserStatus) return desktopStatus
+  return statusPriority(desktopStatus) >= statusPriority(browserStatus) ? desktopStatus : browserStatus
 }
 
 export function monitorHealth({ logs, shots, now = Date.now(), visible, statuses } = {}) {
-  const companionBacked = Boolean(statuses)
   const logStatus = statuses?.logs || channelStatus(logs, { now })
   const screenshotStatus = statuses?.screenshots || (statuses?.pings?.tone ? statuses.pings : companionChannelStatus(statuses?.pings, { now })) || channelStatus(shots, { now })
+  const desktopBacked = [logStatus, screenshotStatus].some(status => status?.source === 'desktop')
+  const browserBacked = [logStatus, screenshotStatus].some(status => status?.source === 'browser')
   const tones = [logStatus.tone, screenshotStatus.tone]
   const channels = { logs: logStatus.tone, screenshots: screenshotStatus.tone }
-  if (tones.every(tone => tone === 'off')) return { tone: 'off', label: 'UNSUPPORTED', detail: companionBacked ? 'The Windows companion is unavailable.' : 'Local folder sync is not supported in this browser.', channels }
+  if (tones.every(tone => tone === 'off')) return { tone: 'off', label: 'UNSUPPORTED', detail: 'No available sync source can watch local folders.', channels }
   if (tones.includes('error')) return { tone: 'error', label: 'ERROR', detail: 'One or more local sync channels reported an error.', channels }
-  if (tones.includes('warn') || (visible === false && !companionBacked)) return { tone: 'warn', label: visible === false ? 'TAB HIDDEN' : 'ATTENTION', detail: visible === false ? 'The tab is hidden, so background checks may be delayed.' : 'One or more local sync channels need attention.', channels }
-  if (tones.includes('ok')) return { tone: 'ok', label: companionBacked ? 'CONNECTED' : 'WATCHING', detail: companionBacked ? 'The Windows companion is connected.' : 'At least one local sync channel is watching.', channels }
+  if (tones.includes('warn') || (visible === false && browserBacked)) return { tone: 'warn', label: visible === false && browserBacked ? 'TAB HIDDEN' : 'ATTENTION', detail: visible === false && browserBacked ? 'A website sync source may be delayed while the tab is hidden.' : 'One or more local sync channels need attention.', channels }
+  if (tones.includes('ok')) return { tone: 'ok', label: desktopBacked ? 'CONNECTED' : 'WATCHING', detail: desktopBacked ? 'At least one channel is handled by the desktop app.' : 'At least one website sync channel is watching.', channels }
   return { tone: 'idle', label: 'NOT SET UP', detail: 'No local sync channel is set up yet.', channels }
 }
 

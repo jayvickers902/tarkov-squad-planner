@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import useDialogFocus from '../useDialogFocus'
 import { RELEASES, SETUP_STEPS } from '../whatsNew'
 
-export default function WelcomeModal({ variant, onDismiss }) {
+export default function WelcomeModal({ variant, onDismiss, onStartQuestSetup }) {
   const [activeVariant, setActiveVariant] = useState(variant)
   const dialogRef = useDialogFocus(true, onDismiss)
   const isSetup = activeVariant === 'setup'
@@ -66,8 +66,18 @@ export default function WelcomeModal({ variant, onDismiss }) {
         </div>
 
         <div className="welcome-actions">
-          <button data-autofocus className="btn-gold" onClick={onDismiss} type="button">
-            {isSetup ? 'GET STARTED' : 'GOT IT'}
+          {isSetup && (
+            <button className="btn-ghost" onClick={onDismiss} type="button">
+              DO THIS LATER
+            </button>
+          )}
+          <button
+            data-autofocus
+            className="btn-gold"
+            onClick={isSetup ? (onStartQuestSetup || onDismiss) : onDismiss}
+            type="button"
+          >
+            {isSetup ? 'SET UP QUESTS' : 'GOT IT'}
           </button>
         </div>
       </div>

@@ -57,8 +57,8 @@ describe('QuestImportHub', () => {
 
   it('keeps unsupported logs visible with a reason and recommends screenshots', () => {
     renderHub({ sync: { supported: false } })
-    const logs = screen.getByRole('button', { name: /Import EFT logs/i })
-    const screenshot = screen.getByRole('button', { name: /Scan a screenshot/i })
+    const logs = screen.getByRole('button', { name: /Import or sync EFT logs/i })
+    const screenshot = screen.getByRole('button', { name: /Import from a screenshot/i })
 
     expect(logs).toBeDisabled()
     expect(within(logs).getByText('Log import needs Chrome or Edge on desktop.')).toBeInTheDocument()
@@ -70,7 +70,7 @@ describe('QuestImportHub', () => {
     const routeGroup = screen.getByRole('group', { name: 'Quest import routes' })
     const routes = within(routeGroup).getAllByRole('button')
 
-    expect(routes[0]).toHaveAccessibleName(/Import EFT logs/i)
+    expect(routes[0]).toHaveAccessibleName(/Import or sync EFT logs/i)
     expect(within(routes[0]).getByText('RECOMMENDED')).toBeInTheDocument()
   })
 
@@ -87,8 +87,14 @@ describe('QuestImportHub', () => {
 
   it('opens a selected importer panel immediately', () => {
     renderHub()
-    fireEvent.click(screen.getByRole('button', { name: /Scan a screenshot/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Import from a screenshot/i }))
     expect(screen.getByText('SCREENSHOT IMPORT PANEL')).toBeInTheDocument()
+  })
+
+  it('disables log import for Season mode and keeps a usable recommendation', () => {
+    renderHub({ gameMode: 'pvp-season', sync: { supported: true } })
+    expect(screen.getByRole('button', { name: /Import or sync EFT logs/i })).toBeDisabled()
+    expect(within(screen.getByRole('button', { name: /Import from a screenshot/i })).getByText('RECOMMENDED')).toBeInTheDocument()
   })
 })
 
@@ -119,9 +125,9 @@ describe('EFT log import steps', () => {
 })
 
 describe('DesktopAppCard', () => {
-  it('shows the acquisition card and disabled download state when no link is configured', () => {
+  it('shows an honest coming-soon card and disabled download state when no link is configured', () => {
     render(<DesktopAppCard companion={null} />)
-    expect(screen.getByRole('heading', { name: 'SYNC WITHOUT THE TAB OPEN' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'BACKGROUND SYNC APP · COMING SOON' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Download link coming soon' })).toBeDisabled()
     expect(screen.queryByRole('link', { name: 'DOWNLOAD DESKTOP APP' })).not.toBeInTheDocument()
   })
@@ -129,8 +135,15 @@ describe('DesktopAppCard', () => {
   it('shows the compact connected state without a download link', () => {
     render(<DesktopAppCard companion={{ desktopConnected: true, desktopLastSeen: '2026-08-27T12:00:00.000Z' }} />)
     expect(screen.getByText('DESKTOP APP CONNECTED')).toBeInTheDocument()
-    expect(screen.getByText(/Last sync/)).toBeInTheDocument()
+    expect(screen.getByText(/Last report/)).toBeInTheDocument()
+    expect(screen.getByText(/Last successful check/)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'DOWNLOAD DESKTOP APP' })).not.toBeInTheDocument()
+  })
+
+  it('distinguishes a stale desktop app from one that was never set up', () => {
+    render(<DesktopAppCard companion={{ desktopState: 'offline', desktopLastSeen: '2026-08-27T12:00:00.000Z' }} />)
+    expect(screen.getByRole('heading', { name: 'DESKTOP APP OFFLINE' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /COMING SOON/ })).not.toBeInTheDocument()
   })
 
   it('renders a configured download URL as an external link', () => {

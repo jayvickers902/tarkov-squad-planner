@@ -82,7 +82,7 @@ describe('EftLogImport', () => {
     fireEvent.click(screen.getByRole('button', { name: 'IMPORT EFT LOGS' }))
 
     // A directory picker that returns no relative paths still needs a way in.
-    expect(screen.getByRole('button', { name: 'CHOOSE LOG FILES' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'IMPORT LOG FILES ONCE' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'SHOW IMPORT NOTES' }))
     // parseErrors is a count, not an array; reading `.length` always showed 0.
     expect(screen.getByText(/3 MALFORMED RECORDS SKIPPED/)).toBeInTheDocument()
@@ -91,5 +91,33 @@ describe('EftLogImport', () => {
     fireEvent.click(screen.getByText(/3 MALFORMED RECORDS SKIPPED/))
     expect(screen.getByText('notifications.log · LINE 12')).toBeInTheDocument()
     expect(screen.getByText('notifications.log · LINE 15')).toBeInTheDocument()
+  })
+
+  it('captures an undo point before applying and returns a structured receipt', async () => {
+    const onImportStart = vi.fn().mockResolvedValue(undefined)
+    const onImportComplete = vi.fn()
+    confirmImport.mockResolvedValueOnce({ inserted: 1, updated: 0, ignored: 0, affected_task_ids: [taskId] })
+    render(
+      <EftLogImport
+        sync={sync}
+        allTasks={[{ id: taskId, name: 'Synthetic Task' }]}
+        gameMode="regular"
+        userId="user-1"
+        onApply={vi.fn()}
+        onImportStart={onImportStart}
+        onImportComplete={onImportComplete}
+        defaultOpen
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'CONFIRM IMPORT' }))
+    await waitFor(() => expect(onImportComplete).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'logs',
+      questIds: [taskId],
+      applied: 1,
+      states: { active: 1, failed: 0, completed: 0 },
+      syncEnabled: false,
+    })))
+    expect(onImportStart.mock.invocationCallOrder[0]).toBeLessThan(confirmImport.mock.invocationCallOrder.at(-1))
   })
 })

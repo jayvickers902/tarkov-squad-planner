@@ -8,19 +8,21 @@ afterEach(cleanup)
 
 function renderModal(variant = 'news') {
   const onDismiss = vi.fn()
-  render(<WelcomeModal variant={variant} onDismiss={onDismiss} />)
-  return onDismiss
+  const onStartQuestSetup = vi.fn()
+  render(<WelcomeModal variant={variant} onDismiss={onDismiss} onStartQuestSetup={onStartQuestSetup} />)
+  return { onDismiss, onStartQuestSetup }
 }
 
 describe('WelcomeModal', () => {
   it('renders release notes and swaps to the setup guide in place', () => {
-    const onDismiss = renderModal()
+    const { onDismiss } = renderModal()
 
     expect(screen.getByRole('heading', { name: RELEASES[0].title })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'SETUP GUIDE' }))
 
     expect(screen.getByRole('heading', { name: 'WELCOME TO SQUAD PLANNER' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'GET STARTED' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'SET UP QUESTS' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'DO THIS LATER' })).toBeInTheDocument()
     expect(onDismiss).not.toHaveBeenCalled()
   })
 
@@ -29,9 +31,18 @@ describe('WelcomeModal', () => {
     ['backdrop click', container => fireEvent.click(container)],
     ['primary button', container => fireEvent.click(screen.getByRole('button', { name: 'GOT IT' }))],
   ])('dismisses through %s', (_label, action) => {
-    const onDismiss = renderModal()
+    const { onDismiss } = renderModal()
     action(screen.getByRole('dialog').parentElement)
     expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands the setup primary action to the quest setup flow', () => {
+    const { onDismiss, onStartQuestSetup } = renderModal('setup')
+
+    fireEvent.click(screen.getByRole('button', { name: 'SET UP QUESTS' }))
+
+    expect(onStartQuestSetup).toHaveBeenCalledTimes(1)
+    expect(onDismiss).not.toHaveBeenCalled()
   })
 
   it('traps focus and returns it to the trigger when closed', () => {

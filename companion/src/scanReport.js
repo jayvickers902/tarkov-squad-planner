@@ -34,3 +34,16 @@ export function buildEventRows(recentEvents, taskNames = new Map()) {
     pending: rows.filter(row => !row.applied),
   }
 }
+
+/** Build the ordered, bounded event list retained for a successful scan. */
+export function buildSuccessfulScanRows(events, taskNames = new Map()) {
+  const names = taskNames instanceof Map ? taskNames : new Map()
+  return (Array.isArray(events) ? events : [])
+    .filter(event => event && typeof event === 'object' && typeof event.taskId === 'string')
+    .map(event => ({
+      taskId: event.taskId,
+      name: names.get(event.taskId) || event.taskId,
+      state: event.state,
+      occurredAt: event.occurredAt || null,
+    }))
+}

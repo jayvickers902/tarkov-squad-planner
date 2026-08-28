@@ -5,6 +5,7 @@ import {
   createCompanionSyncEngine,
   createQuestLogSyncController,
   createScreenshotPingSyncController,
+  QUEST_LOG_SCANNER_VERSION,
   QUEST_LOG_SYNC_CHUNK_SIZE,
   SCREENSHOT_FRESHNESS_MS,
 } from './companionSyncEngine'
@@ -58,6 +59,15 @@ describe('native-agnostic companion sync engine', () => {
     expect(checkpoints.saves[0].files[0].parsedOffset).toBe(text.length)
     expect(apply.mock.calls[0][1][0]).toEqual(expect.objectContaining({ task_id: taskId, event_key: 'event:event-0' }))
     expect(apply.mock.calls[0][1][0]).not.toHaveProperty('sessionKey')
+    expect(result.lastSuccessfulScan).toMatchObject({
+      mode: 'regular', filesScanned: 1, eventsIncluded: 201, plannerChanges: 201,
+    })
+    expect(result.lastSuccessfulScan.events).toHaveLength(25)
+
+    const retained = await controller.sync()
+    expect(retained.events).toEqual([])
+    expect(retained.lastSuccessfulScan).toEqual(result.lastSuccessfulScan)
+    expect(checkpoints.value.lastSuccessfulScansByMode.regular).toEqual(result.lastSuccessfulScan)
   })
 
   it('uses the checked-in EFT parser fixtures for a native-neutral full scan', async () => {
@@ -153,7 +163,7 @@ describe('native-agnostic companion sync engine', () => {
 
     const unchanged = await controller.sync()
     expect(unchanged).toMatchObject({ fullScan: false, changed: false })
-    expect(unchanged.scanMetrics).toMatchObject({ eventsSeen: 2, matchedEvents: 1, appliedEvents: 1, scannerVersion: '0.2.0' })
+    expect(unchanged.scanMetrics).toMatchObject({ eventsSeen: 2, matchedEvents: 1, appliedEvents: 1, scannerVersion: QUEST_LOG_SCANNER_VERSION })
   })
 
   it('honors an explicit change-character request instead of auto-selecting', async () => {

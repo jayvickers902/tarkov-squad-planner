@@ -2,12 +2,12 @@ export const RELEASE_VERSION = '2026.12'
 
 export const SETUP_STEPS = [
   {
-    title: 'LOAD YOUR QUESTS',
-    body: 'Quest Manager holds your active task list. Choose GET YOUR QUESTS IN to import your EFT Logs folder locally, scan a screenshot, catch up by trader, or search and add tasks by hand.',
+    title: 'CHOOSE YOUR CHARACTER MODE',
+    body: 'PVP, PVE and Season each keep a separate quest list because they are separate characters. Choose the character you are setting up before importing.',
   },
   {
-    title: 'PICK YOUR GAME MODE',
-    body: 'PVP, PVE and Season each keep a separate quest list, because they are separate characters. A party fixes its mode when it is created.',
+    title: 'LOAD YOUR QUESTS',
+    body: 'Quest Manager recommends the best available route: background desktop sync, a one-time local log import, a screenshot, trader catch-up, or manual search.',
   },
   {
     title: 'CREATE OR JOIN A PARTY',
