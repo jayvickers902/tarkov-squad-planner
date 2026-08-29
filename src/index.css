@@ -124,7 +124,7 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .room-body { padding: 14px 16px; }
 
 /* -- Map-art banner: the art IS the top bar ------------------------------- */
-.room-banner { position: relative; min-height: 96px; border-bottom: 1px solid var(--brd); background: var(--bg); }
+.room-banner { position: relative; z-index: 20; min-height: 96px; border-bottom: 1px solid var(--brd); background: var(--bg); }
 .room-banner-art { position: absolute; inset: 0; overflow: hidden; }
 .room-banner-layer {
   position: absolute;
