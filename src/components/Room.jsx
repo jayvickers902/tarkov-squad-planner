@@ -95,6 +95,10 @@ function hasRaidWork(progress) {
   return Object.keys(progress || {}).some(key => key !== '__raid_start__')
 }
 
+function compactMapName(map) {
+  return map.normalizedName === 'streets-of-tarkov' ? 'Streets' : map.name
+}
+
 export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, activeQuestCount = 0, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, onQuestComplete, userObjProgress, userSettings = {}, onSetUserSetting, gameMode = 'regular', onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid, onOpenRaid, onCloseRaid }) {
   const isMobile = useIsMobile()
   const [tab, setTab]           = useState('todo')
@@ -665,7 +669,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
                             <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: isTop ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }}>#{i + 1}</span>
                             <span style={{ fontSize: isTop ? 'var(--fs-sm)' : 'var(--fs-xs)', fontWeight: isTop ? 600 : 400, color: isTop ? 'var(--tx)' : 'var(--txm)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {stat.map.name.toUpperCase()}
+                              {compactMapName(stat.map).toUpperCase()}
                             </span>
                             <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: isTop ? 'var(--goldtx)' : 'var(--txm)', flexShrink: 0 }}>
                               {stat.total}Q
@@ -755,7 +759,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                       >
                         <span className="room-map-thumb-art" style={art ? { backgroundImage: `url('${art}')` } : undefined} />
                         <span className="room-map-thumb-scrim" />
-                        <span className="room-map-thumb-name">{m.name.toUpperCase()}</span>
+                        <span className="room-map-thumb-name">{compactMapName(m).toUpperCase()}</span>
                         <span className="room-map-thumb-rail" />
                       </button>
                     )

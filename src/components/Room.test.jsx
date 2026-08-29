@@ -20,9 +20,11 @@ vi.mock('../useCompanionSyncStatus', () => ({ useCompanionSyncStatus: () => null
 const MAPS = [
   { id: 'map-woods', name: 'Woods', normalizedName: 'woods' },
   { id: 'map-customs', name: 'Customs', normalizedName: 'customs' },
+  { id: 'map-streets', name: 'Streets of Tarkov', normalizedName: 'streets-of-tarkov' },
 ]
 
 const WOODS = { id: 'map-woods', name: 'Woods', normalizedName: 'woods' }
+const STREETS = { id: 'map-streets', name: 'Streets of Tarkov', normalizedName: 'streets-of-tarkov' }
 
 const TASKS = [
   {
@@ -42,6 +44,13 @@ const TASKS = [
     objectives: [
       { id: 'obj-visit', description: 'Locate the intercepted transmission point', type: 'visit', maps: [WOODS], zones: [{ id: 'z2', map: WOODS, position: { x: 4, y: 5, z: 6 } }] },
     ],
+  },
+  {
+    id: 'task-streets',
+    name: 'Urban Medicine',
+    map: STREETS,
+    wikiLink: '',
+    objectives: [],
   },
 ]
 
@@ -174,12 +183,27 @@ describe('Room map selector', () => {
   it('renders one art thumbnail per map and marks the active one', () => {
     const { container } = renderRoom()
     const thumbs = container.querySelectorAll('.room-map-thumb')
-    expect(thumbs).toHaveLength(2)
+    expect(thumbs).toHaveLength(3)
 
     const woods = screen.getByRole('button', { name: 'WOODS' })
     expect(woods).toHaveAttribute('aria-pressed', 'true')
     expect(woods.querySelector('.room-map-thumb-art').style.backgroundImage).toContain('/map-banners/reference/woods.webp')
     expect(screen.getByRole('button', { name: 'CUSTOMS' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('uses the compact Streets label in the selector and recommendations only', () => {
+    const { container } = renderRoom({
+      party: {
+        members: [
+          { user_id: 'user-1', callsign: 'SHRIKE', quests: [], quests_all: [{ id: 'task-streets' }] },
+        ],
+      },
+    })
+
+    expect(screen.getByRole('button', { name: 'STREETS' })).toBeInTheDocument()
+    expect([...container.querySelectorAll('.room-map-thumb-name')].map(node => node.textContent)).toContain('STREETS')
+    expect(screen.getAllByText('STREETS')).toHaveLength(2)
+    expect(screen.queryByText('STREETS OF TARKOV')).not.toBeInTheDocument()
   })
 
   it('switches maps directly when the party has no plan to lose', () => {
