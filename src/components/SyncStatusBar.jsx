@@ -59,6 +59,7 @@ function ChannelChip({ channel, title, status, now, onClick, buttonRef, monitor 
       aria-expanded={Boolean(onClick.open)}
       aria-haspopup={embedded ? undefined : 'dialog'}
       aria-label={ariaLabel}
+      title={ariaLabel}
       onClick={onClick.handler}
     >
       <span className="sync-chip-dot" aria-hidden="true" />
@@ -263,7 +264,7 @@ export default function SyncStatusBar({ onMyQuests, embedded = false, variant = 
           </div>
           <PopoverRow label="LOGS" status={logStatus}>Quest log sync is {logStatus.label.toLowerCase()} via {sourceLabel(logStatus.source)}.</PopoverRow>
           <PopoverRow label="PINGS" status={screenshotStatus}>Screenshot sync is {screenshotStatus.label.toLowerCase()} via {sourceLabel(screenshotStatus.source)}.</PopoverRow>
-          <PopoverRow label="WEBSITE TAB" status={{ tone: browserSelected ? (visible ? 'ok' : 'warn') : 'idle' }}>{browserSelected ? (visible ? 'The tab is visible for website folder checks.' : 'The tab is hidden, so website folder checks may be delayed.') : 'The active desktop sources do not depend on this tab.'}</PopoverRow>
+          <PopoverRow label="WEBSITE TAB" status={{ tone: browserSelected ? (visible ? 'ok' : 'warn') : 'off' }}>{browserSelected ? (visible ? 'The tab is visible for website folder checks.' : 'The tab is hidden, so website folder checks may be delayed.') : 'The active desktop sources do not depend on this tab.'}</PopoverRow>
           {(logStatus.tone === 'off' || screenshotStatus.tone === 'off') && <p>Local folder sync uses Chromium-only File System Access.</p>}
         </div>
       )}

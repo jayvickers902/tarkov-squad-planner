@@ -39,7 +39,8 @@ export function channelStatus(controller, { now = Date.now(), staleAfterMs = FIV
   if (value.state === 'error' || value.error) return { ...common, tone: 'error', label: 'ERROR', detail: errorText(value.error), stale }
   if (stale && connected(value)) return { ...common, tone: 'warn', label: 'STALE', detail: 'This folder has not been checked recently.', stale: true }
   if (value.state === 'watching') return { ...common, tone: 'ok', label: 'WATCHING', detail: 'This folder is being checked while this site is open.', stale: false }
-  if (value.state === 'reading') return { ...common, tone: 'ok', label: 'READING', detail: 'This folder is being checked now.', stale: false }
+  if (value.state === 'reading') return { ...common, tone: 'connecting', label: 'READING', detail: 'This folder is being checked now.', stale: false }
+  if (value.state === 'applying') return { ...common, tone: 'connecting', label: 'APPLYING', detail: 'Imported quest changes are being applied now.', stale: false }
   if (connected(value)) return { ...common, tone: 'idle', label: String(value.state || 'IDLE').toUpperCase(), detail: 'The folder is connected, but automatic checking is not active.', stale: false }
   return { ...common, tone: 'idle', label: 'NOT SET UP', detail: 'No local folder is connected yet.', stale: false }
 }
@@ -65,12 +66,15 @@ export function companionChannelStatus(row, { now = Date.now(), staleAfterMs = F
   if (state === 'disabled') return { ...common, tone: 'idle', label: 'DISABLED', detail, stale: false }
   if (state === 'offline') return { ...common, tone: 'warn', label: 'OFFLINE', detail, stale }
   if (stale) return { ...common, tone: 'warn', label: 'STALE', detail: 'The desktop app has not reported recently.', stale: true }
-  return { ...common, tone: 'ok', label: state === 'syncing' || state === 'connecting' ? 'SYNCING' : 'CONNECTED', detail, stale: false }
+  if (state === 'connecting') return { ...common, tone: 'connecting', label: 'CONNECTING', detail, stale: false }
+  if (state === 'syncing') return { ...common, tone: 'connecting', label: 'SYNCING', detail, stale: false }
+  return { ...common, tone: 'ok', label: 'CONNECTED', detail, stale: false }
 }
 
 function statusPriority(status) {
   if (!status) return -1
   if (status.tone === 'ok') return 50
+  if (status.tone === 'connecting') return 40
   if (status.tone === 'error' || status.tone === 'warn') return 30
   if (status.tone === 'idle' && status.configured) return 20
   if (status.tone === 'idle') return 10
@@ -96,6 +100,7 @@ export function monitorHealth({ logs, shots, now = Date.now(), visible, statuses
   if (tones.includes('error')) return { tone: 'error', label: 'ERROR', detail: 'One or more local sync channels reported an error.', channels }
   if (tones.includes('warn') || (visible === false && browserBacked)) return { tone: 'warn', label: visible === false && browserBacked ? 'TAB HIDDEN' : 'ATTENTION', detail: visible === false && browserBacked ? 'A website sync source may be delayed while the tab is hidden.' : 'One or more local sync channels need attention.', channels }
   if (tones.includes('ok')) return { tone: 'ok', label: desktopBacked ? 'CONNECTED' : 'WATCHING', detail: desktopBacked ? 'At least one channel is handled by the desktop app.' : 'At least one website sync channel is watching.', channels }
+  if (tones.includes('connecting')) return { tone: 'connecting', label: 'CONNECTING', detail: 'A local sync channel is connecting now.', channels }
   return { tone: 'idle', label: 'NOT SET UP', detail: 'No local sync channel is set up yet.', channels }
 }
 

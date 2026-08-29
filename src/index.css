@@ -16,6 +16,7 @@
   --txd:     #8d998b;
   --red:     #e06b6b;
   --grn:     #66b778;
+  --org:     #e0913f;
 
   /* Party-view palette - the handoff's token table, one name per role. */
   --brdm:    #2c3129; /* glass panel borders, dividers */
@@ -520,11 +521,54 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .raid-settings-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--brd); }
 .raid-settings-note { color: var(--txd); font-size: var(--fs-xs); margin-top: 3px; letter-spacing: .04em; }
 .raid-settings-list { display: flex; flex-direction: column; }
-.raid-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--brd); }
+.raid-settings-row { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--brd); }
 .raid-settings-row:last-child { border-bottom: 0; }
 .raid-settings-label { min-width: 0; display: flex; flex-direction: column; gap: 2px; font-family: 'Share Tech Mono', monospace; font-size: var(--fs-sm); color: var(--tx); }
+.raid-settings-label-line { display: flex; align-items: center; gap: 5px; }
 .raid-settings-source { color: var(--txd); font-size: var(--fs-xs); letter-spacing: .04em; }
 .raid-settings-control { flex-shrink: 0; }
+.raid-settings-help { display: inline-flex; flex: 0 0 auto; }
+.raid-settings-help-button {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 1px solid var(--brd2);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--txm);
+  font-family: 'Noto Sans', sans-serif;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  line-height: 1;
+}
+.raid-settings-help-button:hover,
+.raid-settings-help-button:focus-visible { border-color: var(--gold); color: var(--goldtx); background: rgba(201,168,76,.08); }
+.raid-settings-tooltip {
+  position: absolute;
+  top: calc(100% - 4px);
+  left: 0;
+  right: 0;
+  z-index: 2;
+  visibility: hidden;
+  opacity: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--brds);
+  border-radius: 4px;
+  background: var(--sur3);
+  box-shadow: 0 8px 22px rgba(0,0,0,.65);
+  color: var(--tx);
+  font-family: 'Noto Sans', sans-serif;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0;
+  pointer-events: none;
+  transition: opacity .12s ease, visibility .12s ease;
+}
+.raid-settings-help:hover .raid-settings-tooltip,
+.raid-settings-help:focus-within .raid-settings-tooltip { visibility: visible; opacity: 1; }
 /* The value reads as a pill; it stays a select because the leader edits it. */
 .raid-settings-control select {
   padding: 4px 9px;
@@ -1537,17 +1581,26 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .sync-status-bar { position: relative; }
 .sync-chip-list { display: flex; align-items: center; gap: 6px; }
 .sync-chip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.sync-chip-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--txm); }
+/* The dots are a connection light, so they only ever say three things: green is
+   connected, orange is connecting or needs a nudge, red is not connected. Grey
+   is kept for "off" - a channel this browser can never have, which is not a
+   connection state and must not read as a fault. */
+.sync-chip-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--dot, var(--red)); }
 .sync-chip[data-tone="ok"] .sync-chip-dot,
-.sync-chip-dot[data-tone="ok"] { background: var(--gold); }
+.sync-chip-dot[data-tone="ok"] { --dot: var(--grn); }
+.sync-chip[data-tone="connecting"] .sync-chip-dot,
+.sync-chip-dot[data-tone="connecting"],
 .sync-chip[data-tone="warn"] .sync-chip-dot,
-.sync-chip-dot[data-tone="warn"] { background: #d9a441; }
+.sync-chip-dot[data-tone="warn"] { --dot: var(--org); }
 .sync-chip[data-tone="error"] .sync-chip-dot,
-.sync-chip-dot[data-tone="error"] { background: var(--red); }
+.sync-chip-dot[data-tone="error"],
 .sync-chip[data-tone="idle"] .sync-chip-dot,
-.sync-chip-dot[data-tone="idle"],
+.sync-chip-dot[data-tone="idle"] { --dot: var(--red); }
 .sync-chip[data-tone="off"] .sync-chip-dot,
-.sync-chip-dot[data-tone="off"] { background: var(--txm); }
+.sync-chip-dot[data-tone="off"] { --dot: var(--txm); }
+.sync-chip[data-tone="connecting"] .sync-chip-dot,
+.sync-chip-dot[data-tone="connecting"] { animation: sync-dot-pulse 1.3s ease-in-out infinite; }
+@keyframes sync-dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 .sync-chip-meta { color: var(--txm); font-size: var(--fs-xs); letter-spacing: .05em; }
 .sync-popover { position: absolute; top: calc(100% + 8px); right: 0; z-index: 1100; width: min(360px, calc(100vw - 24px)); padding: 13px; background: var(--sur2); border-color: var(--brd); }
 .sync-popover h2,
@@ -1576,10 +1629,8 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   letter-spacing: .08em;
 }
 .sync-chip-compact:hover { border: none; color: var(--goldtx); }
-.sync-chip-compact .sync-chip-dot { width: 6px; height: 6px; flex-basis: 6px; }
-.sync-chip-compact[data-tone="ok"] .sync-chip-dot { box-shadow: 0 0 7px var(--gold); }
-.sync-chip-compact[data-tone="warn"] .sync-chip-dot { box-shadow: 0 0 7px #d9a441; }
-.sync-chip-compact[data-tone="error"] .sync-chip-dot { box-shadow: 0 0 7px var(--red); }
+.sync-chip-compact .sync-chip-dot { width: 6px; height: 6px; flex-basis: 6px; box-shadow: 0 0 7px var(--dot, var(--red)); }
+.sync-chip-compact[data-tone="off"] .sync-chip-dot { box-shadow: none; }
 
 .sync-status-bar-embedded { width: 100%; }
 .sync-status-bar-embedded .sync-chip-list { flex-wrap: wrap; }
