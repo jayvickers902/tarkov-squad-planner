@@ -156,6 +156,18 @@ describe('Room banner header', () => {
     fireEvent.mouseDown(document.body)
     expect(container.querySelector('.raid-settings-popover')).not.toBeInTheDocument()
   })
+
+  it('provides accessible help for every raid setting', () => {
+    renderRoom()
+    fireEvent.click(screen.getByRole('button', { name: 'Raid settings' }))
+
+    const helpButtons = screen.getAllByRole('button', { name: /^About / })
+    expect(helpButtons).toHaveLength(6)
+
+    const pingHelp = screen.getByRole('button', { name: 'About PING TTL' })
+    const descriptionId = pingHelp.getAttribute('aria-describedby')
+    expect(document.getElementById(descriptionId)).toHaveTextContent('How long a squad ping stays on the map')
+  })
 })
 
 describe('Room map selector', () => {
