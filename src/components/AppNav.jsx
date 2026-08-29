@@ -1,7 +1,7 @@
 export default function AppNav({ route, party, raidLive, onNavigate, onRequestLeave }) {
   const code = party?.code
   const destinations = [
-    { screen: 'lobby', label: 'LOBBY', route: { screen: 'lobby' } },
+    { screen: 'lobby', label: party ? 'LEAVE' : 'LOBBY', route: { screen: 'lobby' }, destructive: Boolean(party) },
     { screen: 'quests', label: 'QUEST MANAGER', route: code ? { screen: 'quests', code } : { screen: 'quests' } },
     ...(party ? [{ screen: 'room', label: 'PARTY', route: { screen: 'room', code } }] : []),
     ...(party && raidLive ? [{ screen: 'raid', label: 'RAID', route: { screen: 'raid', code } }] : []),
@@ -24,7 +24,7 @@ export default function AppNav({ route, party, raidLive, onNavigate, onRequestLe
             <button
               key={destination.screen}
               type="button"
-              className="app-nav-link"
+              className={`app-nav-link${destination.destructive ? ' app-nav-link-danger' : ''}`}
               aria-current={active ? 'page' : undefined}
               onClick={() => selectDestination(destination)}
             >

@@ -304,9 +304,11 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
             SAVED BETWEEN SESSIONS — AUTO-LOADED WHEN YOU JOIN A PARTY
           </div>
         </div>
-        <button className="btn-ghost" onClick={onDone} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-          <Icon name="arrow-left" size="sm" /> {inParty ? 'BACK TO PARTY' : 'BACK TO LOBBY'}
-        </button>
+        {inParty && (
+          <button className="btn-ghost" onClick={onDone} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+            <Icon name="arrow-left" size="sm" /> BACK TO PARTY
+          </button>
+        )}
       </div>
 
       {/* In-party notice */}

@@ -18,15 +18,25 @@ describe('AppNav', () => {
     expect(screen.getByRole('button', { name: 'RAID' })).toHaveAttribute('aria-current', 'page')
   })
 
-  it('uses the existing leave-confirmation callback for Lobby in a live party', () => {
+  it('shows a destructive Leave action and uses the confirmation callback in a live party', () => {
     const onNavigate = vi.fn()
     const onRequestLeave = vi.fn()
     render(<AppNav route={{ screen: 'room', code: 'ABC123' }} party={{ code: 'ABC123' }} raidLive={false} onNavigate={onNavigate} onRequestLeave={onRequestLeave} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'LOBBY' }))
+    const leaveButton = screen.getByRole('button', { name: 'LEAVE' })
+    expect(leaveButton).toHaveClass('app-nav-link-danger')
+    expect(screen.queryByRole('button', { name: 'LOBBY' })).not.toBeInTheDocument()
+    fireEvent.click(leaveButton)
 
     expect(onRequestLeave).toHaveBeenCalledTimes(1)
     expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it('shows Lobby when there is no active party', () => {
+    render(<AppNav route={{ screen: 'lobby' }} party={null} raidLive={false} onNavigate={vi.fn()} onRequestLeave={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: 'LOBBY' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.queryByRole('button', { name: 'LEAVE' })).not.toBeInTheDocument()
   })
 
   it('navigates Quest Manager with the active party code', () => {

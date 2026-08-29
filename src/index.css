@@ -180,6 +180,8 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 }
 .app-nav-link:hover { color: var(--tx); }
 .app-nav-link[aria-current='page'] { color: var(--goldtx); border-bottom-color: var(--gold); }
+.app-nav-link.app-nav-link-danger { color: var(--red); border-bottom-color: rgba(224, 107, 107, .45); }
+.app-nav-link.app-nav-link-danger:hover { color: #fff; background: rgba(224, 107, 107, .12); border-bottom-color: var(--red); }
 
 .app-route-overlay {
   position: fixed;

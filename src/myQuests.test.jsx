@@ -37,9 +37,19 @@ describe('MyQuests render smoke', () => {
     expect(screen.getByRole('heading', { name: 'QUEST MANAGER' })).toBeInTheDocument()
     expect(screen.getByLabelText('Quest setup progress')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'GET YOUR QUESTS IN' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'BACK TO LOBBY' })).not.toBeInTheDocument()
     expect(screen.queryByText('LIVE POSITION PINGS')).not.toBeInTheDocument()
     expect(screen.queryByText('ADD QUEST TO YOUR LIST')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /SAVE SNAPSHOT/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps the return action when Quest Manager is opened from a party', () => {
+    const onDone = vi.fn()
+    render(<MyQuests {...baseProps} inParty onDone={onDone} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'BACK TO PARTY' }))
+
+    expect(onDone).toHaveBeenCalledTimes(1)
   })
 
   it('reveals and focuses manual search without expanding the other advanced blocks', () => {
