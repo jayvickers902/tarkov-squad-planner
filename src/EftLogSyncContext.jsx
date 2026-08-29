@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef } from 'react'
 import { useTasks } from './useTarkov'
 import { useEftLogImport } from './useEftLogImport'
 import { useEftScreenshotSync as useEftScreenshotController } from './useEftScreenshotSync'
@@ -15,6 +15,8 @@ export function EftLogSyncProvider({
   myName,
   gameMode,
   onApply,
+  onRepairNames,
+  questsLoading = false,
   onAddPing,
   mapNorm,
   partyId,
@@ -24,6 +26,17 @@ export function EftLogSyncProvider({
   // users must not start task loading or touch the filesystem sync hook.
   const { tasks: allTasks } = useTasks(null, gameMode)
   const controller = useEftLogImport({ allTasks, gameMode, userId, onApply })
+  const repairedScopesRef = useRef(new Set())
+
+  useEffect(() => {
+    if (!userId || questsLoading || !Array.isArray(allTasks) || allTasks.length === 0 || typeof onRepairNames !== 'function') return
+    const scope = `${userId}:${gameMode}`
+    if (repairedScopesRef.current.has(scope)) return
+    repairedScopesRef.current.add(scope)
+    Promise.resolve(onRepairNames(allTasks)).catch(error => {
+      console.warn('Quest name repair failed', error)
+    })
+  }, [allTasks, gameMode, onRepairNames, questsLoading, userId])
   const screenshotController = useEftScreenshotController({
     userId,
     myName,

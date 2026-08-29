@@ -14,7 +14,7 @@ import {
 } from './eftLogDirectory'
 import { createEftLogHandleStore, isIndexedDbSupported } from './eftLogHandleStore'
 import { createQuestLogImportJob, loadPendingJob, QUEST_LOG_IMPORT_CHUNK_SIZE } from './questLogImportJob'
-import { FEATURED } from './constants'
+import { taskMetadataFor } from './questLogState'
 
 // Resumability is a convenience, not a precondition. A browser in private mode
 // or with site data blocked rejects every IndexedDB write, and letting that
@@ -42,11 +42,6 @@ function createResilientJobStore(store, memory) {
 }
 
 const VALID_MODES = new Set(['regular', 'pve'])
-// The reconciliation RPC validates map_norm against the same allowlist, and it
-// rejects the whole payload on a single unknown value. Upstream tasks can sit
-// on maps this app does not feature, so those import as "any map" instead.
-const IMPORTABLE_MAPS = new Set(FEATURED)
-const MAX_QUEST_NAME_BYTES = 160
 const MAX_PREVIEW_DETAIL_ROWS = 100
 const STALE_REQUEST = 'A newer EFT log scan replaced this one.'
 
@@ -78,35 +73,6 @@ function taskIdsFor(allTasks) {
   return Array.from(allTasks || [])
     .map(task => typeof task === 'string' ? task : task?.id)
     .filter(Boolean)
-}
-
-function boundedQuestName(value) {
-  const text = String(value || '').trim()
-  if (!text) return null
-  if (typeof TextEncoder === 'undefined') return text.slice(0, MAX_QUEST_NAME_BYTES)
-  const encoder = new TextEncoder()
-  if (encoder.encode(text).byteLength <= MAX_QUEST_NAME_BYTES) return text
-  let end = Math.min(text.length, MAX_QUEST_NAME_BYTES)
-  while (end > 0 && encoder.encode(text.slice(0, end)).byteLength > MAX_QUEST_NAME_BYTES) end -= 1
-  return text.slice(0, end) || null
-}
-
-/**
- * Canonical task names never appear in EFT logs, only task IDs do. Without this
- * the reconciliation RPC stores the 24-hex ID as the quest name and an imported
- * started task renders in the planner as a hex string.
- */
-function taskMetadataFor(allTasks) {
-  const result = new Map()
-  for (const task of Array.from(allTasks || [])) {
-    if (!task || typeof task === 'string' || !task.id) continue
-    const mapNorm = task.map?.normalizedName || task.mapNorm || null
-    result.set(task.id, {
-      questName: boundedQuestName(task.name),
-      mapNorm: IMPORTABLE_MAPS.has(mapNorm) ? mapNorm : null,
-    })
-  }
-  return result
 }
 
 function versionParts(version) {

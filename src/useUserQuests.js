@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from './supabase'
 import { normalizeGameMode } from './gameMode'
+import { FEATURED } from './constants'
 import { activeQuestRows, manualQuestStatePatch, toQuestLogEventPayload } from './questLogState'
 
 const LOG_IMPORT_MODES = new Set(['regular', 'pve'])
 export const QUEST_LOG_CHUNK_SIZE = 200
 export const QUEST_PRUNE_CHUNK_SIZE = 100
+const QUEST_NAME_REPAIR_CAP = 200
+const FEATURED_MAPS = new Set(FEATURED)
 
 function throwIfError(error) {
   if (error) throw error
@@ -164,6 +167,72 @@ export function useUserQuests(userId, gameMode = 'regular') {
     const { error } = await supabase.from('user_quests').update({ obj_progress: objProgress }).eq('user_id', userId).eq('game_mode', mode).eq('quest_id', questId)
     throwIfError(error)
     if (activeModeRef.current === mode) setQuests(prev => prev.map(q => q.quest_id === questId ? { ...q, obj_progress: objProgress } : q))
+  }, [userId, mode])
+
+  // Repair rows written by an unenriched log import. The task list is already
+  // in memory, so keep this bounded and update each row independently rather
+  // than using an upsert that could overwrite protected quest state.
+  const repairQuestNames = useCallback(async (taskIndex) => {
+    if (!userId) return 0
+
+    const tasks = taskIndex instanceof Map
+      ? [...taskIndex.values()]
+      : Array.isArray(taskIndex)
+        ? taskIndex
+        : Object.values(taskIndex || {})
+    const byId = new Map()
+    for (const task of tasks) {
+      if (!task || typeof task === 'string' || !task.id) continue
+      const name = String(task.name || '').trim()
+      if (!name) continue
+      const mapNorm = task.map?.normalizedName || task.mapNorm || null
+      byId.set(task.id, {
+        name,
+        mapNorm: FEATURED_MAPS.has(mapNorm) ? mapNorm : null,
+      })
+    }
+
+    const repairs = []
+    for (const row of questsRef.current) {
+      if (repairs.length >= QUEST_NAME_REPAIR_CAP) break
+      const questId = row?.quest_id
+      if (row?.quest_name !== questId || typeof questId !== 'string' || !/^[a-f0-9]{24}$/i.test(questId)) continue
+      const task = byId.get(questId)
+      if (!task) continue
+      repairs.push({
+        questId,
+        questName: task.name,
+        mapNorm: row.map_norm == null ? task.mapNorm : null,
+      })
+    }
+
+    if (repairs.length === 0) return 0
+
+    await Promise.all(repairs.map(async ({ questId, questName, mapNorm }) => {
+      const update = { quest_name: questName }
+      if (mapNorm) update.map_norm = mapNorm
+      const result = await supabase
+        .from('user_quests')
+        .update(update)
+        .eq('user_id', userId)
+        .eq('game_mode', mode)
+        .eq('quest_id', questId)
+      throwIfError(result.error)
+    }))
+
+    if (activeModeRef.current === mode) {
+      const repaired = new Map(repairs.map(item => [item.questId, item]))
+      setQuests(prev => prev.map(row => {
+        const repair = repaired.get(row.quest_id)
+        if (!repair) return row
+        return {
+          ...row,
+          quest_name: repair.questName,
+          ...(repair.mapNorm ? { map_norm: repair.mapNorm } : {}),
+        }
+      }))
+    }
+    return repairs.length
   }, [userId, mode])
 
   // Mark a quest as completed while retaining terminal history in the database.
@@ -334,6 +403,7 @@ export function useUserQuests(userId, gameMode = 'regular') {
     restoreSnapshot,
     markCompleted,
     saveObjectiveProgress,
+    repairQuestNames,
     reconcileLogEvents,
     getQuestHistory,
   }

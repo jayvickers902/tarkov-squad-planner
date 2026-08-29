@@ -179,4 +179,55 @@ describe('game mode contract', () => {
     expect(db.rows.filter(row => row.game_mode === 'pve').map(row => row.quest_id)).toEqual(['kept'])
     expect(db.rows.filter(row => row.game_mode === 'regular').map(row => row.quest_id)).toEqual(['regular-1'])
   })
+
+  it('repairs eligible hex names and fills only missing featured maps', async () => {
+    const hexId = '59c9392986f7742f6923add2'
+    const mappedId = '5ae449d986f774453a54a7e1'
+    const absentId = '5b4795fb86f7745876267770'
+    db.rows = [
+      { user_id: 'user-1', game_mode: 'regular', quest_id: hexId, quest_name: hexId, map_norm: null, state: 'active' },
+      { user_id: 'user-1', game_mode: 'regular', quest_id: mappedId, quest_name: mappedId, map_norm: 'woods', state: 'active' },
+      { user_id: 'user-1', game_mode: 'regular', quest_id: absentId, quest_name: absentId, map_norm: null, state: 'active' },
+      { user_id: 'user-1', game_mode: 'regular', quest_id: 'normal-quest', quest_name: 'Already named', map_norm: null, state: 'active' },
+    ]
+    const { result } = renderHook(() => useUserQuests('user-1', 'regular'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let repaired
+    await act(async () => {
+      repaired = await result.current.repairQuestNames([
+        { id: hexId, name: 'Aid Stations', map: { normalizedName: 'customs' } },
+        { id: mappedId, name: 'Supervisor', map: { normalizedName: 'interchange' } },
+        { id: 'normal-quest', name: 'Would not overwrite', map: { normalizedName: 'factory' } },
+      ])
+    })
+
+    expect(repaired).toBe(2)
+    expect(db.rows.map(row => [row.quest_id, row.quest_name, row.map_norm])).toEqual([
+      [hexId, 'Aid Stations', 'customs'],
+      [mappedId, 'Supervisor', 'woods'],
+      [absentId, absentId, null],
+      ['normal-quest', 'Already named', null],
+    ])
+    expect(result.current.quests.find(row => row.quest_id === hexId)).toMatchObject({ quest_name: 'Aid Stations', map_norm: 'customs' })
+  })
+
+  it('caps quest name repair at 200 rows', async () => {
+    const rows = Array.from({ length: 205 }, (_, index) => {
+      const questId = (index + 1).toString(16).padStart(24, '0')
+      return { user_id: 'user-1', game_mode: 'regular', quest_id: questId, quest_name: questId, map_norm: null, state: 'active' }
+    })
+    db.rows = rows
+    const { result } = renderHook(() => useUserQuests('user-1', 'regular'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let repaired
+    await act(async () => {
+      repaired = await result.current.repairQuestNames(rows.map(row => ({ id: row.quest_id, name: `Quest ${row.quest_id}` })))
+    })
+
+    expect(repaired).toBe(200)
+    expect(db.rows.filter(row => row.quest_name !== row.quest_id)).toHaveLength(200)
+    expect(db.rows.slice(200).every(row => row.quest_name === row.quest_id)).toBe(true)
+  })
 })

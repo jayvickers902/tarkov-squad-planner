@@ -18,6 +18,7 @@ import {
   MAX_TOTAL_RELEVANT_BYTES,
 } from './eftLogDirectory'
 import {
+  taskMetadataFor,
   toQuestLogEventPayload,
 } from './questLogState'
 import {
@@ -420,7 +421,7 @@ function sourceFile(name, text, metadata) {
   }
 }
 
-function selectedEvents(preview, { mode, checkpoint, taskIds, parser = {} }) {
+function selectedEvents(preview, { mode, checkpoint, taskIds, taskMetadata = null, parser = {} }) {
   const known = taskIds ? new Set([...taskIds].map(String)) : null
   const versions = new Set(Array.isArray(checkpoint?.includedVersions) ? checkpoint.includedVersions.map(String) : [])
   if (!versions.size && Array.isArray(preview?.includedVersions)) {
@@ -442,12 +443,17 @@ function selectedEvents(preview, { mode, checkpoint, taskIds, parser = {} }) {
     if (versions.size && event?.version && !versions.has(String(event.version))) return false
     if (profileKey && event?.profileKey !== profileKey) return false
     return true
-  }).map(event => ({
-    ...event,
-    ...(event?.gameMode || mode ? { gameMode: event?.gameMode || mode } : {}),
-    ...(event?.profileKey || profileKey ? { profileKey: event?.profileKey || profileKey } : {}),
-    ...(event?.version || versions.size !== 1 ? {} : { version: [...versions][0] }),
-  }))
+  }).map(event => {
+    const metadata = taskMetadata?.get(event?.taskId)
+    return {
+      ...event,
+      ...(event?.gameMode || mode ? { gameMode: event?.gameMode || mode } : {}),
+      ...(event?.profileKey || profileKey ? { profileKey: event?.profileKey || profileKey } : {}),
+      ...(event?.version || versions.size !== 1 ? {} : { version: [...versions][0] }),
+      ...(metadata?.questName ? { questName: metadata.questName } : {}),
+      ...(metadata?.mapNorm ? { mapNorm: metadata.mapNorm } : {}),
+    }
+  })
 }
 
 function selectionRequirement(preview, { mode, checkpoint, parser = {}, taskIds }) {
@@ -503,6 +509,12 @@ function logFilesFromScan(scan) {
   return Array.isArray(scan?.files) ? scan.files : (Array.isArray(scan?.entries) ? scan.entries : [])
 }
 
+function taskIdsFor(tasks) {
+  return Array.from(tasks || [])
+    .map(task => typeof task === 'string' ? task : task?.id)
+    .filter(Boolean)
+}
+
 /** Create an incremental, checkpointed quest-log synchronizer. */
 export function createQuestLogSyncController({
   filesystem,
@@ -517,6 +529,8 @@ export function createQuestLogSyncController({
   maxTotalBytes = MAX_TOTAL_RELEVANT_BYTES,
   chunkSize = QUEST_LOG_SYNC_CHUNK_SIZE,
 } = {}) {
+  const normalizedTaskIds = taskIdsFor(taskIds)
+  const initialTaskMetadata = taskMetadataFor(taskIds)
   const safeChunkSize = Number.isInteger(chunkSize) && chunkSize > 0
     ? Math.min(chunkSize, QUEST_LOG_SYNC_CHUNK_SIZE) : QUEST_LOG_SYNC_CHUNK_SIZE
   let checkpoint = null
@@ -530,9 +544,11 @@ export function createQuestLogSyncController({
     return logEntries(logFilesFromScan(result))
   }
 
-  async function sync({ force = false, mode = gameMode, taskIds: ids = taskIds, parser = parserOptions } = {}) {
+  async function sync({ force = false, mode = gameMode, taskIds: ids = normalizedTaskIds, parser = parserOptions } = {}) {
     if (!VALID_MODES.has(mode)) throw new Error('Quest log sync supports PvP Permanent, PvP Seasonal, and PvE.')
     if (inFlight) return inFlight
+    const knownTaskIds = ids === normalizedTaskIds ? normalizedTaskIds : taskIdsFor(ids)
+    const taskMetadata = ids === normalizedTaskIds ? initialTaskMetadata : taskMetadataFor(ids)
     inFlight = (async () => {
       checkpoint = checkpoint || await loadCheckpoint(checkpointStore, checkpointKey)
       const current = await list()
@@ -570,13 +586,13 @@ export function createQuestLogSyncController({
           files.push(sourceFile(entry.relativeFilename, text, entry))
           if (notificationLog(entry.relativeFilename)) nextOffsets.set(entry.relativeFilename, actualBytes)
         }
-        preview = parseEftLogFiles(files, ids, parser)
-        const choice = chooseCandidate(preview, { mode, checkpoint, parser, taskIds: ids })
+        preview = parseEftLogFiles(files, knownTaskIds, parser)
+        const choice = chooseCandidate(preview, { mode, checkpoint, parser, taskIds: knownTaskIds })
         preview = { ...preview, discoveredProfiles: choice.candidates }
         if (choice.selected && !checkpoint?.profileKey && !parser?.profileKey) {
           parser = { ...parser, profileKey: choice.selected, selectionState: 'auto' }
         }
-        const requiresSelection = selectionRequirement(preview, { mode, checkpoint, parser, taskIds: ids })
+        const requiresSelection = selectionRequirement(preview, { mode, checkpoint, parser, taskIds: knownTaskIds })
         if (requiresSelection) return {
           changed: changed.length > 0 || force,
           fullScan: true,
@@ -602,7 +618,7 @@ export function createQuestLogSyncController({
           },
           checkpoint: clone(checkpoint),
         }
-        events.push(...selectedEvents(preview, { mode, checkpoint, taskIds: ids, parser }))
+        events.push(...selectedEvents(preview, { mode, checkpoint, taskIds: knownTaskIds, taskMetadata, parser }))
         stagedPending.clear()
       } else {
         for (const file of changed.filter(item => item.change === 'append' && notificationLog(item.relativeFilename))) {
@@ -622,7 +638,7 @@ export function createQuestLogSyncController({
             text,
             pendingText: pendingText.get(file.relativeFilename) || '',
             state: { parsedOffset: old?.parsedOffset },
-            taskIds: ids,
+            taskIds: knownTaskIds,
             options: parser,
           })
           const parsedPreview = result.preview || result
@@ -638,7 +654,7 @@ export function createQuestLogSyncController({
               ...(event?.gameMode || !checkpoint?.gameMode ? {} : { gameMode: checkpoint.gameMode }),
             })),
           }
-          events.push(...selectedEvents(resultPreview, { mode, checkpoint, taskIds: ids, parser }))
+          events.push(...selectedEvents(resultPreview, { mode, checkpoint, taskIds: knownTaskIds, taskMetadata, parser }))
           if (result.pendingText && !result.pendingOverflow) stagedPending.set(file.relativeFilename, result.pendingText)
           else stagedPending.delete(file.relativeFilename)
           if (Number.isSafeInteger(result.parsedOffset)) nextOffsets.set(file.relativeFilename, result.parsedOffset)

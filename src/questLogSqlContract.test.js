@@ -4,7 +4,7 @@ import path from 'node:path'
 import { FEATURED } from './constants'
 
 const tableMigration = fs.readFileSync(path.resolve(process.cwd(), 'supabase/10_17_quest_log_sync.sql'), 'utf8')
-const rpcMigration = fs.readFileSync(path.resolve(process.cwd(), 'supabase/10_18_quest_log_reconcile_perf.sql'), 'utf8')
+const rpcMigration = fs.readFileSync(path.resolve(process.cwd(), 'supabase/10_26_quest_log_name_repair.sql'), 'utf8')
 
 describe('quest log migration contract', () => {
   it('uses the canonical state model and authorized destructive cutover', () => {
@@ -19,8 +19,9 @@ describe('quest log migration contract', () => {
 
   it('secures and bounds the authenticated reconciliation RPC', () => {
     expect(rpcMigration).toMatch(/create or replace function public\.reconcile_user_quest_log_events\(\s*p_game_mode text,\s*p_events jsonb/i)
-    expect(rpcMigration).toMatch(/auth\.uid\(\) is null/i)
-    expect(rpcMigration).toMatch(/p_game_mode not in \('regular', 'pve'\)/i)
+    expect(rpcMigration).toMatch(/v_uid uuid := auth\.uid\(\)/i)
+    expect(rpcMigration).toMatch(/if v_uid is null then raise exception 'not authenticated'/i)
+    expect(rpcMigration).toMatch(/p_game_mode not in \('regular', 'pve', 'pvp-season'\)/i)
     expect(rpcMigration).toMatch(/jsonb_array_length\(p_events\) > 1000/i)
     expect(rpcMigration).toMatch(/task_id !~\* '\^\[a-f0-9\]\{24\}\$'/i)
     expect(rpcMigration).toMatch(/event_key !~ '\^\[A-Za-z0-9\]/i)
@@ -95,5 +96,12 @@ describe('quest log migration contract', () => {
     expect(rpcMigration).not.toMatch(/set[\s\S]{0,240}important\s*=/i)
     expect(rpcMigration).not.toMatch(/set[\s\S]{0,240}obj_progress\s*=/i)
     expect(rpcMigration).not.toMatch(/set[\s\S]{0,240}skipped\s*=/i)
+  })
+
+  it('repairs hex quest names and fills missing map metadata only in the update path', () => {
+    const updateSet = rpcMigration.match(/on conflict \(user_id, game_mode, quest_id\) do update\s+set([\s\S]*?)where/i)?.[1]
+    expect(updateSet).toBeTruthy()
+    expect(updateSet).toMatch(/quest_name\s*=\s*case[\s\S]*?when public\.user_quests\.quest_name\s*=\s*public\.user_quests\.quest_id[\s\S]*?then coalesce\(excluded\.quest_name, public\.user_quests\.quest_name\)[\s\S]*?else public\.user_quests\.quest_name[\s\S]*?end/i)
+    expect(updateSet).toMatch(/map_norm\s*=\s*coalesce\(public\.user_quests\.map_norm, excluded\.map_norm\)/i)
   })
 })

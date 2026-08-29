@@ -58,6 +58,7 @@ export default function App() {
     bulkAddQuests,
     toggleImportant, toggleSkipped, clearAllQuests, restoreSnapshot, markCompleted: markQuestCompleted,
     saveObjectiveProgress,
+    repairQuestNames,
     reconcileLogEvents,
     getQuestHistory,
   } = useUserQuests(user?.id, questGameMode)
@@ -591,6 +592,8 @@ export default function App() {
       myName={myName}
       gameMode={gameMode}
       onApply={reconcileLogEvents}
+      onRepairNames={repairQuestNames}
+      questsLoading={questsLoading || questGameMode !== gameMode}
       onAddPing={party ? addPing : null}
       mapNorm={party?.map_norm || null}
       partyId={party ? `${party.id || party.code}:${Number(party.raid_id) || 0}` : null}

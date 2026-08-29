@@ -1,8 +1,10 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EftLogSyncProvider, useEftLogSync } from './EftLogSyncContext'
 
-vi.mock('./useTarkov', () => ({ useTasks: vi.fn(() => ({ tasks: [{ id: 'task-1' }], loading: false })) }))
+const taskState = vi.hoisted(() => ({ current: { tasks: [{ id: 'task-1' }], loading: false } }))
+
+vi.mock('./useTarkov', () => ({ useTasks: vi.fn(() => taskState.current) }))
 vi.mock('./useEftLogImport', () => ({ useEftLogImport: vi.fn(() => ({ state: 'idle', supported: true })) }))
 vi.mock('./useEftScreenshotSync', () => ({ useEftScreenshotSync: vi.fn(() => ({ state: 'watching', supported: true })) }))
 
@@ -13,6 +15,15 @@ import { useEftScreenshotSync } from './useEftScreenshotSync'
 const mockUseTasks = vi.mocked(useTasks)
 const mockUseEftLogImport = vi.mocked(useEftLogImport)
 const mockUseEftScreenshotSync = vi.mocked(useEftScreenshotSync)
+
+beforeEach(() => {
+  taskState.current = { tasks: [{ id: 'task-1' }], loading: false }
+  mockUseTasks.mockClear()
+  mockUseEftLogImport.mockClear()
+  mockUseEftScreenshotSync.mockClear()
+})
+
+afterEach(cleanup)
 
 function Consumer() {
   const sync = useEftLogSync()
@@ -38,5 +49,62 @@ describe('EftLogSyncProvider', () => {
       </EftLogSyncProvider>,
     )
     expect(mockUseEftLogImport).toHaveBeenCalledTimes(2)
+  })
+
+  it('repairs names once when tasks arrive after the initial quest load', async () => {
+    taskState.current = { tasks: [], loading: false }
+    const onRepairNames = vi.fn().mockResolvedValue(1)
+    const { rerender } = render(
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairNames={onRepairNames}>
+        <Consumer />
+      </EftLogSyncProvider>,
+    )
+    expect(onRepairNames).not.toHaveBeenCalled()
+
+    taskState.current = { tasks: [{ id: 'task-1', name: 'Task One' }], loading: false }
+    rerender(
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairNames={onRepairNames}>
+        <Consumer />
+      </EftLogSyncProvider>,
+    )
+    await waitFor(() => expect(onRepairNames).toHaveBeenCalledTimes(1))
+    expect(onRepairNames).toHaveBeenCalledWith([{ id: 'task-1', name: 'Task One' }])
+  })
+
+  it('waits while the initial quest load is pending and does not re-fire on rerender', async () => {
+    const onRepairNames = vi.fn().mockResolvedValue(1)
+    const { rerender } = render(
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={true} onApply={() => {}} onRepairNames={onRepairNames}>
+        <Consumer />
+      </EftLogSyncProvider>,
+    )
+    expect(onRepairNames).not.toHaveBeenCalled()
+
+    rerender(
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairNames={onRepairNames}>
+        <Consumer />
+      </EftLogSyncProvider>,
+    )
+    await waitFor(() => expect(onRepairNames).toHaveBeenCalledTimes(1))
+    rerender(
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairNames={onRepairNames}>
+        <Consumer />
+      </EftLogSyncProvider>,
+    )
+    expect(onRepairNames).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not surface a failed repair to the provider consumer', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const onRepairNames = vi.fn().mockRejectedValue(new Error('offline'))
+    render(
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairNames={onRepairNames}>
+        <Consumer />
+      </EftLogSyncProvider>,
+    )
+    await waitFor(() => expect(onRepairNames).toHaveBeenCalledTimes(1))
+    expect(screen.getByText('1:idle')).toBeInTheDocument()
+    expect(warnSpy).toHaveBeenCalledWith('Quest name repair failed', expect.any(Error))
+    warnSpy.mockRestore()
   })
 })

@@ -156,21 +156,28 @@ image URL, PMC spawn coordinates (0–1 fractions), a terrain SVG fallback, and
 terrain labels. Leaflet bounds and zoom settings live in
 `src/data/tarkovMapConfigs.js`. `MapLeaflet.jsx` is the active renderer.
 
-**`FEATURED` is an allowlist, not a display list.** It gates TarkovMonitor map
-switches (`useTarkovMonitor.js`), ping validation (`tarkovPings.js`), the upstream
-map filter (`useTarkov.js`) and the prebake filter (`scripts/prebake.mjs`). It must
-stay identical to the `map_norm` allowlists inside `select_map_party` and
-`append_party_ping` in `supabase/10_10_security_hardening.sql`;
-`securityContract.test.js` asserts that both lists match. Adding a map here without
-adding it to those two RPCs produces a map the picker offers and the server refuses,
-which reads as a broken app rather than an unsupported map.
+**`FEATURED` is an allowlist, not a display list.** It gates ping validation
+(`tarkovPings.js`), the upstream map filter (`useTarkov.js`), the prebake filter
+(`scripts/prebake.mjs`), EFT log location mapping (`eftLocations.js`), screenshot
+position validation (`eftScreenshots.js`) and quest log import
+(`questLogImportJob.js`, `useEftLogImport.js`). `AdminKeyManager.jsx` and
+`MyQuests.jsx` also render it as a list, but that is display, not gating.
+
+It must stay identical to every `map_norm` allowlist on the server. Two contract
+tests enforce this and between them cover three migrations:
+`securityContract.test.js` checks `supabase/10_10_security_hardening.sql` and
+`supabase/10_15_raid_sessions.sql` (asserting at least four allowlists match), and
+`questLogSqlContract.test.js` checks the reconcile RPC in
+`supabase/10_26_quest_log_name_repair.sql`. Adding a map here without adding it
+to all of them produces a map the picker offers and the server refuses, which reads
+as a broken app rather than an unsupported map.
 
 Icebreaker and Labyrinth were added to the config after patch 1.1 but are **not in
 `FEATURED`**. The server allowlist never included them, so neither was ever
 selectable; they were listed client-side for two releases while every attempt to
 pick one failed server-side. Their `MAP_IMAGES` and `tarkovMapConfigs` entries are
-kept so re-enabling is cheap, but re-enabling means editing `FEATURED` **and** both
-RPCs in one change.
+kept so re-enabling is cheap, but re-enabling means editing `FEATURED` **and** every
+server allowlist named above in one change.
 
 They are also still upstream data gaps, which is why they are not worth that change
 yet. Neither has `SPAWNS`, `TERRAIN` or `TERRAIN_LABELS` entries — live spawn data

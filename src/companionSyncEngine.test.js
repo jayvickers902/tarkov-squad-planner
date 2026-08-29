@@ -13,10 +13,14 @@ import {
 const taskId = '507f1f77bcf86cd799439011'
 
 function notification(eventId, type = 12) {
+  return notificationForTask(taskId, eventId, type)
+}
+
+function notificationForTask(id, eventId, type = 12) {
   return JSON.stringify({
     type: 'ChatMessageReceived',
     eventId,
-    message: { type, eventId, templateId: `${taskId} quest`, dt: '2026-08-26T12:00:00Z' },
+    message: { type, eventId, templateId: `${id} quest`, dt: '2026-08-26T12:00:00Z' },
   })
 }
 
@@ -68,6 +72,74 @@ describe('native-agnostic companion sync engine', () => {
     expect(retained.events).toEqual([])
     expect(retained.lastSuccessfulScan).toEqual(result.lastSuccessfulScan)
     expect(checkpoints.value.lastSuccessfulScansByMode.regular).toEqual(result.lastSuccessfulScan)
+  })
+
+  it('enriches companion events from object-shaped task metadata', async () => {
+    const apply = vi.fn(async (_mode, events) => ({ inserted: events.length }))
+    const controller = createQuestLogSyncController({
+      filesystem: { async listEftLogs() { return [file('notifications.log', notification('event'))] } },
+      checkpointStore: store(), network: { applyQuestLogEvents: apply },
+      taskIds: [{ id: taskId, name: 'Aid Stations', mapNorm: 'customs' }], gameMode: 'regular',
+      parserOptions: { unknownModeTarget: 'regular' },
+    })
+
+    await controller.sync()
+
+    expect(apply).toHaveBeenCalledOnce()
+    expect(apply.mock.calls[0][1]).toEqual([
+      expect.objectContaining({ task_id: taskId, quest_name: 'Aid Stations', map_norm: 'customs' }),
+    ])
+  })
+
+  it('keeps string task IDs unchanged while filtering to known events', async () => {
+    const unknownTaskId = '507f1f77bcf86cd799439012'
+    const apply = vi.fn(async (_mode, events) => ({ inserted: events.length }))
+    const controller = createQuestLogSyncController({
+      filesystem: {
+        async listEftLogs() {
+          return [file('notifications.log', `${notification('known')}\n${notificationForTask(unknownTaskId, 'unknown')}`)]
+        },
+      },
+      checkpointStore: store(), network: { applyQuestLogEvents: apply },
+      taskIds: [taskId], gameMode: 'regular', parserOptions: { unknownModeTarget: 'regular' },
+    })
+
+    await controller.sync()
+
+    expect(apply).toHaveBeenCalledOnce()
+    expect(apply.mock.calls[0][1]).toHaveLength(1)
+    expect(apply.mock.calls[0][1][0]).toEqual(expect.objectContaining({ task_id: taskId }))
+    expect(apply.mock.calls[0][1][0]).not.toHaveProperty('quest_name')
+    expect(apply.mock.calls[0][1][0]).not.toHaveProperty('map_norm')
+  })
+
+  it('omits task maps outside the featured allowlist', async () => {
+    const apply = vi.fn(async (_mode, events) => ({ inserted: events.length }))
+    const controller = createQuestLogSyncController({
+      filesystem: { async listEftLogs() { return [file('notifications.log', notification('event'))] } },
+      checkpointStore: store(), network: { applyQuestLogEvents: apply },
+      taskIds: [{ id: taskId, name: 'Labyrinth Quest', mapNorm: 'the-labyrinth' }], gameMode: 'regular',
+      parserOptions: { unknownModeTarget: 'regular' },
+    })
+
+    await controller.sync()
+
+    expect(apply.mock.calls[0][1][0]).toEqual(expect.objectContaining({ task_id: taskId, quest_name: 'Labyrinth Quest' }))
+    expect(apply.mock.calls[0][1][0]).not.toHaveProperty('map_norm')
+  })
+
+  it('enriches seasonal companion events', async () => {
+    const apply = vi.fn(async (_mode, events) => ({ inserted: events.length }))
+    const controller = createQuestLogSyncController({
+      filesystem: { async listEftLogs() { return [file('notifications.log', notification('event'))] } },
+      checkpointStore: store(), network: { applyQuestLogEvents: apply },
+      taskIds: [{ id: taskId, name: 'Seasonal Aid', mapNorm: 'customs' }], gameMode: 'pvp-season',
+      parserOptions: { unknownModeTarget: 'pvp-season' },
+    })
+
+    await controller.sync()
+
+    expect(apply.mock.calls[0][1][0]).toEqual(expect.objectContaining({ task_id: taskId, quest_name: 'Seasonal Aid', map_norm: 'customs' }))
   })
 
   it('uses the checked-in EFT parser fixtures for a native-neutral full scan', async () => {
