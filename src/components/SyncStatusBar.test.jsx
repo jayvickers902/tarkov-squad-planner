@@ -113,6 +113,14 @@ describe('SyncStatusBar', () => {
     expect(screen.getByRole('dialog').textContent).toMatch(/pings need an active party map/i)
   })
 
+  it('expands details inline when embedded in the room overflow', () => {
+    render(<SyncStatusBar embedded onMyQuests={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Quest log sync/ }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'LOGS SYNC' })).toBeInTheDocument()
+  })
+
   it('labels fresh companion heartbeats as connected', () => {
     const updatedAt = new Date().toISOString()
     vi.mocked(useCompanionSyncStatus).mockReturnValue({

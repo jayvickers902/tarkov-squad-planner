@@ -114,9 +114,9 @@ function PingCard({ card, focusPingId, onFocusPing, onHoverPing }) {
         }
       }}>
       <div className="ping-card-head">
-        <span className="mono" style={{ color: card.color, fontSize: 11, letterSpacing: '.08em' }}>{card.ping.user.toUpperCase()}</span>
-        <span className="mono" style={{ color: card.cadence.color, fontSize: 10, letterSpacing: '.08em' }}>{card.cadence.label}</span>
-        <span className="mono" style={{ color: decay.color, fontSize: 10, marginLeft: 'auto' }}>{ageLabel(card.age)}</span>
+        <span className="mono" style={{ color: card.color, fontSize: 'var(--fs-sm)', letterSpacing: '.08em' }}>{card.ping.user.toUpperCase()}</span>
+        <span className="mono" style={{ color: card.cadence.color, fontSize: 'var(--fs-xs)', letterSpacing: '.08em' }}>{card.cadence.label}</span>
+        <span className="mono" style={{ color: decay.color, fontSize: 'var(--fs-xs)', marginLeft: 'auto' }}>{ageLabel(card.age)}</span>
       </div>
       <div className="mono raid-ping-body">
         {card.fromMe && <span>{card.fromMe.dist} m {card.fromMe.dir} of you</span>}
@@ -164,7 +164,7 @@ function LastKnownCard({ card, focusPingId, onFocusPing, onHoverPing }) {
         }
       }}>
       <div className="last-known-head">
-        <span className="mono" style={{ color: card.color, fontSize: 11, letterSpacing: '.08em' }}>
+        <span className="mono" style={{ color: card.color, fontSize: 'var(--fs-sm)', letterSpacing: '.08em' }}>
           {card.ping.user.toUpperCase()}
         </span>
         <span className="mono last-known-age">{ageLabel(card.age)} AGO</span>

@@ -39,9 +39,9 @@ export default class ErrorBoundary extends React.Component {
     const lastPartyCode = readLastPartyCode()
 
     return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24, background: 'var(--bg)' }}>
+      <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', padding: 24, background: 'var(--bg)' }}>
         <div className="card" style={{ width: 'min(100%, 460px)', padding: 24 }}>
-          <div className="mono" style={{ color: 'var(--gold)', fontSize: 11, letterSpacing: '.12em', marginBottom: 10 }}>
+          <div className="mono" style={{ color: 'var(--gold)', fontSize: 'var(--fs-sm)', letterSpacing: '.12em', marginBottom: 10 }}>
             RAID SYSTEM FAILURE
           </div>
           <h1 style={{ color: 'var(--gold)', fontSize: 28, marginBottom: 10 }}>SOMETHING BROKE.</h1>
@@ -51,7 +51,7 @@ export default class ErrorBoundary extends React.Component {
           <div className="mono" style={{ color: 'var(--gold)', fontSize: 18, letterSpacing: '.14em', marginBottom: 18 }}>
             {lastPartyCode || 'NO PARTY CODE SAVED'}
           </div>
-          <div className="mono" style={{ color: 'var(--txm)', fontSize: 11, lineHeight: 1.5, overflowWrap: 'anywhere', marginBottom: 20 }}>
+          <div className="mono" style={{ color: 'var(--txm)', fontSize: 'var(--fs-sm)', lineHeight: 1.5, overflowWrap: 'anywhere', marginBottom: 20 }}>
             {error.message || 'Unknown render error'}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

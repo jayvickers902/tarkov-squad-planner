@@ -38,7 +38,7 @@ afterEach(() => {
 })
 
 describe('MyQuests import receipt', () => {
-  it('keeps a durable receipt and restores the full pre-import history on undo', async () => {
+  it('keeps a receipt until undo, restores full history, then collapses back to the zero state', async () => {
     const history = [
       { quest_id: 'quest-active', quest_name: 'Active quest', state: 'active' },
       { quest_id: 'quest-complete', quest_name: 'Completed quest', state: 'completed', state_source: 'log_import' },
@@ -71,12 +71,14 @@ describe('MyQuests import receipt', () => {
 
     expect(await screen.findByText('IMPORT COMPLETE')).toBeInTheDocument()
     expect(screen.getByText(/1 quest state updated · 1 started/)).toBeInTheDocument()
+    expect(screen.getByText('ADD QUEST TO YOUR LIST')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'UNDO IMPORT' }))
 
     // 'all' scope: the undo point is the complete history, so rows absent
     // from it were created by the import and must be pruned.
     await waitFor(() => expect(onRestore).toHaveBeenCalledWith(history, { scope: 'all' }))
-    expect(screen.getByText('IMPORT UNDONE')).toBeInTheDocument()
-    expect(screen.getByText(/Restored 2 quest records/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('IMPORT COMPLETE')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'GET YOUR QUESTS IN' })).toBeInTheDocument()
+    expect(screen.queryByText('ADD QUEST TO YOUR LIST')).not.toBeInTheDocument()
   })
 })

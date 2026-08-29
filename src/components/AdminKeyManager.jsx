@@ -140,7 +140,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
   const armed = section === 'loot' ? placingLoot : !!placing
 
   return (
-    <div style={{ minHeight: '100vh', padding: '14px 16px' }}>
+    <div style={{ minHeight: '100dvh', padding: '14px 16px' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, paddingBottom: 14, borderBottom: '1px solid var(--brd)' }}>
@@ -148,7 +148,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
         <div style={{ width: 4, height: 26, background: 'var(--gold)', borderRadius: 2 }} />
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>MAP DATA ADMIN</h1>
-          <div className="mono" style={{ fontSize: 11, color: 'var(--txm)' }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>
             // {section === 'keys' ? 'KEY PRIORITY + LOCATION MANAGER' : 'HAND-PLACED DOCUMENT SPAWNS'}
           </div>
         </div>
@@ -161,7 +161,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
             onClick={() => { setSection('share'); setPlacing(null); setPlacingLoot(false) }}>⚑ SHAREABILITY</button>
         </div>
         {feedback && (
-          <div className="mono" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--gold)', background: 'var(--sur2)', border: '1px solid var(--golddim)', borderRadius: 4, padding: '4px 10px' }}>
+          <div className="mono" style={{ marginLeft: 'auto', fontSize: 'var(--fs-sm)', color: 'var(--gold)', background: 'var(--sur2)', border: '1px solid var(--golddim)', borderRadius: 4, padding: '4px 10px' }}>
             {feedback}
           </div>
         )}
@@ -173,7 +173,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
           <button key={m}
             onClick={() => { setMapNorm(m); setPlacing(null); setPlacingLoot(false) }}
             className={mapNorm === m ? 'btn-gold' : 'btn-ghost'}
-            style={{ padding: '5px 12px', fontSize: 12 }}>
+            style={{ padding: '5px 12px', fontSize: 'var(--fs-sm)' }}>
             {MAP_LABELS[m]}
           </button>
         ))}
@@ -182,18 +182,18 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
       {section === 'share' && (
         <div className="card" style={{ padding: 14, marginBottom: 16, maxWidth: 900 }}>
           <div className="lbl" style={{ marginBottom: 8 }}>QUEST SHAREABILITY OVERRIDES</div>
-          <div className="mono" style={{ fontSize: 10, lineHeight: 1.5, color: 'var(--txd)', marginBottom: 10 }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', lineHeight: 1.5, color: 'var(--txd)', marginBottom: 10 }}>
             CLASSIFICATION IS DERIVED FROM OBJECTIVE TYPES. USE THIS EDITOR FOR SOLO-ONLY CHAINS OR OTHER CURATED CORRECTIONS.
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.5fr 1fr 150px', gap: 8, alignItems: 'end' }}>
-            <label className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>
+            <label className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)' }}>
               TASK
               <select value={overrideTaskId} onChange={e => selectOverrideTask(e.target.value)} style={{ display: 'block', width: '100%', marginTop: 4, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, color: 'var(--tx)', padding: 7 }}>
                 <option value="">Select a task…</option>
                 {tasks.map(task => <option key={task.id} value={task.id}>{task.name} · {task.id}</option>)}
               </select>
             </label>
-            <label className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>
+            <label className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)' }}>
               VERDICT
               <select value={overrideVerdict} onChange={e => setOverrideVerdict(e.target.value)} style={{ display: 'block', width: '100%', marginTop: 4, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, color: 'var(--tx)', padding: 7 }}>
                 <option value="solo">SOLO</option><option value="partial">PARTIAL</option><option value="shared">SHARED</option>
@@ -203,11 +203,11 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
           </div>
           <input aria-label="Override task name" placeholder="Task name" value={overrideTaskName} onChange={e => setOverrideTaskName(e.target.value)} style={{ marginTop: 8 }} />
           <input aria-label="Override note" placeholder="Reason / source note" value={overrideNote} onChange={e => setOverrideNote(e.target.value)} style={{ marginTop: 8 }} />
-          <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 14, marginBottom: 6 }}>SAVED OVERRIDES ({Object.keys(overrides).length})</div>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', marginTop: 14, marginBottom: 6 }}>SAVED OVERRIDES ({Object.keys(overrides).length})</div>
           {Object.values(overrides).map(row => (
             <div key={row.task_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: '1px solid var(--brd)' }}>
-              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>{row.task_name || row.task_id}</span>
-              <span className="mono" style={{ fontSize: 10, color: row.verdict === 'solo' ? 'var(--red)' : row.verdict === 'shared' ? 'var(--grn)' : 'var(--gold)' }}>{row.verdict.toUpperCase()}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'var(--fs-sm)' }}>{row.task_name || row.task_id}</span>
+              <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: row.verdict === 'solo' ? 'var(--red)' : row.verdict === 'shared' ? 'var(--grn)' : 'var(--gold)' }}>{row.verdict.toUpperCase()}</span>
               <button className="btn-ghost btn-sm" onClick={() => selectOverrideTask(row.task_id)}>EDIT</button>
             </div>
           ))}
@@ -224,7 +224,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
           </div>
 
           {keysLoading && (
-            <div className="mono" style={{ fontSize: 12, color: 'var(--txm)', padding: 8 }}>LOADING...</div>
+            <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', padding: 8 }}>LOADING...</div>
           )}
 
           {keys.map(k => {
@@ -257,7 +257,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
                 </button>
 
                 {/* Key name */}
-                <span style={{ flex: 1, fontSize: 12, color: isPri ? 'var(--tx)' : 'var(--txm)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ flex: 1, fontSize: 'var(--fs-sm)', color: isPri ? 'var(--tx)' : 'var(--txm)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {k.name}
                 </span>
 
@@ -267,7 +267,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
                     onClick={() => clearLocation(k.name)}
                     disabled={isSaving}
                     title="Clear location"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 11, color: 'var(--grn, #5de87a)', flexShrink: 0 }}>
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 'var(--fs-sm)', color: 'var(--grn, #5de87a)', flexShrink: 0 }}>
                     📍
                   </button>
                 )}
@@ -277,7 +277,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
                   onClick={() => setPlacing(isPlacing ? null : k.name)}
                   disabled={isSaving}
                   className={isPlacing ? 'btn-gold' : 'btn-ghost'}
-                  style={{ padding: '2px 7px', fontSize: 10, flexShrink: 0 }}>
+                  style={{ padding: '2px 7px', fontSize: 'var(--fs-xs)', flexShrink: 0 }}>
                   {isPlacing ? 'CANCEL' : 'PLACE'}
                 </button>
               </div>
@@ -290,7 +290,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
         {section === 'loot' && (
         <div className="card" style={{ padding: 14, maxHeight: '80vh', overflowY: 'auto' }}>
           {lootError && (
-            <div className="mono" style={{ fontSize: 11, color: 'var(--red)', marginBottom: 10, lineHeight: 1.5 }}>
+            <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--red)', marginBottom: 10, lineHeight: 1.5 }}>
               ⚠ {lootError}
               <div style={{ color: 'var(--txd)', marginTop: 4 }}>
                 RUN THE map_loot BLOCK IN supabase-schema.sql
@@ -301,16 +301,16 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
           <div className="lbl" style={{ marginBottom: 8 }}>PLACE A DOCUMENT SPAWN</div>
 
           <select value={lootName} onChange={e => setLootName(e.target.value)}
-            style={{ width: '100%', fontSize: 12, padding: '4px 6px', marginBottom: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, color: 'var(--tx)' }}>
+            style={{ width: '100%', fontSize: 'var(--fs-sm)', padding: '4px 6px', marginBottom: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, color: 'var(--tx)' }}>
             {DOCUMENT_NAMES.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
           <input aria-label="Document spawn note" placeholder="Note (e.g. 3rd floor office desk)" value={lootNotes}
             onChange={e => setLootNotes(e.target.value)}
-            style={{ width: '100%', fontSize: 12, marginBottom: 6 }} />
+            style={{ width: '100%', fontSize: 'var(--fs-sm)', marginBottom: 6 }} />
           <button
             className={placingLoot ? 'btn-gold' : 'btn-ghost'}
             onClick={() => setPlacingLoot(v => !v)}
-            style={{ width: '100%', padding: '5px', fontSize: 11 }}>
+            style={{ width: '100%', padding: '5px', fontSize: 'var(--fs-sm)' }}>
             {placingLoot ? 'PLACING — CLICK MAP (CLICK HERE TO STOP)' : 'PLACE ON MAP'}
           </button>
 
@@ -318,7 +318,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
             {lootRows.length} PLACED ON {MAP_LABELS[mapNorm]?.toUpperCase()}
           </div>
           {lootRows.length === 0 && (
-            <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>— NONE YET</div>
+            <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)' }}>— NONE YET</div>
           )}
           {lootRows.map(row => (
             <div key={row.id} style={{
@@ -327,15 +327,15 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
               background: 'var(--sur2)', border: '1px solid var(--brd)', borderRadius: 4,
             }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {row.loot_name}
                 </div>
-                <div className="mono" style={{ fontSize: 9, color: 'var(--txd)' }}>
+                <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
                   {row.notes ? `${row.notes} · ` : ''}
                   {row.loc_x?.toFixed(3)} / {row.loc_y?.toFixed(3)}
                 </div>
               </div>
-              <button className="btn-ghost btn-sm" style={{ fontSize: 10, color: 'var(--red)', flexShrink: 0 }}
+              <button className="btn-ghost btn-sm" style={{ fontSize: 'var(--fs-xs)', color: 'var(--red)', flexShrink: 0 }}
                 onClick={async () => {
                   const { error } = await removeLoot(row.id)
                   flash(error ? 'Delete failed: ' + error.message : `Removed ${row.loot_name}`)
@@ -347,7 +347,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 14, cursor: 'pointer' }}>
             <input type="checkbox" checked={showIntelRef} onChange={e => setShowIntelRef(e.target.checked)} style={{ width: 'auto' }} />
-            <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>
+            <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)' }}>
               SHOW {intelRefMarks.length} PREBAKED INTEL SPAWNS FOR REFERENCE
             </span>
           </label>
@@ -360,13 +360,13 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
             <div className="mono" style={{
               marginBottom: 10, padding: '8px 12px',
               background: 'rgba(201,168,76,0.1)', border: '1px solid var(--gold)', borderRadius: 4,
-              fontSize: 12, color: 'var(--gold)',
+              fontSize: 'var(--fs-sm)', color: 'var(--gold)',
             }}>
               CLICK MAP TO PLACE: {section === 'loot' ? lootName : placing}
             </div>
           )}
           {!armed && (
-            <div className="mono" style={{ marginBottom: 10, fontSize: 11, color: 'var(--txd)' }}>
+            <div className="mono" style={{ marginBottom: 10, fontSize: 'var(--fs-sm)', color: 'var(--txd)' }}>
               {section === 'loot'
                 ? 'PICK A DOCUMENT, CLICK PLACE ON MAP, THEN CLICK THE MAP — PLACEMENT STAYS ARMED'
                 : 'SELECT A KEY FROM THE LIST AND CLICK PLACE, THEN CLICK THE MAP'}
@@ -429,7 +429,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
             ))}
           </div>
 
-          <div className="mono" style={{ marginTop: 8, fontSize: 10, color: 'var(--txd)' }}>
+          <div className="mono" style={{ marginTop: 8, fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
             {section === 'keys' ? (
               <>
                 {located.length} KEY{located.length !== 1 ? 'S' : ''} PLACED ON THIS MAP

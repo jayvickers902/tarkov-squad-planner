@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RELEASE_VERSION } from './whatsNew'
+import { RELEASE_VERSION, SETUP_STEPS } from './whatsNew'
 import { resolveWelcomeVariant, welcomeStamp } from './welcome'
 
 const base = {
@@ -33,6 +33,16 @@ describe('welcome gating', () => {
       ...base,
       settings: { welcome: { news_version: '2026.07' } },
     })).toBe('news')
+  })
+})
+
+describe('first-run setup steps', () => {
+  it('keeps only the three actions a new player can take immediately', () => {
+    expect(SETUP_STEPS.map(step => step.title)).toEqual([
+      'CHOOSE YOUR CHARACTER MODE',
+      'LOAD YOUR QUESTS',
+      'CREATE OR JOIN A PARTY',
+    ])
   })
 })
 

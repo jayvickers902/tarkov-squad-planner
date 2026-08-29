@@ -10,6 +10,7 @@ import AuthScreen from './components/AuthScreen'
 import Lobby from './components/Lobby'
 import Room from './components/Room'
 import WelcomeModal from './components/WelcomeModal'
+import AppNav from './components/AppNav'
 import { findMember, objectiveProgressKey, progressParts } from './partyMembers'
 import { normalizeGameMode, resolvePartyMode } from './gameMode'
 import useDialogFocus from './useDialogFocus'
@@ -21,7 +22,7 @@ const MyQuests = lazy(() => import('./components/MyQuests'))
 const AdminKeyManager = lazy(() => import('./components/AdminKeyManager'))
 
 function AppSpinner() {
-  return <div style={{ width: 28, height: 28, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', margin: '0 auto' }} />
+  return <div style={{ width: 28, height: 28, border: '2px solid var(--brd)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', margin: '0 auto' }} />
 }
 
 export default function App() {
@@ -85,6 +86,7 @@ export default function App() {
   })
 
   const raidSession = useRaidSession(party, user?.id, { onError: setPartyError })
+  const raidLive = Boolean(party?.progress?.['__raid_start__']) || raidSession?.session?.status === 'active'
 
   const isAdmin = profile?.is_admin === true
   const gameMode = resolvePartyMode(party || questModeParty, userSettings)
@@ -289,7 +291,7 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ width: '100%', maxWidth: 430, textAlign: 'center' }}>
           <div style={{ position: 'relative', width: '100%', height: 180, marginBottom: 24, borderRadius: 6, overflow: 'hidden' }}>
             <img src="/splash.jpg" alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} />
@@ -302,7 +304,7 @@ export default function App() {
             <div style={{ width: 5, height: 34, background: 'var(--gold)', borderRadius: 2 }} />
             <h1 style={{ fontSize: 36, fontWeight: 700 }}>SQUAD PLANNER</h1>
           </div>
-          <p className="mono" style={{ fontSize: 11, color: 'var(--txm)', letterSpacing: '0.1em', marginBottom: 32 }}>
+          <p className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', letterSpacing: '0.1em', marginBottom: 32 }}>
             ESCAPE FROM TARKOV // RAID COORDINATOR
           </p>
           <AppSpinner />
@@ -593,6 +595,13 @@ export default function App() {
       mapNorm={party?.map_norm || null}
       partyId={party ? `${party.id || party.code}:${Number(party.raid_id) || 0}` : null}
     >
+      <AppNav
+        route={route}
+        party={party}
+        raidLive={raidLive}
+        onNavigate={navigate}
+        onRequestLeave={() => setLeaveConfirmOpen(true)}
+      />
       {signedInView}
     </EftLogSyncProvider>
   )

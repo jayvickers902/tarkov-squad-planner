@@ -28,7 +28,7 @@ function MemberPill({ name, allMembers }) {
   const c = memberColor(name, allMembers)
   return (
     <span className="mono" style={{
-      fontSize: 10, padding: '2px 6px', borderRadius: 3,
+      fontSize: 'var(--fs-xs)', padding: '2px 6px', borderRadius: 3,
       background: c.bg, border: `1px solid ${c.border}`, color: c.text,
       flexShrink: 0, letterSpacing: '.04em',
     }}>
@@ -107,7 +107,7 @@ const QuestCard = memo(function QuestCard({
             }}>{task.name}</div>
             {task.kappaRequired && (
               <span className="mono" title="Required for Kappa" style={{
-                fontSize: 9, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
+                fontSize: 'var(--fs-xs)', padding: '1px 5px', borderRadius: 3, flexShrink: 0,
                 background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)',
                 color: 'var(--gold)', letterSpacing: '.06em',
               }}>κ</span>
@@ -119,9 +119,9 @@ const QuestCard = memo(function QuestCard({
           <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
             {owners.map(o => <MemberPill key={o} name={o} allMembers={members} />)}
             {task.trader?.imageLink && (
-              <img src={task.trader.imageLink} alt={task.trader.name} title={task.trader.name} style={{ width: 18, height: 18, borderRadius: 2, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--brd2)', opacity: completed || allDone ? 0.4 : 0.8 }} />
+              <img src={task.trader.imageLink} alt={task.trader.name} title={task.trader.name} style={{ width: 18, height: 18, borderRadius: 2, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--brd)', opacity: completed || allDone ? 0.4 : 0.8 }} />
             )}
-            {loyalty && <span className="mono" style={{ fontSize: 9, color: 'var(--txm)' }}>{loyalty}</span>}
+            {loyalty && <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)' }}>{loyalty}</span>}
           </div>
         </div>
 
@@ -133,7 +133,7 @@ const QuestCard = memo(function QuestCard({
               title={dimmed ? 'Un-skip' : 'Skip for now'}
               style={{
                 background: 'none', border: '1px solid var(--brd2)', borderRadius: 3,
-                padding: '2px 7px', cursor: 'pointer', fontSize: 10, fontFamily: 'Share Tech Mono',
+                padding: '2px 7px', cursor: 'pointer', fontSize: 'var(--fs-xs)', fontFamily: 'Share Tech Mono',
                 color: dimmed ? 'var(--gold)' : 'var(--txd)', letterSpacing: '.04em', transition: 'all .15s',
               }}>{dimmed ? 'UNSKIP' : '⊘ SKIP'}</button>
           </div>
@@ -141,15 +141,15 @@ const QuestCard = memo(function QuestCard({
 
         {/* Progress */}
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div className="mono" style={{ fontSize: 12, color: completed || allDone ? 'var(--grn)' : 'var(--txm)' }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: completed || allDone ? 'var(--grn)' : 'var(--txm)' }}>
             {doneCount}/{objs.length}
           </div>
-          <div className="mono" style={{ fontSize: 9, color: 'var(--txd)' }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
             {completed || allDone ? 'DONE' : `${Math.round(pct)}%`}
           </div>
         </div>
 
-        <div className="mono" style={{ color: 'var(--txd)', fontSize: 10, flexShrink: 0 }}>
+        <div className="mono" style={{ color: 'var(--txd)', fontSize: 'var(--fs-xs)', flexShrink: 0 }}>
           {isOpen ? '▲' : '▼'}
         </div>
       </div>
@@ -166,7 +166,7 @@ const QuestCard = memo(function QuestCard({
       {/* Expanded objectives */}
       {isOpen && (
         <div style={{ padding: '6px 10px 10px' }} className="fade-in">
-          <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid var(--brd)' }}>OBJECTIVES</div>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 5, borderBottom: '1px solid var(--brd)' }}>OBJECTIVES</div>
           {objs.map(obj => {
             const doneBy = owners.filter(m => progress?.[objectiveProgressKey(task.id, obj.id, memberIdsByName.get(m))])
             const allDoneObj = doneBy.length === owners.length && owners.length > 0
@@ -177,7 +177,7 @@ const QuestCard = memo(function QuestCard({
               }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
-                    fontSize: 12,
+                    fontSize: 'var(--fs-sm)',
                     color: allDoneObj ? 'var(--txd)' : 'var(--tx)',
                     textDecoration: allDoneObj ? 'line-through' : 'none',
                     lineHeight: 1.4,
@@ -189,7 +189,7 @@ const QuestCard = memo(function QuestCard({
                         const c = memberColor(m, members)
                         return (
                           <span key={m} className="mono" style={{
-                            fontSize: 9, padding: '1px 5px', borderRadius: 3,
+                            fontSize: 'var(--fs-xs)', padding: '1px 5px', borderRadius: 3,
                             background: done ? 'rgba(90,200,90,0.15)' : c.bg,
                             border: `1px solid ${done ? 'rgba(90,200,90,0.4)' : c.border}`,
                             color: done ? 'var(--grn)' : c.text,
@@ -202,7 +202,7 @@ const QuestCard = memo(function QuestCard({
                   )}
                 </div>
                 <span className="mono" style={{
-                  fontSize: 9, flexShrink: 0, marginTop: 2, letterSpacing: '.06em',
+                  fontSize: 'var(--fs-xs)', flexShrink: 0, marginTop: 2, letterSpacing: '.06em',
                   color: allDoneObj ? 'var(--txd)' : 'var(--txm)',
                   background: 'var(--sur)', border: '1px solid var(--brd)',
                   borderRadius: 2, padding: '1px 5px',
@@ -376,8 +376,8 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
 
   if (!questRows.length) return (
     <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-      <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', letterSpacing: '.1em' }}>NO QUESTS SELECTED</div>
-      <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', marginTop: 8 }}>ADD QUESTS IN THE QUESTS TAB TO BUILD YOUR TODO LIST</div>
+      <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', letterSpacing: '.1em' }}>NO QUESTS SELECTED</div>
+      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', marginTop: 8 }}>ADD QUESTS IN THE QUESTS TAB TO BUILD YOUR TODO LIST</div>
     </div>
   )
 
@@ -398,9 +398,9 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
           <div>
             <h3 style={{ fontSize: 18, color: 'var(--goldtx)', lineHeight: 1 }}>SQUAD OBJECTIVES</h3>
-            <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em', marginTop: 3 }}>PARTY-WIDE VIEW</div>
+            <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', letterSpacing: '.1em', marginTop: 3 }}>PARTY-WIDE VIEW</div>
           </div>
-          <span className="mono" style={{ fontSize: 11, color: 'var(--txm)' }}>
+          <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>
             {doneObjs}/{totalObjs} DONE · {pctDone}%
           </span>
         </div>
@@ -457,7 +457,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
           const active = filter === m
           return (
             <button key={m} onClick={() => setFilter(m)} style={{
-              padding: '5px 10px', fontSize: 12, borderRadius: 4,
+              padding: '5px 10px', fontSize: 'var(--fs-sm)', borderRadius: 4,
               background: active ? c.bg : 'transparent',
               border: `1px solid ${active ? c.border : 'var(--brd2)'}`,
               color: active ? c.text : 'var(--txm)',
@@ -467,7 +467,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
             </button>
           )
         })}
-        <span className="mono" style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--txd)' }}>
+        <span className="mono" style={{ marginLeft: 'auto', fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
           {viewMode === 'objectives'
             ? `${objectiveRows.length} OBJ${objectiveRows.length !== 1 ? 'S' : ''}`
             : `${filteredActive.length + filteredSkipped.length} QUEST${filteredActive.length + filteredSkipped.length !== 1 ? 'S' : ''}`}
@@ -478,13 +478,13 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
       {viewMode === 'objectives' && (
         !mapNorm ? (
           <div style={{ textAlign: 'center', padding: '40px 24px' }}>
-            <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', letterSpacing: '.1em' }}>SELECT A MAP</div>
-            <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', marginTop: 8 }}>MAP-SPECIFIC OBJECTIVES WILL APPEAR HERE</div>
+            <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', letterSpacing: '.1em' }}>SELECT A MAP</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', marginTop: 8 }}>MAP-SPECIFIC OBJECTIVES WILL APPEAR HERE</div>
           </div>
         ) : objectiveRows.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 24px' }}>
-            <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', letterSpacing: '.1em' }}>NO MAP-LOCATED OBJECTIVES</div>
-            <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', marginTop: 8 }}>NO FILTERED QUESTS HAVE OBJECTIVES WITH MAP LOCATIONS</div>
+            <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', letterSpacing: '.1em' }}>NO MAP-LOCATED OBJECTIVES</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', marginTop: 8 }}>NO FILTERED QUESTS HAVE OBJECTIVES WITH MAP LOCATIONS</div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -537,7 +537,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
                   {/* Description + quest name */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{
-                      fontSize: 12, color: row.doneByMembers.length === row.owners.length && row.owners.length > 0 ? 'var(--txd)' : 'var(--tx)',
+                      fontSize: 'var(--fs-sm)', color: row.doneByMembers.length === row.owners.length && row.owners.length > 0 ? 'var(--txd)' : 'var(--tx)',
                       textDecoration: row.doneByMembers.length === row.owners.length && row.owners.length > 0 ? 'line-through' : 'none',
                       lineHeight: 1.4,
                     }}>
@@ -550,7 +550,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
                         >{row.obj.description}</a>
                       ) : row.obj.description}
                     </div>
-                    <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {toAntifandom(row.task.wikiLink) ? (
                         <a
                           href={toAntifandom(row.task.wikiLink)}
@@ -566,7 +566,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
 
                   {/* Type badge */}
                   <span className="mono" style={{
-                    fontSize: 9, flexShrink: 0, letterSpacing: '.06em',
+                    fontSize: 'var(--fs-xs)', flexShrink: 0, letterSpacing: '.06em',
                     color: row.doneByMembers.length === row.owners.length && row.owners.length > 0 ? 'var(--txd)' : 'var(--txm)',
                     background: 'var(--sur)', border: '1px solid var(--brd)',
                     borderRadius: 2, padding: '1px 5px',
@@ -584,7 +584,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
                       const c = memberColor(m, members)
                       return (
                         <span key={m} className="mono" style={{
-                          fontSize: 9, padding: '1px 5px', borderRadius: 3,
+                          fontSize: 'var(--fs-xs)', padding: '1px 5px', borderRadius: 3,
                           background: done ? 'rgba(90,200,90,0.15)' : c.bg,
                           border: `1px solid ${done ? 'rgba(90,200,90,0.4)' : c.border}`,
                           color: done ? 'var(--grn)' : c.text,
@@ -618,14 +618,14 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
 
             {filteredActive.length === 0 && filteredSkipped.length === 0 && filteredCompleted.length === 0 && (
               <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>NO QUESTS MATCH THIS FILTER</div>
+                <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)' }}>NO QUESTS MATCH THIS FILTER</div>
               </div>
             )}
 
             {/* Skipped — map-specific */}
             {mapSkipped.length > 0 && (
               <div style={{ marginTop: 16 }}>
-                <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid var(--brd)' }}>
+                <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid var(--brd)' }}>
                   ⊘ SKIPPED ({mapSkipped.length})
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -640,10 +640,10 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
             {(anyActive.length > 0 || anySkipped.length > 0) && (
               <div style={{ marginTop: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--brd)' }}>
-                  <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', letterSpacing: '.1em' }}>
+                  <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', letterSpacing: '.1em' }}>
                     ◆ NON-MAP SPECIFIC ({anyActive.length + anySkipped.length})
                   </div>
-                  <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.06em' }}>
+                  <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', letterSpacing: '.06em' }}>
                     — CAN BE DONE ON ANY MAP
                   </div>
                 </div>
@@ -654,7 +654,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
                 </div>
                 {anySkipped.length > 0 && (
                   <div style={{ marginTop: 12 }}>
-                    <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid var(--brd)' }}>
+                    <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid var(--brd)' }}>
                       ⊘ SKIPPED ({anySkipped.length})
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -673,7 +673,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
       {/* Completed section */}
       {viewMode === 'quests' && filteredCompleted.length > 0 && (
         <div style={{ marginTop: 16 }}>
-          <div className="mono" style={{ fontSize: 10, color: 'var(--grn)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid var(--brd)' }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--grn)', letterSpacing: '.1em', marginBottom: 6, paddingBottom: 4, borderBottom: '1px solid var(--brd)' }}>
             ✓ COMPLETED ({filteredCompleted.length})
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

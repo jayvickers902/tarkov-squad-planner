@@ -13,18 +13,6 @@ export const SETUP_STEPS = [
     title: 'CREATE OR JOIN A PARTY',
     body: 'Share the six-character code, or send a dudgy.net/join/CODE link. Add squadmates as friends and rejoining is one click.',
   },
-  {
-    title: 'PICK THE MAP AND PLAN',
-    body: 'The party map drives every tab: TODO LIST, REQUIRED ITEMS, WHAT TO LOOK FOR, MAP / ROUTE, BOSS SPAWNS / KEYS. Draw routes and drop markers; the squad sees them live.',
-  },
-  {
-    title: 'GO INTO RAID',
-    body: 'START RAID gives the pre-raid brief: boss odds, extracts, keys, in-game time. Raid View is the in-raid layout with the objective rail and live squad pings.',
-  },
-  {
-    title: 'SYNC IN THE BACKGROUND',
-    body: 'The desktop companion keeps quests and screenshot pings in sync while this site is closed. Sign in to it with the same Google account you use here.',
-  },
 ]
 
 export const RELEASES = [

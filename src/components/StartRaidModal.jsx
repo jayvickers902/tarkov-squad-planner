@@ -42,9 +42,9 @@ function formatGoonAge(timestamp) {
 function BossColumn({ label, bosses }) {
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
-      {label && <div className="mono" style={{ fontSize: 9, color: 'var(--txm)', letterSpacing: '.08em', marginBottom: 4 }}>{label}</div>}
+      {label && <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', letterSpacing: '.08em', marginBottom: 4 }}>{label}</div>}
       {!bosses.length ? (
-        <div className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>NO BOSSES{label ? '' : ' ON THIS MAP'}</div>
+        <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>NO BOSSES{label ? '' : ' ON THIS MAP'}</div>
       ) : (
         bosses.map((boss, index) => <BossCard key={`${boss.normalizedName || boss.name}-${index}`} boss={boss} compact />)
       )}
@@ -230,30 +230,33 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
             position: 'absolute', inset: 0,
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
           }}>
-            <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.18em', textShadow: '0 0 4px #000, 0 1px 3px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>◆ INSERTING INTO</div>
+            <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', letterSpacing: '.18em', textShadow: '0 0 4px #000, 0 1px 3px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>◆ INSERTING INTO</div>
             <div id="start-raid-title" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '.12em', lineHeight: 1, color: 'var(--goldtx)', textShadow: '0 0 4px #000, 0 1px 4px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>
               {(mapName || 'UNKNOWN').toUpperCase()}
             </div>
-            <div id="start-raid-description" className="mono" style={{ fontSize: 9, color: 'var(--txm)', letterSpacing: '.14em', textShadow: '0 0 4px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>REVIEW YOUR RAID BRIEF</div>
+            <div id="start-raid-description" className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', letterSpacing: '.14em', textShadow: '0 0 4px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>REVIEW YOUR RAID BRIEF</div>
           </div>
         </div>
 
         {/* Body */}
         <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p className="start-raid-context-note">
+            Start Raid gives this pre-raid brief — boss odds, extracts, keys, and in-game time; Raid View is the in-raid layout with the objective rail and live squad pings.
+          </p>
 
           {/* Squad prep comes first: this is the information players can act on before loading in. */}
           <section aria-labelledby="squad-prep-title">
-            <div id="squad-prep-title" className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 7 }}>◆ SQUAD RAID PREP</div>
+            <div id="squad-prep-title" className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 7 }}>◆ SQUAD RAID PREP</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {squadPrep.map(member => {
                 const isMe = member.user_id === myUserId
                 return (
-                  <div key={member.user_id} style={{ padding: '8px 9px', background: 'var(--sur2)', border: '1px solid var(--brd)', borderLeft: `3px solid ${isMe ? 'var(--gold)' : 'var(--brd2)'}`, borderRadius: 3 }}>
+                  <div key={member.user_id} style={{ padding: '8px 9px', background: 'var(--sur2)', border: '1px solid var(--brd)', borderLeft: `3px solid ${isMe ? 'var(--gold)' : 'var(--brd)'}`, borderRadius: 3 }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-                      <span className="mono" style={{ fontSize: 10, color: isMe ? 'var(--goldtx)' : 'var(--txm)', letterSpacing: '.06em' }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: isMe ? 'var(--goldtx)' : 'var(--txm)', letterSpacing: '.06em' }}>
                         {(member.callsign || 'SQUAD MEMBER').toUpperCase()}{isMe ? ' · YOU' : ''}
                       </span>
-                      <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', flexShrink: 0 }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', flexShrink: 0 }}>
                         {member.mapQuests.length} QUEST{member.mapQuests.length === 1 ? '' : 'S'}
                       </span>
                     </div>
@@ -261,24 +264,24 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
                     {member.mapQuests.length > 0 ? (
                       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 5 }}>
                         {member.mapQuests.map(task => (
-                          <span key={task.id} title={task.trader?.name || ''} style={{ fontSize: 11, color: 'var(--tx)', lineHeight: 1.2 }}>
+                          <span key={task.id} title={task.trader?.name || ''} style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx)', lineHeight: 1.2 }}>
                             {task.name}
                           </span>
                         )).reduce((nodes, node, index) => index ? [...nodes, <span key={`sep-${index}`} style={{ color: 'var(--txd)' }}>·</span>, node] : [node], [])}
                       </div>
                     ) : (
-                      <div className="mono" style={{ marginTop: 4, fontSize: 9, color: 'var(--txd)' }}>NO ACTIVE QUESTS HERE</div>
+                      <div className="mono" style={{ marginTop: 4, fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>NO ACTIVE QUESTS HERE</div>
                     )}
 
                     {member.items.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 7, paddingTop: 6, borderTop: '1px solid var(--brd)' }}>
                         {member.items.map(item => (
                           <div key={`${item.action}-${item.name}`} style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                            {item.iconLink && <img src={item.iconLink} alt="" style={{ width: 22, height: 22, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', background: 'var(--sur)', border: '1px solid var(--brd2)', borderRadius: 2 }} />}
-                            <span className="mono" style={{ fontSize: 9, color: item.isKey ? 'var(--goldtx)' : 'var(--txm)', minWidth: 35 }}>{item.action}</span>
-                            <span className="mono" style={{ fontSize: 10, color: 'var(--goldtx)', fontWeight: 700 }}>{item.count}×</span>
-                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11, color: 'var(--tx)' }}>{item.name}</span>
-                            {item.foundInRaid && <span className="mono" style={{ marginLeft: 'auto', fontSize: 8, color: '#e85a5a', flexShrink: 0 }}>FIR</span>}
+                            {item.iconLink && <img src={item.iconLink} alt="" style={{ width: 22, height: 22, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', background: 'var(--sur)', border: '1px solid var(--brd)', borderRadius: 2 }} />}
+                            <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: item.isKey ? 'var(--goldtx)' : 'var(--txm)', minWidth: 35 }}>{item.action}</span>
+                            <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--goldtx)', fontWeight: 700 }}>{item.count}×</span>
+                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{item.name}</span>
+                            {item.foundInRaid && <span className="mono" style={{ marginLeft: 'auto', fontSize: 'var(--fs-xs)', color: '#e85a5a', flexShrink: 0 }}>FIR</span>}
                           </div>
                         ))}
                       </div>
@@ -306,7 +309,7 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
           {hasCliffDescent && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: 'rgba(201,168,76,0.06)', border: '1px solid var(--golddim)', borderRadius: 4 }}>
               <span aria-hidden="true">⛏ 🪢</span>
-              <span className="mono" style={{ fontSize: 10, color: 'var(--goldtx)', letterSpacing: '.04em' }}>BRING RED REBEL + PARACORD FOR CLIFF DESCENT</span>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--goldtx)' }}>BRING RED REBEL + PARACORD FOR CLIFF DESCENT</span>
             </div>
           )}
 
@@ -323,7 +326,7 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
                   borderRadius: 4, padding: '5px 8px',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
                 }}>
-                  <div className="mono" style={{ fontSize: 8, color: 'var(--txm)', letterSpacing: '.06em' }}>{label}</div>
+                  <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', letterSpacing: '.06em' }}>{label}</div>
                   <div style={{
                     fontFamily: 'Orbitron, Share Tech Mono, monospace',
                     fontSize: 18, fontWeight: 700, letterSpacing: '.1em',
@@ -331,7 +334,7 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
                   }}>
                     {toHHMM(secs)}
                   </div>
-                  <div className="mono" style={{ fontSize: 8, color: day ? 'var(--gold)' : '#5a7a8a' }}>
+                  <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: day ? 'var(--gold)' : '#5a7a8a' }}>
                     {day ? '☀ DAY' : '☽ NIGHT'}
                   </div>
                 </div>
@@ -339,9 +342,9 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
             </div>
 
             <div>
-              <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 5 }}>◆ BOSS SPAWNS</div>
+              <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 5 }}>◆ BOSS SPAWNS</div>
               {bossLoading ? (
-                <div className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>LOADING...</div>
+                <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>LOADING...</div>
               ) : isFactory ? (
                 <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                   <BossColumn label="FACTORY (DAY)" bosses={dayBosses} />
@@ -351,7 +354,7 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClo
                 <BossColumn bosses={bosses} />
               )}
               {goonAge && (
-                <div className="mono" style={{ marginTop: 6, fontSize: 9, color: '#d69b5a', lineHeight: 1.35 }}>
+                <div className="mono" style={{ marginTop: 6, fontSize: 'var(--fs-xs)', color: '#d69b5a', lineHeight: 1.35 }}>
                   ⚠ GOONS REPORTED HERE — {goonAge} · COMMUNITY REPORT
                 </div>
               )}

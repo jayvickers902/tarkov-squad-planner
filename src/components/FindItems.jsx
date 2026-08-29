@@ -109,7 +109,7 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
             <h3 style={{ fontSize: 18, color: 'var(--goldtx)' }}>SHARED FINDS</h3>
-            <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>MULTIPLE SQUAD MEMBERS NEED THESE</span>
+            <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>MULTIPLE SQUAD MEMBERS NEED THESE</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {sharedItems.filter(i => i.members.length > 1).map(item => (
@@ -121,7 +121,7 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
                 borderRadius: 4, padding: '8px 10px',
               }}>
                 {item.iconLink && (
-                  <img src={item.iconLink} alt="" style={{ width: 40, height: 40, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', borderRadius: 3, background: 'var(--sur)', border: '1px solid var(--brd2)' }} />
+                  <img src={item.iconLink} alt="" style={{ width: 40, height: 40, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', borderRadius: 3, background: 'var(--sur)', border: '1px solid var(--brd)' }} />
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -130,7 +130,7 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
                     </span>
                     {item.foundInRaid && (
                       <span className="mono" style={{
-                        fontSize: 9, color: 'var(--gold)', background: 'rgba(229,173,0,.12)',
+                        fontSize: 'var(--fs-xs)', color: 'var(--gold)', background: 'rgba(229,173,0,.12)',
                         border: '1px solid var(--golddim)', borderRadius: 2, padding: '1px 5px', letterSpacing: '.06em',
                       }}>FIR</span>
                     )}
@@ -140,7 +140,7 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
                       const c = memberColor(name, members)
                       return (
                         <span key={name} className="mono" style={{
-                          fontSize: 10, padding: '1px 6px', borderRadius: 3,
+                          fontSize: 'var(--fs-xs)', padding: '1px 6px', borderRadius: 3,
                           background: c.bg, border: `1px solid ${c.border}`, color: c.text,
                         }} title={quests.join(', ')}>
                           {name.slice(0, 10).toUpperCase()} × {count}
@@ -159,13 +159,13 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
           <h3 style={{ fontSize: 18, color: 'var(--goldtx)' }}>ITEMS TO FIND</h3>
-          <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>COLLECT THESE DURING RAID FOR ACTIVE QUESTS</span>
+          <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>COLLECT THESE DURING RAID FOR ACTIVE QUESTS</span>
         </div>
 
         {!hasAnyItems ? (
           <div style={{ textAlign: 'center', padding: '24px 0' }}>
-            <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', letterSpacing: '.1em' }}>NO FIND OBJECTIVES</div>
-            <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', marginTop: 8 }}>NO ITEMS NEED TO BE FOUND IN RAID FOR ACTIVE QUESTS ON THIS MAP</div>
+            <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', letterSpacing: '.1em' }}>NO FIND OBJECTIVES</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', marginTop: 8 }}>NO ITEMS NEED TO BE FOUND IN RAID FOR ACTIVE QUESTS ON THIS MAP</div>
           </div>
         ) : (
           <>
@@ -177,7 +177,7 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
                 const active = activeMember === m
                 return (
                   <button key={m} onClick={() => setActiveMember(m)} style={{
-                    padding: '5px 10px', fontSize: 12, borderRadius: 4,
+                    padding: '5px 10px', fontSize: 'var(--fs-sm)', borderRadius: 4,
                     background: active ? c.bg : 'transparent',
                     border: `1px solid ${active ? c.border : 'var(--brd2)'}`,
                     color: active ? c.text : 'var(--txm)',
@@ -200,16 +200,16 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
                       marginBottom: 8, paddingBottom: 6, borderBottom: `1px solid ${c.border}`,
                     }}>
                       <div style={{ width: 8, height: 8, borderRadius: '50%', background: c.text, flexShrink: 0 }} />
-                      <span className="mono" style={{ fontSize: 12, color: c.text, letterSpacing: '.08em' }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: c.text, letterSpacing: '.08em' }}>
                         {member.toUpperCase()}{isMe ? ' (YOU)' : ''}
                       </span>
-                      <span className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginLeft: 4 }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', marginLeft: 4 }}>
                         {items.length} ITEM TYPE{items.length !== 1 ? 'S' : ''}
                       </span>
                     </div>
 
                     {!items.length ? (
-                      <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', paddingLeft: 16 }}>— NO FIND OBJECTIVES</div>
+                      <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', paddingLeft: 16 }}>— NO FIND OBJECTIVES</div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {items.map(item => {
@@ -222,13 +222,13 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
                             <div key={`${item.itemId}::${item.foundInRaid}`} style={{
                               display: 'flex', alignItems: 'center', gap: 10,
                               background: 'var(--sur2)', border: '1px solid var(--brd)',
-                              borderLeft: `3px solid ${item.foundInRaid ? 'var(--gold)' : 'var(--brd2)'}`,
+                              borderLeft: `3px solid ${item.foundInRaid ? 'var(--gold)' : 'var(--brd)'}`,
                               borderRadius: 4, padding: '8px 10px',
                             }}>
                               {item.iconLink
-                                ? <img src={item.iconLink} alt="" style={{ width: 40, height: 40, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', borderRadius: 3, background: 'var(--sur)', border: '1px solid var(--brd2)' }} />
+                                ? <img src={item.iconLink} alt="" style={{ width: 40, height: 40, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', borderRadius: 3, background: 'var(--sur)', border: '1px solid var(--brd)' }} />
                                 : (
-                                  <div style={{ minWidth: 28, textAlign: 'center', background: 'var(--sur)', border: '1px solid var(--brd2)', borderRadius: 3, padding: '2px 5px', flexShrink: 0 }}>
+                                  <div style={{ minWidth: 28, textAlign: 'center', background: 'var(--sur)', border: '1px solid var(--brd)', borderRadius: 3, padding: '2px 5px', flexShrink: 0 }}>
                                     <span className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', fontWeight: 700 }}>{item.count}x</span>
                                   </div>
                                 )
@@ -236,7 +236,7 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                   {item.iconLink && (
-                                    <span className="mono" style={{ fontSize: 12, color: 'var(--goldtx)', fontWeight: 700 }}>{item.count}x</span>
+                                    <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--goldtx)', fontWeight: 700 }}>{item.count}x</span>
                                   )}
                                   <div style={{ fontSize: 13, fontFamily: 'Rajdhani, sans-serif', fontWeight: 600, color: 'var(--tx)', letterSpacing: '.02em' }}>
                                     {item.name}
@@ -245,18 +245,18 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
                                 <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
                                   {item.foundInRaid && (
                                     <span className="mono" style={{
-                                      fontSize: 9, color: 'var(--gold)', background: 'rgba(229,173,0,.12)',
+                                      fontSize: 'var(--fs-xs)', color: 'var(--gold)', background: 'rgba(229,173,0,.12)',
                                       border: '1px solid var(--golddim)', borderRadius: 2, padding: '1px 5px', letterSpacing: '.06em',
                                     }}>FIR</span>
                                   )}
                                   {item.quests.map(q => (
                                     <span key={q} className="mono" style={{
-                                      fontSize: 10, color: 'var(--txd)',
+                                      fontSize: 'var(--fs-xs)', color: 'var(--txd)',
                                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200,
                                     }}>{q}</span>
                                   ))}
                                   {others.length > 0 && (
-                                    <span className="mono" style={{ fontSize: 9, color: 'var(--goldtx)', letterSpacing: '.04em' }}>
+                                    <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--goldtx)', letterSpacing: '.04em' }}>
                                       also: {others.map(o => o.toUpperCase()).join(', ')}
                                     </span>
                                   )}

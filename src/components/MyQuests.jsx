@@ -7,15 +7,31 @@ import EftScreenshotPings from './EftScreenshotPings'
 import DesktopAppCard from './DesktopAppCard'
 import { GAME_MODES, gameModeLabel, resolvePartyMode } from '../gameMode'
 import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
+import Icon from './Icon'
 
 // Small Kappa badge — reused in search results and saved list
 function KappaBadge() {
   return (
     <span className="mono" title="Required for Kappa" style={{
-      fontSize: 9, padding: '1px 5px', borderRadius: 3, flexShrink: 0,
+      fontSize: 'var(--fs-xs)', padding: '1px 5px', borderRadius: 3, flexShrink: 0,
       background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)',
       color: 'var(--gold)', letterSpacing: '.06em',
     }}>κ</span>
+  )
+}
+
+function QuestEmptyState({ hubOpen, onOpenHub, onManualSearch }) {
+  return (
+    <div className="card quest-empty-card">
+      <div className="quest-empty-state">
+        <h3>NO QUESTS YET</h3>
+        <p>Import your quest list to get started — it takes about a minute.</p>
+        <div className="quest-empty-actions">
+          {!hubOpen && <button className="btn-gold" onClick={onOpenHub}>GET YOUR QUESTS IN</button>}
+          <button className="btn-ghost btn-sm" onClick={onManualSearch}>ADD ONE MANUALLY</button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -35,6 +51,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
   const [recentlyAdded, setRecentlyAdded] = useState(new Set())
   const [questOrder, setQuestOrder] = useState(() => userQuests.map(q => q.quest_id))
   const [hubOpen, setHubOpen] = useState(false)
+  const [manualSearchVisible, setManualSearchVisible] = useState(false)
   const [importReceipt, setImportReceipt] = useState(null)
   const [importRestorePoint, setImportRestorePoint] = useState(null)
   const [undoingImport, setUndoingImport] = useState(false)
@@ -192,9 +209,19 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
 
   function focusManualSearch() {
     setSearchOpen(true)
-    searchInputRef.current?.focus()
-    searchInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (searchInputRef.current) {
+      searchInputRef.current.focus()
+      searchInputRef.current.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+      return
+    }
+    setManualSearchVisible(true)
   }
+
+  useEffect(() => {
+    if (!manualSearchVisible || !searchInputRef.current) return
+    searchInputRef.current.focus()
+    searchInputRef.current.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  }, [manualSearchVisible])
 
   async function handleImportStart() {
     let restoreRows = userQuests
@@ -243,8 +270,9 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
       // this mode and anything absent from it belongs to the import.
       await onRestore(importRestorePoint, { scope: 'all' })
       setHubOpen(false)
-      setImportReceipt(receipt => receipt ? { ...receipt, undone: true, restoredCount: importRestorePoint.length } : null)
+      setImportReceipt(null)
       setImportRestorePoint(null)
+      setManualSearchVisible(false)
     } catch {
       // The restore point is deliberately kept so the user can retry.
       setUndoError('The import could not be undone. Your quests were not changed — try again.')
@@ -264,18 +292,20 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
         importReceipt.states.failed ? `${importReceipt.states.failed} failed` : null,
       ].filter(Boolean)
     : []
+  const showExpandedContent = userQuests.length > 0 || Boolean(importReceipt)
+  const showManualSearch = showExpandedContent || manualSearchVisible
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: '20px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--goldtx)' }}>MY QUESTS</h2>
-          <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', marginTop: 2 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--goldtx)' }}>QUEST MANAGER</h2>
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', marginTop: 2 }}>
             SAVED BETWEEN SESSIONS — AUTO-LOADED WHEN YOU JOIN A PARTY
           </div>
         </div>
-        <button className="btn-ghost" onClick={onDone} style={{ fontSize: 13 }}>
-          {inParty ? '← BACK TO PARTY' : '← BACK TO LOBBY'}
+        <button className="btn-ghost" onClick={onDone} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <Icon name="arrow-left" size="sm" /> {inParty ? 'BACK TO PARTY' : 'BACK TO LOBBY'}
         </button>
       </div>
 
@@ -285,7 +315,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
           marginBottom: 16, padding: '8px 12px',
           background: 'var(--sur2)', border: '1px solid var(--golddim)',
           borderLeft: '3px solid var(--gold)', borderRadius: 4,
-          fontSize: 11, color: 'var(--gold)', letterSpacing: '.04em',
+          fontSize: 'var(--fs-sm)', color: 'var(--gold)', letterSpacing: '.04em',
         }}>
           ◆ YOUR PARTY IS STILL ACTIVE — CHANGES HERE WON'T AFFECT THE CURRENT RAID
         </div>
@@ -324,13 +354,13 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
 
 
       {/* Snapshot save / restore */}
-      {snapKey && (
+      {showExpandedContent && snapKey && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
           <button
             className="btn-ghost btn-sm"
             onClick={handleSaveSnapshot}
             disabled={userQuests.length === 0}
-            style={{ fontSize: 11 }}
+            style={{ fontSize: 'var(--fs-sm)' }}
           >
             ↓ SAVE SNAPSHOT ({userQuests.length})
           </button>
@@ -338,26 +368,26 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
             <button
               className="btn-ghost btn-sm"
               onClick={() => setConfirmRestore(true)}
-              style={{ fontSize: 11, color: 'var(--gold)' }}
+              style={{ fontSize: 'var(--fs-sm)', color: 'var(--gold)' }}
             >
               ↑ RESTORE SNAPSHOT · {snapshot.quests.length} QUESTS · {new Date(snapshot.savedAt).toLocaleDateString()}
             </button>
           )}
           {snapshot && confirmRestore && (
             <>
-              <span className="mono" style={{ fontSize: 10, color: '#e07070' }}>
+              <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: '#e07070' }}>
                 REPLACE {userQuests.length} CURRENT QUESTS WITH {snapshot.quests.length} FROM SNAPSHOT?
               </span>
               <button
                 className="btn-sm"
                 onClick={handleRestore}
                 disabled={restoring}
-                style={{ fontSize: 11, background: 'rgba(180,60,60,.2)', border: '1px solid rgba(180,60,60,.4)', color: '#e07070' }}
+                style={{ fontSize: 'var(--fs-sm)', background: 'rgba(180,60,60,.2)', border: '1px solid rgba(180,60,60,.4)', color: '#e07070' }}
               >{restoring ? 'RESTORING...' : 'YES, RESTORE'}</button>
-              <button className="btn-ghost btn-sm" onClick={() => setConfirmRestore(false)} style={{ fontSize: 11 }}>CANCEL</button>
+              <button className="btn-ghost btn-sm" onClick={() => setConfirmRestore(false)} style={{ fontSize: 'var(--fs-sm)' }}>CANCEL</button>
             </>
           )}
-          {restoreError && <span className="mono eft-log-import-error" role="alert" style={{ fontSize: 10 }}>{restoreError}</span>}
+          {restoreError && <span className="mono eft-log-import-error" role="alert" style={{ fontSize: 'var(--fs-xs)' }}>{restoreError}</span>}
         </div>
       )}
 
@@ -405,16 +435,26 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
           onViewQuests={handleViewQuests}
         />
       )}
-      <DesktopAppCard companion={companion} />
-
-      <div className="lbl quest-pings-label">LIVE POSITION PINGS</div>
-      <EftScreenshotPings />
+      {!showExpandedContent && !hubOpen && (
+        <QuestEmptyState
+          hubOpen={hubOpen}
+          onOpenHub={() => setHubOpen(true)}
+          onManualSearch={focusManualSearch}
+        />
+      )}
+      {showExpandedContent && (
+        <>
+          <DesktopAppCard companion={companion} />
+          <div className="lbl quest-pings-label">LIVE POSITION PINGS</div>
+          <EftScreenshotPings />
+        </>
+      )}
 
       {/* Add quest section */}
-      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+      {showManualSearch && <div className="card" style={{ padding: 16, marginBottom: 16 }}>
         <div className="lbl">ADD QUEST TO YOUR LIST</div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', flexShrink: 0 }}>FILTER BY MAP:</div>
+          <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', flexShrink: 0 }}>FILTER BY MAP:</div>
           <button
             onClick={() => setSearchMap('any')}
             className={searchMap === 'any' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}>
@@ -424,7 +464,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
             <button key={norm}
               onClick={() => setSearchMap(norm)}
               className={searchMap === norm ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-              style={{ fontSize: 11 }}>
+              style={{ fontSize: 'var(--fs-sm)' }}>
               {MAP_NAMES[norm] || norm}
             </button>
           ))}
@@ -432,7 +472,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
 
         <div style={{ position: 'relative' }}>
           {tasksLoading && searchMap !== 'any'
-            ? <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', padding: '8px 0' }}>LOADING QUESTS...</div>
+            ? <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', padding: '8px 0' }}>LOADING QUESTS...</div>
             : <input
                 ref={searchInputRef}
                 aria-label="Search saved quests"
@@ -463,7 +503,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                       <span style={{ fontSize: 13 }}>{t.name}</span>
                       {t.kappaRequired && <KappaBadge />}
                     </div>
-                    <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', marginTop: 2 }}>
+                    <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', marginTop: 2 }}>
                       {t.trader?.name} · Lv.{t.minPlayerLevel || 1}
                       {!t.map && <span style={{ marginLeft: 8, color: 'var(--txd)' }}>any map</span>}
                     </div>
@@ -478,13 +518,13 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
             <div style={{
               position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 200,
               background: 'var(--sur3)', border: '1px solid var(--brd2)', borderRadius: 5,
-              padding: '12px', fontSize: 12, color: 'var(--txm)',
+              padding: '12px', fontSize: 'var(--fs-sm)', color: 'var(--txm)',
             }} className="mono">
               NO RESULTS FOR "{searchQ.toUpperCase()}"
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       <style>{`
         @keyframes goldFlash {
@@ -496,7 +536,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
       `}</style>
 
       {/* Saved quests */}
-      <div className="card" ref={savedQuestsRef} style={{ padding: 16 }}>
+      {showExpandedContent && <div className="card" ref={savedQuestsRef} style={{ padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
           {[
             { key: 'all', label: `ALL (${mapCounts.all})` },
@@ -506,7 +546,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
             <button key={key}
               onClick={() => setMapFilter(key)}
               className={mapFilter === key ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-              style={{ fontSize: 11 }}>
+              style={{ fontSize: 'var(--fs-sm)' }}>
               {label}
             </button>
           ))}
@@ -514,16 +554,16 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
               {confirmClear ? (
                 <>
-                  <span className="mono" style={{ fontSize: 10, color: '#e07070' }}>CLEAR ALL {userQuests.length} QUESTS?</span>
+                  <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: '#e07070' }}>CLEAR ALL {userQuests.length} QUESTS?</span>
                   <button
                     className="btn-sm"
                     onClick={() => { onClearAll(); setConfirmClear(false) }}
-                    style={{ fontSize: 11, background: 'rgba(180,60,60,.2)', border: '1px solid rgba(180,60,60,.4)', color: '#e07070' }}
+                    style={{ fontSize: 'var(--fs-sm)', background: 'rgba(180,60,60,.2)', border: '1px solid rgba(180,60,60,.4)', color: '#e07070' }}
                   >YES, CLEAR</button>
-                  <button className="btn-ghost btn-sm" onClick={() => setConfirmClear(false)} style={{ fontSize: 11 }}>CANCEL</button>
+                  <button className="btn-ghost btn-sm" onClick={() => setConfirmClear(false)} style={{ fontSize: 'var(--fs-sm)' }}>CANCEL</button>
                 </>
               ) : (
-                <button className="btn-ghost btn-sm" onClick={() => setConfirmClear(true)} style={{ fontSize: 11, color: 'var(--txd)' }}>
+                <button className="btn-ghost btn-sm" onClick={() => setConfirmClear(true)} style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)' }}>
                   CLEAR ALL
                 </button>
               )}
@@ -533,7 +573,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
 
         {!filtered.length ? (
           <div style={{ textAlign: 'center', padding: '32px 0' }}>
-            <div className="mono" style={{ fontSize: 12, color: 'var(--txd)' }}>
+            <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)' }}>
               {userQuests.length === 0 ? (
                 <div className="quest-empty-state">
                   <h3>NO QUESTS YET</h3>
@@ -578,7 +618,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                     </span>
                     {kappaIds.has(q.quest_id) && <KappaBadge />}
                   </div>
-                  <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginTop: 2 }}>
+                  <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', marginTop: 2 }}>
                     {q.map_norm ? (MAP_NAMES[q.map_norm] || q.map_norm).toUpperCase() : 'ANY MAP'}
                     {q.skipped && <span style={{ marginLeft: 8, color: 'var(--txd)' }}>⊘ SKIPPED</span>}
                   </div>
@@ -593,7 +633,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                     disabled={idx === 0}
                     style={{
                       background: 'none', border: 'none', padding: '1px 4px', cursor: idx === 0 ? 'default' : 'pointer',
-                      fontSize: 10, lineHeight: 1, color: idx === 0 ? 'var(--brd2)' : 'var(--txd)',
+                      fontSize: 'var(--fs-xs)', lineHeight: 1, color: idx === 0 ? 'var(--brd2)' : 'var(--txd)',
                       transition: 'color .15s',
                     }}>▲</button>
                   <button
@@ -603,7 +643,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                     disabled={idx === orderedFiltered.length - 1}
                     style={{
                       background: 'none', border: 'none', padding: '1px 4px', cursor: idx === orderedFiltered.length - 1 ? 'default' : 'pointer',
-                      fontSize: 10, lineHeight: 1, color: idx === orderedFiltered.length - 1 ? 'var(--brd2)' : 'var(--txd)',
+                      fontSize: 'var(--fs-xs)', lineHeight: 1, color: idx === orderedFiltered.length - 1 ? 'var(--brd2)' : 'var(--txd)',
                       transition: 'color .15s',
                     }}>▼</button>
                 </div>
@@ -615,7 +655,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                     title="Mark as done — retains completion history and removes from your active list"
                     style={{
                       background: 'none', border: '1px solid var(--brd2)', borderRadius: 3,
-                      padding: '2px 7px', cursor: 'pointer', fontSize: 10, fontFamily: 'Share Tech Mono',
+                      padding: '2px 7px', cursor: 'pointer', fontSize: 'var(--fs-xs)', fontFamily: 'Share Tech Mono',
                       color: 'var(--grn)', letterSpacing: '.04em',
                     }}>✓ DONE</button>
                   <button
@@ -623,7 +663,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                     title={q.skipped ? 'Un-skip' : 'Skip — will be pre-skipped in party UI'}
                     style={{
                       background: 'none', border: '1px solid var(--brd2)', borderRadius: 3,
-                      padding: '2px 7px', cursor: 'pointer', fontSize: 10, fontFamily: 'Share Tech Mono',
+                      padding: '2px 7px', cursor: 'pointer', fontSize: 'var(--fs-xs)', fontFamily: 'Share Tech Mono',
                       color: q.skipped ? 'var(--gold)' : 'var(--txd)', letterSpacing: '.04em',
                     }}>{q.skipped ? 'UNSKIP' : '⊘ SKIP'}</button>
                 </div>
@@ -638,12 +678,12 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
-      <div className="mono" style={{ marginTop: 16, fontSize: 10, color: 'var(--txd)', textAlign: 'center', lineHeight: 1.6 }}>
+      {showExpandedContent && <div style={{ marginTop: 16, fontSize: 'var(--fs-xs)', color: 'var(--txd)', textAlign: 'center', lineHeight: 1.6 }}>
         ★ STARRED QUESTS WILL BE AUTO-STARRED IN THE PARTY TODO LIST<br />
         QUESTS ARE AUTO-LOADED WHEN YOU JOIN OR CREATE A PARTY
-      </div>
+      </div>}
     </div>
   )
 }

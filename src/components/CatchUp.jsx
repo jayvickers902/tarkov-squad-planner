@@ -125,11 +125,11 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
         <button
           className="btn-ghost btn-sm"
           disabled
-          style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 5, opacity: .55 }}
+          style={{ fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: 5, opacity: .55 }}
         >
           <span style={{ fontSize: 14 }}>⊕</span> CATCH ME UP
         </button>
-        <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>
+        <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
           QUEST PREREQUISITE DATA NOT LOADED YET
         </span>
       </div>
@@ -141,7 +141,7 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
       <button
         className="btn-ghost btn-sm"
         onClick={() => setOpen(true)}
-        style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 5 }}
+        style={{ fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: 5 }}
       >
         <span style={{ fontSize: 14 }}>⊕</span> CATCH ME UP
       </button>
@@ -153,7 +153,7 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div>
           <div className="lbl" style={{ color: 'var(--gold)' }}>CATCH ME UP</div>
-          <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginTop: 2 }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', marginTop: 2 }}>
             PICK THE LAST QUEST YOU FINISHED FOR EACH TRADER — WE&apos;LL WORK OUT THE REST
           </div>
         </div>
@@ -165,7 +165,7 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
       </div>
 
       <div style={{ marginBottom: 14 }}>
-        <label htmlFor="catch-up-pmc-level" className="mono" style={{ display: 'block', fontSize: 10, color: 'var(--txm)', marginBottom: 5 }}>
+        <label htmlFor="catch-up-pmc-level" className="mono" style={{ display: 'block', fontSize: 'var(--fs-xs)', color: 'var(--txm)', marginBottom: 5 }}>
           PMC LEVEL (OPTIONAL)
         </label>
         <input
@@ -185,7 +185,7 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
           const traderTasks = group.tasks.filter(task => !savedIds.has(task.id))
           return (
             <label key={group.trader} style={{ display: 'grid', gridTemplateColumns: 'minmax(110px, .28fr) minmax(0, 1fr)', alignItems: 'center', gap: 8 }}>
-              <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>{group.trader}</span>
+              <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)' }}>{group.trader}</span>
               <select value={picks[group.trader] || ''} onChange={event => handlePick(group.trader, event.target.value)}>
                 <option value="">— HAVEN&apos;T STARTED —</option>
                 {traderTasks.map(task => <option key={task.id} value={task.id}>{task.name}</option>)}
@@ -195,7 +195,7 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
         })}
       </div>
 
-      <div className="mono" style={{ fontSize: 10, color: 'var(--gold)', marginBottom: 8 }}>
+      <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', marginBottom: 8 }}>
         {implied.size} QUEST{implied.size === 1 ? '' : 'S'} IMPLIED COMPLETE · {available.length} AVAILABLE NOW
       </div>
 
@@ -219,7 +219,7 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
                 />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                   <span style={{ fontSize: 13, color: '#e8e0cc' }}>{task.name}</span>
-                  <span className="mono" style={{ fontSize: 10, color: '#7a8070' }}>
+                  <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: '#7a8070' }}>
                     {task.trader?.name || task.trader || 'UNKNOWN TRADER'} · Lv.{task.minPlayerLevel || 1} · {taskMapName(task)}
                   </span>
                 </div>
@@ -235,11 +235,11 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
           className="btn-gold btn-sm"
           onClick={confirm}
           disabled={selectedTasks.length === 0 || adding}
-          style={{ fontSize: 12, opacity: selectedTasks.length === 0 ? .4 : 1 }}
+          style={{ fontSize: 'var(--fs-sm)', opacity: selectedTasks.length === 0 ? .4 : 1 }}
         >
           {adding ? 'ADDING...' : `ADD ${selectedTasks.length} QUEST${selectedTasks.length === 1 ? '' : 'S'}`}
         </button>
-        <button className="btn-ghost btn-sm" onClick={reset} style={{ fontSize: 12 }}>RESET</button>
+        <button className="btn-ghost btn-sm" onClick={reset} style={{ fontSize: 'var(--fs-sm)' }}>RESET</button>
       </div>
     </div>
   )

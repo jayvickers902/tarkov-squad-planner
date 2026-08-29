@@ -35,7 +35,7 @@ function relativeAccessible(timestamp, now) {
   return 'more than 1 day ago'
 }
 
-function ChannelChip({ channel, title, status, now, onClick, buttonRef, monitor = false }) {
+function ChannelChip({ channel, title, status, now, onClick, buttonRef, monitor = false, embedded = false }) {
   const meta = monitor
     ? status.label
     : (status.source === 'desktop' || status.lastCheckedMs === null
@@ -57,7 +57,7 @@ function ChannelChip({ channel, title, status, now, onClick, buttonRef, monitor 
       data-channel={monitor ? 'monitor' : channel.toLowerCase()}
       data-tone={status.tone}
       aria-expanded={Boolean(onClick.open)}
-      aria-haspopup="dialog"
+      aria-haspopup={embedded ? undefined : 'dialog'}
       aria-label={ariaLabel}
       onClick={onClick.handler}
     >
@@ -98,7 +98,7 @@ function TimingRows({ status, changeLabel = 'LAST DATA CHANGE', now }) {
   )
 }
 
-export default function SyncStatusBar({ onMyQuests }) {
+export default function SyncStatusBar({ onMyQuests, embedded = false }) {
   const logs = useEftLogSync({ optional: true })
   const shots = useEftScreenshotSyncContext({ optional: true })
   const companion = useCompanionSyncStatus({ optional: true })
@@ -190,15 +190,19 @@ export default function SyncStatusBar({ onMyQuests }) {
   const localScreenshotSupported = shots.supported !== false
   const localScreenshotConfigured = localScreenshotSupported && Boolean(shots.folderName || shots.rememberedFolderName)
   const browserSelected = logStatus.source === 'browser' || screenshotStatus.source === 'browser'
+  const detailClassName = embedded ? 'sync-embedded-detail' : 'card sync-popover'
+  const detailRole = embedded ? 'group' : 'dialog'
 
   return (
-    <div className="sync-status-bar" ref={barRef}>
-      <ChannelChip channel="LOGS" title="Quest log" status={logStatus} now={now} buttonRef={node => { buttonRefs.current.logs = node }} onClick={{ open: openKey === 'logs', handler: () => toggle('logs') }} />
-      <ChannelChip channel="PINGS" title="Screenshot" status={screenshotStatus} now={now} buttonRef={node => { buttonRefs.current.shots = node }} onClick={{ open: openKey === 'shots', handler: () => toggle('shots') }} />
-      <ChannelChip channel="MONITOR" status={health} now={now} monitor buttonRef={node => { buttonRefs.current.monitor = node }} onClick={{ open: openKey === 'monitor', handler: () => toggle('monitor') }} />
+    <div className={`sync-status-bar${embedded ? ' sync-status-bar-embedded' : ''}`} ref={barRef}>
+      <div className="sync-chip-list">
+        <ChannelChip embedded={embedded} channel="LOGS" title="Quest log" status={logStatus} now={now} buttonRef={node => { buttonRefs.current.logs = node }} onClick={{ open: openKey === 'logs', handler: () => toggle('logs') }} />
+        <ChannelChip embedded={embedded} channel="PINGS" title="Screenshot" status={screenshotStatus} now={now} buttonRef={node => { buttonRefs.current.shots = node }} onClick={{ open: openKey === 'shots', handler: () => toggle('shots') }} />
+        <ChannelChip embedded={embedded} channel="MONITOR" status={health} now={now} monitor buttonRef={node => { buttonRefs.current.monitor = node }} onClick={{ open: openKey === 'monitor', handler: () => toggle('monitor') }} />
+      </div>
 
       {openKey === 'logs' && (
-        <div className="card sync-popover" role="dialog" aria-modal="false" aria-labelledby="sync-popover-logs-title" id="sync-popover-logs">
+        <div className={detailClassName} role={detailRole} aria-modal={embedded ? undefined : 'false'} aria-labelledby="sync-popover-logs-title" id="sync-popover-logs">
           <div className="sync-popover-head">
             <h2 id="sync-popover-logs-title">LOGS SYNC</h2>
             <button type="button" className="btn-ghost btn-sm" aria-label="Close logs sync" onClick={() => closePopover()}>✕</button>
@@ -220,7 +224,7 @@ export default function SyncStatusBar({ onMyQuests }) {
       )}
 
       {openKey === 'shots' && (
-        <div className="card sync-popover" role="dialog" aria-modal="false" aria-labelledby="sync-popover-shots-title" id="sync-popover-shots">
+        <div className={detailClassName} role={detailRole} aria-modal={embedded ? undefined : 'false'} aria-labelledby="sync-popover-shots-title" id="sync-popover-shots">
           <div className="sync-popover-head">
             <h2 id="sync-popover-shots-title">PINGS SYNC</h2>
             <button type="button" className="btn-ghost btn-sm" aria-label="Close shots sync" onClick={() => closePopover()}>✕</button>
@@ -246,7 +250,7 @@ export default function SyncStatusBar({ onMyQuests }) {
       )}
 
       {openKey === 'monitor' && (
-        <div className="card sync-popover" role="dialog" aria-modal="false" aria-labelledby="sync-popover-monitor-title" id="sync-popover-monitor">
+        <div className={detailClassName} role={detailRole} aria-modal={embedded ? undefined : 'false'} aria-labelledby="sync-popover-monitor-title" id="sync-popover-monitor">
           <div className="sync-popover-head">
             <h2 id="sync-popover-monitor-title">MONITOR</h2>
             <button type="button" className="btn-ghost btn-sm" aria-label="Close monitor" onClick={() => closePopover()}>✕</button>

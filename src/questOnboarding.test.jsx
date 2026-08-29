@@ -130,6 +130,8 @@ describe('DesktopAppCard', () => {
     expect(screen.getByRole('heading', { name: 'BACKGROUND SYNC APP · COMING SOON' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Download link coming soon' })).toBeDisabled()
     expect(screen.queryByRole('link', { name: 'DOWNLOAD DESKTOP APP' })).not.toBeInTheDocument()
+    expect(screen.getByText(/Website folder sync pauses when this tab closes/i)).toBeInTheDocument()
+    expect(screen.getByText(/same Google account/i)).toBeInTheDocument()
   })
 
   it('shows the compact connected state without a download link', () => {

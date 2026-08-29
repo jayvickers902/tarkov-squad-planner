@@ -8,13 +8,13 @@ const FMT = new Intl.NumberFormat('en-US')
 function MapBossSection({ label, bosses }) {
   if (!bosses.length) return (
     <div style={{ flex: 1, minWidth: 0 }}>
-      <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.08em', marginBottom: 4 }}>{label}</div>
-      <div className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>NO BOSSES</div>
+      <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', letterSpacing: '.08em', marginBottom: 4 }}>{label}</div>
+      <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>NO BOSSES</div>
     </div>
   )
   return (
     <div style={{ flex: 1, minWidth: 0 }}>
-      {label && <div className="mono" style={{ fontSize: 9, color: 'var(--txm)', letterSpacing: '.08em', marginBottom: 4 }}>{label}</div>}
+      {label && <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', letterSpacing: '.08em', marginBottom: 4 }}>{label}</div>}
       {bosses.map((b, index) => <BossCard key={`${b.normalizedName || b.name}-${index}`} boss={b} />)}
     </div>
   )
@@ -40,9 +40,9 @@ export default function BossPanel({ mapNorm, gameMode }) {
 
       {/* Boss Spawns */}
       <div>
-        <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 10 }}>◆ BOSS SPAWNS</div>
+        <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 10 }}>◆ BOSS SPAWNS</div>
         {bossLoading ? (
-          <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>LOADING...</div>
+          <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)' }}>LOADING...</div>
         ) : isFactory ? (
           <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
             <div style={{ minWidth: 200 }}><MapBossSection label="FACTORY (DAY)" bosses={dayBosses} /></div>
@@ -58,14 +58,14 @@ export default function BossPanel({ mapNorm, gameMode }) {
       {/* Priority Keys */}
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-          <div className="mono" style={{ fontSize: 9, color: 'var(--gold)', letterSpacing: '.1em' }}>◆ PRIORITY KEYS</div>
-          <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>CLICK NAME TO VIEW LOOT ON WIKI</span>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', letterSpacing: '.1em' }}>◆ PRIORITY KEYS</div>
+          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>CLICK NAME TO VIEW LOOT ON WIKI</span>
         </div>
 
         {keysLoading ? (
-          <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>LOADING KEYS...</div>
+          <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)' }}>LOADING KEYS...</div>
         ) : !priorityKeys.length ? (
-          <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', padding: '8px 0' }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', padding: '8px 0' }}>
             NO PRIORITY KEYS SET FOR THIS MAP
           </div>
         ) : (
@@ -80,7 +80,7 @@ export default function BossPanel({ mapNorm, gameMode }) {
                   borderRadius: 4,
                 }}>
                   {k.iconLink && (
-                    <img src={k.iconLink} alt="" style={{ width: 32, height: 32, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', borderRadius: 2, background: 'var(--sur)', border: '1px solid var(--brd2)' }} />
+                    <img src={k.iconLink} alt="" style={{ width: 32, height: 32, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', borderRadius: 2, background: 'var(--sur)', border: '1px solid var(--brd)' }} />
                   )}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {k.wikiLink
@@ -89,13 +89,13 @@ export default function BossPanel({ mapNorm, gameMode }) {
                           style={{ fontSize: 13, color: 'var(--tx)', textDecoration: 'none' }}
                           onMouseEnter={e => e.currentTarget.style.color = 'var(--gold)'}
                           onMouseLeave={e => e.currentTarget.style.color = 'var(--tx)'}>
-                          {k.name} <span style={{ fontSize: 10, color: 'var(--txd)' }}>↗</span>
+                          {k.name} <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>↗</span>
                         </a>
                       : <span style={{ fontSize: 13, color: 'var(--tx)' }}>{k.name}</span>
                     }
                   </div>
                   <div className="mono" style={{
-                    fontSize: 12,
+                    fontSize: 'var(--fs-sm)',
                     color: price ? 'var(--goldtx)' : 'var(--txd)',
                     minWidth: 90, textAlign: 'right', whiteSpace: 'nowrap', flexShrink: 0,
                   }}>

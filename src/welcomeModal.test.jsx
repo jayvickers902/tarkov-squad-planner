@@ -21,6 +21,8 @@ describe('WelcomeModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'SETUP GUIDE' }))
 
     expect(screen.getByRole('heading', { name: 'WELCOME TO SQUAD PLANNER' })).toBeInTheDocument()
+    expect(screen.getAllByRole('listitem')).toHaveLength(3)
+    expect(screen.queryByRole('heading', { name: 'PICK THE MAP AND PLAN' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'SET UP QUESTS' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'DO THIS LATER' })).toBeInTheDocument()
     expect(onDismiss).not.toHaveBeenCalled()

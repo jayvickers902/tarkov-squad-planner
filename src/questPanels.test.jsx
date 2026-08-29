@@ -190,3 +190,43 @@ describe('degradation when curated overrides are unavailable', () => {
     expect(within(objectiveRow('Eliminate targets')).getByText('SQUAD')).toBeTruthy()
   })
 })
+
+// The empty state used to inline a button mid-sentence and point at a control
+// ("AT THE TOP") that the header no longer shows. Both regressions are cheap to
+// reintroduce because the same empty state is duplicated in Room.jsx.
+describe('empty state', () => {
+  async function renderEmpty(onOpenQuestManager = () => {}) {
+    const { default: MyQuestPanel } = await import('./components/MyQuestPanel')
+    render(
+      <MyQuestPanel
+        myQuests={[]}
+        tasks={[]}
+        progress={{}}
+        userObjProgress={{}}
+        myUserId="user-1"
+        myName="DUDGY"
+        onSubmit={() => {}}
+        onOpenQuestManager={onOpenQuestManager}
+        mapNorm={null}
+        loading={false}
+        settings={{}}
+      />,
+    )
+    return screen.getByRole('button', { name: /QUEST MANAGER/ })
+  }
+
+  it('offers Quest Manager as a standalone control, not a word in a sentence', async () => {
+    const button = await renderEmpty()
+
+    expect(button.style.display).toBe('inline-flex')
+    expect(screen.queryByText(/AT THE TOP/)).toBeNull()
+  })
+
+  it('routes to Quest Manager when the control is used', async () => {
+    const opened = vi.fn()
+    const button = await renderEmpty(opened)
+
+    button.click()
+    expect(opened).toHaveBeenCalledTimes(1)
+  })
+})

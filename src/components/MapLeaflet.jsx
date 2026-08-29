@@ -1700,13 +1700,13 @@ export default function MapLeaflet({
       <button
         className={mapStyle === 'svg' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
         onClick={() => setMapStyle('svg')}
-        style={{ fontSize: 10 }}>
+        style={{ fontSize: 'var(--fs-xs)' }}>
         ABSTRACT
       </button>
       <button
         className={mapStyle === 'tile' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
         onClick={() => setMapStyle('tile')}
-        style={{ fontSize: 10 }}>
+        style={{ fontSize: 'var(--fs-xs)' }}>
         SATELLITE
       </button>
     </>
@@ -1715,7 +1715,7 @@ export default function MapLeaflet({
   const memberLegend = memberNames.map((name, index) => (
     <div key={memberIds[index] || name} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
       <div style={{ width: 8, height: 8, borderRadius: '50%', background: name === myName ? myColor : getUserColor(name, memberNames, memberIds[index], memberIds), flexShrink: 0 }} />
-      <span className="mono" style={{ fontSize: 10, color: name === myName ? 'var(--goldtx)' : 'var(--txm)' }}>
+      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: name === myName ? 'var(--goldtx)' : 'var(--txm)' }}>
         {name.toUpperCase()}
       </span>
     </div>
@@ -1749,11 +1749,11 @@ export default function MapLeaflet({
             <button
               className={mode === 'draw' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
               onClick={() => { changeMode(mode === 'draw' ? 'pan' : 'draw'); setSelectedQuestId('') }}
-              style={{ fontSize: 10 }}>
+              style={{ fontSize: 'var(--fs-xs)' }}>
               ✏ DRAW
             </button>
             {mode === 'draw' && (
-              <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.05em' }}>
+              <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', letterSpacing: '.05em' }}>
                 LEFT CLICK TO PAN
               </span>
             )}
@@ -1762,7 +1762,7 @@ export default function MapLeaflet({
         <button
           className={mode === 'marker' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
           onClick={() => { changeMode(mode === 'marker' ? 'pan' : 'marker'); setSelectedQuestId('') }}
-          style={{ fontSize: 10 }}>
+          style={{ fontSize: 'var(--fs-xs)' }}>
           ◎ QUEST MARKER
         </button>
 
@@ -1771,7 +1771,7 @@ export default function MapLeaflet({
             aria-label="Quest to pin"
             value={selectedQuestId}
             onChange={handleQuestSelect}
-            style={{ fontSize: 11, padding: '3px 6px', background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, color: selectedQuestId ? 'var(--gold)' : 'var(--txm)', flexShrink: 1, minWidth: 0, maxWidth: 220 }}>
+            style={{ fontSize: 'var(--fs-sm)', padding: '3px 6px', background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 3, color: selectedQuestId ? 'var(--gold)' : 'var(--txm)', flexShrink: 1, minWidth: 0, maxWidth: 220 }}>
             <option value="">— select quest to pin —</option>
             {myQuests.map(q => (
               <option key={q.id} value={q.id}>{q.name}</option>
@@ -1785,20 +1785,20 @@ export default function MapLeaflet({
           <button
             className={showSpawns ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
             onClick={() => setShowSpawns(s => !s)}
-            style={{ fontSize: 10 }}>
+            style={{ fontSize: 'var(--fs-xs)' }}>
             ⊕ PMC SPAWNS
           </button>
           <button
             className={showQuestPins ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
             onClick={() => setShowQuestPins(q => !q)}
-            style={{ fontSize: 10 }}>
+            style={{ fontSize: 'var(--fs-xs)' }}>
             ◆ QUEST PINS
           </button>
           {pingList.length > 0 && (
             <button
               className={showPings ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
               onClick={() => setShowPings(p => !p)}
-              style={{ fontSize: 10 }}>
+              style={{ fontSize: 'var(--fs-xs)' }}>
               ▲ PINGS ({pingList.length})
             </button>
           )}
@@ -1821,7 +1821,7 @@ export default function MapLeaflet({
               ))}
             </div>
           )}
-          <button className="btn-ghost btn-sm" onClick={focusOverview} style={{ fontSize: 10 }} type="button">
+          <button className="btn-ghost btn-sm" onClick={focusOverview} style={{ fontSize: 'var(--fs-xs)' }} type="button">
             &#8984; OVERVIEW
           </button>
           <div className="map-layer-menu" ref={layersMenuRef}>
@@ -1830,7 +1830,7 @@ export default function MapLeaflet({
               onClick={() => setLayersOpen(open => !open)}
               aria-expanded={layersOpen}
               aria-haspopup="true"
-              style={{ fontSize: 10 }}>
+              style={{ fontSize: 'var(--fs-xs)' }}>
               ◈ LAYERS
             </button>
             {layersOpen && (
@@ -1853,11 +1853,11 @@ export default function MapLeaflet({
                         return i < 0 ? RING_RADII_M[0] : (RING_RADII_M[i + 1] ?? 0)
                       })}
                       title="Draw a radius around every unchecked spawn — where rings overlap, one detour covers several"
-                      style={{ fontSize: 10 }}>
+                      style={{ fontSize: 'var(--fs-xs)' }}>
                       ◎ RINGS{ringRadius ? ` ${ringRadius} M` : ''}
                     </button>
                     {checkedCount > 0 && (
-                      <button className="btn-ghost btn-sm" onClick={clearChecked} style={{ fontSize: 10, color: 'var(--txd)' }}>
+                      <button className="btn-ghost btn-sm" onClick={clearChecked} style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
                         UNCHECK {checkedCount}
                       </button>
                     )}
@@ -1933,7 +1933,7 @@ export default function MapLeaflet({
                 {(onClearPings && pingList.length > 0 && !replayOn) || canReplay ? (
                   <div className="map-layer-secondary-controls">
                     {onClearPings && pingList.length > 0 && !replayOn && (
-                      <button className="btn-ghost btn-sm" onClick={onClearPings} style={{ fontSize: 10, color: 'var(--txd)' }}>
+                      <button className="btn-ghost btn-sm" onClick={onClearPings} style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
                         CLEAR
                       </button>
                     )}
@@ -1942,7 +1942,7 @@ export default function MapLeaflet({
                         className={replayOn ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
                         onClick={() => setReplay(r => (r ? null : { t: replayData.from, playing: false, speed: 4 }))}
                         title="Scrub back through this raid's pings"
-                        style={{ fontSize: 10 }}>
+                        style={{ fontSize: 'var(--fs-xs)' }}>
                         ⏱ REPLAY ({replayData.count})
                       </button>
                     )}
@@ -1995,7 +1995,7 @@ export default function MapLeaflet({
         }}>
         {mode === 'draw' && !hideDrawButton && (
           <>
-            <span className="mono" style={{ fontSize: 9, color: 'var(--txd)', marginRight: 2 }}>COLOR</span>
+            <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', marginRight: 2 }}>COLOR</span>
             {PALETTE.map(c => (
               <button key={c} onClick={() => setMyColor(c)} aria-label={`Use drawing color ${c}`} aria-pressed={myColor === c} style={{
                 width: 16, height: 16, borderRadius: '50%', padding: 0, flexShrink: 0,
@@ -2005,7 +2005,7 @@ export default function MapLeaflet({
               }} />
             ))}
             <button className="btn-ghost btn-sm" onClick={onClearMyStrokes}
-              style={{ fontSize: 10, marginLeft: 'auto', flexShrink: 0 }}>
+              style={{ fontSize: 'var(--fs-xs)', marginLeft: 'auto', flexShrink: 0 }}>
               CLEAR MY LINES
             </button>
           </>
@@ -2013,17 +2013,17 @@ export default function MapLeaflet({
         {mode === 'marker' && myQuests.length > 0 && (
           <>
             {selectedQuestId
-              ? <span className="mono" style={{ fontSize: 10, color: 'var(--gold)' }}>CLICK MAP TO PLACE MARKER</span>
-              : <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>SELECT A QUEST ABOVE, THEN CLICK THE MAP</span>
+              ? <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)' }}>CLICK MAP TO PLACE MARKER</span>
+              : <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>SELECT A QUEST ABOVE, THEN CLICK THE MAP</span>
             }
             <button className="btn-ghost btn-sm" onClick={onClearMyMarkers}
-              style={{ fontSize: 10, marginLeft: 'auto', flexShrink: 0 }}>
+              style={{ fontSize: 'var(--fs-xs)', marginLeft: 'auto', flexShrink: 0 }}>
               CLEAR MY MARKERS
             </button>
           </>
         )}
         {mode === 'marker' && myQuests.length === 0 && (
-          <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>ADD QUESTS FIRST TO PLACE MARKERS</span>
+          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>ADD QUESTS FIRST TO PLACE MARKERS</span>
         )}
       </div>
 
@@ -2035,7 +2035,7 @@ export default function MapLeaflet({
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'var(--sur)', borderRadius: 4,
           }}>
-            <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAP...</span>
+            <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>LOADING MAP...</span>
           </div>
         )}
         {showPings && !replayOn && pingAnnouncement && (
@@ -2115,7 +2115,7 @@ export default function MapLeaflet({
         </div>
         {debugCoord && (
           <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 9999, background: '#0c0e0d', border: '1px solid var(--gold)', borderRadius: 4, padding: '5px 10px', pointerEvents: 'none' }}>
-            <span className="mono" style={{ fontSize: 11, color: 'var(--goldtx)', letterSpacing: '.06em' }}>
+            <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--goldtx)', letterSpacing: '.06em' }}>
               x: {debugCoord.x} &nbsp; y: {debugCoord.y}
             </span>
           </div>
@@ -2149,7 +2149,7 @@ export default function MapLeaflet({
                 t: r.t >= replayData.to ? replayData.from : r.t,
                 playing: !r.playing,
               }))}
-              style={{ fontSize: 10, minWidth: 44 }}>
+              style={{ fontSize: 'var(--fs-xs)', minWidth: 44 }}>
               {replay.playing ? '❚❚' : '▶'}
             </button>
             <input
@@ -2173,11 +2173,11 @@ export default function MapLeaflet({
                 aria-label={`Replay speed ${s} times`}
                 aria-pressed={replay.speed === s}
                 onClick={() => setReplay(r => ({ ...r, speed: s }))}
-                style={{ fontSize: 10 }}>
+                style={{ fontSize: 'var(--fs-xs)' }}>
                 {s}×
               </button>
             ))}
-            <button className="btn-ghost btn-sm" onClick={() => setReplay(null)} style={{ fontSize: 10, color: 'var(--txd)' }}>
+            <button className="btn-ghost btn-sm" onClick={() => setReplay(null)} style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
               CLOSE
             </button>
           </div>
@@ -2223,9 +2223,9 @@ export default function MapLeaflet({
                   }
                 }}>
                 <div className="ping-card-head">
-                  <span className="mono" style={{ color: card.color, fontSize: 11, letterSpacing: '.08em' }}>{card.ping.user.toUpperCase()}</span>
-                  <span className="mono" style={{ color: card.cadence.color, fontSize: 10, letterSpacing: '.08em' }}>{card.cadence.label}</span>
-                  <span className="mono" style={{ color: decay.color, fontSize: 10, marginLeft: 'auto' }}>{ageLabel(card.age)}</span>
+                  <span className="mono" style={{ color: card.color, fontSize: 'var(--fs-sm)', letterSpacing: '.08em' }}>{card.ping.user.toUpperCase()}</span>
+                  <span className="mono" style={{ color: card.cadence.color, fontSize: 'var(--fs-xs)', letterSpacing: '.08em' }}>{card.cadence.label}</span>
+                  <span className="mono" style={{ color: decay.color, fontSize: 'var(--fs-xs)', marginLeft: 'auto' }}>{ageLabel(card.age)}</span>
                 </div>
                 <div className="mono ping-card-body">
                   {card.fromMe && <span>{card.fromMe.dist} m {card.fromMe.dir} of you</span>}
@@ -2255,7 +2255,7 @@ export default function MapLeaflet({
 
       <div
         className={overlayChrome ? 'mono map-chrome map-mode-hint' : 'mono'}
-        style={{ marginTop: overlayChrome ? 0 : 8, fontSize: 10, color: 'var(--txd)', textAlign: 'center' }}>
+        style={{ marginTop: overlayChrome ? 0 : 8, fontSize: 'var(--fs-xs)', color: 'var(--txd)', textAlign: 'center' }}>
         {mode === 'draw' && !hideDrawButton
           ? <>YOUR COLOR: <span style={{ color: myColor }}>■</span>&nbsp; DRAW ROUTES — VISIBLE TO ALL PARTY MEMBERS IN REAL TIME</>
           : mode === 'draw'

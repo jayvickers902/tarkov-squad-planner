@@ -4,7 +4,7 @@ import { useMapKeys } from '../useMapKeys'
 const FMT = new Intl.NumberFormat('en-US')
 
 function Spin() {
-  return <div style={{ width: 20, height: 20, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
+  return <div style={{ width: 20, height: 20, border: '2px solid var(--brd)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
 }
 
 export default function KeysList({ mapNorm, gameMode }) {
@@ -21,7 +21,7 @@ export default function KeysList({ mapNorm, gameMode }) {
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}>
         <Spin />
-        <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING KEYS...</span>
+        <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>LOADING KEYS...</span>
         </div>
       </div>
     )
@@ -30,7 +30,7 @@ export default function KeysList({ mapNorm, gameMode }) {
   if (!mergedKeys.length) {
     return (
       <div>
-        <div className="mono" style={{ fontSize: 12, color: 'var(--txd)', padding: '32px 0', textAlign: 'center' }}>
+        <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', padding: '32px 0', textAlign: 'center' }}>
           NO PRIORITY KEYS SET FOR THIS MAP
         </div>
       </div>
@@ -39,7 +39,7 @@ export default function KeysList({ mapNorm, gameMode }) {
 
   return (
     <div>
-      <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginBottom: 12, letterSpacing: '.04em' }}>
+      <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', marginBottom: 12, letterSpacing: '.04em' }}>
         {mergedKeys.length} PRIORITY KEYS — CLICK NAME TO VIEW LOOT ON WIKI
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -61,13 +61,13 @@ export default function KeysList({ mapNorm, gameMode }) {
                       style={{ fontSize: 13, color: 'var(--tx)', textDecoration: 'none' }}
                       onMouseEnter={e => e.currentTarget.style.color = 'var(--gold)'}
                       onMouseLeave={e => e.currentTarget.style.color = 'var(--tx)'}>
-                      {k.name} <span style={{ fontSize: 10, color: 'var(--txd)' }}>↗</span>
+                      {k.name} <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>↗</span>
                     </a>
                   : <span style={{ fontSize: 13, color: 'var(--tx)' }}>{k.name}</span>
                 }
               </div>
               <div className="mono" style={{
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
                 color: price ? 'var(--goldtx)' : 'var(--txd)',
                 minWidth: 90, textAlign: 'right', whiteSpace: 'nowrap', flexShrink: 0,
               }}>

@@ -153,7 +153,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, onAdded, def
       <button
         className="btn-ghost btn-sm"
         onClick={() => setOpen(true)}
-        style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 5 }}
+        style={{ fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: 5 }}
       >
         <span style={{ fontSize: 14 }}>⊕</span> SCAN FROM SCREENSHOT
       </button>
@@ -168,7 +168,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, onAdded, def
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div>
           <div className="lbl" style={{ color: 'var(--gold)' }}>SCAN FROM SCREENSHOT</div>
-          <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginTop: 2 }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', marginTop: 2 }}>
             PASTE (CTRL+V) OR UPLOAD A SCREENSHOT OF YOUR TARKOV QUEST JOURNAL
           </div>
         </div>
@@ -203,10 +203,10 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, onAdded, def
           onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--brd2)'}
         >
           <div style={{ fontSize: 28, marginBottom: 8, opacity: .5 }}>📷</div>
-          <div className="mono" style={{ fontSize: 11, color: 'var(--txm)' }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>
             PASTE IMAGE (CTRL+V) · DRAG & DROP · OR CLICK TO UPLOAD
           </div>
-          <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 6 }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', marginTop: 6 }}>
             READ ON YOUR OWN DEVICE — NOTHING IS UPLOADED
           </div>
           <input
@@ -222,7 +222,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, onAdded, def
       {/* Scanning state */}
       {scanning && (
         <div role="status" aria-live="polite" style={{ padding: '28px 0', textAlign: 'center' }}>
-          <div className="mono" style={{ fontSize: 11, color: 'var(--gold)', letterSpacing: '.08em' }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--gold)', letterSpacing: '.08em' }}>
             {STAGE_LABEL[stage] ?? 'SCANNING...'}
           </div>
           <div style={{
@@ -249,18 +249,18 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, onAdded, def
 
           {results.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '12px 0' }}>
-              <div className="mono" style={{ fontSize: 11, color: 'var(--txm)' }}>
+              <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>
                 NO UNTRACKED QUESTS DETECTED
               </div>
-              <div className="mono" style={{ fontSize: 10, color: 'var(--txd)', marginTop: 6 }}>
+              <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', marginTop: 6 }}>
                 TRY A LARGER, UNSCALED SCREENSHOT OF THE QUEST LIST
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 12 }}>
-                <button className="btn-ghost btn-sm" onClick={scanAnother} style={{ fontSize: 12 }}>
+                <button className="btn-ghost btn-sm" onClick={scanAnother} style={{ fontSize: 'var(--fs-sm)' }}>
                   TRY ANOTHER
                 </button>
                 {rawText.trim() && (
-                  <button className="btn-ghost btn-sm" onClick={() => setShowRaw(v => !v)} style={{ fontSize: 12 }}>
+                  <button className="btn-ghost btn-sm" onClick={() => setShowRaw(v => !v)} style={{ fontSize: 'var(--fs-sm)' }}>
                     {showRaw ? 'HIDE' : 'SHOW'} WHAT WE READ
                   </button>
                 )}
@@ -269,13 +269,13 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, onAdded, def
                 <pre className="mono" style={{
                   textAlign: 'left', marginTop: 10, padding: '8px 10px', borderRadius: 4,
                   background: 'var(--sur2)', border: '1px solid var(--brd)', maxHeight: 160,
-                  overflow: 'auto', fontSize: 10, color: 'var(--txd)', whiteSpace: 'pre-wrap',
+                  overflow: 'auto', fontSize: 'var(--fs-xs)', color: 'var(--txd)', whiteSpace: 'pre-wrap',
                 }}>{rawText.trim()}</pre>
               )}
             </div>
           ) : (
             <>
-              <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginBottom: 8 }}>
+              <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', marginBottom: 8 }}>
                 {results.length} QUEST{results.length !== 1 ? 'S' : ''} DETECTED — SELECT WHICH TO ADD
                 {uncertainCount > 0 && ` · ${uncertainCount} UNCERTAIN`}
               </div>
@@ -299,10 +299,10 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, onAdded, def
                       <span style={{ fontSize: 13, color: '#e8e0cc' }}>
                         {t.name}
                         {t.uncertain && (
-                          <span className="mono" style={{ marginLeft: 8, fontSize: 9, color: '#c08a4a' }}>UNCERTAIN</span>
+                          <span className="mono" style={{ marginLeft: 8, fontSize: 'var(--fs-xs)', color: '#c08a4a' }}>UNCERTAIN</span>
                         )}
                       </span>
-                      <span className="mono" style={{ fontSize: 10, color: '#7a8070' }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: '#7a8070' }}>
                         {t.trader?.name}{t.trader?.name && ' · '}Lv.{t.minPlayerLevel || 1}
                         {' · '}{t.detectedMap ? t.detectedMap.replace(/-/g, ' ').toUpperCase() : 'ANY MAP'}
                         {t.kappaRequired && <span style={{ marginLeft: 8, color: 'var(--gold)' }}>κ</span>}
@@ -316,11 +316,11 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, onAdded, def
                   className="btn-gold btn-sm"
                   onClick={handleAddSelected}
                   disabled={selectedCount === 0 || saving}
-                  style={{ fontSize: 12, opacity: selectedCount === 0 ? .4 : 1 }}
+                  style={{ fontSize: 'var(--fs-sm)', opacity: selectedCount === 0 ? .4 : 1 }}
                 >
                   {saving ? 'SAVING...' : `ADD ${selectedCount > 0 ? selectedCount : ''} QUEST${selectedCount !== 1 ? 'S' : ''}`}
                 </button>
-                <button className="btn-ghost btn-sm" onClick={scanAnother} disabled={saving} style={{ fontSize: 12 }}>
+                <button className="btn-ghost btn-sm" onClick={scanAnother} disabled={saving} style={{ fontSize: 'var(--fs-sm)' }}>
                   SCAN ANOTHER
                 </button>
               </div>
@@ -334,7 +334,7 @@ export default function QuestScanner({ allTasks, userQuests, onAdd, onAdded, def
         <div className="mono" role="alert" style={{
           marginTop: 10, padding: '8px 10px', borderRadius: 4,
           background: 'rgba(180,60,60,.12)', border: '1px solid rgba(180,60,60,.3)',
-          fontSize: 11, color: '#e07070',
+          fontSize: 'var(--fs-sm)', color: '#e07070',
         }}>
           {error}
         </div>

@@ -38,10 +38,10 @@ function SpawnBar({ chance, compact = false }) {
   const color = pct >= 75 ? '#c94c4c' : pct >= 50 ? '#c9944c' : pct >= 25 ? '#c9c44c' : '#4caa6a'
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-      <div style={{ flex: 1, height: compact ? 3 : 4, background: 'var(--brd2)', borderRadius: 2, overflow: 'hidden' }}>
+      <div style={{ flex: 1, height: compact ? 3 : 4, background: 'var(--brd)', borderRadius: 2, overflow: 'hidden' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2 }} />
       </div>
-      <span className="mono" style={{ fontSize: compact ? 10 : 11, color, minWidth: compact ? 28 : 32, textAlign: 'right', flexShrink: 0 }}>{pct}%</span>
+      <span className="mono" style={{ fontSize: compact ? 'var(--fs-xs)' : 'var(--fs-sm)', color, minWidth: compact ? 28 : 32, textAlign: 'right', flexShrink: 0 }}>{pct}%</span>
     </div>
   )
 }
@@ -85,15 +85,15 @@ export default function BossCard({ boss = {}, compact = false }) {
             src={boss.portrait}
             alt={name}
             title={name}
-            style={{ width: portraitSize, height: portraitSize, borderRadius: 3, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--brd2)' }}
+            style={{ width: portraitSize, height: portraitSize, borderRadius: 3, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--brd)' }}
           />
         ) : (
-          <div style={{ width: portraitSize, height: portraitSize, borderRadius: 3, background: 'var(--sur3)', border: '1px solid var(--brd2)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ fontSize: compact ? 12 : 14, color: 'var(--txd)' }}>?</span>
+          <div style={{ width: portraitSize, height: portraitSize, borderRadius: 3, background: 'var(--sur3)', border: '1px solid var(--brd)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: compact ? 'var(--fs-sm)' : 14, color: 'var(--txd)' }}>?</span>
           </div>
         )}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: compact ? 11 : 12, fontWeight: 600, color: 'var(--tx)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div style={{ fontSize: compact ? 'var(--fs-sm)' : 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {name}
           </div>
           <SpawnBar chance={boss.spawnChance} compact={compact} />
@@ -101,7 +101,7 @@ export default function BossCard({ boss = {}, compact = false }) {
       </div>
 
       {locations.length > 0 && (
-        <div className="mono" style={{ display: 'flex', gap: 6, marginTop: compact ? 5 : 7, fontSize: compact ? 9 : 10, lineHeight: 1.25, color: 'var(--txm)' }}>
+        <div className="mono" style={{ display: 'flex', gap: 6, marginTop: compact ? 5 : 7, fontSize: compact ? 'var(--fs-xs)' : 'var(--fs-xs)', lineHeight: 1.25, color: 'var(--txm)' }}>
           <span style={{ color: 'var(--txd)', flexShrink: 0 }}>WHERE</span>
           <span style={{ minWidth: 0 }}>{locations.map(location => `${upper(location.name)} ${location.pct}%`).join(' · ')}</span>
         </div>
@@ -112,9 +112,9 @@ export default function BossCard({ boss = {}, compact = false }) {
           {escorts.map((escort, index) => (
             <div key={`${escort.name}-${index}`} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               {escort.portrait && (
-                <img src={escort.portrait} alt="" style={{ width: compact ? 18 : 20, height: compact ? 18 : 20, borderRadius: 2, objectFit: 'cover', border: '1px solid var(--brd2)' }} />
+                <img src={escort.portrait} alt="" style={{ width: compact ? 18 : 20, height: compact ? 18 : 20, borderRadius: 2, objectFit: 'cover', border: '1px solid var(--brd)' }} />
               )}
-              <span className="mono" style={{ fontSize: compact ? 9 : 10, color: 'var(--tx)' }}>
+              <span className="mono" style={{ fontSize: compact ? 'var(--fs-xs)' : 'var(--fs-xs)', color: 'var(--tx)' }}>
                 +{Math.round(Number(escort.count))} {escortLabel(escort.name)}
               </span>
             </div>
@@ -124,21 +124,21 @@ export default function BossCard({ boss = {}, compact = false }) {
 
       {hasArmor && (
         <div style={{ marginTop: compact ? 6 : 8, padding: compact ? '5px 6px' : '6px 8px', background: 'rgba(201,168,76,0.08)', border: '1px solid var(--golddim)', borderRadius: 3 }}>
-          <div className="mono" style={{ fontSize: compact ? 10 : 11, color: 'var(--goldtx)', fontWeight: 700, letterSpacing: '.04em' }}>
+          <div className="mono" style={{ fontSize: compact ? 'var(--fs-xs)' : 'var(--fs-sm)', color: 'var(--goldtx)', fontWeight: 700, letterSpacing: '.04em' }}>
             CLASS {armorClass} ARMOUR — BRING PEN {penFloor}+
           </div>
-          <div className="mono" style={{ fontSize: 8, color: 'var(--txd)', marginTop: 2 }}>GUIDANCE — COMMUNITY RULE OF THUMB</div>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', marginTop: 2 }}>GUIDANCE — COMMUNITY RULE OF THUMB</div>
         </div>
       )}
 
       {healthParts.length > 0 && (
-        <div className="mono" style={{ marginTop: compact ? 5 : 7, fontSize: compact ? 9 : 10, color: 'var(--txm)' }}>
+        <div className="mono" style={{ marginTop: compact ? 5 : 7, fontSize: compact ? 'var(--fs-xs)' : 'var(--fs-xs)', color: 'var(--txm)' }}>
           HEALTH {healthParts.join(' · ')}
         </div>
       )}
 
       {(spawnTime || hasSwitchTrigger) && (
-        <div className="mono" style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: compact ? 5 : 7, fontSize: compact ? 9 : 10, color: 'var(--txm)' }}>
+        <div className="mono" style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: compact ? 5 : 7, fontSize: compact ? 'var(--fs-xs)' : 'var(--fs-xs)', color: 'var(--txm)' }}>
           {spawnTime && <span>SPAWNS ~{spawnTime} INTO RAID{boss.spawnTimeRandom ? ' ± RANDOM' : ''}</span>}
           {hasSwitchTrigger && <span>TRIGGERED BY A SWITCH</span>}
         </div>
@@ -146,17 +146,17 @@ export default function BossCard({ boss = {}, compact = false }) {
 
       {drops.length > 0 && (
         <details style={{ marginTop: compact ? 6 : 8 }}>
-          <summary className="mono" style={{ fontSize: compact ? 8 : 9, color: 'var(--txm)', letterSpacing: '.08em', cursor: 'pointer', userSelect: 'none', padding: '3px 0' }}>
+          <summary className="mono" style={{ fontSize: compact ? 'var(--fs-xs)' : 'var(--fs-xs)', color: 'var(--txm)', letterSpacing: '.08em', cursor: 'pointer', userSelect: 'none', padding: '3px 0' }}>
             VIEW TOP DROPS ({drops.length})
           </summary>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4, paddingLeft: 2 }}>
             {drops.map((drop, index) => (
               <div key={drop.id || `${drop.name}-${index}`} style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                 {drop.iconLink && (
-                  <img src={drop.iconLink} alt="" style={{ width: compact ? 20 : 22, height: compact ? 20 : 22, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', background: 'var(--sur)', border: '1px solid var(--brd2)', borderRadius: 2 }} />
+                  <img src={drop.iconLink} alt="" style={{ width: compact ? 20 : 22, height: compact ? 20 : 22, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', background: 'var(--sur)', border: '1px solid var(--brd)', borderRadius: 2 }} />
                 )}
-                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: compact ? 10 : 11, color: 'var(--tx)' }} title={drop.name}>{drop.name}</span>
-                <span className="mono" style={{ fontSize: compact ? 9 : 10, color: 'var(--goldtx)', flexShrink: 0 }}>{Math.round(Number(drop.prevalence))}%</span>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: compact ? 'var(--fs-xs)' : 'var(--fs-sm)', color: 'var(--tx)' }} title={drop.name}>{drop.name}</span>
+                <span className="mono" style={{ fontSize: compact ? 'var(--fs-xs)' : 'var(--fs-xs)', color: 'var(--goldtx)', flexShrink: 0 }}>{Math.round(Number(drop.prevalence))}%</span>
               </div>
             ))}
           </div>

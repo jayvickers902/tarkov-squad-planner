@@ -135,6 +135,8 @@ describe('App welcome gating', () => {
 
     expect(setupHeading()).toBeInTheDocument()
     expect(newsHeading()).not.toBeInTheDocument()
+    expect(screen.getAllByRole('listitem')).toHaveLength(3)
+    expect(screen.queryByRole('heading', { name: 'GO INTO RAID' })).not.toBeInTheDocument()
   })
 
   it('shows the release notes to an existing account with no welcome state', () => {
@@ -248,7 +250,7 @@ describe('App welcome guide button', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'SET UP QUESTS' }))
 
-    await waitFor(() => expect(screen.getByText('QUEST MANAGER')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'QUEST MANAGER' })).toHaveAttribute('aria-current', 'page'))
     expect(window.location.pathname).toBe('/quests')
   })
 })

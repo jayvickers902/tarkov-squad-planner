@@ -58,7 +58,7 @@ export default function TarkovClocks() {
           }}>
             {toHHMMSS(secs)}
           </div>
-          <div className="mono" style={{ fontSize: 8, color: day ? 'var(--gold)' : '#5a7a8a', letterSpacing: '.06em' }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: day ? 'var(--gold)' : '#5a7a8a', letterSpacing: '.06em' }}>
             {day ? '☀ DAY' : '☽ NIGHT'}
           </div>
         </div>

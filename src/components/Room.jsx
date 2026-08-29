@@ -11,6 +11,7 @@ import TarkovClocks from './TarkovClocks'
 import StartRaidModal from './StartRaidModal'
 import RaidSettings from './RaidSettings'
 import SyncStatusBar from './SyncStatusBar'
+import Icon from './Icon'
 import useEphemeralSweep from '../useEphemeralSweep'
 import { resolveSetting } from '../settings'
 import { gameModeLabel, resolvePartyMode } from '../gameMode'
@@ -20,7 +21,7 @@ const MapLeaflet = lazy(() => import('./MapLeaflet'))
 const RaidView = lazy(() => import('./RaidView'))
 
 function Spin({ s = 20 }) {
-  return <div style={{ width: s, height: s, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
+  return <div style={{ width: s, height: s, border: '2px solid var(--brd)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
 }
 
 const MEMBER_COLORS = [
@@ -38,10 +39,80 @@ function MemberPill({ name, allMembers }) {
   const c = memberColor(name, allMembers)
   return (
     <span className="mono" style={{
-      fontSize: 10, padding: '1px 5px', borderRadius: 3,
+      fontSize: 'var(--fs-xs)', padding: '1px 5px', borderRadius: 3,
       background: c.bg, border: `1px solid ${c.border}`, color: c.text,
       flexShrink: 0, letterSpacing: '.04em',
     }}>{name.slice(0, 8).toUpperCase()}</span>
+  )
+}
+
+function RoomOverflow({
+  open,
+  isMobile,
+  containerRef,
+  triggerRef,
+  onToggle,
+  partyCode,
+  copied,
+  onCopy,
+  friendsCount,
+  pendingCount,
+  showFriends,
+  onFriends,
+  isAdmin,
+  onAdmin,
+  settingsOpen,
+  onSettings,
+  onMyQuests,
+  onLeave,
+}) {
+  return (
+    <div className="room-overflow" ref={containerRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className={open ? 'btn-ghost btn-sm room-overflow-trigger btn-active' : 'btn-ghost btn-sm room-overflow-trigger'}
+        aria-label="More party tools"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={onToggle}
+      >
+        <Icon name="more" size="md" />
+      </button>
+      {open && (
+        <div className="room-overflow-popover" role="dialog" aria-label="More party tools">
+          {isMobile && (
+            <>
+              <div className="room-overflow-clocks"><TarkovClocks /></div>
+              <div className="room-overflow-party-code">
+                <span className="mono">PARTY</span>
+                <strong className="mono">{partyCode}</strong>
+                <button type="button" className="btn-ghost btn-sm" onClick={onCopy}>{copied ? 'COPIED' : 'COPY'}</button>
+              </div>
+              <button type="button" className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={onFriends}>
+                FRIENDS{friendsCount > 0 ? ` (${friendsCount})` : ''}
+                {pendingCount > 0 && <span className="mono room-overflow-count">{pendingCount}</span>}
+              </button>
+            </>
+          )}
+          <div className="lbl room-overflow-sync-label">SYNC</div>
+          <SyncStatusBar embedded onMyQuests={onMyQuests} />
+          <div className="room-overflow-actions">
+            {isAdmin && (
+              <button type="button" className="btn-ghost btn-sm" onClick={onAdmin}>
+                <Icon name="settings" size="sm" /> ADMIN
+              </button>
+            )}
+            <button type="button" className={settingsOpen ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={onSettings}>
+              <Icon name="settings" size="sm" /> SETTINGS
+            </button>
+          </div>
+          <div className="room-overflow-leave">
+            <button type="button" className="btn-danger btn-sm" onClick={onLeave}>LEAVE PARTY</button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -65,6 +136,9 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   const [startRaidPending, setStartRaidPending] = useState(false)
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [overflowOpen, setOverflowOpen] = useState(false)
+  const overflowRef = useRef(null)
+  const overflowTriggerRef = useRef(null)
   useEphemeralSweep({ party, userId: myUserId, userSettings, onSweep: onSweepEphemeral })
 
   useEffect(() => {
@@ -84,6 +158,33 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [settingsOpen, hasRouteOverlay, raidView])
+
+  useEffect(() => {
+    if (!overflowOpen) return undefined
+
+    function onKeyDown(event) {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setOverflowOpen(false)
+      overflowTriggerRef.current?.focus()
+    }
+
+    function onMouseDown(event) {
+      if (overflowRef.current?.contains(event.target)) return
+      setOverflowOpen(false)
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('mousedown', onMouseDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('mousedown', onMouseDown)
+    }
+  }, [overflowOpen])
+
+  useEffect(() => {
+    if (hasRouteOverlay || raidView) setOverflowOpen(false)
+  }, [hasRouteOverlay, raidView])
 
   const raidStart = party.progress?.['__raid_start__'] || null
   const showRaidModal = startRaidPending || (!!party.map_id && raidStart !== null && raidStart !== dismissedRaidStart)
@@ -236,67 +337,97 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
       {/* Header */}
       <div className="room-header">
         <div className="room-header-row">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <div className="room-header-identity">
             <div style={{ width: 4, height: 26, background: 'var(--gold)', borderRadius: 2, flexShrink: 0 }} />
-            <div style={{ minWidth: 0 }}>
+            <div className="room-header-identity-copy">
               <h1 style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>SQUAD PLANNER</h1>
-              <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {party.map_name ? `// ${party.map_name.toUpperCase()}` : '// NO MAP SELECTED'}
               </div>
+              {!isMobile && (
+                <div className="room-party-identity">
+                  <span className="mono">PARTY</span>
+                  <strong className="mono">{party.code}</strong>
+                  <button type="button" className="btn-ghost btn-sm" onClick={copy}>{copied ? 'COPIED' : 'COPY'}</button>
+                </div>
+              )}
               <div className="mono room-mode-badge">MODE · {gameModeLabel(gameMode)}</div>
             </div>
           </div>
-          <div className="room-header-actions">
-            {!isMobile && (
-              <>
-                <TarkovClocks />
-                <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>
+          {!isMobile && (
+            <>
+              <div className="room-header-tools">
+                <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}><Icon name="star" size="sm" /> QUEST MANAGER</button>
                 {party.map_id && (
-                  <button className="btn-ghost btn-sm" onClick={onOpenRaid} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}>⛺ RAID VIEW</button>
+                  <button className="btn-ghost btn-sm" onClick={onOpenRaid} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}><Icon name="tent" size="sm" /> RAID VIEW</button>
                 )}
-                <SyncStatusBar onMyQuests={onMyQuests} />
                 <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
-                  {pendingIn.length > 0 && <span className="mono" style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)', color: 'var(--gold)' }}>{pendingIn.length}</span>}
+                  {pendingIn.length > 0 && <span className="mono room-overflow-count">{pendingIn.length}</span>}
                 </button>
-                {isAdmin && <button className="btn-ghost btn-sm" onClick={onAdmin} aria-label="Open admin tools" style={{ color: 'var(--txm)' }}>⚙</button>}
-                <button className={settingsOpen ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => setSettingsOpen(value => !value)} aria-label="Raid settings">⚙ SETTINGS</button>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, padding: '5px 10px' }}>
-                  <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>PARTY</span>
-                  <span className="mono" style={{ fontSize: 17, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
-                  <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
+                <TarkovClocks />
+                <RoomOverflow
+                  open={overflowOpen}
+                  isMobile={false}
+                  containerRef={overflowRef}
+                  triggerRef={overflowTriggerRef}
+                  onToggle={() => setOverflowOpen(value => !value)}
+                  partyCode={party.code}
+                  copied={copied}
+                  onCopy={copy}
+                  friendsCount={friends.length}
+                  pendingCount={pendingIn.length}
+                  showFriends={showFriends}
+                  onFriends={() => { setOverflowOpen(false); setShowFriends(value => !value); if (!showFriends) onRefreshFriends() }}
+                  isAdmin={isAdmin}
+                  onAdmin={() => { setOverflowOpen(false); onAdmin() }}
+                  settingsOpen={settingsOpen}
+                  onSettings={() => { setOverflowOpen(false); setSettingsOpen(value => !value) }}
+                  onMyQuests={() => { setOverflowOpen(false); onMyQuests() }}
+                  onLeave={() => { setOverflowOpen(false); onLeave() }}
+                />
+              </div>
+              {isLeader && party.map_id && (
+                <div className="room-header-raid">
+                  <button className="btn-gold btn-sm" onClick={() => setStartRaidPending(true)} style={{ letterSpacing: '.06em' }}><Icon name="play" size="sm" /> START RAID</button>
                 </div>
-              </>
-            )}
-            {!isMobile && isLeader && party.map_id && (
-              <button className="btn-gold btn-sm" onClick={() => setStartRaidPending(true)} style={{ letterSpacing: '.06em' }}>▶ START RAID</button>
-            )}
-            {!isMobile && <button className="btn-danger btn-sm" onClick={onLeave}>LEAVE</button>}
-          </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Mobile second row */}
         {isMobile && (
           <div className="room-mobile-actions">
-            <div className="room-mobile-clocks"><TarkovClocks /></div>
-            <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button>
+            <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}><Icon name="star" size="sm" /> QUEST MANAGER</button>
             {party.map_id && (
-              <button className="btn-ghost btn-sm" onClick={onOpenRaid} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}>⛺ RAID VIEW</button>
+              <button className="btn-ghost btn-sm" onClick={onOpenRaid} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}><Icon name="tent" size="sm" /> RAID VIEW</button>
             )}
-            <SyncStatusBar onMyQuests={onMyQuests} />
-            <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}>
-              FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
-            </button>
-            {isAdmin && <button className="btn-ghost btn-sm" onClick={onAdmin} aria-label="Open admin tools" style={{ color: 'var(--txm)' }}>⚙</button>}
-            <button className={settingsOpen ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => setSettingsOpen(value => !value)} aria-label="Raid settings">⚙</button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, padding: '4px 8px' }}>
-              <span className="mono" style={{ fontSize: 15, color: 'var(--gold)', letterSpacing: '0.2em' }}>{party.code}</span>
-              <button className="btn-ghost btn-sm" onClick={copy}>{copied ? '✓' : 'COPY'}</button>
-            </div>
+            <RoomOverflow
+              open={overflowOpen}
+              isMobile
+              containerRef={overflowRef}
+              triggerRef={overflowTriggerRef}
+              onToggle={() => setOverflowOpen(value => !value)}
+              partyCode={party.code}
+              copied={copied}
+              onCopy={copy}
+              friendsCount={friends.length}
+              pendingCount={pendingIn.length}
+              showFriends={showFriends}
+              onFriends={() => { setOverflowOpen(false); setShowFriends(value => !value); if (!showFriends) onRefreshFriends() }}
+              isAdmin={isAdmin}
+              onAdmin={() => { setOverflowOpen(false); onAdmin() }}
+              settingsOpen={settingsOpen}
+              onSettings={() => { setOverflowOpen(false); setSettingsOpen(value => !value) }}
+              onMyQuests={() => { setOverflowOpen(false); onMyQuests() }}
+              onLeave={() => { setOverflowOpen(false); onLeave() }}
+            />
             {isLeader && party.map_id && (
-              <button className="btn-gold btn-sm" onClick={() => setStartRaidPending(true)} style={{ letterSpacing: '.06em' }}>▶ START RAID</button>
+              <div className="room-mobile-raid-actions">
+                <button className="btn-gold btn-sm" onClick={() => setStartRaidPending(true)} style={{ letterSpacing: '.06em' }}><Icon name="play" size="sm" /> START RAID</button>
+              </div>
             )}
-            <button className="btn-danger btn-sm" onClick={onLeave}>LEAVE</button>
           </div>
         )}
         <div className="sr-status" aria-live="polite">{copied ? 'Invite link copied.' : ''}</div>
@@ -336,8 +467,8 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                   <div className="lbl" style={{ color: 'var(--gold)' }}>FRIEND REQUESTS ({pendingIn.length})</div>
                   {pendingIn.map(r => (
                     <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span className="mono" style={{ flex: 1, fontSize: 12, color: 'var(--tx)' }}>{r.callsign}</span>
-                      <button className="btn-gold btn-sm" style={{ fontSize: 11 }} onClick={() => onAcceptRequest(r.id)}>ACCEPT</button>
+                      <span className="mono" style={{ flex: 1, fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{r.callsign}</span>
+                      <button className="btn-gold btn-sm" style={{ fontSize: 'var(--fs-sm)' }} onClick={() => onAcceptRequest(r.id)}>ACCEPT</button>
                       <button className="btn-ghost btn-sm" style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '3px 6px' }} onClick={() => onRemoveRequest(r.id)} title="Decline">×</button>
                     </div>
                   ))}
@@ -347,23 +478,23 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
 
               <div className="lbl">FRIENDS</div>
               {friends.length === 0 && pendingIn.length === 0 && pendingOut.length === 0 && (
-                <div className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>NO FRIENDS ADDED YET</div>
+                <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)' }}>NO FRIENDS ADDED YET</div>
               )}
               {friends.map(f => (
                 <div key={f.user_id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: f.partyCode ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }} />
-                  <span className="mono" style={{ flex: 1, fontSize: 12, color: f.partyCode ? 'var(--tx)' : 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span className="mono" style={{ flex: 1, fontSize: 'var(--fs-sm)', color: f.partyCode ? 'var(--tx)' : 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {f.callsign}
                   </span>
                   {confirmUnfriend === f.user_id ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                      <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>REMOVE?</span>
-                      <button className="btn-danger btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => { onRemoveFriend(f.user_id); setConfirmUnfriend(null) }}>YES</button>
-                      <button className="btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => setConfirmUnfriend(null)}>NO</button>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)' }}>REMOVE?</span>
+                      <button className="btn-danger btn-sm" style={{ fontSize: 'var(--fs-xs)', padding: '2px 7px' }} onClick={() => { onRemoveFriend(f.user_id); setConfirmUnfriend(null) }}>YES</button>
+                      <button className="btn-ghost btn-sm" style={{ fontSize: 'var(--fs-xs)', padding: '2px 7px' }} onClick={() => setConfirmUnfriend(null)}>NO</button>
                     </div>
                   ) : (
                     <>
-                      <span className="mono" style={{ fontSize: 10, color: f.partyCode ? 'var(--gold)' : 'var(--txd)' }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: f.partyCode ? 'var(--gold)' : 'var(--txd)' }}>
                         {f.partyCode ? 'IN PARTY' : 'OFFLINE'}
                       </span>
                       <button className="btn-ghost btn-sm" style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '3px 6px' }} onClick={() => setConfirmUnfriend(f.user_id)} title="Unfriend">×</button>
@@ -376,8 +507,8 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
               {pendingOut.map(r => (
                 <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--txd)', flexShrink: 0 }} />
-                  <span className="mono" style={{ flex: 1, fontSize: 12, color: 'var(--txd)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.callsign}</span>
-                  <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>PENDING</span>
+                  <span className="mono" style={{ flex: 1, fontSize: 'var(--fs-sm)', color: 'var(--txd)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.callsign}</span>
+                  <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>PENDING</span>
                   <button className="btn-ghost btn-sm" style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '3px 6px' }} onClick={() => onRemoveRequest(r.id)} title="Withdraw">×</button>
                 </div>
               ))}
@@ -398,7 +529,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                 />
                 <button className="btn-ghost btn-sm" onClick={handleSendRequest} disabled={addBusy} style={{ whiteSpace: 'nowrap' }}>+ ADD</button>
               </div>
-              {addError && <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 11 }}>⚠ {addError}</p>}
+              {addError && <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 'var(--fs-sm)' }}>⚠ {addError}</p>}
             </div>
           </div>
         </div>
@@ -417,7 +548,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
               style={{
                 background: 'var(--sur2)', border: '1px solid var(--brd)', borderRadius: 4,
                 color: 'var(--txd)', cursor: 'pointer', padding: '6px 0',
-                fontSize: 12, writingMode: 'vertical-rl', width: '100%',
+                fontSize: 'var(--fs-sm)', writingMode: 'vertical-rl', width: '100%',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >▶</button>
@@ -429,7 +560,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
               <div className="lbl" style={{ marginBottom: 0 }}>PARTY MEMBERS</div>
               <div style={{ display: 'flex', gap: 4 }}>
                 <button className="btn-ghost btn-sm" onClick={onRefresh} title="Refresh members" aria-label="Refresh party members" style={{ fontSize: 14, padding: '2px 7px', color: 'var(--txd)' }}>↻</button>
-                <button className="btn-ghost btn-sm" onClick={() => setSidebarOpen(false)} title="Collapse sidebar" aria-label="Collapse party sidebar" style={{ fontSize: 11, padding: '2px 7px', color: 'var(--txd)' }}>◀</button>
+                <button className="btn-ghost btn-sm" onClick={() => setSidebarOpen(false)} title="Collapse sidebar" aria-label="Collapse party sidebar" style={{ fontSize: 'var(--fs-sm)', padding: '2px 7px', color: 'var(--txd)' }}>◀</button>
               </div>
             </div>
             {members.map(member => {
@@ -453,7 +584,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                     <div style={{ fontSize: 13, color: isSelf ? 'var(--goldtx)' : 'var(--tx)' }}>
                       {displayName}{isSelf ? ' · you' : ''}
                     </div>
-                    <div className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>
+                    <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)' }}>
                       {totalCount} QUEST{totalCount !== 1 ? 'S' : ''}
                       {mapCount !== null && (
                         <span style={{ color: 'var(--txd)' }}> · {mapCount} ON MAP</span>
@@ -463,19 +594,19 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
                     {party.leader_id === member.user_id && (
-                      <span className="mono" style={{ fontSize: 10, color: 'var(--gold)', border: '1px solid var(--golddim)', borderRadius: 3, padding: '1px 5px' }}>LDR</span>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', border: '1px solid var(--golddim)', borderRadius: 3, padding: '1px 5px' }}>LDR</span>
                     )}
                     {!isSelf && !isFriend && !isPending && (
-                      <button className="btn-ghost btn-sm" style={{ fontSize: 10 }}
+                      <button className="btn-ghost btn-sm" style={{ fontSize: 'var(--fs-xs)' }}
                         onClick={() => onSendRequest({ userId: member.user_id, callsign: m })}>
                         + FRIEND
                       </button>
                     )}
                     {!isSelf && isPending && (
-                      <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>PENDING</span>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>PENDING</span>
                     )}
                     {!isSelf && isFriend && (
-                      <span className="mono" style={{ fontSize: 10, color: 'var(--grn)' }}>✓</span>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--grn)' }}>✓</span>
                     )}
                   </div>
                 </div>
@@ -485,8 +616,8 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
           {/* Map Recommendations */}
           {mapStats.length > 0 && (
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--brd)' }}>
-              <div className="mono" style={{ fontSize: 10, color: 'var(--goldtx)', letterSpacing: '.06em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 11, color: 'var(--gold)' }}>◆</span>
+              <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--goldtx)', letterSpacing: '.06em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--gold)' }}>◆</span>
                 MAP RECOMMENDATIONS
               </div>
               {(() => {
@@ -504,11 +635,11 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                           borderRadius: 4,
                         }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                            <span className="mono" style={{ fontSize: 9, color: isTop ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }}>#{i + 1}</span>
-                            <span style={{ fontSize: isTop ? 11 : 10, fontWeight: isTop ? 600 : 400, color: isTop ? 'var(--tx)' : 'var(--txm)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: isTop ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }}>#{i + 1}</span>
+                            <span style={{ fontSize: isTop ? 'var(--fs-sm)' : 'var(--fs-xs)', fontWeight: isTop ? 600 : 400, color: isTop ? 'var(--tx)' : 'var(--txm)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {stat.map.name.toUpperCase()}
                             </span>
-                            <span className="mono" style={{ fontSize: 9, color: isTop ? 'var(--goldtx)' : 'var(--txm)', flexShrink: 0 }}>
+                            <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: isTop ? 'var(--goldtx)' : 'var(--txm)', flexShrink: 0 }}>
                               {stat.total}Q
                             </span>
                           </div>
@@ -533,14 +664,14 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                               })()}
                             </div>
                             {stat.crossover > 0 && (
-                              <span className="mono" style={{ fontSize: 9, color: 'var(--grn)', flexShrink: 0 }}>{stat.crossover}S</span>
+                              <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--grn)', flexShrink: 0 }}>{stat.crossover}S</span>
                             )}
                             <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                               {Object.entries(stat.perMember).filter(([, v]) => v > 0).map(([name]) => {
                                 const c = memberColor(name, memberNameList)
                                 return (
                                   <span key={name} className="mono" title={`${name}: ${stat.perMember[name]} quest${stat.perMember[name] !== 1 ? 's' : ''}`} style={{
-                                    fontSize: 9, width: 14, height: 14, borderRadius: 2,
+                                    fontSize: 'var(--fs-xs)', width: 14, height: 14, borderRadius: 2,
                                     background: c.bg, border: `1px solid ${c.border}`, color: c.text,
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                                     flexShrink: 0, cursor: 'default',
@@ -568,8 +699,13 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
           {/* Map selector */}
           <div className="room-map-selector-card card" style={{ padding: 16, display: raidStart && !mapSelectorOpen ? 'none' : undefined }}>
             <div className="lbl">{canChangeMap ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
+            {!party.map_id && (
+              <p className="room-map-selector-hint">
+                The party map drives TODO LIST, REQUIRED ITEMS, WHAT TO LOOK FOR, MAP / ROUTE, and BOSS SPAWNS / KEYS; routes and markers update live for the squad.
+              </p>
+            )}
             {loadingMaps && !maps.length
-              ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING MAPS...</span></div>
+              ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>LOADING MAPS...</span></div>
               : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
                   {maps.map(m => (
@@ -619,18 +755,21 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                       (mineWasNonEmpty.current || questsLoading) ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '32px 24px', justifyContent: 'center' }}>
                           <Spin />
-                          <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>SYNCING...</span>
+                          <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>SYNCING...</span>
                         </div>
                       ) : (
                         <div style={{ textAlign: 'center', padding: '40px 24px' }}>
                           <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>NO QUESTS ADDED</div>
-                          <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', lineHeight: 1.7 }}>
-                            CLICK <button onClick={onMyQuests} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11, color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button> AT THE TOP TO IMPORT YOUR QUESTS
+                          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', lineHeight: 1.7 }}>
+                            Import your quest list to fill this out.
+                            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
+                              <button onClick={onMyQuests} className="btn-ghost btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--gold)', borderColor: 'var(--golddim)' }}><Icon name="star" size="sm" /> QUEST MANAGER</button>
+                            </div>
                           </div>
                         </div>
                       )
                     ) : loadingTasks
-                      ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
+                      ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>LOADING...</span></div>
                       : (
                         <TodoList
                           key={party.map_norm}
@@ -671,7 +810,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
               {tab === 'items' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
                   {loadingTasks && !tasks.length
-                    ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
+                    ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>LOADING...</span></div>
                     : <RequiredItems tasks={tasks} memberQuests={members} mapNorm={party.map_norm} progress={party.progress} gameMode={gameMode} />
                   }
                 </div>
@@ -680,7 +819,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
               {tab === 'find' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
                   {loadingTasks && !tasks.length
-                    ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>LOADING...</span></div>
+                    ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>LOADING...</span></div>
                     : <FindItems tasks={tasks} memberQuests={members} mapNorm={party.map_norm} progress={party.progress} myName={myName} myUserId={myUserId} userObjProgress={userObjProgress} />
                   }
                 </div>

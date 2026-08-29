@@ -3,6 +3,7 @@ import { objectiveProgressKey, questDoneKey } from '../partyMembers'
 import { objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
 import { classifyObjective, classifyTask } from '../questShare'
 import { useQuestShareOverrides } from '../useQuestShareOverrides'
+import Icon from './Icon'
 
 
 function objsForMap(objectives, mapNorm, taskMapNorm) {
@@ -153,8 +154,8 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
     if (!hasAnyQuests && loading) {
       return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '32px 24px', justifyContent: 'center' }}>
-          <div style={{ width: 20, height: 20, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
-          <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>SYNCING...</span>
+          <div style={{ width: 20, height: 20, border: '2px solid var(--brd)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
+          <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>SYNCING...</span>
         </div>
       )
     }
@@ -164,12 +165,20 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
         <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>
           {hasAnyQuests ? 'NO QUESTS FOR THIS MAP' : 'NO QUESTS ADDED'}
         </div>
-        <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', lineHeight: 1.7 }}>
-          {hasAnyQuests
-            ? 'SELECT A DIFFERENT MAP OR ADD MORE QUESTS'
-            : <>CLICK <button onClick={onOpenQuestManager} className="btn-ghost btn-sm" style={{ display: 'inline', padding: '1px 7px', fontSize: 11, color: 'var(--gold)', borderColor: 'var(--golddim)' }}>★ QUEST MANAGER</button> AT THE TOP TO IMPORT YOUR QUESTS</>
-          }
-        </div>
+        {hasAnyQuests ? (
+          <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', lineHeight: 1.7 }}>
+            SELECT A DIFFERENT MAP OR ADD MORE QUESTS
+          </div>
+        ) : (
+          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', lineHeight: 1.7 }}>
+            Import your quest list to fill this out.
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
+              <button onClick={onOpenQuestManager} className="btn-ghost btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--gold)', borderColor: 'var(--golddim)' }}>
+                <Icon name="star" size="sm" /> QUEST MANAGER
+              </button>
+            </div>
+          </div>
+        )}
         </div>
       </div>
     )
@@ -180,10 +189,10 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div>
-          <div className="mono" style={{ fontSize: 12, color: 'var(--goldtx)', fontWeight: 700, letterSpacing: '.08em' }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--goldtx)', fontWeight: 700, letterSpacing: '.08em' }}>
             MY QUESTS
           </div>
-          <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', marginTop: 2, letterSpacing: '.1em' }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', marginTop: 2, letterSpacing: '.1em' }}>
             {myName.toUpperCase()} · PERSONAL VIEW
           </div>
         </div>
@@ -191,7 +200,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
           onClick={handleSubmit}
           disabled={!hasPending}
           className={hasPending ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-          style={{ fontSize: 11, opacity: hasPending ? 1 : 0.35, transition: 'opacity .2s' }}
+          style={{ fontSize: 'var(--fs-sm)', opacity: hasPending ? 1 : 0.35, transition: 'opacity .2s' }}
         >
           ▲ SUBMIT{hasPending ? ` (${pendingCount})` : ''}
         </button>
@@ -217,12 +226,12 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
           return (
             <div key={task.id}>
             {showAnyMapDivider && (
-              <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em', paddingBottom: 5, marginBottom: 2, borderBottom: '1px solid var(--brd)' }}>
+              <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', letterSpacing: '.1em', paddingBottom: 5, marginBottom: 2, borderBottom: '1px solid var(--brd)' }}>
                 ◆ ANY MAP
               </div>
             )}
             {showCompletedDivider && (
-              <div className="mono" style={{ fontSize: 9, color: 'var(--txd)', letterSpacing: '.1em', paddingBottom: 5, marginBottom: 2, borderBottom: '1px solid var(--brd)' }}>
+              <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', letterSpacing: '.1em', paddingBottom: 5, marginBottom: 2, borderBottom: '1px solid var(--brd)' }}>
                 ✓ COMPLETED
               </div>
             )}
@@ -240,11 +249,11 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                 borderBottom: objs.length && !isDone ? '1px solid var(--brd)' : 'none',
               }}>
                 {task.trader?.imageLink && (
-                  <img src={task.trader.imageLink} alt={task.trader.name} title={task.trader.name} style={{ width: 28, height: 28, borderRadius: 3, objectFit: 'cover', flexShrink: 0, opacity: isDone ? 0.4 : 1, border: '1px solid var(--brd2)' }} />
+                  <img src={task.trader.imageLink} alt={task.trader.name} title={task.trader.name} style={{ width: 28, height: 28, borderRadius: 3, objectFit: 'cover', flexShrink: 0, opacity: isDone ? 0.4 : 1, border: '1px solid var(--brd)' }} />
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
-                    fontSize: 12, fontWeight: 600,
+                    fontSize: 'var(--fs-sm)', fontWeight: 600,
                     color: isDone ? 'var(--txd)' : 'var(--tx)',
                     textDecoration: isDone ? 'line-through' : 'none',
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -253,17 +262,17 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                     {task.kappaRequired && (
-                      <span className="mono" style={{ fontSize: 9, color: 'var(--gold)' }}>κ KAPPA</span>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)' }}>κ KAPPA</span>
                     )}
                     {taskShare === 'shared' && (
                       <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
                     )}
                     {objs.length > 0 && (
-                      <span className="mono" style={{ fontSize: 9, color: isDone || allObjsDone ? 'var(--grn)' : 'var(--txd)' }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: isDone || allObjsDone ? 'var(--grn)' : 'var(--txd)' }}>
                         {doneObjCount}/{objs.length} OBJ
                       </span>
                     )}
-                    {loyalty && <span className="mono" style={{ fontSize: 9, color: 'var(--txm)' }}>{loyalty}</span>}
+                    {loyalty && <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)' }}>{loyalty}</span>}
                   </div>
                 </div>
                 {/* Move to top / bottom within section */}
@@ -277,7 +286,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                       style={{
                         background: 'none', border: 'none', padding: '1px 4px',
                         cursor: sectionIdx === 0 ? 'default' : 'pointer',
-                        fontSize: 10, lineHeight: 1,
+                        fontSize: 'var(--fs-xs)', lineHeight: 1,
                         color: sectionIdx === 0 ? 'var(--brd2)' : 'var(--txd)',
                         transition: 'color .15s',
                       }}>▲</button>
@@ -289,7 +298,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                       style={{
                         background: 'none', border: 'none', padding: '1px 4px',
                         cursor: sectionIdx === sectionRows.length - 1 ? 'default' : 'pointer',
-                        fontSize: 10, lineHeight: 1,
+                        fontSize: 'var(--fs-xs)', lineHeight: 1,
                         color: sectionIdx === sectionRows.length - 1 ? 'var(--brd2)' : 'var(--txd)',
                         transition: 'color .15s',
                       }}>▼</button>
@@ -302,7 +311,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                     background: 'none',
                     border: `1px solid ${isDone ? 'var(--grn)' : isPendingDone ? 'var(--golddim)' : 'var(--brd2)'}`,
                     borderRadius: 3, padding: '2px 8px', cursor: 'pointer',
-                    fontSize: 10, fontFamily: 'Share Tech Mono',
+                    fontSize: 'var(--fs-xs)', fontFamily: 'Share Tech Mono',
                     color: isDone ? 'var(--grn)' : isPendingDone ? 'var(--gold)' : 'var(--txd)',
                     letterSpacing: '.04em', flexShrink: 0, transition: 'all .15s',
                   }}
@@ -345,7 +354,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
 
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{
-                        fontSize: 11, lineHeight: 1.4,
+                        fontSize: 'var(--fs-sm)', lineHeight: 1.4,
                         color: checked ? 'var(--txd)' : 'var(--tx)',
                         textDecoration: checked ? 'line-through' : 'none',
                       }}>
@@ -354,7 +363,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                     </div>
 
                     <span className="mono" style={{
-                      fontSize: 9, flexShrink: 0, marginTop: 2, letterSpacing: '.06em',
+                      fontSize: 'var(--fs-xs)', flexShrink: 0, marginTop: 2, letterSpacing: '.06em',
                       color: checked ? 'var(--txd)' : 'var(--txm)',
                       background: 'var(--sur)', border: '1px solid var(--brd)',
                       borderRadius: 2, padding: '1px 4px',
@@ -379,7 +388,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
           marginTop: 10, padding: '7px 10px',
           background: 'rgba(201,168,76,0.06)', border: '1px solid var(--golddim)', borderRadius: 4,
         }}>
-          <div className="mono" style={{ fontSize: 10, color: 'var(--gold)', letterSpacing: '.04em' }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', letterSpacing: '.04em' }}>
             {pendingCount} UNSAVED CHANGE{pendingCount !== 1 ? 'S' : ''} — HIT SUBMIT TO SHARE WITH PARTY
           </div>
         </div>

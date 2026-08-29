@@ -27,7 +27,7 @@ function QuestTooltip({ task, anchor, mapNorm }) {
       pointerEvents: 'none',
       boxShadow: '0 4px 20px rgba(0,0,0,0.7)',
     }}>
-      <div className="mono" style={{ fontSize: 10, color: 'var(--gold)', marginBottom: 6, letterSpacing: '.06em' }}>
+      <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', marginBottom: 6, letterSpacing: '.06em' }}>
         {task.name.toUpperCase()}
       </div>
       {objs.map(obj => (
@@ -35,9 +35,9 @@ function QuestTooltip({ task, anchor, mapNorm }) {
           display: 'flex', alignItems: 'flex-start', gap: 8,
           padding: '4px 0', borderBottom: '1px solid var(--brd)',
         }}>
-          <span style={{ fontSize: 12, color: 'var(--tx)', flex: 1, lineHeight: 1.4 }}>{obj.description}</span>
+          <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx)', flex: 1, lineHeight: 1.4 }}>{obj.description}</span>
           <span className="mono" style={{
-            fontSize: 9, color: 'var(--txd)', flexShrink: 0, marginTop: 2,
+            fontSize: 'var(--fs-xs)', color: 'var(--txd)', flexShrink: 0, marginTop: 2,
             background: 'var(--sur)', border: '1px solid var(--brd)',
             borderRadius: 2, padding: '1px 4px', letterSpacing: '.04em',
           }}>{objectiveTypeLabel(obj.type)}</span>
@@ -82,8 +82,8 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
 
       {loading ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
-          <div style={{ width: 16, height: 16, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
-          <span className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>FETCHING QUESTS FROM TARKOV.DEV...</span>
+          <div style={{ width: 16, height: 16, border: '2px solid var(--brd)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
+          <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>FETCHING QUESTS FROM TARKOV.DEV...</span>
         </div>
       ) : (
         <input ref={ref} aria-label="Search quests for this map" placeholder="Search quests for this map..."
@@ -109,7 +109,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
             >
               <div>
                 <div style={{ fontSize: 13 }}>{t.name}</div>
-                <div className="mono" style={{ fontSize: 11, color: 'var(--txm)', marginTop: 2 }}>
+                <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', marginTop: 2 }}>
                   {t.trader?.name} · Lv.{t.minPlayerLevel || 1}
                   {!t.map && <span style={{ marginLeft: 8, color: 'var(--txd)' }}>any map</span>}
                 </div>
@@ -124,7 +124,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
         <div style={{
           position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 200,
           background: 'var(--sur3)', border: '1px solid var(--brd2)', borderRadius: 5,
-          padding: '12px', fontSize: 12, color: 'var(--txm)',
+          padding: '12px', fontSize: 'var(--fs-sm)', color: 'var(--txm)',
         }} className="mono">
           NO RESULTS FOR "{q.toUpperCase()}"
         </div>
@@ -138,7 +138,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
             onMouseLeave={hideTooltip}
             style={{
               display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px',
-              background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, fontSize: 12,
+              background: 'var(--sur2)', border: '1px solid var(--brd2)', borderRadius: 4, fontSize: 'var(--fs-sm)',
               cursor: 'default',
             }}>
             <span style={{ color: 'var(--goldtx)' }}>{item.name}</span>
@@ -147,14 +147,14 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
           </div>
         ))}
         {activeQuests.length === 0 && !loading && (
-          <p className="mono" style={{ fontSize: 11, color: 'var(--txd)' }}>TYPE TO SEARCH AND ADD YOUR ACTIVE QUESTS</p>
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)' }}>TYPE TO SEARCH AND ADD YOUR ACTIVE QUESTS</p>
         )}
       </div>
 
       {/* Completed quests */}
       {completedActive.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <div className="mono" style={{ fontSize: 9, color: 'var(--grn)', letterSpacing: '.1em', marginBottom: 6 }}>
+          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--grn)', letterSpacing: '.1em', marginBottom: 6 }}>
             ✓ COMPLETED THIS RAID
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -164,10 +164,10 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
                 onMouseLeave={hideTooltip}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px',
-                  background: 'var(--sur2)', border: '1px solid var(--brd)', borderRadius: 4, fontSize: 12,
+                  background: 'var(--sur2)', border: '1px solid var(--brd)', borderRadius: 4, fontSize: 'var(--fs-sm)',
                   opacity: 0.5, cursor: 'default',
                 }}>
-                <span style={{ color: 'var(--grn)', fontSize: 10 }}>✓</span>
+                <span style={{ color: 'var(--grn)', fontSize: 'var(--fs-xs)' }}>✓</span>
                 <span style={{ color: 'var(--txm)', textDecoration: 'line-through' }}>{item.name}</span>
               </div>
             ))}

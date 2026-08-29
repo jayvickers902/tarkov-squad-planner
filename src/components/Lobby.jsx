@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabase'
 import { GAME_MODES, gameModeLabel, normalizeGameMode } from '../gameMode'
+import Icon from './Icon'
 
 export default function Lobby({ userId, callsign, userGameMode = 'regular', onEnter, onForceJoin, onManageQuests, onLogout, onOpenGuide, onAdmin, isAdmin, error, friendsError = '', loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const [mode, setMode]         = useState('home')
@@ -111,7 +112,7 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
   const hasPending = pendingIn.length > 0
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div style={{ width: '100%', maxWidth: 430 }}>
 
         <div style={{ textAlign: 'center', marginBottom: 48 }}>
@@ -133,36 +134,36 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
             <div style={{ width: 5, height: 34, background: 'var(--gold)', borderRadius: 2 }} />
             <h1 style={{ fontSize: 36, fontWeight: 700 }}>SQUAD PLANNER</h1>
           </div>
-          <p className="mono" style={{ fontSize: 11, color: 'var(--txm)', letterSpacing: '0.1em' }}>
+          <p className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', letterSpacing: '0.1em' }}>
             ESCAPE FROM TARKOV // RAID COORDINATOR
           </p>
           <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-            <span className="mono" style={{ fontSize: 12, color: 'var(--goldtx)' }}>
+            <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--goldtx)' }}>
               ◆ {callsign.toUpperCase()}
             </span>
-            <button className="btn-ghost btn-sm" onClick={() => onOpenGuide?.()} style={{ fontSize: 11 }}>GUIDE</button>
-            <button className="btn-ghost btn-sm" onClick={onLogout} style={{ fontSize: 11 }}>LOGOUT</button>
+            <button className="btn-ghost btn-sm" onClick={() => onOpenGuide?.()} style={{ fontSize: 'var(--fs-sm)' }}>GUIDE</button>
+            <button className="btn-ghost btn-sm" onClick={onLogout} style={{ fontSize: 'var(--fs-sm)' }}>LOGOUT</button>
           </div>
         </div>
 
         {autoJoinCode && (
           <div className="card fade-in" style={{ padding: 20, textAlign: 'center', marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-              <div style={{ width: 16, height: 16, border: '2px solid var(--brd2)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
+              <div style={{ width: 16, height: 16, border: '2px solid var(--brd)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
               <div>
-                <div className="mono" style={{ fontSize: 12, color: 'var(--txm)' }}>JOINING PARTY</div>
+                <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>JOINING PARTY</div>
                 <div className="mono" style={{ fontSize: 20, color: 'var(--gold)', letterSpacing: '0.2em', marginTop: 2 }}>{autoJoinCode}</div>
               </div>
             </div>
             {err && (
-              <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 12, marginTop: 10 }}>⚠ {err}</p>
+              <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 'var(--fs-sm)', marginTop: 10 }}>⚠ {err}</p>
             )}
           </div>
         )}
 
         {lastCode && !autoJoinCode && (
           <div className="card fade-in" style={{ padding: '14px 16px', marginBottom: 12, borderColor: 'var(--golddim)' }}>
-            <div className="mono" style={{ fontSize: 10, color: 'var(--txm)', marginBottom: 6 }}>{rejoinLookup === 'offline' ? 'OFFLINE REJOIN HINT' : 'ACTIVE PARTY'}</div>
+            <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', marginBottom: 6 }}>{rejoinLookup === 'offline' ? 'OFFLINE REJOIN HINT' : 'ACTIVE PARTY'}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="mono" style={{ fontSize: 20, color: 'var(--gold)', letterSpacing: '0.2em', flex: 1 }}>{lastCode}</span>
               <button className="btn-gold btn-sm" disabled={loading}
@@ -175,7 +176,7 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
               </button>
             </div>
             <div className="mono party-list-mode">MODE · {gameModeLabel(rejoinGameMode)}</div>
-            {err && <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 11, marginTop: 6 }}>⚠ {err}</p>}
+            {err && <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 'var(--fs-sm)', marginTop: 6 }}>⚠ {err}</p>}
           </div>
         )}
 
@@ -202,12 +203,12 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
             <button className="btn-ghost" style={{ padding: '14px 24px', fontSize: 16 }} onClick={() => setMode('join')}>
               JOIN PARTY
             </button>
-            <button className="btn-ghost" style={{ padding: '14px 24px', fontSize: 16, color: 'var(--gold)', borderColor: 'var(--golddim)' }} onClick={onManageQuests}>
-              ★ MY QUESTS
+            <button className="btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '14px 24px', fontSize: 16, color: 'var(--gold)', borderColor: 'var(--golddim)' }} onClick={onManageQuests}>
+              <Icon name="star" size="md" /> QUEST MANAGER
             </button>
             {isAdmin && (
-              <button className="btn-ghost" style={{ padding: '14px 24px', fontSize: 16, color: 'var(--txm)' }} onClick={onAdmin}>
-                ⚙ KEY ADMIN
+              <button className="btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '14px 24px', fontSize: 16, color: 'var(--txm)' }} onClick={onAdmin}>
+                <Icon name="settings" size="md" /> KEY ADMIN
               </button>
             )}
 
@@ -223,13 +224,13 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
                   {totalFriends > 0 && <span style={{ color: 'var(--txm)' }}>({totalFriends})</span>}
                   {hasPending && (
                     <span className="mono" style={{
-                      fontSize: 10, padding: '1px 6px', borderRadius: 3,
+                      fontSize: 'var(--fs-xs)', padding: '1px 6px', borderRadius: 3,
                       background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)',
                       color: 'var(--gold)',
                     }}>{pendingIn.length} REQ</span>
                   )}
                 </span>
-                <span style={{ color: 'var(--txd)', fontSize: 10 }}>{showFriends ? '▲' : '▼'}</span>
+                <span style={{ color: 'var(--txd)', fontSize: 'var(--fs-xs)' }}>{showFriends ? '▲' : '▼'}</span>
               </button>
 
               {showFriends && (
@@ -244,7 +245,7 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
                       {pendingIn.map(r => (
                         <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
                           <span className="mono" style={{ flex: 1, fontSize: 13, color: 'var(--tx)' }}>{r.callsign}</span>
-                          <button className="btn-gold btn-sm" onClick={() => onAcceptRequest(r.id)} style={{ fontSize: 11 }}>ACCEPT</button>
+                          <button className="btn-gold btn-sm" onClick={() => onAcceptRequest(r.id)} style={{ fontSize: 'var(--fs-sm)' }}>ACCEPT</button>
                           <button
                             className="btn-ghost btn-sm"
                             style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
@@ -259,7 +260,7 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
 
                   {/* Accepted friends */}
                   {friends.length === 0 && pendingIn.length === 0 && pendingOut.length === 0 && (
-                    <div className="mono" style={{ fontSize: 11, color: 'var(--txd)', textAlign: 'center', padding: '6px 0' }}>
+                    <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', textAlign: 'center', padding: '6px 0' }}>
                       NO FRIENDS ADDED YET
                     </div>
                   )}
@@ -282,9 +283,9 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
                         )}
                         {confirmUnfriend === f.user_id ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                            <span className="mono" style={{ fontSize: 10, color: 'var(--txm)' }}>REMOVE?</span>
-                            <button className="btn-danger btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => { onRemoveFriend(f.user_id); setConfirmUnfriend(null) }}>YES</button>
-                            <button className="btn-ghost btn-sm" style={{ fontSize: 10, padding: '2px 7px' }} onClick={() => setConfirmUnfriend(null)}>NO</button>
+                            <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)' }}>REMOVE?</span>
+                            <button className="btn-danger btn-sm" style={{ fontSize: 'var(--fs-xs)', padding: '2px 7px' }} onClick={() => { onRemoveFriend(f.user_id); setConfirmUnfriend(null) }}>YES</button>
+                            <button className="btn-ghost btn-sm" style={{ fontSize: 'var(--fs-xs)', padding: '2px 7px' }} onClick={() => setConfirmUnfriend(null)}>NO</button>
                           </div>
                         ) : (
                           <button
@@ -297,7 +298,7 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
                       </div>
                       {friendJoinCode === f.partyCode && error && (
                         <div style={{ marginTop: 6, marginLeft: 16 }}>
-                          <p className="mono" style={{ color: 'var(--red)', fontSize: 11 }}>⚠ {error}</p>
+                          <p className="mono" style={{ color: 'var(--red)', fontSize: 'var(--fs-sm)' }}>⚠ {error}</p>
                         </div>
                       )}
                     </div>
@@ -310,7 +311,7 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
                       <span className="mono" style={{ flex: 1, fontSize: 13, color: 'var(--txd)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {r.callsign}
                       </span>
-                      <span className="mono" style={{ fontSize: 10, color: 'var(--txd)' }}>PENDING</span>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>PENDING</span>
                       <button
                         className="btn-ghost btn-sm"
                         style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
@@ -335,8 +336,8 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
                       + ADD
                     </button>
                   </div>
-                  {addError && <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 11, marginTop: 4 }}>⚠ {addError}</p>}
-                  {addSuccess && <p className="mono" role="status" style={{ color: 'var(--grn)', fontSize: 11, marginTop: 4 }}>✓ REQUEST SENT</p>}
+                  {addError && <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 'var(--fs-sm)', marginTop: 4 }}>⚠ {addError}</p>}
+                  {addSuccess && <p className="mono" role="status" style={{ color: 'var(--grn)', fontSize: 'var(--fs-sm)', marginTop: 4 }}>✓ REQUEST SENT</p>}
                 </div>
               )}
             </div>
@@ -353,8 +354,8 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
                 style={{ fontFamily: 'Share Tech Mono', letterSpacing: '0.2em', fontSize: 20 }}
                 maxLength={6} autoFocus onKeyDown={e => e.key === 'Enter' && join()} />
             </div>
-            {err && <p className="mono" style={{ color: 'var(--red)', fontSize: 12 }}>⚠ {err}</p>}
-            {loading && <p className="mono" style={{ color: 'var(--txm)', fontSize: 12 }}>JOINING...</p>}
+            {err && <p className="mono" style={{ color: 'var(--red)', fontSize: 'var(--fs-sm)' }}>⚠ {err}</p>}
+            {loading && <p className="mono" style={{ color: 'var(--txm)', fontSize: 'var(--fs-sm)' }}>JOINING...</p>}
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn-ghost" onClick={() => { setMode('home'); setLocal(''); setFriendJoinCode(null) }}>BACK</button>
               <button className="btn-gold" style={{ flex: 1 }} onClick={join} disabled={loading}>JOIN</button>
@@ -362,7 +363,7 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
           </div>
         )}
 
-        <p className="mono" style={{ textAlign: 'center', marginTop: 28, fontSize: 10, color: 'var(--txd)' }}>
+        <p className="mono" style={{ textAlign: 'center', marginTop: 28, fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
           QUEST DATA VIA TARKOV.DEV — COMMUNITY MAINTAINED
         </p>
       </div>

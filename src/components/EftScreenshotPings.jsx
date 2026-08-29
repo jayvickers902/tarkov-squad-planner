@@ -27,7 +27,7 @@ export default function EftScreenshotPings() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
           <span className={watching ? 'mon-dot mon-dot-live' : 'mon-dot'} style={{ background: watching ? 'var(--grn)' : 'var(--txd)' }} />
-          <span className="mono" style={{ fontSize: 10, color: watching ? 'var(--grn)' : 'var(--txm)', letterSpacing: '.06em' }}>
+          <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: watching ? 'var(--grn)' : 'var(--txm)', letterSpacing: '.06em' }}>
             LOCAL SCREENSHOT PINGS · {status}
           </span>
           {sync.pending > 0 && <span className="mono" style={{ color: 'var(--gold)' }}>{'●'.repeat(sync.pending)}</span>}
@@ -47,16 +47,16 @@ export default function EftScreenshotPings() {
           {sync.folderName && <button className="btn-ghost btn-sm" onClick={() => sync.forget()}>FORGET</button>}
         </div>
       </div>
-      <div className="mono" style={{ marginTop: 5, color: 'var(--txd)', fontSize: 9, lineHeight: 1.5 }}>
+      <div style={{ marginTop: 5, color: 'var(--txd)', fontSize: 'var(--fs-xs)', lineHeight: 1.5 }}>
         {!sync.persistentSupported
           ? 'LOCAL FOLDER WATCHING NEEDS THE DESKTOP VERSION OF CHROME OR EDGE.'
           : sync.folderName
           ? `${sync.folderName} · PRESS EFT'S SCREENSHOT KEY TO PING. ONLY THE FILENAME AND FILE TIME ARE READ; THE IMAGE NEVER LEAVES THIS PC.`
           : 'ONE-TIME SETUP: CHOOSE DOCUMENTS\\ESCAPE FROM TARKOV\\SCREENSHOTS. EXISTING SCREENSHOTS ARE BASELINED, NOT REPLAYED.'}
       </div>
-      {sync.error && <div className="mono" role="alert" style={{ marginTop: 5, color: 'var(--red)', fontSize: 10 }}>{sync.error}</div>}
+      {sync.error && <div role="alert" style={{ marginTop: 5, color: 'var(--red)', fontSize: 'var(--fs-xs)' }}>{sync.error}</div>}
       {cadence && (
-        <div className="mono" role="status" style={{ marginTop: 5, color: cadence.color, fontSize: 10 }}>
+        <div role="status" style={{ marginTop: 5, color: cadence.color, fontSize: 'var(--fs-xs)' }}>
           PING SENT · {cadence.label}{sync.lastPing.floor ? ` · ${sync.lastPing.floor}` : ''}
         </div>
       )}
