@@ -886,6 +886,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                       <MapLeaflet
                         mapNorm={party.map_norm}
                         mapName={party.map_name}
+                        gameMode={gameMode}
                         drawings={party.drawings || []}
                         markers={party.markers || []}
                         pings={party.pings || []}

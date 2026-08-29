@@ -178,6 +178,7 @@ export default function RaidView({
           <MapLeaflet
             mapNorm={party.map_norm}
             mapName={party.map_name}
+            gameMode={gameMode}
             drawings={party.drawings || []}
             markers={party.markers || []}
             pings={party.pings || []}

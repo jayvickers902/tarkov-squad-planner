@@ -16,6 +16,7 @@ import { useIntel } from '../useIntel'
 import { useIntelChecklist } from '../useIntelChecklist'
 import { useMapLayer } from '../useMapLayer'
 import { useMapZones } from '../useMapZones'
+import { useKeys } from '../useTarkov'
 import {
   FACTION_STYLE, HAZARD_STYLE, switchForExtract, extractsFor, countFactions,
   lootPointsFor, outlineToLatLngs, centroid,
@@ -403,7 +404,7 @@ function pingCompanionCards(target, cards) {
 }
 
 export default function MapLeaflet({
-  mapNorm, mapName,
+  mapNorm, mapName, gameMode = 'regular',
   drawings = [], markers = [], pings = [], extracts = [],
   pingLog,              // party.ping_log — raw on purpose: undefined means the
                         // Phase 8 column is not applied, [] means no pings yet
@@ -470,6 +471,10 @@ export default function MapLeaflet({
   const [showBtr, setShowBtr] = useState(false)
   const [showHazards, setShowHazards] = useState(false)
   const [showLoot, setShowLoot] = useState(false)
+  // The upstream dataset includes hundreds of ordinary locked doors, trunks,
+  // and containers. Keep them available as reference without covering the map
+  // until the reader explicitly asks for them.
+  const [showKeyLocks, setShowKeyLocks] = useState(false)
   const [exitFaction, setExitFaction] = useState('all')
   const [lootItemId, setLootItemId] = useState('')
   const [layersOpen, setLayersOpen] = useState(false)
@@ -503,6 +508,7 @@ export default function MapLeaflet({
   }
 
   const { mapKeys } = useMapKeys(mapNorm)
+  const { allKeys } = useKeys(mapNorm, gameMode)
   const { intelPoints } = useIntel(mapNorm)
   const { lootRows } = useMapLoot(mapNorm)
   const {
@@ -561,6 +567,17 @@ export default function MapLeaflet({
     counts[kind] += 1
     return counts
   }, { minefield: 0, sniper: 0, other: 0 }), [hazards])
+  const keysById = useMemo(
+    () => new Map(allKeys.filter(key => key?.id && key?.name).map(key => [key.id, key])),
+    [allKeys],
+  )
+  const namedLocks = useMemo(
+    () => locks.flatMap(lock => {
+      const keyItem = keysById.get(lock?.key)
+      return keyItem && lock?.position ? [{ ...lock, keyItem }] : []
+    }),
+    [keysById, locks],
+  )
   const sortedLootItems = useMemo(
     () => [...lootItems].sort((a, b) => Number(b.value || 0) - Number(a.value || 0)),
     [lootItems],
@@ -938,31 +955,30 @@ export default function MapLeaflet({
       const latlng = normToLatlng([v.loc_x, v.loc_y], bounds)
       const km = L.marker(latlng, { icon: makeKeyIcon(v.priority), interactive: true, zIndexOffset: 100 })
       bindTacticalTooltip(km, `<div style="min-width:150px">
-        <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em">🔑 ${escapeHtml(keyName)}</div>
-        <div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;color:#9aaa98;font-size:10px">SOURCE: CURATED MAP KEY${v.priority ? ' · PRIORITY' : ''}</div>
+        <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em">${escapeHtml(keyName)}</div>
+        ${v.priority ? '<div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;color:#9aaa98;font-size:10px">PRIORITY KEY</div>' : ''}
       </div>`, { offset: [0, -10] })
       return km
     })
-    const upstream = locks.map(lock => {
-      if (!lock?.position) return null
+    const upstream = showKeyLocks ? namedLocks.map(lock => {
+      const elevation = elevationLine(lock.position, mapNorm)
       const km = L.marker(L.latLng(lock.position.z, lock.position.x), {
         icon: makeKeyIcon(false),
         interactive: true,
         zIndexOffset: 80,
       })
       bindTacticalTooltip(km, `<div style="min-width:165px">
-        <div style="color:#6a9aaa;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em">🔑 UPSTREAM LOCK</div>
+        <div style="color:#6a9aaa;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.08em">KEY REQUIRED</div>
+        <div style="color:#d8ded8;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:14px;line-height:1.25;margin-top:3px">${escapeHtml(lock.keyItem.name)}</div>
         <div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;display:flex;flex-direction:column;gap:3px;color:#9aaa98;font-size:10px">
-          <div>TYPE: ${escapeHtml(lock.lockType || 'unknown').toUpperCase()}</div>
-          <div>NEEDS POWER: ${lock.needsPower ? 'YES' : 'NO'}</div>
-          <div>KEY ID: ${escapeHtml(lock.key || 'unknown')}</div>
-          <div style="color:#5c6b61">SOURCE: UPSTREAM MAP LOCK</div>
+          <div>${escapeHtml(lock.lockType || 'lock').toUpperCase()}${lock.needsPower ? ' · POWER REQUIRED' : ''}</div>
+          ${elevation ? `<div>${escapeHtml(elevation)}</div>` : ''}
         </div>
       </div>`, { offset: [0, -10] })
       return km
-    })
+    }) : []
     return [...curated, ...upstream]
-  }, [mapKeys, locks, mapNorm])
+  }, [mapKeys, mapNorm, namedLocks, showKeyLocks])
 
   // ─── Map reference layers ─────────────────────────────────────────────────
   // Vector geometry lives in zonesPane (410): below rings (420) and drawings
@@ -1638,6 +1654,7 @@ export default function MapLeaflet({
     setShowBtr(false)
     setShowHazards(false)
     setShowLoot(false)
+    setShowKeyLocks(false)
     setExitFaction('all')
     setLootItemId('')
     setLayersOpen(false)
@@ -1910,6 +1927,13 @@ export default function MapLeaflet({
                   checked={showHazards}
                   onChange={() => setShowHazards(v => !v)}
                   disabled={hazards.length === 0}
+                />
+                <LayerToggleRow
+                  label="KEY LOCKS"
+                  count={namedLocks.length}
+                  checked={showKeyLocks}
+                  onChange={() => setShowKeyLocks(v => !v)}
+                  disabled={namedLocks.length === 0}
                 />
                 <LayerToggleRow
                   label={`◈ LOOT${lootLoading ? ' · LOADING' : ''}`}
