@@ -347,6 +347,8 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
           myName={myName}
           tasks={allTasks}
           gameMode={gameMode}
+          onlineMemberIds={onlineMemberIds}
+          presenceReady={presenceReady}
           onClose={() => {
             if (startRaidPending) {
               const ts = Date.now()

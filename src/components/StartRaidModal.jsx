@@ -1,20 +1,23 @@
-import { useState, useEffect, useMemo } from 'react'
-import { useBossSpawns, useKeys } from '../useTarkov'
-import { getRestGoonReports } from '../tarkovRest'
-import { RED_REBEL_MAPS } from '../constants'
-import { useIntel } from '../useIntel'
-import { useMapLoot } from '../useMapLoot'
-import { useIntelChecklist } from '../useIntelChecklist'
-import { curatedLootPoints, mergeIntelSources, countByKind, INTEL_KINDS, bestCluster, RING_RADII_M } from '../tarkovIntel'
+import { useEffect, useMemo, useState } from 'react'
+import { useBossSpawns, useExtracts, useKeys } from '../useTarkov'
 import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
-import BossCard from './BossCard'
+import { memberColor } from '../memberColors'
 import useDialogFocus from '../useDialogFocus'
+
+const EXTRACT_STYLES = {
+  GEAR: { color: '#e8c96a', border: 'rgba(201,168,76,.42)', background: 'rgba(201,168,76,.1)', rail: '#c9a84c' },
+  PAID: { color: '#e8c96a', border: 'rgba(201,168,76,.42)', background: 'rgba(201,168,76,.1)', rail: '#c9a84c' },
+  POWER: { color: '#7ec2f4', border: 'rgba(126,194,244,.4)', background: 'rgba(126,194,244,.1)', rail: '#4b8fb8' },
+  'CO-OP': { color: '#cd86f2', border: 'rgba(205,134,242,.4)', background: 'rgba(205,134,242,.1)', rail: '#6a2a90' },
+  TIMED: { color: '#d69b5a', border: 'rgba(214,155,90,.4)', background: 'rgba(214,155,90,.1)', rail: '#b6603c' },
+}
+
+const ACTION_COLORS = { BRING: '#4b8fb8', KEY: '#c9a84c', FIND: '#e85a5a' }
 
 function getTarkovTimes() {
   const utcSecs = Date.now() / 1000
   const tarkovSecs = (utcSecs * 7) % 86400
-  const rightSecs  = (tarkovSecs + 43200) % 86400
-  return { left: tarkovSecs, right: rightSecs }
+  return { left: tarkovSecs, right: (tarkovSecs + 43200) % 86400 }
 }
 
 function toHHMM(secs) {
@@ -28,353 +31,385 @@ function isDaytime(secs) {
   return h >= 6 && h < 21
 }
 
-function formatGoonAge(timestamp) {
-  const ageMs = Date.now() - Number(timestamp)
-  if (!Number.isFinite(ageMs)) return null
-  const ageMinutes = Math.max(0, Math.floor(ageMs / 60000))
-  if (ageMinutes < 1) return 'LESS THAN 1 MIN AGO'
-  if (ageMinutes < 60) return `${ageMinutes} MIN AGO`
-  const ageHours = Math.floor(ageMinutes / 60)
-  if (ageHours < 24) return `${ageHours} H AGO`
-  return `${Math.floor(ageHours / 24)} D AGO`
+function percentage(value) {
+  const pct = Math.round(Number(value) * 100)
+  return Number.isFinite(pct) && pct > 0 ? pct : null
 }
 
-function BossColumn({ label, bosses }) {
+function upper(value) {
+  return String(value || '').toUpperCase()
+}
+
+function packedStorageKey(party, mapNorm) {
+  const partyKey = party?.id || party?.code || party?.party_code || 'local'
+  return `tsp.raid-prep.${partyKey}.${mapNorm || 'unknown'}`
+}
+
+function readPacked(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || '{}')
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  } catch {
+    return {}
+  }
+}
+
+function classifyExtract(extract) {
+  const normalized = String(extract?.name || '').toLowerCase()
+  const hasSwitch = Array.isArray(extract?.switchIds) && extract.switchIds.length > 0
+  if (/co[ -]?op|scav lands|scav camp|friendship bridge|side tunnel|pinewood basement/.test(normalized)) {
+    return { tag: 'CO-OP', requirement: 'Needs a friendly player scav to extract — coordinate first', note: 'FREE · NO GEAR' }
+  }
+  if (/v-ex|taxi/.test(normalized)) {
+    return { tag: 'PAID', requirement: 'Vehicle extract — bring roubles for the squad toll', note: 'LIMITED SEATS · MAY DEPART' }
+  }
+  if (/flare/.test(normalized)) {
+    return { tag: 'GEAR', requirement: 'Requires a green flare fired from the signal area', note: 'WAIT FOR THE SIGNAL PROMPT' }
+  }
+  if (/cliff descent|climber's trail|mountain pass/.test(normalized)) {
+    return { tag: 'GEAR', requirement: 'Red Rebel ice pick + paracord in container', note: 'CHECK ARMOUR RESTRICTIONS' }
+  }
+  if (/sewer manhole|hole in the fence|ventilation shaft/.test(normalized)) {
+    return { tag: 'GEAR', requirement: 'Loadout restriction applies — drop your backpack before extracting', note: 'NO BACKPACK' }
+  }
+  if (/armored train/.test(normalized)) {
+    return { tag: 'TIMED', requirement: 'Train arrives and departs during a limited raid window', note: 'LISTEN FOR THE ARRIVAL HORN' }
+  }
+  if (/old gas station|smugglers' boat|pier boat|courtyard$/.test(normalized)) {
+    return { tag: 'TIMED', requirement: 'Only available in some raids — confirm the visual signal', note: 'CHECK ON LOAD-IN' }
+  }
+  if (hasSwitch) {
+    return { tag: 'POWER', requirement: 'Requires a map switch or power control to be activated', note: 'ACTIVATE BEFORE EXTRACT' }
+  }
+  return null
+}
+
+function SectionHeading({ id, number, title, hint, meta }) {
   return (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      {label && <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', letterSpacing: '.08em', marginBottom: 4 }}>{label}</div>}
-      {!bosses.length ? (
-        <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>NO BOSSES{label ? '' : ' ON THIS MAP'}</div>
-      ) : (
-        bosses.map((boss, index) => <BossCard key={`${boss.normalizedName || boss.name}-${index}`} boss={boss} compact />)
-      )}
+    <div className="start-raid-section-heading">
+      <span className="start-raid-section-number">{number}</span>
+      <h2 id={id}>{title}</h2>
+      {hint ? <span className="mono start-raid-section-hint">{hint}</span> : null}
+      {meta ? <span className="mono start-raid-section-meta">{meta}</span> : null}
     </div>
   )
 }
 
-export default function StartRaidModal({ party, myUserId, tasks, gameMode, onClose, onCancel = onClose }) {
+function RaidClock({ seconds }) {
+  const day = isDaytime(seconds)
+  return (
+    <div className={`start-raid-clock ${day ? 'is-day' : 'is-night'}`}>
+      <span className="mono start-raid-clock-time">{toHHMM(seconds)}</span>
+      <span className="mono start-raid-clock-phase" aria-label={day ? 'Daytime' : 'Nighttime'}>
+        <span aria-hidden="true">{day ? '☀' : '☽'}</span> {day ? 'DAY' : 'NIGHT'}
+      </span>
+    </div>
+  )
+}
+
+function PrepItem({ item, checked, memberNames, onToggle }) {
+  return (
+    <button
+      type="button"
+      className={`start-raid-prep-row ${checked ? 'is-checked' : ''}`}
+      style={{ '--prep-rail': ACTION_COLORS[item.action] || ACTION_COLORS.BRING }}
+      role="checkbox"
+      aria-checked={checked}
+      onClick={onToggle}
+    >
+      <span className="start-raid-checkbox" aria-hidden="true">{checked ? '✓' : ''}</span>
+      {item.iconLink ? (
+        <img className="start-raid-item-icon" src={item.iconLink} alt="" width="30" height="30" />
+      ) : (
+        <span className="mono start-raid-item-icon start-raid-item-fallback" aria-hidden="true">
+          {upper(item.name).replace(/[^A-Z0-9]/g, '').slice(0, 3) || '—'}
+        </span>
+      )}
+      <span className={`mono start-raid-item-action action-${item.action.toLowerCase()}`}>{item.action}</span>
+      <span className="mono start-raid-item-count">{item.count}×</span>
+      <span className="start-raid-item-copy">
+        <span className="start-raid-item-name">{item.name}</span>
+        <span className="mono start-raid-item-quests" title={item.quests.join(' · ')}>{item.quests.join(' · ')}</span>
+      </span>
+      {item.foundInRaid ? <span className="mono start-raid-fir">FIR</span> : null}
+      <span className="start-raid-owners">
+        {item.owners.map(owner => {
+          const palette = memberColor(owner.callsign, memberNames)
+          return (
+            <span
+              key={owner.user_id}
+              className="mono start-raid-owner-chip"
+              style={{ '--owner-bg': palette.bg, '--owner-border': palette.border, '--owner-text': palette.text }}
+            >
+              {upper(owner.callsign || 'MEMBER')}
+            </span>
+          )
+        })}
+      </span>
+    </button>
+  )
+}
+
+function ExtractCard({ extract }) {
+  const style = EXTRACT_STYLES[extract.tag]
+  return (
+    <article className="start-raid-extract-card" style={{ '--extract-rail': style.rail }}>
+      <div className="start-raid-extract-title-row">
+        <h3 title={extract.name}>{extract.name}</h3>
+        <span className="mono start-raid-extract-tag" style={{ color: style.color, borderColor: style.border, background: style.background }}>{extract.tag}</span>
+      </div>
+      <p>{extract.requirement}</p>
+      <span className="mono start-raid-extract-note">{extract.note}</span>
+    </article>
+  )
+}
+
+function BriefBoss({ boss }) {
+  const name = boss.name || 'UNKNOWN BOSS'
+  const pct = percentage(boss.spawnChance)
+  const locations = (Array.isArray(boss.spawnLocations) ? boss.spawnLocations : [])
+    .map(location => ({ name: location?.name, pct: percentage(location?.chance) }))
+    .filter(location => location.name && location.pct != null)
+    .slice(0, 3)
+  const escorts = (Array.isArray(boss.escorts) ? boss.escorts : [])
+    .filter(escort => escort?.name && Number(escort.count) > 0)
+    .slice(0, 2)
+  const armorClass = Number(boss.armorClass)
+  const penFloor = { 2: 20, 3: 25, 4: 30, 5: 35, 6: 45 }[armorClass]
+  const totalHealth = Number(boss.health?.total)
+  const headHealth = Number(boss.health?.head)
+  const drops = (Array.isArray(boss.drops) ? boss.drops : []).filter(drop => drop?.name).slice(0, 6)
+  const barColor = pct != null && pct >= 30 ? '#e8c96a' : pct != null && pct >= 15 ? '#d69b5a' : '#9c6fb8'
+
+  return (
+    <article className="start-raid-boss">
+      <div className="start-raid-boss-title-row">
+        {boss.portrait ? (
+          <img src={boss.portrait} alt="" width="30" height="30" className="start-raid-boss-portrait" />
+        ) : (
+          <span className="mono start-raid-boss-portrait start-raid-boss-fallback" aria-hidden="true">{upper(name).slice(0, 3)}</span>
+        )}
+        <h3>{name}</h3>
+        <span className="mono start-raid-boss-chance" style={{ color: barColor }}>{pct == null ? '—' : `${pct}%`}</span>
+      </div>
+      {pct != null ? <div className="start-raid-boss-bar" aria-label={`${pct}% spawn chance`}><span style={{ width: `${pct}%`, background: barColor }} /></div> : null}
+      {locations.map(location => <span key={location.name} className="mono start-raid-boss-location">{upper(location.name)} {location.pct}%</span>)}
+      {escorts.length ? <span className="mono start-raid-boss-guards">{escorts.map(escort => `+${Math.round(Number(escort.count))} ${upper(escort.name)}`).join(' · ')}</span> : null}
+      {penFloor ? <span className="mono start-raid-boss-counter">CLASS {armorClass} ARMOUR — BRING PEN {penFloor}+</span> : null}
+      {(totalHealth > 0 || headHealth > 0) ? (
+        <span className="mono start-raid-boss-health">{totalHealth > 0 ? `${totalHealth} HP` : null}{totalHealth > 0 && headHealth > 0 ? ' · ' : null}{headHealth > 0 ? `${headHealth} HEAD` : null}</span>
+      ) : null}
+      {drops.length ? (
+        <details className="start-raid-boss-drops">
+          <summary className="mono">▸ TOP DROPS ({drops.length})</summary>
+          <div>
+            {drops.map((drop, index) => (
+              <span key={drop.id || `${drop.name}-${index}`}>
+                {drop.iconLink ? <img src={drop.iconLink} alt="" width="22" height="22" /> : null}
+                <span>{drop.name}</span>
+                {Number.isFinite(Number(drop.prevalence)) ? <b className="mono">{Math.round(Number(drop.prevalence))}%</b> : null}
+              </span>
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </article>
+  )
+}
+
+export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlineMemberIds = [], presenceReady = false, onClose, onCancel = onClose }) {
   const dialogRef = useDialogFocus(true, onCancel)
   const [times, setTimes] = useState(getTarkovTimes)
-  const [goonReports, setGoonReports] = useState([])
+  const mapNorm = party.map_norm
+  const storageKey = packedStorageKey(party, mapNorm)
+  const [packed, setPacked] = useState(() => readPacked(storageKey))
   const { getBossesForMap, loading: bossLoading } = useBossSpawns(gameMode)
+  const { extracts, loading: extractsLoading } = useExtracts(mapNorm, gameMode)
+  const { allKeys } = useKeys(mapNorm, gameMode)
 
   useEffect(() => {
     const id = setInterval(() => setTimes(getTarkovTimes()), 1000)
     return () => clearInterval(id)
   }, [])
 
-  const mapNorm = party.map_norm
-
   useEffect(() => {
-    let active = true
-    const controller = new AbortController()
-    getRestGoonReports(controller.signal, gameMode)
-      .then(result => {
-        if (!active || result?.fromCache !== false || !Array.isArray(result?.data)) return
-        setGoonReports(result.data)
-      })
-      .catch(error => {
-        if (active && error?.name !== 'AbortError') console.warn('live Goons report unavailable', error)
-      })
-    return () => {
-      active = false
-      controller.abort()
-    }
-  }, [])
-
-  const mapName = party.map_name
-  const isFactory = mapNorm === 'factory'
-  const { allKeys } = useKeys(mapNorm, gameMode)
-  const keyIconMap = useMemo(() => Object.fromEntries(allKeys.map(k => [k.id, k.iconLink || null])), [allKeys])
-  const dayBosses   = mapNorm ? getBossesForMap(isFactory ? 'factory' : mapNorm) : []
-  const nightBosses = isFactory ? getBossesForMap('night-factory') : []
-  const bosses = isFactory ? [...dayBosses, ...nightBosses] : dayBosses
-  const goonReport = goonReports
-    .filter(report => report?.normalizedName === mapNorm && Number.isFinite(Number(report.timestamp)))
-    .sort((a, b) => Number(b.timestamp) - Number(a.timestamp))[0]
-  const goonAge = goonReport ? formatGoonAge(goonReport.timestamp) : null
-
-  // Pre-raid intel brief — "6 document spawns on Customs", known before you load
-  // in, which is the one moment the count is actually actionable.
-  const { intelPoints } = useIntel(mapNorm)
-  const { lootRows } = useMapLoot(mapNorm)
-  const { foundToday } = useIntelChecklist(mapNorm, party.progress?.['__raid_start__'] ?? null)
-  const allIntel = useMemo(
-    () => mergeIntelSources(intelPoints, curatedLootPoints(lootRows, mapNorm)),
-    [intelPoints, lootRows, mapNorm],
-  )
-  const intelCounts = useMemo(() => countByKind(allIntel), [allIntel])
-  const intelTotal = intelCounts.folder + intelCounts.case + intelCounts.document + intelCounts.battlepass
-  // The pre-raid half of the planning rings: the tightest group on this map,
-  // quoted at the same radius the map's default ring uses so the number the
-  // brief gives is the number the gold ring will show.
-  const intelCluster = useMemo(
-    () => (intelTotal > 1 ? bestCluster(allIntel, RING_RADII_M[0]) : null),
-    [allIntel, intelTotal],
-  )
+    try { localStorage.setItem(storageKey, JSON.stringify(packed)) } catch { /* Storage may be unavailable. */ }
+  }, [packed, storageKey])
 
   const memberRows = useMemo(() => normalizeMembers(party.members), [party.members])
+  const memberNames = useMemo(() => memberRows.map(member => member.callsign), [memberRows])
   const taskById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks])
+  const keyIconMap = useMemo(() => Object.fromEntries(allKeys.map(key => [key.id, key.iconLink || null])), [allKeys])
 
   const squadPrep = useMemo(() => memberRows.map(member => {
     const progress = party.progress || {}
-    const itemMap = {}
+    const items = new Map()
     const seenQuests = new Set()
     const mapQuests = member.quests
-      .filter(q => seenQuests.has(q.id) ? false : (seenQuests.add(q.id), true))
-      .filter(q => !progress[`__done__:${q.id}::${member.user_id}`])
-      .map(q => taskById.get(q.id))
+      .filter(quest => seenQuests.has(quest.id) ? false : (seenQuests.add(quest.id), true))
+      .filter(quest => !progress[`__done__:${quest.id}::${member.user_id}`])
+      .map(quest => taskById.get(quest.id))
       .filter(task => task && task.map?.normalizedName === mapNorm)
 
-    member.quests.forEach(q => {
-      const task = taskById.get(q.id)
+    member.quests.forEach(quest => {
+      const task = taskById.get(quest.id)
       if (!task) return
-      task.objectives?.forEach(obj => {
-        if (obj.optional) return
-        if (progress[objectiveProgressKey(task.id, obj.id, member.user_id)]) return
-        const isPlant = obj.type === 'plantItem' && obj.item
-        const isMark  = obj.type === 'mark' && obj.markerItem
-        const isFind = obj.type === 'findItem' && obj.item
-        const onMap = obj.maps?.length > 0
-          ? obj.maps.some(m => m.normalizedName === mapNorm)
+      task.objectives?.forEach(objective => {
+        if (objective.optional || progress[objectiveProgressKey(task.id, objective.id, member.user_id)]) return
+        const onMap = objective.maps?.length > 0
+          ? objective.maps.some(map => map.normalizedName === mapNorm)
           : task.map?.normalizedName === mapNorm
         if (!onMap) return
+
+        const isPlant = objective.type === 'plantItem' && objective.item
+        const isMark = objective.type === 'mark' && objective.markerItem
+        const isFind = objective.type === 'findItem' && objective.item
         if (isPlant || isMark || isFind) {
-          const item = isMark ? obj.markerItem : obj.item
-          const count = isMark ? 1 : (obj.count || 1)
-          const key = `${item.id}::${isFind ? 'find' : 'bring'}`
-          if (itemMap[key]) {
-            itemMap[key].count += count
+          const item = isMark ? objective.markerItem : objective.item
+          const action = isFind ? 'FIND' : 'BRING'
+          const key = `${item.id}:${action}`
+          const current = items.get(key)
+          if (current) {
+            current.count += isMark ? 1 : (objective.count || 1)
+            current.quests.add(task.name)
           } else {
-            itemMap[key] = {
-              name: item.name,
-              iconLink: item.iconLink || null,
-              count,
-              isKey: false,
-              action: isFind ? 'FIND' : 'BRING',
-              foundInRaid: Boolean(isFind && obj.foundInRaid),
-            }
+            items.set(key, { key, name: item.name, iconLink: item.iconLink || null, count: isMark ? 1 : (objective.count || 1), action, foundInRaid: Boolean(isFind && objective.foundInRaid), quests: new Set([task.name]) })
           }
         }
-        // Keys required to access/complete objectives on this map
-        // requiredKeys is [[Item]] — each inner array is a set of alternatives for one lock
-        if (obj.requiredKeys?.length) {
-          obj.requiredKeys.forEach(alternatives => {
-            if (!alternatives?.length) return
-            alternatives.forEach(keyItem => {
-              if (!keyItem?.id) return
-              const rk = `rk::${keyItem.id}`
-              if (!itemMap[rk]) {
-                itemMap[rk] = {
-                  name: keyItem.name,
-                  iconLink: keyItem.iconLink || keyIconMap[keyItem.id] || null,
-                  count: 1,
-                  isKey: true,
-                  questName: task.name,
-                  action: 'KEY',
-                  foundInRaid: false,
-                }
-              }
-            })
-          })
-        }
+
+        objective.requiredKeys?.forEach(alternatives => alternatives?.forEach(keyItem => {
+          if (!keyItem?.id) return
+          const key = `${keyItem.id}:KEY`
+          const current = items.get(key)
+          if (current) current.quests.add(task.name)
+          else items.set(key, { key, name: keyItem.name, iconLink: keyItem.iconLink || keyIconMap[keyItem.id] || null, count: 1, action: 'KEY', foundInRaid: false, quests: new Set([task.name]) })
+        }))
       })
     })
-    return { ...member, mapQuests, items: Object.values(itemMap) }
-  }), [memberRows, party.progress, taskById, mapNorm, keyIconMap])
+    return { ...member, mapQuests, items: [...items.values()] }
+  }), [keyIconMap, mapNorm, memberRows, party.progress, taskById])
 
-  const hasCliffDescent = RED_REBEL_MAPS.has(mapNorm)
-  const leftDay  = isDaytime(times.left)
-  const rightDay = isDaytime(times.right)
+  const prepItems = useMemo(() => {
+    const items = new Map()
+    squadPrep.forEach(member => member.items.forEach(item => {
+      const current = items.get(item.key)
+      if (current) {
+        current.count += item.count
+        current.owners.push({ user_id: member.user_id, callsign: member.callsign })
+        item.quests.forEach(quest => current.quests.add(quest))
+        current.foundInRaid ||= item.foundInRaid
+      } else {
+        items.set(item.key, { ...item, owners: [{ user_id: member.user_id, callsign: member.callsign }], quests: new Set(item.quests) })
+      }
+    }))
+    return [...items.values()].map(item => ({ ...item, quests: [...item.quests] }))
+  }, [squadPrep])
+
+  const checkedCount = prepItems.reduce((count, item) => count + (packed[item.key] ? 1 : 0), 0)
+  const itemsLeft = prepItems.length - checkedCount
+  const prepPct = prepItems.length ? Math.round((checkedCount / prepItems.length) * 100) : 100
+  const questCount = squadPrep.reduce((count, member) => count + member.mapQuests.length, 0)
+  const raidExtracts = useMemo(() => extracts.filter(extract => extract.faction !== 'scav'), [extracts])
+  const conditionalExtracts = useMemo(() => raidExtracts.map(extract => ({ ...extract, ...classifyExtract(extract) })).filter(extract => extract.tag), [raidExtracts])
+  const isFactory = mapNorm === 'factory'
+  const dayBosses = mapNorm ? getBossesForMap(mapNorm) : []
+  const nightBosses = isFactory ? getBossesForMap('night-factory') : []
+  const bosses = isFactory ? [...dayBosses, ...nightBosses] : dayBosses
+
+  function togglePacked(itemKey) {
+    setPacked(current => ({ ...current, [itemKey]: !current[itemKey] }))
+  }
 
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0,0,0,0.78)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 16,
-      }}
-      onClick={e => { if (e.target === e.currentTarget) onCancel() }}
-    >
-      <div
-        ref={dialogRef}
-        className="card fade-in"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="start-raid-title"
-        aria-describedby="start-raid-description"
-        tabIndex={-1}
-        style={{
-        width: '100%', maxWidth: 480,
-        maxHeight: '90vh', overflow: 'auto',
-        display: 'flex', flexDirection: 'column',
-        padding: 0,
-        }}
-      >
-
-        {/* Header */}
-        <div style={{ position: 'relative', height: 76, overflow: 'hidden', flexShrink: 0, borderRadius: '4px 4px 0 0' }}>
-          <img
-            src="/splash.jpg" alt=""
-            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 30%', display: 'block' }}
-          />
-          <div style={{
-            position: 'absolute', inset: 0,
-            background: `
-              linear-gradient(to right,  #0c0e0d 0%, transparent 35%, transparent 65%, #0c0e0d 100%),
-              linear-gradient(to bottom, #0c0e0d 0%, transparent 30%, transparent 60%, #0c0e0d 100%)
-            `,
-          }} />
-          <div style={{
-            position: 'absolute', inset: 0,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
-          }}>
-            <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', letterSpacing: '.18em', textShadow: '0 0 4px #000, 0 1px 3px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>◆ INSERTING INTO</div>
-            <div id="start-raid-title" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '.12em', lineHeight: 1, color: 'var(--goldtx)', textShadow: '0 0 4px #000, 0 1px 4px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>
-              {(mapName || 'UNKNOWN').toUpperCase()}
+    <div className="start-raid-overlay" onMouseDown={event => { if (event.target === event.currentTarget) onCancel() }}>
+      <div ref={dialogRef} className="start-raid-dialog fade-in" role="dialog" aria-modal="true" aria-labelledby="sr-title" aria-describedby="sr-summary" tabIndex={-1}>
+        <header className="start-raid-banner" style={{ backgroundImage: `url('/map-banners/reference/${mapNorm}.webp')` }}>
+          <div className="start-raid-banner-scrim" aria-hidden="true" />
+          <div className="start-raid-banner-content">
+            <div className="start-raid-banner-identity">
+              <span className="start-raid-banner-rail" aria-hidden="true" />
+              <div>
+                <span className="mono start-raid-eyebrow"><span aria-hidden="true">◆</span> INSERTING INTO</span>
+                <h1 id="sr-title">{upper(party.map_name || 'Unknown')}</h1>
+                <p id="sr-summary" className="mono">{memberRows.length} OPERATOR{memberRows.length === 1 ? '' : 'S'} · {questCount} QUEST{questCount === 1 ? '' : 'S'} ON MAP · {upper(gameMode || 'regular')}</p>
+              </div>
             </div>
-            <div id="start-raid-description" className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', letterSpacing: '.14em', textShadow: '0 0 4px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000' }}>REVIEW YOUR RAID BRIEF</div>
+            <div className="start-raid-banner-actions">
+              <RaidClock seconds={times.left} />
+              <RaidClock seconds={times.right} />
+              <button type="button" className="start-raid-close" aria-label="Close raid brief" onClick={onCancel}>×</button>
+            </div>
           </div>
+        </header>
+
+        <div className="start-raid-readiness" aria-label={`${checkedCount} of ${prepItems.length} items packed`}>
+          <span className="mono">PREP CHECK</span>
+          <div className="start-raid-readiness-track" aria-hidden="true"><span style={{ width: `${prepPct}%` }} /></div>
+          <strong className="mono">{checkedCount} / {prepItems.length} ITEMS PACKED</strong>
         </div>
 
-        {/* Body */}
-        <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <p className="start-raid-context-note">
-            Start Raid gives this pre-raid brief — boss odds, extracts, keys, and in-game time; Raid View is the in-raid layout with the objective rail and live squad pings.
-          </p>
+        <div className="start-raid-body">
+          <main className="start-raid-main">
+            <section aria-labelledby="raid-prep-items-title">
+              <SectionHeading id="raid-prep-items-title" number="1" title="QUEST ITEMS TO BRING" hint="TICK IT OFF IN YOUR STASH" meta={`${itemsLeft} STILL TO PACK`} />
+              {prepItems.length ? (
+                <div className="start-raid-prep-list">
+                  {prepItems.map(item => <PrepItem key={item.key} item={item} checked={Boolean(packed[item.key])} memberNames={memberNames} onToggle={() => togglePacked(item.key)} />)}
+                </div>
+              ) : <div className="mono start-raid-empty">NO QUEST ITEMS OR KEYS NEEDED ON THIS MAP</div>}
+            </section>
 
-          {/* Squad prep comes first: this is the information players can act on before loading in. */}
-          <section aria-labelledby="squad-prep-title">
-            <div id="squad-prep-title" className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 7 }}>◆ SQUAD RAID PREP</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {squadPrep.map(member => {
-                const isMe = member.user_id === myUserId
-                return (
-                  <div key={member.user_id} style={{ padding: '8px 9px', background: 'var(--sur2)', border: '1px solid var(--brd)', borderLeft: `3px solid ${isMe ? 'var(--gold)' : 'var(--brd)'}`, borderRadius: 3 }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: isMe ? 'var(--goldtx)' : 'var(--txm)', letterSpacing: '.06em' }}>
-                        {(member.callsign || 'SQUAD MEMBER').toUpperCase()}{isMe ? ' · YOU' : ''}
+            <section aria-labelledby="raid-prep-extracts-title">
+              <SectionHeading id="raid-prep-extracts-title" number="2" title="EXTRACTS THAT NEED SOMETHING" meta={`${raidExtracts.length} EXTRACTS · ${conditionalExtracts.length} CONDITIONAL`} />
+              {extractsLoading ? <div className="mono start-raid-empty">LOADING EXTRACTS…</div> : conditionalExtracts.length ? (
+                <div className="start-raid-extract-grid">{conditionalExtracts.map(extract => <ExtractCard key={extract.id} extract={extract} />)}</div>
+              ) : <div className="mono start-raid-empty">NO SPECIAL EXTRACT REQUIREMENTS FOUND</div>}
+            </section>
+          </main>
+
+          <aside className="start-raid-rail">
+            <section className="start-raid-rail-card" aria-labelledby="start-raid-squad-title">
+              <h2 id="start-raid-squad-title" className="mono start-raid-rail-label">SQUAD · {memberRows.length} OPERATORS</h2>
+              <div className="start-raid-squad-list">
+                {squadPrep.map(member => {
+                  const palette = memberColor(member.callsign, memberNames)
+                  const owned = prepItems.filter(item => item.owners.some(owner => owner.user_id === member.user_id))
+                  const left = owned.filter(item => !packed[item.key]).length
+                  const online = !presenceReady || onlineMemberIds.includes(member.user_id)
+                  return (
+                    <div className="start-raid-squad-row" key={member.user_id}>
+                      <span className="start-raid-squad-color" style={{ background: palette.text }} aria-hidden="true" />
+                      <span className="start-raid-squad-copy">
+                        <strong className={`mono ${member.user_id === myUserId ? 'is-me' : ''} ${online ? '' : 'is-offline'}`}>{upper(member.callsign || 'Squad member')}{member.user_id === myUserId ? ' · YOU' : ''}</strong>
+                        <span className="mono">{member.mapQuests.length} QUEST{member.mapQuests.length === 1 ? '' : 'S'} HERE</span>
                       </span>
-                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', flexShrink: 0 }}>
-                        {member.mapQuests.length} QUEST{member.mapQuests.length === 1 ? '' : 'S'}
-                      </span>
+                      <span className={`mono start-raid-squad-status ${left === 0 ? 'is-ready' : ''}`}>{left === 0 ? 'READY' : `${left} LEFT`}</span>
                     </div>
+                  )
+                })}
+              </div>
+            </section>
 
-                    {member.mapQuests.length > 0 ? (
-                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 5 }}>
-                        {member.mapQuests.map(task => (
-                          <span key={task.id} title={task.trader?.name || ''} style={{ fontSize: 'var(--fs-sm)', color: 'var(--tx)', lineHeight: 1.2 }}>
-                            {task.name}
-                          </span>
-                        )).reduce((nodes, node, index) => index ? [...nodes, <span key={`sep-${index}`} style={{ color: 'var(--txd)' }}>·</span>, node] : [node], [])}
-                      </div>
-                    ) : (
-                      <div className="mono" style={{ marginTop: 4, fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>NO ACTIVE QUESTS HERE</div>
-                    )}
-
-                    {member.items.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 7, paddingTop: 6, borderTop: '1px solid var(--brd)' }}>
-                        {member.items.map(item => (
-                          <div key={`${item.action}-${item.name}`} style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                            {item.iconLink && <img src={item.iconLink} alt="" style={{ width: 22, height: 22, objectFit: 'contain', flexShrink: 0, imageRendering: 'pixelated', background: 'var(--sur)', border: '1px solid var(--brd)', borderRadius: 2 }} />}
-                            <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: item.isKey ? 'var(--goldtx)' : 'var(--txm)', minWidth: 35 }}>{item.action}</span>
-                            <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--goldtx)', fontWeight: 700 }}>{item.count}×</span>
-                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'var(--fs-sm)', color: 'var(--tx)' }}>{item.name}</span>
-                            {item.foundInRaid && <span className="mono" style={{ marginLeft: 'auto', fontSize: 'var(--fs-xs)', color: '#e85a5a', flexShrink: 0 }}>FIR</span>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </section>
-
-          {/* Intel brief */}
-          {intelTotal > 0 && (
-            <div className="mono intel-brief">
-              <span style={{ color: 'var(--goldtx)', letterSpacing: '.1em' }}>▤ INTEL SPAWNS</span>
-              {intelCounts.folder > 0 && <span style={{ color: INTEL_KINDS.folder.color }}>{intelCounts.folder} FOLDER</span>}
-              {intelCounts.case > 0 && <span style={{ color: INTEL_KINDS.case.color }}>{intelCounts.case} CASE</span>}
-              {intelCounts.document > 0 && <span style={{ color: INTEL_KINDS.document.color }}>{intelCounts.document} DOCUMENT</span>}
-              {intelCounts.battlepass > 0 && <span style={{ color: INTEL_KINDS.battlepass.color }}>{intelCounts.battlepass} BATTLE PASS INTEL</span>}
-              <span style={{ color: 'var(--txd)' }}>— ENABLE THE INTEL LAYER ON THE MAP</span>
-              {intelCluster && intelCluster.count > 1 && <span style={{ color: 'var(--goldtx)' }}>· TIGHTEST GROUP {intelCluster.count} WITHIN {RING_RADII_M[0]} M — TURN ON ◎ RINGS TO SEE IT</span>}
-              {foundToday > 0 && <span style={{ color: 'var(--txd)', marginLeft: 'auto' }}>{foundToday} CHECKED TODAY</span>}
-            </div>
-          )}
-
-          {hasCliffDescent && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: 'rgba(201,168,76,0.06)', border: '1px solid var(--golddim)', borderRadius: 4 }}>
-              <span aria-hidden="true">⛏ 🪢</span>
-              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--goldtx)' }}>BRING RED REBEL + PARACORD FOR CLIFF DESCENT</span>
-            </div>
-          )}
-
-          {/* Clocks */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-              {[
-                { label: 'LEFT',  secs: times.left,  day: leftDay  },
-                { label: 'RIGHT', secs: times.right, day: rightDay },
-              ].map(({ label, secs, day }) => (
-                <div key={label} style={{
-                  background: 'var(--sur2)',
-                  border: `1px solid ${day ? 'var(--golddim)' : 'var(--brd2)'}`,
-                  borderRadius: 4, padding: '5px 8px',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-                }}>
-                  <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', letterSpacing: '.06em' }}>{label}</div>
-                  <div style={{
-                    fontFamily: 'Orbitron, Share Tech Mono, monospace',
-                    fontSize: 18, fontWeight: 700, letterSpacing: '.1em',
-                    color: day ? 'var(--goldtx)' : '#8ab0cc', lineHeight: 1,
-                  }}>
-                    {toHHMM(secs)}
-                  </div>
-                  <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: day ? 'var(--gold)' : '#5a7a8a' }}>
-                    {day ? '☀ DAY' : '☽ NIGHT'}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div>
-              <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', letterSpacing: '.1em', marginBottom: 5 }}>◆ BOSS SPAWNS</div>
-              {bossLoading ? (
-                <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>LOADING...</div>
-              ) : isFactory ? (
-                <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                  <BossColumn label="FACTORY (DAY)" bosses={dayBosses} />
-                  <BossColumn label="NIGHT FACTORY" bosses={nightBosses} />
-                </div>
-              ) : (
-                <BossColumn bosses={bosses} />
-              )}
-              {goonAge && (
-                <div className="mono" style={{ marginTop: 6, fontSize: 'var(--fs-xs)', color: '#d69b5a', lineHeight: 1.35 }}>
-                  ⚠ GOONS REPORTED HERE — {goonAge} · COMMUNITY REPORT
-                </div>
-              )}
-            </div>
-          </div>
-
+            <section className="start-raid-rail-card" aria-labelledby="start-raid-boss-title">
+              <div className="start-raid-boss-heading">
+                <span className="start-raid-section-number">3</span>
+                <h2 id="start-raid-boss-title">BOSS SPAWNS</h2>
+                <span className="mono">{bosses.length} BOSS{bosses.length === 1 ? '' : 'ES'} · LIVE ODDS</span>
+              </div>
+              {bossLoading ? <div className="mono start-raid-empty">LOADING BOSSES…</div> : null}
+              {!bossLoading && !bosses.length ? <div className="mono start-raid-empty">NO BOSSES ON THIS MAP</div> : null}
+              {!bossLoading && bosses.map((boss, index) => <BriefBoss key={`${boss.normalizedName || boss.name}-${index}`} boss={boss} />)}
+            </section>
+          </aside>
         </div>
 
-        {/* Footer */}
-        <div style={{ padding: '0 16px 14px', flexShrink: 0 }}>
-          <button
-            data-autofocus
-            className="btn-gold"
-            style={{ width: '100%', padding: '11px', fontSize: 15, letterSpacing: '.1em' }}
-            onClick={onClose}
-          >
-            OK — LET'S GO
-          </button>
-        </div>
-
+        <footer className="start-raid-footer">
+          <span className={`mono start-raid-footer-status ${itemsLeft === 0 ? 'is-ready' : ''}`} role="status">
+            {itemsLeft === 0 ? 'EVERYTHING PACKED — SQUAD IS READY' : `${itemsLeft} ITEM${itemsLeft === 1 ? '' : 'S'} NOT PACKED YET — YOU CAN STILL LOAD IN`}
+          </span>
+          <button type="button" className="start-raid-back" onClick={onCancel}>BACK</button>
+          <button type="button" data-autofocus className="start-raid-go" onClick={onClose}>OK — LET'S GO</button>
+        </footer>
       </div>
     </div>
   )
