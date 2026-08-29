@@ -7,6 +7,8 @@ const root = process.cwd()
 const partyClient = readFileSync(join(root, 'src', 'useParty.js'), 'utf8')
 const migration = readFileSync(join(root, 'supabase', '10_10_security_hardening.sql'), 'utf8')
 const raidSessionMigration = readFileSync(join(root, 'supabase', '10_15_raid_sessions.sql'), 'utf8')
+const userDataMigration = readFileSync(join(root, 'supabase', '10_24_user_data_hardening.sql'), 'utf8')
+const profileScopeMigration = readFileSync(join(root, 'supabase', '10_25_profiles_column_scope.sql'), 'utf8')
 const css = readFileSync(join(root, 'src', 'index.css'), 'utf8')
 
 describe('security-sensitive contracts', () => {
@@ -27,6 +29,26 @@ describe('security-sensitive contracts', () => {
     expect(migration).toContain('Accepting replacement')
     expect(partyClient).not.toContain('p_markers:')
     expect(partyClient).not.toContain('p_drawings:')
+  })
+
+  it('bounds user quest storage and scopes profile administration data', () => {
+    for (const bound of [
+      'octet_length(quest_id) <= 128',
+      'octet_length(quest_name) <= 256',
+      'map_norm is null or octet_length(map_norm) <= 64',
+      'octet_length(obj_progress::text) <= 16384',
+    ]) {
+      expect(userDataMigration).toContain(bound)
+    }
+    expect(userDataMigration).toContain('referencing new table as inserted')
+    expect(userDataMigration).toContain('for each statement')
+    expect(userDataMigration).toContain('select distinct user_id from inserted')
+    expect(userDataMigration).toContain('revoke update on table public.party_members from anon')
+    expect(userDataMigration).toMatch(/create function public\.current_profile\(\)[\s\S]*security definer[\s\S]*set search_path = public, pg_temp/)
+    expect(userDataMigration).toContain('revoke all on function public.current_profile() from public, anon')
+    expect(userDataMigration).not.toMatch(/grant execute on function public\.current_profile\(\) to anon/)
+    expect(profileScopeMigration).toContain('revoke select on table public.profiles from anon, authenticated')
+    expect(profileScopeMigration).toContain('grant select (id, callsign) on table public.profiles to authenticated')
   })
 
   // A map the picker offers but the RPC refuses reads as a broken app, not as an

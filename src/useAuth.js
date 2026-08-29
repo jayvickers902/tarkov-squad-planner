@@ -22,12 +22,8 @@ export function useAuth() {
   useEffect(() => {
     let cancelled = false
 
-    async function fetchProfile(userId) {
-      const { data, error: profileErr } = await supabase
-        .from('profiles')
-        .select('id, callsign, is_admin')
-        .eq('id', userId)
-        .maybeSingle()
+    async function fetchProfile() {
+      const { data, error: profileErr } = await supabase.rpc('current_profile')
       if (cancelled) return
       if (profileErr) {
         setProfile(null)
@@ -36,14 +32,15 @@ export function useAuth() {
         return
       }
       setProfileError('')
-      setProfile(data || null)
+      const currentProfile = Array.isArray(data) ? data[0] || null : data || null
+      setProfile(currentProfile)
       setLoading(false)
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (cancelled) return
       setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
+      if (session?.user) fetchProfile()
       else {
         setProfile(null)
         setProfileError('')
@@ -55,7 +52,7 @@ export function useAuth() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (cancelled) return
       setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
+      if (session?.user) fetchProfile()
       else {
         setProfile(null)
         setProfileError('')
