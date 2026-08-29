@@ -266,7 +266,7 @@ function LayerToggleRow({ label, count, checked, onChange, disabled = false }) {
     <label className={`map-layer-row${disabled ? ' map-layer-row-disabled' : ''}`}>
       <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} />
       <span className="map-layer-row-label">{label}</span>
-      <span className="map-layer-row-count">({count})</span>
+      {count != null && <span className="map-layer-row-count">({count})</span>}
     </label>
   )
 }
@@ -515,7 +515,9 @@ export default function MapLeaflet({
     lootPoints,
     lootItems,
     loading: zonesLoading,
-  } = useMapZones(mapNorm)
+    lootLoading,
+    lootLoaded,
+  } = useMapZones(mapNorm, { includeLoot: showLoot })
   // Scav extracts are not useful during a PMC raid. Keep the upstream data
   // intact for other surfaces, but omit scav-only exits from this map and its
   // nearby-extract context.
@@ -1910,11 +1912,11 @@ export default function MapLeaflet({
                   disabled={hazards.length === 0}
                 />
                 <LayerToggleRow
-                  label="◈ LOOT"
-                  count={lootPoints.length}
+                  label={`◈ LOOT${lootLoading ? ' · LOADING' : ''}`}
+                  count={lootLoaded ? lootPoints.length : null}
                   checked={showLoot}
                   onChange={() => setShowLoot(v => !v)}
-                  disabled={lootPoints.length === 0}
+                  disabled={lootLoaded && lootPoints.length === 0}
                 />
                 {showLoot && lootItems.length > 0 && (
                   <label className="map-loot-filter">

@@ -64,7 +64,6 @@ src/
     RaidRail.jsx       # in-raid side rail
     RaidSettings.jsx   # leader settings popover with inherited-value sources
     MapLeaflet.jsx     # active Leaflet renderer (drawings, markers, spawns)
-    MapCanvas.jsx      # (legacy) canvas renderer · MapOverlay.jsx — its SVG overlay
     MyQuests.jsx       # standalone "Quest Manager" page
     MyQuestPanel.jsx   # "My Quests" panel inside Room
     QuestSearch.jsx    # search/add quests from tarkov.dev
@@ -155,8 +154,7 @@ Game mode belongs to character progression, not to a display preference. A party
 Ten featured maps are defined in `FEATURED` in `src/constants.js`. Each carries an
 image URL, PMC spawn coordinates (0–1 fractions), a terrain SVG fallback, and
 terrain labels. Leaflet bounds and zoom settings live in
-`src/data/tarkovMapConfigs.js`. `MapLeaflet.jsx` is the active renderer;
-`MapCanvas.jsx` is legacy.
+`src/data/tarkovMapConfigs.js`. `MapLeaflet.jsx` is the active renderer.
 
 **`FEATURED` is an allowlist, not a display list.** It gates TarkovMonitor map
 switches (`useTarkovMonitor.js`), ping validation (`tarkovPings.js`), the upstream
@@ -176,8 +174,8 @@ RPCs in one change.
 
 They are also still upstream data gaps, which is why they are not worth that change
 yet. Neither has `SPAWNS`, `TERRAIN` or `TERRAIN_LABELS` entries — live spawn data
-covers them and `MapOverlay.jsx`, the only consumer of the terrain fallbacks, is
-legacy and unmounted. Do not invent coordinates for them. Two quirks worth knowing:
+covers them, while the terrain fallbacks now have no consumer at all. Do not invent
+coordinates for them. Two quirks worth knowing:
 Labyrinth's normalized name is `the-labyrinth` while its image is
 `labyrinth-2d.jpg`, and **Icebreaker's upstream bounds cover only the Infirmary
 deck** — real PMC spawns sit at z≈82 against a declared z-max of 67.4, so they

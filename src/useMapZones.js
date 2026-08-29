@@ -10,20 +10,24 @@ function mapRecord(data, mapNorm) {
   return data.find(entry => entry?.normalizedName === mapNorm) || null
 }
 
-export function useMapZones(mapNorm) {
+export function useMapZones(mapNorm, { includeLoot = false } = {}) {
   const [zoneData, setZoneData] = useState(EMPTY_ZONES)
   const [lootData, setLootData] = useState(EMPTY_LOOT)
   const [loading, setLoading] = useState(true)
+  const [lootLoading, setLootLoading] = useState(false)
+  const [lootLoaded, setLootLoaded] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
     let live = false
     let painted = false
-    let pending = 3
+    let pending = 2
 
     setZoneData(EMPTY_ZONES)
     setLootData(EMPTY_LOOT)
     setLoading(true)
+    setLootLoading(false)
+    setLootLoaded(false)
 
     function settled() {
       pending -= 1
@@ -36,11 +40,6 @@ export function useMapZones(mapNorm) {
       if (controller.signal.aborted || live || !prebaked) return
       painted = true
       setZoneData(Array.isArray(prebaked.data) ? prebaked.data : EMPTY_ZONES)
-    }).finally(settled)
-
-    loadPrebaked('loot').then(prebaked => {
-      if (controller.signal.aborted || !prebaked) return
-      setLootData(Array.isArray(prebaked.data) ? prebaked.data : EMPTY_LOOT)
     }).finally(settled)
 
     getRestZones(controller.signal).then(result => {
@@ -60,6 +59,25 @@ export function useMapZones(mapNorm) {
     return () => controller.abort()
   }, [mapNorm])
 
+  useEffect(() => {
+    if (!includeLoot) {
+      setLootLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    setLootLoading(true)
+    loadPrebaked('loot').then(prebaked => {
+      if (controller.signal.aborted) return
+      setLootData(Array.isArray(prebaked?.data) ? prebaked.data : EMPTY_LOOT)
+      setLootLoaded(true)
+    }).finally(() => {
+      if (!controller.signal.aborted) setLootLoading(false)
+    })
+
+    return () => controller.abort()
+  }, [mapNorm, includeLoot])
+
   return useMemo(() => {
     const zones = mapRecord(zoneData, mapNorm)
     const loot = mapRecord(lootData, mapNorm)
@@ -73,6 +91,8 @@ export function useMapZones(mapNorm) {
       lootPoints: loot?.points || [],
       lootItems: loot?.items || [],
       loading,
+      lootLoading,
+      lootLoaded,
     }
-  }, [zoneData, lootData, mapNorm, loading])
+  }, [zoneData, lootData, mapNorm, loading, lootLoading, lootLoaded])
 }

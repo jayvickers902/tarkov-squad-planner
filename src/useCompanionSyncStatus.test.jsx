@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const { rpc, removeChannel, channel } = vi.hoisted(() => {
@@ -31,6 +31,8 @@ function Probe() {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
+  vi.restoreAllMocks()
   rpc.mockReset()
   removeChannel.mockReset()
   channel.mockClear()
@@ -84,6 +86,29 @@ describe('companion sync status data layer', () => {
     expect(screen.getByTestId('status')).toHaveTextContent(/"desktopState":"not-setup"/)
     expect(screen.getByTestId('status')).toHaveTextContent(/"desktopConnected":false/)
     expect(screen.getByTestId('status')).toHaveTextContent(/"desktopLastSeen":null/)
+  })
+
+  it('pauses interval RPCs while hidden and refreshes immediately when visible', async () => {
+    vi.useFakeTimers()
+    let visibilityState = 'visible'
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibilityState)
+    rpc.mockResolvedValue({ data: [], error: null })
+
+    render(
+      <CompanionSyncStatusProvider userId="user-1">
+        <Probe />
+      </CompanionSyncStatusProvider>,
+    )
+    await act(async () => {})
+    expect(rpc).toHaveBeenCalledTimes(1)
+
+    visibilityState = 'hidden'
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(rpc).toHaveBeenCalledTimes(1)
+
+    visibilityState = 'visible'
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    expect(rpc).toHaveBeenCalledTimes(2)
   })
 
   it('does not treat a historical row as a connected desktop', () => {

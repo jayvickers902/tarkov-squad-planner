@@ -145,7 +145,16 @@ export function CompanionSyncStatusProvider({ userId, children }) {
     }
 
     load()
-    pollId = setInterval(load, POLL_INTERVAL_MS)
+    const hasDocument = typeof document !== 'undefined'
+    const loadWhileVisible = () => {
+      if (!hasDocument || document.visibilityState !== 'hidden') load()
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') load()
+    }
+
+    pollId = setInterval(loadWhileVisible, POLL_INTERVAL_MS)
+    if (hasDocument) document.addEventListener('visibilitychange', handleVisibilityChange)
     // No Realtime subscription here on purpose. `sync_client_status` is
     // RPC-only: 10_20/10_22 revoke every table privilege from `authenticated`
     // and re-grant execute on get_sync_client_status alone, so a postgres_changes
@@ -158,6 +167,7 @@ export function CompanionSyncStatusProvider({ userId, children }) {
     return () => {
       cancelled = true
       if (pollId !== null) clearInterval(pollId)
+      if (hasDocument) document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [userId])
 

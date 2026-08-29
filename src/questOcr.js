@@ -5,8 +5,6 @@
 // font, which is why preprocess() below does the heavy lifting and why the
 // matcher in questMatch.js is fuzzy rather than exact.
 
-import { createWorker } from 'tesseract.js'
-
 // Upscale small text toward the ~30px cap height Tesseract likes, without
 // building a canvas big enough to blow up a phone.
 const TARGET_WIDTH = 3000
@@ -20,9 +18,10 @@ let onProgress    = null   // swapped per-scan; the worker's logger is fixed at 
 // English model (~5MB, browser-cached thereafter); later scans reuse it.
 function getWorker() {
   if (!workerPromise) {
-    workerPromise = createWorker('eng', 1, {
-      logger: m => { if (onProgress) onProgress(m) },
-    })
+    workerPromise = import('tesseract.js')
+      .then(({ createWorker }) => createWorker('eng', 1, {
+        logger: m => { if (onProgress) onProgress(m) },
+      }))
       .then(async worker => {
         await worker.setParameters({
           tessedit_pageseg_mode:     '6',   // one uniform block — keeps journal rows as lines
