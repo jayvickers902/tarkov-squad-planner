@@ -60,7 +60,7 @@ export default function RaidSettings({ party, userId, userSettings = {}, onChang
         <div>
           <div className="lbl" id="raid-settings-title">RAID SETTINGS</div>
           <div className="mono raid-settings-note">
-            {isLeader ? 'LEADER CONTROLS · CHANGES APPLY TO THIS RAID' : 'READ ONLY · THE LEADER CONTROLS THIS RAID'}
+            {isLeader ? 'LEADER CONTROLS · APPLIES TO THIS RAID' : 'READ ONLY · THE LEADER CONTROLS THIS RAID'}
           </div>
         </div>
         <button data-autofocus className="btn-ghost btn-sm" onClick={onClose} aria-label="Close raid settings">×</button>

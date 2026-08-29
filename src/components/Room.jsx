@@ -16,34 +16,14 @@ import useEphemeralSweep from '../useEphemeralSweep'
 import { resolveSetting } from '../settings'
 import { gameModeLabel, resolvePartyMode } from '../gameMode'
 import { normalizeMembers, findMember, memberIds, memberNames, progressOwnerId, progressQuestId } from '../partyMembers'
+import { memberColor } from '../memberColors'
+import { mapBannerLayers, mapReferenceArt } from '../mapBanners'
 
 const MapLeaflet = lazy(() => import('./MapLeaflet'))
 const RaidView = lazy(() => import('./RaidView'))
 
 function Spin({ s = 20 }) {
   return <div style={{ width: s, height: s, border: '2px solid var(--brd)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
-}
-
-const MEMBER_COLORS = [
-  { bg: '#1a2e3a', border: '#1e5a7a', text: '#5aace8' },
-  { bg: '#2a1a2e', border: '#5a1e7a', text: '#b85ae8' },
-  { bg: '#2e1a1a', border: '#7a1e1e', text: '#e85a5a' },
-  { bg: '#1a2e1a', border: '#1e7a1e', text: '#5ae85a' },
-  { bg: '#2e2a1a', border: '#7a6a1e', text: '#e8c85a' },
-  { bg: '#1a2a2e', border: '#1e6a7a', text: '#5ad8e8' },
-]
-function memberColor(name, allMembers) {
-  return MEMBER_COLORS[Math.max(0, allMembers.indexOf(name)) % MEMBER_COLORS.length]
-}
-function MemberPill({ name, allMembers }) {
-  const c = memberColor(name, allMembers)
-  return (
-    <span className="mono" style={{
-      fontSize: 'var(--fs-xs)', padding: '1px 5px', borderRadius: 3,
-      background: c.bg, border: `1px solid ${c.border}`, color: c.text,
-      flexShrink: 0, letterSpacing: '.04em',
-    }}>{name.slice(0, 8).toUpperCase()}</span>
-  )
 }
 
 function RoomOverflow({
@@ -61,8 +41,6 @@ function RoomOverflow({
   onFriends,
   isAdmin,
   onAdmin,
-  settingsOpen,
-  onSettings,
   onMyQuests,
   onLeave,
 }) {
@@ -89,24 +67,21 @@ function RoomOverflow({
                 <strong className="mono">{partyCode}</strong>
                 <button type="button" className="btn-ghost btn-sm" onClick={onCopy}>{copied ? 'COPIED' : 'COPY'}</button>
               </div>
-              <button type="button" className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={onFriends}>
-                FRIENDS{friendsCount > 0 ? ` (${friendsCount})` : ''}
-                {pendingCount > 0 && <span className="mono room-overflow-count">{pendingCount}</span>}
-              </button>
             </>
           )}
+          <button type="button" className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={onFriends}>
+            FRIENDS{friendsCount > 0 ? ` (${friendsCount})` : ''}
+            {pendingCount > 0 && <span className="mono room-overflow-count">{pendingCount}</span>}
+          </button>
           <div className="lbl room-overflow-sync-label">SYNC</div>
           <SyncStatusBar embedded onMyQuests={onMyQuests} />
-          <div className="room-overflow-actions">
-            {isAdmin && (
+          {isAdmin && (
+            <div className="room-overflow-actions">
               <button type="button" className="btn-ghost btn-sm" onClick={onAdmin}>
                 <Icon name="settings" size="sm" /> ADMIN
               </button>
-            )}
-            <button type="button" className={settingsOpen ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={onSettings}>
-              <Icon name="settings" size="sm" /> SETTINGS
-            </button>
-          </div>
+            </div>
+          )}
           <div className="room-overflow-leave">
             <button type="button" className="btn-danger btn-sm" onClick={onLeave}>LEAVE PARTY</button>
           </div>
@@ -137,8 +112,11 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [overflowOpen, setOverflowOpen] = useState(false)
+  const [pendingMap, setPendingMap] = useState(null)
   const overflowRef = useRef(null)
   const overflowTriggerRef = useRef(null)
+  const settingsRef = useRef(null)
+  const settingsTriggerRef = useRef(null)
   useEphemeralSweep({ party, userId: myUserId, userSettings, onSweep: onSweepEphemeral })
 
   useEffect(() => {
@@ -158,6 +136,21 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [settingsOpen, hasRouteOverlay, raidView])
+
+  // The settings popover overlays the page instead of pushing it down, so it
+  // has to give the camera back on an outside click the way any popover does.
+  // Escape and the focus trap come from useDialogFocus inside RaidSettings.
+  useEffect(() => {
+    if (!settingsOpen) return undefined
+
+    function onMouseDown(event) {
+      if (settingsRef.current?.contains(event.target)) return
+      setSettingsOpen(false)
+    }
+
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [settingsOpen])
 
   useEffect(() => {
     if (!overflowOpen) return undefined
@@ -267,6 +260,39 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   }, [allTasks, allTasksById, maps, members]) // eslint-disable-line
 
 
+  // Cross-fade rather than hard-cut: the layer below holds whatever art was
+  // last committed, the keyed layer above fades the new art in over it.
+  const bannerLayers = mapBannerLayers(party.map_norm)
+  const previousBannerRef = useRef(bannerLayers)
+  const previousBanner = previousBannerRef.current
+  useEffect(() => { previousBannerRef.current = bannerLayers }, [bannerLayers])
+
+  const onlineCount = presenceReady
+    ? members.filter(member => onlineMemberIds.includes(member.user_id)).length
+    : members.length
+
+  const questsOnMap = useMemo(() => {
+    if (!party.map_norm) return 0
+    const ids = new Set()
+    members.forEach(member => member.quests.forEach(quest => {
+      if (allTasksById.get(quest.id)?.map?.normalizedName === party.map_norm) ids.add(quest.id)
+    }))
+    return ids.size
+  }, [members, allTasksById, party.map_norm])
+
+  function commitSelectMap(map) {
+    onSelectMap(map)
+    if (raidStart) setMapSelectorOpen(false)
+  }
+
+  function handleSelectMap(map) {
+    if (!canChangeMap || map.id === party.map_id) return
+    // select_map_party resets drawings, markers, starred quests and progress —
+    // ask first when there is any of that to lose.
+    if (hasPlan) { setPendingMap(map); return }
+    commitSelectMap(map)
+  }
+
   async function copy() {
     setCopyError('')
     try {
@@ -334,105 +360,118 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
         />
       )}
 
-      {/* Header */}
-      <div className="room-header">
-        <div className="room-header-row">
-          <div className="room-header-identity">
-            <div style={{ width: 4, height: 26, background: 'var(--gold)', borderRadius: 2, flexShrink: 0 }} />
-            <div className="room-header-identity-copy">
-              <h1 style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>SQUAD PLANNER</h1>
-              <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {party.map_name ? `// ${party.map_name.toUpperCase()}` : '// NO MAP SELECTED'}
+      {/* Party banner — the selected map's art IS the top bar */}
+      <div className="room-banner">
+        <div className="room-banner-art" aria-hidden="true">
+          {bannerLayers && previousBanner && <div className="room-banner-layer" style={{ backgroundImage: previousBanner }} />}
+          {bannerLayers && <div key={bannerLayers} className="room-banner-layer room-banner-layer-live" style={{ backgroundImage: bannerLayers }} />}
+          <div className="room-banner-fade" />
+          <div className="room-banner-vignette" />
+        </div>
+        <div className="room-banner-underline" aria-hidden="true" />
+
+        <div className="room-banner-row">
+          <div className="room-banner-identity">
+            <div className="room-banner-rail" aria-hidden="true" />
+            <div className="room-banner-identity-copy">
+              <div className="room-banner-meta">
+                <span className="mono room-banner-meta-label">PARTY</span>
+                <span className="mono room-banner-code">{party.code}</span>
+                <button type="button" className="mono room-banner-copy" onClick={copy}>{copied ? 'COPIED' : 'COPY'}</button>
+                <span className="room-banner-meta-divider" aria-hidden="true" />
+                <span className="mono room-banner-mode">{gameModeLabel(gameMode)}</span>
               </div>
-              {!isMobile && (
-                <div className="room-party-identity">
-                  <span className="mono">PARTY</span>
-                  <strong className="mono">{party.code}</strong>
-                  <button type="button" className="btn-ghost btn-sm" onClick={copy}>{copied ? 'COPIED' : 'COPY'}</button>
-                </div>
-              )}
-              <div className="mono room-mode-badge">MODE · {gameModeLabel(gameMode)}</div>
+              <h1 className="room-banner-title">{party.map_name ? party.map_name.toUpperCase() : 'NO MAP SELECTED'}</h1>
+              <div className="mono room-banner-readout">
+                {members.length} OPERATOR{members.length === 1 ? '' : 'S'}
+                {' · '}
+                <span className="room-banner-online">{onlineCount} ONLINE</span>
+                {party.map_norm && <>{' · '}{questsOnMap} QUEST{questsOnMap === 1 ? '' : 'S'} ON MAP</>}
+              </div>
             </div>
           </div>
-          {!isMobile && (
-            <>
-              <div className="room-header-tools">
-                <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}><Icon name="star" size="sm" /> QUEST MANAGER</button>
-                {party.map_id && (
-                  <button className="btn-ghost btn-sm" onClick={onOpenRaid} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}><Icon name="tent" size="sm" /> RAID VIEW</button>
-                )}
-                <button className={showFriends ? 'btn-ghost btn-sm btn-active' : 'btn-ghost btn-sm'} onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  FRIENDS{friends.length > 0 ? ` (${friends.length})` : ''}
-                  {pendingIn.length > 0 && <span className="mono room-overflow-count">{pendingIn.length}</span>}
-                </button>
-                <TarkovClocks />
-                <RoomOverflow
-                  open={overflowOpen}
-                  isMobile={false}
-                  containerRef={overflowRef}
-                  triggerRef={overflowTriggerRef}
-                  onToggle={() => setOverflowOpen(value => !value)}
-                  partyCode={party.code}
-                  copied={copied}
-                  onCopy={copy}
-                  friendsCount={friends.length}
-                  pendingCount={pendingIn.length}
-                  showFriends={showFriends}
-                  onFriends={() => { setOverflowOpen(false); setShowFriends(value => !value); if (!showFriends) onRefreshFriends() }}
-                  isAdmin={isAdmin}
-                  onAdmin={() => { setOverflowOpen(false); onAdmin() }}
-                  settingsOpen={settingsOpen}
-                  onSettings={() => { setOverflowOpen(false); setSettingsOpen(value => !value) }}
-                  onMyQuests={() => { setOverflowOpen(false); onMyQuests() }}
-                  onLeave={() => { setOverflowOpen(false); onLeave() }}
-                />
-              </div>
-              {isLeader && party.map_id && (
-                <div className="room-header-raid">
-                  <button className="btn-gold btn-sm" onClick={() => setStartRaidPending(true)} style={{ letterSpacing: '.06em' }}><Icon name="play" size="sm" /> START RAID</button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
 
-        {/* Mobile second row */}
-        {isMobile && (
-          <div className="room-mobile-actions">
-            <button className="btn-ghost btn-sm" onClick={onMyQuests} style={{ color: 'var(--gold)', borderColor: 'var(--golddim)' }}><Icon name="star" size="sm" /> QUEST MANAGER</button>
-            {party.map_id && (
-              <button className="btn-ghost btn-sm" onClick={onOpenRaid} style={{ color: 'var(--goldtx)', borderColor: 'var(--golddim)' }}><Icon name="tent" size="sm" /> RAID VIEW</button>
+          <div className="room-banner-spacer" />
+
+          <div className="room-banner-controls">
+            {!isMobile && (
+              <>
+                <SyncStatusBar variant="header" onMyQuests={onMyQuests} />
+                <TarkovClocks />
+                <span className="room-banner-divider" aria-hidden="true" />
+              </>
             )}
-            <RoomOverflow
-              open={overflowOpen}
-              isMobile
-              containerRef={overflowRef}
-              triggerRef={overflowTriggerRef}
-              onToggle={() => setOverflowOpen(value => !value)}
-              partyCode={party.code}
-              copied={copied}
-              onCopy={copy}
-              friendsCount={friends.length}
-              pendingCount={pendingIn.length}
-              showFriends={showFriends}
-              onFriends={() => { setOverflowOpen(false); setShowFriends(value => !value); if (!showFriends) onRefreshFriends() }}
-              isAdmin={isAdmin}
-              onAdmin={() => { setOverflowOpen(false); onAdmin() }}
-              settingsOpen={settingsOpen}
-              onSettings={() => { setOverflowOpen(false); setSettingsOpen(value => !value) }}
-              onMyQuests={() => { setOverflowOpen(false); onMyQuests() }}
-              onLeave={() => { setOverflowOpen(false); onLeave() }}
-            />
-            {isLeader && party.map_id && (
-              <div className="room-mobile-raid-actions">
-                <button className="btn-gold btn-sm" onClick={() => setStartRaidPending(true)} style={{ letterSpacing: '.06em' }}><Icon name="play" size="sm" /> START RAID</button>
+
+            <div className="room-banner-buttons">
+              <button type="button" className="room-banner-btn room-banner-btn-gold" onClick={onMyQuests}>
+                <Icon name="star" size="sm" /> QUESTS
+              </button>
+              {party.map_id && (
+                <button type="button" className="room-banner-btn" onClick={onOpenRaid}>
+                  <Icon name="tent" size="sm" /> RAID VIEW
+                </button>
+              )}
+
+              <div className="room-settings-anchor" ref={settingsRef}>
+                <button
+                  ref={settingsTriggerRef}
+                  type="button"
+                  className={settingsOpen ? 'room-banner-icon-btn is-active' : 'room-banner-icon-btn'}
+                  aria-label="Raid settings"
+                  aria-haspopup="dialog"
+                  aria-expanded={settingsOpen}
+                  onClick={() => setSettingsOpen(value => !value)}
+                >
+                  <Icon name="settings" size="md" />
+                </button>
+                {settingsOpen && (
+                  <RaidSettings
+                    party={party}
+                    userId={myUserId}
+                    userSettings={userSettings}
+                    onChange={onSetRaidSettings}
+                    onClose={() => { setSettingsOpen(false); settingsTriggerRef.current?.focus() }}
+                  />
+                )}
               </div>
+
+              <RoomOverflow
+                open={overflowOpen}
+                isMobile={isMobile}
+                containerRef={overflowRef}
+                triggerRef={overflowTriggerRef}
+                onToggle={() => setOverflowOpen(value => !value)}
+                partyCode={party.code}
+                copied={copied}
+                onCopy={copy}
+                friendsCount={friends.length}
+                pendingCount={pendingIn.length}
+                showFriends={showFriends}
+                onFriends={() => { setOverflowOpen(false); setShowFriends(value => !value); if (!showFriends) onRefreshFriends() }}
+                isAdmin={isAdmin}
+                onAdmin={() => { setOverflowOpen(false); onAdmin() }}
+                onMyQuests={() => { setOverflowOpen(false); onMyQuests() }}
+                onLeave={() => { setOverflowOpen(false); onLeave() }}
+              />
+            </div>
+
+            {isLeader && party.map_id && (
+              <button type="button" className="room-start-raid" onClick={() => setStartRaidPending(true)}>
+                <Icon name="play" size="lg" />
+                <span className="room-start-raid-copy">
+                  <span className="room-start-raid-title">START RAID</span>
+                  <span className="mono room-start-raid-count">{members.length} IN SQUAD</span>
+                </span>
+              </button>
             )}
           </div>
-        )}
+        </div>
+
         <div className="sr-status" aria-live="polite">{copied ? 'Invite link copied.' : ''}</div>
-        {(partyError || friendsError || copyError) && <div className="room-error mono" role="alert">{partyError || friendsError || copyError}</div>}
       </div>
+
+      <div className="room-body">
+        {(partyError || friendsError || copyError) && <div className="room-error mono" role="alert">{partyError || friendsError || copyError}</div>}
 
       {partyModeDiffers && (
         <div className="room-game-mode-notice mono" role="status">
@@ -442,16 +481,6 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
           )}
         </div>
       )}
-
-      {settingsOpen && <div className="room-settings-panel room-settings-panel-open">
-        <RaidSettings
-          party={party}
-          userId={myUserId}
-          userSettings={userSettings}
-          onChange={onSetRaidSettings}
-          onClose={() => setSettingsOpen(false)}
-        />
-      </div>}
 
       {/* Friends panel */}
       {showFriends && (
@@ -535,23 +564,20 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (sidebarOpen ? '210px 1fr' : '28px 1fr'), gap: 14, transition: 'grid-template-columns .2s' }}>
+      <div className="room-grid" data-rail={sidebarOpen ? 'open' : 'closed'}>
 
         {/* Sidebar */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+        <div className="room-rail">
 
           {/* Collapse toggle when closed */}
           {!sidebarOpen && (
             <button
+              type="button"
+              className="room-rail-expand"
               onClick={() => setSidebarOpen(true)}
               title="Expand sidebar"
-              style={{
-                background: 'var(--sur2)', border: '1px solid var(--brd)', borderRadius: 4,
-                color: 'var(--txd)', cursor: 'pointer', padding: '6px 0',
-                fontSize: 'var(--fs-sm)', writingMode: 'vertical-rl', width: '100%',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-            >▶</button>
+              aria-label="Expand party sidebar"
+            >&#9654;</button>
           )}
 
           {/* Members */}
@@ -578,13 +604,16 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                     return task?.map?.normalizedName === party.map_norm
                   }).length
                 : null
+              const isLeaderRow = party.leader_id === member.user_id
+              const rowColor = memberColor(m, memberNameList)
               return (
-                <div key={member.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '7px 0', borderBottom: '1px solid var(--brd)' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: isSelf ? 'var(--goldtx)' : 'var(--tx)' }}>
+                <div key={member.user_id} className="room-member-row">
+                  <span className="room-member-rail" style={{ background: rowColor.text }} aria-hidden="true" />
+                  <div className="room-member-copy">
+                    <div className="room-member-name" data-state={isLeaderRow ? 'leader' : isOnline ? 'online' : 'offline'}>
                       {displayName}{isSelf ? ' · you' : ''}
                     </div>
-                    <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)' }}>
+                    <div className="mono room-member-meta">
                       {totalCount} QUEST{totalCount !== 1 ? 'S' : ''}
                       {mapCount !== null && (
                         <span style={{ color: 'var(--txd)' }}> · {mapCount} ON MAP</span>
@@ -592,22 +621,21 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                       <span style={{ color: isOnline ? 'var(--grn)' : 'var(--txd)' }}> · {isOnline ? 'ONLINE' : 'OFFLINE'}</span>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                    {party.leader_id === member.user_id && (
-                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)', border: '1px solid var(--golddim)', borderRadius: 3, padding: '1px 5px' }}>LDR</span>
-                    )}
+                  <div className="room-member-tags">
+                    {isLeaderRow && <span className="mono room-member-tag room-member-tag-leader">LDR</span>}
                     {!isSelf && !isFriend && !isPending && (
-                      <button className="btn-ghost btn-sm" style={{ fontSize: 'var(--fs-xs)' }}
+                      <button className="btn-ghost btn-sm room-member-add"
                         onClick={() => onSendRequest({ userId: member.user_id, callsign: m })}>
                         + FRIEND
                       </button>
                     )}
                     {!isSelf && isPending && (
-                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>PENDING</span>
+                      <span className="mono room-member-tag">PENDING</span>
                     )}
                     {!isSelf && isFriend && (
-                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--grn)' }}>✓</span>
+                      <span className="mono room-member-tag room-member-tag-friend">✓</span>
                     )}
+                    {!isLeaderRow && isSelf && !isOnline && <span className="mono room-member-tag">OFFLINE</span>}
                   </div>
                 </div>
               )
@@ -694,11 +722,16 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
         </div>
 
         {/* Main */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+        <div className="room-main">
 
           {/* Map selector */}
-          <div className="room-map-selector-card card" style={{ padding: 16, display: raidStart && !mapSelectorOpen ? 'none' : undefined }}>
-            <div className="lbl">{canChangeMap ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
+          <div className="room-map-selector-card card" style={{ display: raidStart && !mapSelectorOpen ? 'none' : undefined }}>
+            <div className="room-map-selector-head">
+              <div className="lbl">{canChangeMap ? 'SELECT MAP FOR THIS RAID' : 'MAP — SET BY LEADER'}</div>
+              <div className="mono room-map-selector-note">
+                {canChangeMap ? 'LEADER · CHANGING RESETS MARKERS' : 'ONLY THE LEADER CAN CHANGE THIS'}
+              </div>
+            </div>
             {!party.map_id && (
               <p className="room-map-selector-hint">
                 The party map drives TODO LIST, REQUIRED ITEMS, WHAT TO LOOK FOR, MAP / ROUTE, and BOSS SPAWNS / KEYS; routes and markers update live for the squad.
@@ -707,19 +740,26 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
             {loadingMaps && !maps.length
               ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Spin s={18} /><span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>LOADING MAPS...</span></div>
               : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
-                  {maps.map(m => (
-                    <button key={m.id}
-                      onClick={() => {
-                        if (!canChangeMap) return
-                        onSelectMap(m)
-                        if (raidStart) setMapSelectorOpen(false)
-                      }}
-                      className={party.map_id === m.id ? 'btn-gold' : 'btn-ghost'}
-                      style={{ padding: '7px 12px', fontSize: 13, opacity: canChangeMap ? 1 : .7, cursor: canChangeMap ? 'pointer' : 'default' }}>
-                      {m.name.toUpperCase()}
-                    </button>
-                  ))}
+                <div className="room-map-thumbs">
+                  {maps.map(m => {
+                    const active = party.map_id === m.id
+                    const art = mapReferenceArt(m.normalizedName)
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        className={active ? 'room-map-thumb is-active' : 'room-map-thumb'}
+                        aria-pressed={active}
+                        disabled={!canChangeMap}
+                        onClick={() => handleSelectMap(m)}
+                      >
+                        <span className="room-map-thumb-art" style={art ? { backgroundImage: `url('${art}')` } : undefined} />
+                        <span className="room-map-thumb-scrim" />
+                        <span className="room-map-thumb-name">{m.name.toUpperCase()}</span>
+                        <span className="room-map-thumb-rail" />
+                      </button>
+                    )
+                  })}
                 </div>
               )
             }
@@ -736,19 +776,19 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                   </div>
                 )}
                 {[['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['find', 'WHAT TO LOOK FOR'], ['map', 'MAP / ROUTE'], ['bosses', 'BOSS SPAWNS / KEYS']].map(([id, lbl]) => (
-                  <button key={id} onClick={() => setTab(id)} style={{
-                    background: 'none', border: 'none',
-                    borderBottom: `2px solid ${tab === id ? 'var(--gold)' : 'transparent'}`,
-                    color: tab === id ? 'var(--goldtx)' : 'var(--txm)',
-                    fontFamily: 'Rajdhani', fontWeight: 600, fontSize: 14, letterSpacing: '.08em',
-                    padding: '8px 18px', borderRadius: 0, cursor: 'pointer', transition: 'all .15s',
-                  }}>{lbl}</button>
+                  <button
+                    key={id}
+                    type="button"
+                    className={tab === id ? 'room-tab is-active' : 'room-tab'}
+                    aria-current={tab === id ? 'true' : undefined}
+                    onClick={() => setTab(id)}
+                  >{lbl}</button>
                 ))}
               </div>
 
 
               {tab === 'todo' && (
-                <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                <div className="room-two-up">
                   {/* Squad Objectives — party-wide card */}
                   <div className="card fade-in" style={{ padding: 16, flex: 1, minWidth: 0 }}>
                     {!mine.length ? (
@@ -799,6 +839,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                       onQuestComplete={onQuestComplete}
                       onOpenQuestManager={onMyQuests}
                       mapNorm={party.map_norm}
+                      mapName={party.map_name}
                       loading={questsLoading}
                       settings={userSettings}
                       onSetSetting={onSetUserSetting}
@@ -879,6 +920,22 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
           )}
         </div>
       </div>
+      </div>
+
+      {pendingMap && (
+        <div className="app-confirm-backdrop" role="presentation">
+          <div className="card app-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="room-map-confirm-title">
+            <h2 id="room-map-confirm-title">CHANGE MAP?</h2>
+            <p>
+              Switching to {pendingMap.name} clears the squad&rsquo;s markers, drawings, starred quests and TODO progress.
+            </p>
+            <div className="app-confirm-actions">
+              <button type="button" className="btn-ghost btn-sm" onClick={() => setPendingMap(null)}>CANCEL</button>
+              <button type="button" className="btn-gold btn-sm" onClick={() => { const map = pendingMap; setPendingMap(null); commitSelectMap(map) }}>CHANGE MAP</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

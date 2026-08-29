@@ -35,7 +35,7 @@ function relativeAccessible(timestamp, now) {
   return 'more than 1 day ago'
 }
 
-function ChannelChip({ channel, title, status, now, onClick, buttonRef, monitor = false, embedded = false }) {
+function ChannelChip({ channel, title, status, now, onClick, buttonRef, monitor = false, embedded = false, compact = false }) {
   const meta = monitor
     ? status.label
     : (status.source === 'desktop' || status.lastCheckedMs === null
@@ -53,7 +53,7 @@ function ChannelChip({ channel, title, status, now, onClick, buttonRef, monitor 
     <button
       ref={buttonRef}
       type="button"
-      className="btn-ghost btn-sm sync-chip"
+      className={`btn-ghost btn-sm sync-chip${compact ? ' sync-chip-compact' : ''}`}
       data-channel={monitor ? 'monitor' : channel.toLowerCase()}
       data-tone={status.tone}
       aria-expanded={Boolean(onClick.open)}
@@ -62,8 +62,8 @@ function ChannelChip({ channel, title, status, now, onClick, buttonRef, monitor 
       onClick={onClick.handler}
     >
       <span className="sync-chip-dot" aria-hidden="true" />
-      <span className="sync-chip-label">{channel}</span>
-      <span className="mono sync-chip-meta">{meta}</span>
+      <span className="sync-chip-label">{compact && monitor ? 'MON' : channel}</span>
+      {!compact && <span className="mono sync-chip-meta">{meta}</span>}
     </button>
   )
 }
@@ -98,7 +98,7 @@ function TimingRows({ status, changeLabel = 'LAST DATA CHANGE', now }) {
   )
 }
 
-export default function SyncStatusBar({ onMyQuests, embedded = false }) {
+export default function SyncStatusBar({ onMyQuests, embedded = false, variant = 'default' }) {
   const logs = useEftLogSync({ optional: true })
   const shots = useEftScreenshotSyncContext({ optional: true })
   const companion = useCompanionSyncStatus({ optional: true })
@@ -193,12 +193,18 @@ export default function SyncStatusBar({ onMyQuests, embedded = false }) {
   const detailClassName = embedded ? 'sync-embedded-detail' : 'card sync-popover'
   const detailRole = embedded ? 'group' : 'dialog'
 
+  const compact = variant === 'header'
+
   return (
-    <div className={`sync-status-bar${embedded ? ' sync-status-bar-embedded' : ''}`} ref={barRef}>
+    <div
+      className={`sync-status-bar${embedded ? ' sync-status-bar-embedded' : ''}${compact ? ' sync-status-bar-header' : ''}`}
+      ref={barRef}
+    >
+      {compact && <div className="mono sync-header-label">SYNC</div>}
       <div className="sync-chip-list">
-        <ChannelChip embedded={embedded} channel="LOGS" title="Quest log" status={logStatus} now={now} buttonRef={node => { buttonRefs.current.logs = node }} onClick={{ open: openKey === 'logs', handler: () => toggle('logs') }} />
-        <ChannelChip embedded={embedded} channel="PINGS" title="Screenshot" status={screenshotStatus} now={now} buttonRef={node => { buttonRefs.current.shots = node }} onClick={{ open: openKey === 'shots', handler: () => toggle('shots') }} />
-        <ChannelChip embedded={embedded} channel="MONITOR" status={health} now={now} monitor buttonRef={node => { buttonRefs.current.monitor = node }} onClick={{ open: openKey === 'monitor', handler: () => toggle('monitor') }} />
+        <ChannelChip compact={compact} embedded={embedded} channel="LOGS" title="Quest log" status={logStatus} now={now} buttonRef={node => { buttonRefs.current.logs = node }} onClick={{ open: openKey === 'logs', handler: () => toggle('logs') }} />
+        <ChannelChip compact={compact} embedded={embedded} channel="PINGS" title="Screenshot" status={screenshotStatus} now={now} buttonRef={node => { buttonRefs.current.shots = node }} onClick={{ open: openKey === 'shots', handler: () => toggle('shots') }} />
+        <ChannelChip compact={compact} embedded={embedded} channel="MONITOR" status={health} now={now} monitor buttonRef={node => { buttonRefs.current.monitor = node }} onClick={{ open: openKey === 'monitor', handler: () => toggle('monitor') }} />
       </div>
 
       {openKey === 'logs' && (

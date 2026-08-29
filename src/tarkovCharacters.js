@@ -117,8 +117,12 @@ function normalizeEquipment(raw) {
 }
 
 /**
- * Convert a monitor characterProfile/characterSnapshot payload into the small,
- * safe shape that can be written to party_members and rendered by the client.
+ * Convert a raw EFT profile payload into the small, allowlisted shape the client
+ * can render. Identity, appearance and equipment only; raw profile JSON is never
+ * kept. The tolerant PascalCase/camelCase key handling below is a leftover from
+ * the removed TarkovMonitor relay — local log profiles use the PascalCase forms.
+ *
+ * This is not persisted. It shapes data for display; nothing writes it to Supabase.
  */
 export function normalizeCharacterSnapshot(raw, syncedAt = null) {
   if (!raw || typeof raw !== 'object') return null

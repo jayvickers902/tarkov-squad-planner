@@ -1,19 +1,6 @@
 import { useMemo, useState } from 'react'
 import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
-
-const MEMBER_COLORS = [
-  { bg: '#1a2e3a', border: '#1e5a7a', text: '#5aace8' },
-  { bg: '#2a1a2e', border: '#5a1e7a', text: '#b85ae8' },
-  { bg: '#2e1a1a', border: '#7a1e1e', text: '#e85a5a' },
-  { bg: '#1a2e1a', border: '#1e7a1e', text: '#5ae85a' },
-  { bg: '#2e2a1a', border: '#7a6a1e', text: '#e8c85a' },
-  { bg: '#1a2a2e', border: '#1e6a7a', text: '#5ad8e8' },
-]
-
-function memberColor(name, allMembers) {
-  const idx = allMembers.indexOf(name) % MEMBER_COLORS.length
-  return MEMBER_COLORS[Math.max(0, idx)]
-}
+import { memberColor } from '../memberColors'
 
 function objIsOnMap(obj, mapNorm, taskMapNorm) {
   if (!mapNorm) return true

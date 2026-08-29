@@ -40,6 +40,9 @@ src/
   tarkovObjectives.js  # quest objective parsing
   tarkovIntel.js       # intel data shaping
   tarkovRest.js        # REST fallback for the tarkov.dev API
+  mapBanners.js        # map art URLs: wide header banner + reference art fallback
+  memberColors.js      # the one member palette every surface tints from
+  questColors.js       # stable quest id -> rail hue, so a quest's rows group
 
   # Hooks (all custom, no external state library)
   useAuth.js           # Google OAuth sign-in, profile + callsign creation
@@ -226,6 +229,30 @@ per scan and needs no rate limiting.
 
 Accuracy lives in the preprocessing and the thresholds in `acceptThreshold()`,
 not in a smarter model. Tune there first.
+
+## Party View
+
+The party header is the selected map's art rather than a stacked utility bar: a
+full-bleed banner (`.room-banner`) carries the party code, map title and squad
+readout on the left and every raid control on the right, so `.room-shell` has no
+padding of its own and `.room-body` holds the page gutter instead.
+
+Banner art comes from `public/map-banners/header/<slug>.webp` (2560x420, ~6:1)
+layered over `public/map-banners/reference/<slug>.webp`; a map with no wide
+banner falls through to the reference art because a background layer that fails
+to load simply does not paint. `mapBanners.js` is the only place those paths are
+built. The reference art is also the map-selector thumbnail and the "nothing else
+on this map" card.
+
+Raid settings open as a popover anchored to the gear button — it must overlay, not
+push page content down. Changing the map confirms first when the party has drawings,
+markers, starred quests or TODO progress to lose, because `select_map_party` resets
+all four.
+
+Objective rows carry a 3px left rail in the quest's colour, from `questRailColor`
+(stable hash of the quest id over five hues). Members are tinted from
+`memberColors.js` — one palette shared by owner chips, filter chips, sidebar rails
+and the map-recommendation bar, so a member keeps the same hue everywhere.
 
 ## Welcome / What's New
 

@@ -17,6 +17,20 @@
   --red:     #e06b6b;
   --grn:     #66b778;
 
+  /* Party-view palette - the handoff's token table, one name per role. */
+  --brdm:    #2c3129; /* glass panel borders, dividers */
+  --brds:    #3a4038; /* button borders */
+  --brdg:    #4a4127; /* gold-panel borders */
+  --brdo:    #23271f; /* objective row border */
+  --txf:     #6f7a6c; /* micro labels */
+  --txt:     #f4efe1; /* map title */
+  --txb:     #e9e5d9; /* objective text */
+  --rowb:    #121510; /* even objective row */
+  --pill:    #101310; /* meta pills */
+  --night:   #8ab0cc;
+  --nightd:  #5a7a8a;
+  --glass:   rgba(9,11,10,.72);
+
   --fs-xs:    12px; /* smallest readable size — chips, meta, counts */
   --fs-sm:    13px; /* dense list rows, secondary lines */
   --fs-md:    15px; /* default UI text */
@@ -103,21 +117,268 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   white-space: nowrap;
   border: 0;
 }
-.room-shell { min-height: calc(100dvh - var(--app-nav-h)); width: 100%; padding: 14px 16px; overflow-x: clip; }
-.room-header { margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--brd); }
-.room-header-row { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 2fr) auto; align-items: center; gap: 16px; }
-.room-header-identity { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
-.room-header-identity-copy { min-width: 0; }
-.room-header-tools { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; flex-wrap: wrap; }
-.room-header-tools > button,
-.room-header-raid > button,
-.room-mobile-actions > button,
-.room-mobile-raid-actions > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-.room-header-raid { display: flex; align-items: center; justify-content: flex-end; margin-left: 16px; }
-.room-party-identity { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
-.room-party-identity > span { color: var(--txm); font-size: var(--fs-xs); }
-.room-party-identity > strong { color: var(--gold); font-size: var(--fs-md); letter-spacing: .18em; }
-.room-party-identity > button { padding: 3px 7px; }
+/* -- Party room shell -----------------------------------------------------
+   The banner is full-bleed, so the shell carries no padding of its own -
+   .room-body holds the page gutter instead. */
+.room-shell { min-height: calc(100dvh - var(--app-nav-h)); width: 100%; overflow-x: clip; }
+.room-body { padding: 14px 16px; }
+
+/* -- Map-art banner: the art IS the top bar ------------------------------- */
+.room-banner { position: relative; min-height: 96px; border-bottom: 1px solid var(--brd); background: var(--bg); }
+.room-banner-art { position: absolute; inset: 0; overflow: hidden; }
+.room-banner-layer {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: 65% 45%;
+  background-repeat: no-repeat;
+}
+/* The layer below holds the outgoing art; this one fades the new art over it. */
+.room-banner-layer-live { animation: roomBannerIn .2s ease; }
+@keyframes roomBannerIn { from { opacity: 0; } to { opacity: 1; } }
+.room-banner-fade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #0c0e0d 0%, #0c0e0d 11%, rgba(12,14,13,.9) 24%, rgba(12,14,13,.52) 40%, rgba(12,14,13,.3) 62%, rgba(12,14,13,.34) 82%, rgba(12,14,13,.5) 100%);
+}
+.room-banner-vignette {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(12,14,13,.6) 0%, rgba(12,14,13,0) 45%, rgba(12,14,13,.7) 100%);
+}
+.room-banner-underline {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--gold) 0%, rgba(201,168,76,.35) 38%, rgba(201,168,76,0) 72%);
+}
+.room-banner-row {
+  position: relative;
+  min-height: 96px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+/* Pushes the control cluster right and lets it wrap below on narrow viewports,
+   so the header grows in height instead of squeezing the map title. */
+.room-banner-spacer { flex: 1; min-width: 0; }
+
+.room-banner-identity { display: flex; align-items: stretch; gap: 12px; min-width: 0; flex-shrink: 0; }
+.room-banner-rail { width: 3px; flex: 0 0 3px; border-radius: 2px; background: linear-gradient(180deg, var(--goldtx), var(--golddim)); }
+.room-banner-identity-copy { display: flex; flex-direction: column; justify-content: center; gap: 5px; min-width: 0; }
+.room-banner-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.room-banner-meta-label { font-size: var(--fs-xs); color: var(--txd); letter-spacing: .16em; }
+.room-banner-code { font-size: var(--fs-sm); color: var(--goldtx); letter-spacing: .22em; }
+.room-banner-copy {
+  min-height: 18px;
+  padding: 1px 6px;
+  border: 1px solid var(--brds);
+  border-radius: 3px;
+  background: rgba(12,14,13,.6);
+  color: var(--txm);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: var(--fs-xs);
+  letter-spacing: .06em;
+}
+.room-banner-copy:hover { border-color: var(--gold); color: var(--goldtx); }
+.room-banner-meta-divider { width: 1px; height: 11px; background: var(--brds); }
+.room-banner-mode {
+  padding: 0 6px;
+  border: 1px solid rgba(201,168,76,.32);
+  border-radius: 3px;
+  background: rgba(201,168,76,.1);
+  color: var(--gold);
+  font-size: var(--fs-xs);
+  letter-spacing: .12em;
+}
+.room-banner-title {
+  font-size: 38px;
+  font-weight: 700;
+  line-height: .92;
+  letter-spacing: .03em;
+  color: var(--txt);
+  text-shadow: 0 2px 18px rgba(0,0,0,.95);
+}
+.room-banner-readout { font-size: var(--fs-xs); color: var(--txm); letter-spacing: .08em; }
+.room-banner-online { color: var(--grn); }
+
+.room-banner-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
+.room-banner-divider { width: 1px; height: 46px; background: rgba(255,255,255,.09); }
+.room-banner-buttons { display: flex; align-items: center; gap: 6px; }
+
+/* Every control in the cluster sits on the same glass panel. */
+.room-banner-btn,
+.room-banner-icon-btn,
+.room-banner-buttons .room-overflow-trigger,
+.room-banner-controls .tarkov-clock,
+.room-banner-controls .sync-status-bar-header {
+  background: var(--glass);
+  border: 1px solid var(--brdm);
+  border-radius: 4px;
+  backdrop-filter: blur(6px);
+}
+.room-banner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-color: var(--brds);
+  color: var(--tx);
+  font-size: var(--fs-sm);
+  letter-spacing: .08em;
+}
+.room-banner-btn:hover { border-color: var(--gold); color: var(--goldtx); }
+.room-banner-btn-gold { border-color: var(--brdg); color: var(--goldtx); }
+.room-banner-btn-gold:hover { background: rgba(201,168,76,.14); border-color: var(--gold); }
+.room-banner-icon-btn,
+.room-banner-buttons .room-overflow-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-color: var(--brds);
+  color: var(--txm);
+}
+.room-banner-icon-btn:hover,
+.room-banner-buttons .room-overflow-trigger:hover { border-color: var(--gold); color: var(--goldtx); }
+.room-banner-icon-btn.is-active { border-color: var(--gold); background: rgba(201,168,76,.14); color: var(--goldtx); }
+
+/* The one solid element on the page. */
+.room-start-raid {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 58px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #d8b85c, #bf9c3e);
+  color: var(--bg);
+  font-weight: 700;
+  box-shadow: 0 0 0 1px rgba(232,201,106,.45), 0 8px 26px rgba(201,168,76,.22);
+}
+.room-start-raid:hover { background: linear-gradient(180deg, #e6c76a, #cba948); }
+.room-start-raid-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.room-start-raid-title { font-size: 17px; letter-spacing: .1em; line-height: 1; }
+.room-start-raid-count { font-size: var(--fs-xs); letter-spacing: .1em; line-height: 1; opacity: .72; }
+
+.room-settings-anchor { position: relative; }
+
+/* -- Room body layout ------------------------------------------------------ */
+.room-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; transition: grid-template-columns .2s; }
+.room-rail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.room-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.room-two-up { display: flex; gap: 16px; align-items: flex-start; }
+.room-rail-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 6px 0;
+  border: 1px solid var(--brd);
+  border-radius: 4px;
+  background: var(--sur2);
+  color: var(--txd);
+  font-size: var(--fs-sm);
+  writing-mode: vertical-rl;
+}
+.room-rail-expand:hover { border-color: var(--gold); color: var(--goldtx); }
+
+@media (min-width: 1101px) {
+  .room-grid[data-rail="open"]   { grid-template-columns: 210px minmax(0, 1fr); }
+  .room-grid[data-rail="closed"] { grid-template-columns: 28px minmax(0, 1fr); }
+}
+@media (max-width: 1100px) {
+  .room-two-up { flex-direction: column; }
+  .room-two-up > .card { width: 100%; position: static; }
+  .room-rail-expand { writing-mode: horizontal-tb; }
+}
+
+/* -- Party members rail ---------------------------------------------------- */
+.room-member-row { display: flex; align-items: center; gap: 7px; padding: 7px 0; border-bottom: 1px solid var(--brd); }
+.room-member-rail { width: 3px; height: 26px; flex: 0 0 3px; border-radius: 2px; }
+.room-member-copy { flex: 1; min-width: 0; }
+.room-member-name { font-size: var(--fs-sm); color: var(--tx); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-member-name[data-state="leader"] { color: var(--goldtx); }
+.room-member-name[data-state="offline"] { color: var(--txm); }
+.room-member-meta { font-size: var(--fs-xs); color: var(--txm); }
+.room-member-tags { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.room-member-tag { font-size: var(--fs-xs); color: var(--txd); }
+.room-member-tag-leader { padding: 1px 5px; border: 1px solid var(--golddim); border-radius: 3px; color: var(--gold); }
+.room-member-tag-friend { color: var(--grn); }
+.room-member-add { font-size: var(--fs-xs); }
+
+/* -- Map selector thumbnails ----------------------------------------------- */
+.room-map-selector-card { padding: 14px 16px 16px; }
+.room-map-selector-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+.room-map-selector-head .lbl { margin-bottom: 0; }
+.room-map-selector-note { font-size: var(--fs-xs); color: var(--txd); letter-spacing: .06em; }
+.room-map-thumbs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--brds) transparent;
+}
+.room-map-thumb {
+  position: relative;
+  flex: 0 0 132px;
+  height: 74px;
+  padding: 0;
+  border: 1px solid var(--brd);
+  border-radius: 5px;
+  overflow: hidden;
+  background: #0f120e;
+}
+.room-map-thumb:hover:not(:disabled) { border-color: var(--gold); }
+.room-map-thumb:disabled { cursor: default; opacity: .85; }
+.room-map-thumb-art { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: .5; transition: opacity .15s; }
+.room-map-thumb-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(12,14,13,.15) 0%, rgba(12,14,13,.86) 72%); }
+.room-map-thumb-name {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  letter-spacing: .08em;
+  color: #d6d2c5;
+  text-shadow: 0 1px 8px rgba(0,0,0,.9);
+}
+.room-map-thumb-rail { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: transparent; }
+.room-map-thumb.is-active { border-color: var(--gold); }
+.room-map-thumb.is-active .room-map-thumb-art { opacity: .92; }
+.room-map-thumb.is-active .room-map-thumb-name { color: var(--goldtx); }
+.room-map-thumb.is-active .room-map-thumb-rail { background: var(--gold); }
+
+/* -- Content tabs ---------------------------------------------------------- */
+.room-tab {
+  min-height: 36px;
+  padding: 8px 18px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--txm);
+  font-size: 14px;
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+.room-tab:hover { color: var(--tx); }
+.room-tab.is-active { color: var(--goldtx); border-bottom-color: var(--gold); }
+
 .room-overflow { position: relative; flex-shrink: 0; }
 .room-overflow-trigger { display: inline-flex; align-items: center; justify-content: center; }
 .room-overflow-popover {
@@ -141,20 +402,15 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 /* LEAVE is destructive and lives apart from the routine tools above it. */
 .room-overflow-leave { display: flex; justify-content: flex-end; margin-top: 3px; padding-top: 10px; border-top: 1px solid var(--brd); }
 .room-overflow-count { padding: 1px 5px; border: 1px solid var(--golddim); border-radius: 3px; background: rgba(201,168,76,.15); color: var(--gold); font-size: var(--fs-xs); }
-.room-overflow-clocks > div { width: 100%; }
-.room-overflow-clocks > div > div { flex: 1; }
+.room-overflow-clocks > .tarkov-clock { width: 100%; }
 .room-overflow-party-code { display: flex; align-items: center; gap: 7px; padding: 7px 8px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur3); }
 .room-overflow-party-code > span { color: var(--txm); font-size: var(--fs-xs); }
 .room-overflow-party-code > strong { color: var(--gold); font-size: var(--fs-md); letter-spacing: .18em; }
 .room-overflow-party-code > button { margin-left: auto; }
-.room-settings-panel[hidden] { display: none; }
-.room-mode-badge { margin-top: 3px; color: var(--goldtx); font-size: var(--fs-xs); letter-spacing: .06em; }
 .room-game-mode-notice { margin-bottom: 14px; padding: 9px 12px; color: var(--gold); border: 1px solid var(--golddim); border-left: 3px solid var(--gold); border-radius: 4px; background: rgba(201,168,76,.06); font-size: var(--fs-sm); line-height: 1.6; }
-.room-mobile-actions { display: flex; align-items: stretch; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.room-mobile-raid-actions { display: flex; align-items: center; flex: 1 1 100%; padding-top: 4px; }
 .room-map-selector-hint { margin: -1px 0 11px; color: var(--txm); font-size: var(--fs-sm); line-height: 1.5; }
 .start-raid-context-note { color: var(--txm); font-size: var(--fs-sm); line-height: 1.55; }
-.room-error { margin-top: 10px; padding: 8px 10px; border: 1px solid rgba(224,107,107,.45); border-radius: 4px; color: var(--red); background: rgba(224,107,107,.08); font-size: var(--fs-sm); }
+.room-error { margin-bottom: 12px; padding: 8px 10px; border: 1px solid rgba(224,107,107,.45); border-radius: 4px; color: var(--red); background: rgba(224,107,107,.08); font-size: var(--fs-sm); }
 .raid-loading { position: fixed; inset: var(--app-nav-h) 0 0; z-index: 500; display: flex; align-items: center; justify-content: center; gap: 12px; background: var(--bg); color: var(--goldtx); }
 
 .app-nav {
@@ -246,7 +502,21 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .legacy-auth-banner { padding: 12px 14px; margin-bottom: 14px; border-color: var(--golddim); }
 .legacy-auth-title { color: var(--gold); font-size: var(--fs-xs); letter-spacing: .08em; }
 .legacy-auth-copy { color: var(--txm); font-size: var(--fs-xs); line-height: 1.6; margin-top: 4px; }
-.raid-settings-popover { padding: 14px; margin: -4px 0 14px; position: relative; z-index: 5; }
+/* Anchored to the gear button in the banner: it overlays the page rather than
+   pushing content down, which is what the old inline panel did. */
+.raid-settings-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 1200;
+  width: min(390px, calc(100vw - 24px));
+  padding: 13px;
+  margin: 0;
+  border: 1px solid var(--brdm);
+  border-radius: 5px;
+  background: var(--sur2);
+  box-shadow: 0 18px 44px rgba(0,0,0,.8);
+}
 .raid-settings-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--brd); }
 .raid-settings-note { color: var(--txd); font-size: var(--fs-xs); margin-top: 3px; letter-spacing: .04em; }
 .raid-settings-list { display: flex; flex-direction: column; }
@@ -255,6 +525,36 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .raid-settings-label { min-width: 0; display: flex; flex-direction: column; gap: 2px; font-family: 'Share Tech Mono', monospace; font-size: var(--fs-sm); color: var(--tx); }
 .raid-settings-source { color: var(--txd); font-size: var(--fs-xs); letter-spacing: .04em; }
 .raid-settings-control { flex-shrink: 0; }
+/* The value reads as a pill; it stays a select because the leader edits it. */
+.raid-settings-control select {
+  padding: 4px 9px;
+  border: 1px solid var(--brds);
+  border-radius: 4px;
+  background: var(--sur3);
+  color: var(--goldtx);
+  font-size: var(--fs-xs);
+}
+
+/* -- Tarkov clock: one bordered unit, three cells --------------------------- */
+.tarkov-clock { display: flex; align-items: stretch; overflow: hidden; border: 1px solid var(--brdg); border-radius: 4px; background: var(--sur2); }
+.tarkov-clock-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 10px;
+  color: var(--txf);
+  font-size: var(--fs-xs);
+  letter-spacing: .2em;
+  line-height: 1;
+}
+.tarkov-clock-cell { display: flex; align-items: center; gap: 7px; padding: 6px 11px; border-left: 1px solid var(--brdm); }
+.tarkov-clock-glyph { font-size: var(--fs-sm); line-height: 1; }
+.tarkov-clock-time { font-size: 19px; font-weight: 700; letter-spacing: .06em; line-height: 1; }
+.tarkov-clock-cell[data-phase="day"] .tarkov-clock-glyph { color: var(--gold); }
+.tarkov-clock-cell[data-phase="day"] .tarkov-clock-time { color: var(--goldtx); }
+.tarkov-clock-cell[data-phase="night"] .tarkov-clock-glyph { color: var(--nightd); }
+.tarkov-clock-cell[data-phase="night"] .tarkov-clock-time { color: var(--night); }
 
 /* ── Local screenshot sync ────────────────────────────────────────────────── */
 .mon-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
@@ -559,6 +859,126 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .obj-row-quest { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); font-family: 'Rajdhani', sans-serif; font-weight: 600; }
 .obj-row-separator { color: var(--txd); flex: 0 0 auto; }
 .obj-row-action { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txm); font-size: var(--fs-xs); }
+/* -- Squad objective rows --------------------------------------------------- */
+.obj-rows { display: flex; flex-direction: column; gap: 2px; }
+.obj-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--brdo);
+  border-left: 3px solid var(--brd);
+  border-radius: 4px;
+  transition: opacity .2s, border-color .15s;
+}
+/* Alternating grounds so a long list stays scannable row to row. */
+.obj-row[data-stripe="odd"]  { background: var(--sur2); }
+.obj-row[data-stripe="even"] { background: var(--rowb); }
+.obj-row.is-done { opacity: .4; }
+.obj-row.is-dragging { opacity: .3; }
+.obj-row.is-drop-target { border-color: var(--gold); }
+.obj-row-promote {
+  flex-shrink: 0;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--txd);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  opacity: .55;
+  transition: color .15s, opacity .15s;
+}
+.obj-row-promote:hover { color: var(--gold); opacity: 1; }
+.obj-row-promote.is-top { opacity: .2; }
+.obj-row-grip { flex-shrink: 0; color: var(--txf); font-size: 14px; line-height: 1; cursor: grab; user-select: none; }
+.obj-row-body { flex: 1; min-width: 0; }
+.obj-row-desc { font-size: var(--fs-sm); color: var(--txb); line-height: 1.4; }
+.obj-row-desc a { color: inherit; text-decoration: inherit; }
+.obj-row.is-done .obj-row-desc { text-decoration: line-through; }
+.obj-row-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.obj-row-owners { display: flex; gap: 5px; flex-shrink: 0; }
+.obj-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 1px 6px;
+  border: 1px solid var(--brdm);
+  border-radius: 2px;
+  background: var(--pill);
+  color: var(--txd);
+  font-size: var(--fs-xs);
+  letter-spacing: .06em;
+}
+.obj-pill-quest { min-width: 0; color: #a8a08a; letter-spacing: .04em; }
+.obj-pill-quest > a,
+.obj-pill-quest { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obj-pill-quest a { color: inherit; }
+.obj-pill-quest a:hover { color: var(--gold); }
+.obj-pill-swatch { width: 5px; height: 5px; flex: 0 0 5px; border-radius: 1px; }
+.obj-pill-shared { border-color: rgba(201,168,76,.42); background: rgba(201,168,76,.13); color: var(--goldtx); letter-spacing: .08em; }
+
+/* A member is a colour bar butted against their callsign. */
+.owner-chip { display: inline-flex; align-items: stretch; flex-shrink: 0; overflow: hidden; border: 1px solid var(--brd); border-radius: 3px; }
+.owner-chip-bar { width: 4px; flex: 0 0 4px; }
+.owner-chip-name { padding: 2px 7px; color: inherit; font-size: var(--fs-xs); letter-spacing: .06em; line-height: 1.35; }
+.owner-chip.is-done { border-color: rgba(90,200,90,.4); background: rgba(90,200,90,.15); color: var(--grn); }
+.owner-chip.is-done .owner-chip-name { text-decoration: line-through; }
+
+.obj-scope-toggle { display: flex; width: fit-content; margin-bottom: 12px; border: 1px solid var(--brd2); border-radius: 4px; overflow: hidden; }
+.obj-scope-btn {
+  padding: 5px 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--tx);
+  font-size: var(--fs-sm);
+}
+.obj-scope-btn + .obj-scope-btn { border-left: 1px solid var(--brd2); }
+.obj-scope-btn:hover:not(.is-active) { color: var(--goldtx); }
+.obj-scope-btn.is-active { background: var(--gold); color: var(--bg); }
+
+.obj-filter-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.obj-filter-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 6px;
+  border: 1px solid var(--brds);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--txm);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: var(--fs-sm);
+  letter-spacing: .04em;
+}
+.obj-filter-member:hover { border-color: var(--brd2); color: var(--tx); }
+.obj-filter-member-rail { width: 3px; height: 13px; flex: 0 0 3px; border-radius: 2px; }
+
+/* -- My Quests panel -------------------------------------------------------- */
+.quest-card-trader-slot { width: 28px; height: 28px; flex: 0 0 28px; border: 1px solid var(--brdm); border-radius: 3px; background: #22261f; }
+.quest-empty-card { position: relative; margin-top: 12px; min-height: 104px; border: 1px solid var(--brd); border-radius: 5px; overflow: hidden; }
+.quest-empty-art { position: absolute; inset: 0; background-size: cover; background-position: 50% 62%; opacity: .55; }
+.quest-empty-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(12,14,13,.94) 0%, rgba(12,14,13,.6) 60%, rgba(12,14,13,.35) 100%); }
+.quest-empty-copy { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 6px; min-height: 104px; padding: 12px 14px; }
+.quest-empty-title { font-size: var(--fs-xs); color: var(--goldtx); letter-spacing: .14em; }
+.quest-empty-note { max-width: 320px; color: #c8c3b4; font-size: var(--fs-sm); line-height: 1.5; }
+.quest-empty-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--golddim);
+  border-radius: 4px;
+  background: rgba(12,14,13,.7);
+  color: var(--goldtx);
+  font-size: var(--fs-sm);
+  letter-spacing: .06em;
+}
+.quest-empty-action:hover { background: rgba(201,168,76,.16); }
+
 .quest-share-badge { flex: 0 0 auto; color: var(--grn); border: 1px solid rgba(102,183,120,.45); border-radius: 2px; padding: 1px 4px; font-size: var(--fs-xs); letter-spacing: .06em; line-height: 1.2; }
 .obj-row-distance { margin-left: auto; flex: 0 0 auto; color: var(--goldtx); font-size: var(--fs-xs); white-space: nowrap; }
 .obj-row-no-location .obj-row-distance { color: var(--txd); }
@@ -961,13 +1381,17 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 @media (max-width: 768px) {
   .app-nav-inner { padding: 0 8px; }
   .app-nav-link { flex: 1 0 auto; padding: 0 9px; }
-  .room-shell { padding: 10px 8px; }
-  .room-header-row { display: block; }
-  .room-mobile-actions > button { min-height: 44px; flex: 1 1 120px; }
-  .room-mobile-actions > .room-overflow { flex: 0 0 52px; }
-  .room-mobile-actions .room-overflow-trigger,
-  .room-mobile-raid-actions > button { min-height: 44px; }
+  .room-body { padding: 10px 8px; }
+  .room-banner-row { padding: 10px 12px; }
+  .room-banner-title { font-size: 30px; }
+  .room-banner-controls { width: 100%; }
+  .room-banner-buttons { flex: 1 1 auto; flex-wrap: wrap; }
+  .room-banner-buttons > .room-banner-btn { flex: 1 1 120px; justify-content: center; min-height: 44px; }
+  .room-banner-icon-btn,
+  .room-banner-buttons .room-overflow-trigger { width: 44px; height: 44px; min-height: 44px; }
+  .room-start-raid { flex: 1 1 100%; justify-content: center; }
   .room-overflow-popover { right: 0; width: min(360px, calc(100vw - 32px)); }
+  .raid-settings-popover { right: auto; left: 0; }
   .raid-topbar { padding: 0 4px; gap: 2px; }
   .raid-map-meta, .raid-map-name, .raid-button-label { display: none; }
   .raid-map-title { justify-content: flex-start; }
@@ -1137,6 +1561,26 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .sync-popover-row > span:first-child:only-child { color: var(--txm); font-family: 'Share Tech Mono', monospace; font-size: var(--fs-xs); }
 .sync-popover-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
 .sync-popover-link { color: var(--goldtx); }
+.sync-status-bar-header { display: flex; flex-direction: column; gap: 4px; padding: 6px 9px; }
+.sync-header-label { font-size: var(--fs-xs); color: var(--txf); letter-spacing: .2em; line-height: 1; }
+.sync-status-bar-header .sync-chip-list { gap: 9px; }
+.sync-chip-compact {
+  gap: 5px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--txm);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: var(--fs-xs);
+  letter-spacing: .08em;
+}
+.sync-chip-compact:hover { border: none; color: var(--goldtx); }
+.sync-chip-compact .sync-chip-dot { width: 6px; height: 6px; flex-basis: 6px; }
+.sync-chip-compact[data-tone="ok"] .sync-chip-dot { box-shadow: 0 0 7px var(--gold); }
+.sync-chip-compact[data-tone="warn"] .sync-chip-dot { box-shadow: 0 0 7px #d9a441; }
+.sync-chip-compact[data-tone="error"] .sync-chip-dot { box-shadow: 0 0 7px var(--red); }
+
 .sync-status-bar-embedded { width: 100%; }
 .sync-status-bar-embedded .sync-chip-list { flex-wrap: wrap; }
 .sync-status-bar-embedded .sync-chip { flex: 1 1 130px; justify-content: flex-start; }
@@ -1147,7 +1591,7 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 }
 
 @media (max-width: 768px) {
-.sync-chip[data-channel="monitor"] .sync-chip-label,
+.sync-chip[data-channel="monitor"]:not(.sync-chip-compact) .sync-chip-label,
 .sync-chip[data-channel="monitor"] .sync-chip-meta { display: none; }
   .sync-popover { right: auto; left: 0; }
 }

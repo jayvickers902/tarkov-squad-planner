@@ -20,6 +20,9 @@ function isDaytime(secs) {
   return h >= 7 && h < 19
 }
 
+// The two servers are always 12h apart, so exactly one of them is in daylight.
+// The cells keep their fixed left/right positions — only the glyph and colour
+// follow which server is actually in daylight right now.
 export default function TarkovClocks() {
   const [times, setTimes] = useState(getTarkovTimes)
 
@@ -28,41 +31,22 @@ export default function TarkovClocks() {
     return () => clearInterval(id)
   }, [])
 
-  const leftDay  = isDaytime(times.left)
-  const rightDay = isDaytime(times.right)
-
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
-      {[
-        { side: 'left', secs: times.left,  day: leftDay  },
-        { side: 'right', secs: times.right, day: rightDay },
-      ].map(({ side, secs, day }) => (
-        <div key={side} style={{
-          background: 'var(--sur2)',
-          border: `1px solid ${day ? 'var(--golddim)' : '#2a3d52'}`,
-          borderRadius: 5,
-          padding: '4px 10px',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 1,
-        }}>
-          <div style={{
-            fontFamily: 'Share Tech Mono, monospace',
-            fontSize: 16,
-            fontWeight: 700,
-            letterSpacing: '0.1em',
-            color: day ? 'var(--goldtx)' : '#8ab0cc',
-            lineHeight: 1,
-          }}>
-            {toHHMMSS(secs)}
+    <div className="tarkov-clock">
+      <div className="tarkov-clock-label mono">
+        <span>TARKOV</span>
+        <span>TIME</span>
+      </div>
+      {[times.left, times.right].map((secs, i) => {
+        const day = isDaytime(secs)
+        return (
+          <div key={i} className="tarkov-clock-cell" data-phase={day ? 'day' : 'night'}>
+            <span className="tarkov-clock-glyph" aria-hidden="true">{day ? '\u2600' : '\u263E'}</span>
+            <span className="mono tarkov-clock-time">{toHHMMSS(secs)}</span>
+            <span className="sr-status">{day ? 'Daytime server' : 'Night server'}</span>
           </div>
-          <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: day ? 'var(--gold)' : '#5a7a8a', letterSpacing: '.06em' }}>
-            {day ? '☀ DAY' : '☽ NIGHT'}
-          </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

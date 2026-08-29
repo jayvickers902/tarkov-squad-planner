@@ -3,6 +3,8 @@ import { normalizeMembers, objectiveProgressKey, questDoneKey } from '../partyMe
 import { objectiveHasMapLocation, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
 import { classifyObjective, classifyTask } from '../questShare'
 import { useQuestShareOverrides } from '../useQuestShareOverrides'
+import { memberColor } from '../memberColors'
+import { questRailColor } from '../questColors'
 
 
 function toAntifandom(url) {
@@ -10,29 +12,17 @@ function toAntifandom(url) {
   return url.replace('escapefromtarkov.fandom.com', 'escapefromtarkov.antifandom.com')
 }
 
-const MEMBER_COLORS = [
-  { bg: '#1a2e3a', border: '#1e5a7a', text: '#5aace8' },
-  { bg: '#2a1a2e', border: '#5a1e7a', text: '#b85ae8' },
-  { bg: '#2e1a1a', border: '#7a1e1e', text: '#e85a5a' },
-  { bg: '#1a2e1a', border: '#1e7a1e', text: '#5ae85a' },
-  { bg: '#2e2a1a', border: '#7a6a1e', text: '#e8c85a' },
-  { bg: '#1a2a2e', border: '#1e6a7a', text: '#5ad8e8' },
-]
-
-function memberColor(name, allMembers) {
-  const idx = allMembers.indexOf(name) % MEMBER_COLORS.length
-  return MEMBER_COLORS[Math.max(0, idx)]
-}
-
-function MemberPill({ name, allMembers }) {
+// A member reads as a colour bar butted against their callsign, so a row's
+// owners are scannable before the text is.
+function MemberPill({ name, allMembers, done = false }) {
   const c = memberColor(name, allMembers)
   return (
-    <span className="mono" style={{
-      fontSize: 'var(--fs-xs)', padding: '2px 6px', borderRadius: 3,
-      background: c.bg, border: `1px solid ${c.border}`, color: c.text,
-      flexShrink: 0, letterSpacing: '.04em',
-    }}>
-      {name.slice(0, 8).toUpperCase()}
+    <span
+      className={done ? 'owner-chip is-done' : 'owner-chip'}
+      style={done ? undefined : { background: c.bg, borderColor: c.border, color: c.text }}
+    >
+      <span className="owner-chip-bar" style={{ background: done ? 'var(--grn)' : c.text }} />
+      <span className="mono owner-chip-name">{name.slice(0, 8).toUpperCase()}</span>
     </span>
   )
 }
@@ -63,12 +53,13 @@ const QuestCard = memo(function QuestCard({
   const pct = objs.length ? (doneCount / objs.length) * 100 : 0
   const taskShare = classifyTask(task, overrides)
   const loyalty = traderGateLabel(task)
+  const rail = questRailColor(task.id)
 
   return (
     <div style={{
       background: 'var(--sur2)',
       border: `1px solid ${starred && !allDone && !completed && !dimmed ? 'var(--golddim)' : 'var(--brd)'}`,
-      borderLeft: `3px solid ${completed || allDone ? 'var(--grn)' : dimmed ? 'var(--brd)' : starred ? 'var(--gold)' : 'var(--brd)'}`,
+      borderLeft: `3px solid ${completed || allDone ? 'var(--grn)' : dimmed ? 'var(--brd)' : starred ? 'var(--gold)' : rail}`,
       borderRadius: 4,
       opacity: completed || allDone || dimmed ? .4 : 1,
       transition: 'opacity .2s, border-color .15s',
@@ -186,17 +177,7 @@ const QuestCard = memo(function QuestCard({
                     <div style={{ display: 'flex', gap: 3, marginTop: 3, flexWrap: 'wrap' }}>
                       {owners.map(m => {
                         const done = doneBy.includes(m)
-                        const c = memberColor(m, members)
-                        return (
-                          <span key={m} className="mono" style={{
-                            fontSize: 'var(--fs-xs)', padding: '1px 5px', borderRadius: 3,
-                            background: done ? 'rgba(90,200,90,0.15)' : c.bg,
-                            border: `1px solid ${done ? 'rgba(90,200,90,0.4)' : c.border}`,
-                            color: done ? 'var(--grn)' : c.text,
-                            letterSpacing: '.04em', flexShrink: 0,
-                            textDecoration: done ? 'line-through' : 'none',
-                          }}>{m.slice(0, 8).toUpperCase()}</span>
-                        )
+                        return <MemberPill key={m} name={m} allMembers={members} done={done} />
                       })}
                     </div>
                   )}
@@ -414,23 +395,25 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
       </div>
 
       {/* View mode toggle */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 12, borderRadius: 4, overflow: 'hidden', border: '1px solid var(--brd2)', width: 'fit-content' }}>
+      <div className="obj-scope-toggle">
         <button
-          onClick={() => setViewMode('objectives')}
-          className={viewMode === 'objectives' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-          style={{ borderRadius: 0, borderRight: '1px solid var(--brd2)' }}>
+          type="button"
+          className={viewMode === 'objectives' ? 'obj-scope-btn is-active' : 'obj-scope-btn'}
+          aria-pressed={viewMode === 'objectives'}
+          onClick={() => setViewMode('objectives')}>
           MAP OBJECTIVES
         </button>
         <button
-          onClick={() => setViewMode('quests')}
-          className={viewMode === 'quests' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-          style={{ borderRadius: 0 }}>
+          type="button"
+          className={viewMode === 'quests' ? 'obj-scope-btn is-active' : 'obj-scope-btn'}
+          aria-pressed={viewMode === 'quests'}
+          onClick={() => setViewMode('quests')}>
           QUESTS
         </button>
       </div>
 
       {/* Filter bar */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="obj-filter-bar">
         <button onClick={() => setFilter('all')} className={filter === 'all' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}>ALL</button>
         <button onClick={() => setFilter('starred')}
           className={filter === 'starred' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
@@ -456,13 +439,15 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
           const c = memberColor(m, members)
           const active = filter === m
           return (
-            <button key={m} onClick={() => setFilter(m)} style={{
-              padding: '5px 10px', fontSize: 'var(--fs-sm)', borderRadius: 4,
-              background: active ? c.bg : 'transparent',
-              border: `1px solid ${active ? c.border : 'var(--brd2)'}`,
-              color: active ? c.text : 'var(--txm)',
-              fontFamily: 'Share Tech Mono', letterSpacing: '.04em', transition: 'all .15s',
-            }}>
+            <button
+              key={m}
+              type="button"
+              className="obj-filter-member"
+              aria-pressed={active}
+              onClick={() => setFilter(active ? 'all' : m)}
+              style={active ? { background: c.bg, borderColor: c.border, color: c.text } : undefined}
+            >
+              <span className="obj-filter-member-rail" style={{ background: c.text }} aria-hidden="true" />
               {m.slice(0, 10).toUpperCase()}
             </button>
           )
@@ -487,112 +472,76 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
             <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', marginTop: 8 }}>NO FILTERED QUESTS HAVE OBJECTIVES WITH MAP LOCATIONS</div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {sortedObjRows.map(row => {
+          <div className="obj-rows">
+            {sortedObjRows.map((row, idx) => {
               const key = objectiveOrderKey(row.task.id, row.obj.id)
               const isDraggingThis = dragObjKey === key
               const isDragOverThis = dragOverObjKey === key
+              const allOwnersDone = row.doneByMembers.length === row.owners.length && row.owners.length > 0
+              const rail = allOwnersDone ? 'var(--grn)' : questRailColor(row.task.id)
+              const isTop = sortedObjRows[0] && objectiveOrderKey(sortedObjRows[0].task.id, sortedObjRows[0].obj.id) === key
+              const wiki = toAntifandom(row.task.wikiLink)
               return (
                 <div
                   key={key}
+                  className={`obj-row${isDragOverThis ? ' is-drop-target' : ''}${allOwnersDone ? ' is-done' : ''}${isDraggingThis ? ' is-dragging' : ''}`}
+                  data-stripe={idx % 2 === 0 ? 'odd' : 'even'}
+                  style={{ borderLeftColor: rail }}
                   draggable
                   onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragObjKey(key) }}
                   onDragOver={e => handleObjDragOver(e, key)}
                   onDrop={e => handleObjDrop(e, key)}
                   onDragEnd={handleObjDragEnd}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 9,
-                    padding: '7px 10px',
-                    background: 'var(--sur2)',
-                    border: `1px solid ${isDragOverThis ? 'var(--gold)' : 'var(--brd)'}`,
-                    borderLeft: `3px solid ${row.doneByMembers.length === row.owners.length && row.owners.length > 0 ? 'var(--grn)' : 'var(--brd)'}`,
-                    borderRadius: 4,
-                    cursor: 'default',
-                    opacity: isDraggingThis ? 0.3 : row.doneByMembers.length === row.owners.length && row.owners.length > 0 ? 0.4 : 1,
-                    transition: 'opacity .2s, border-color .15s',
-                  }}
                 >
                   {/* Send to top */}
                   <button
+                    type="button"
+                    className={isTop ? 'obj-row-promote is-top' : 'obj-row-promote'}
                     onClick={e => { e.stopPropagation(); sendObjToTop(key) }}
                     title="Send to top"
                     aria-label={`Send ${row.obj.description} to top`}
-                    style={{
-                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                      color: 'var(--txd)', fontSize: 13, flexShrink: 0, lineHeight: 1,
-                      opacity: sortedObjRows[0] && objectiveOrderKey(sortedObjRows[0].task.id, sortedObjRows[0].obj.id) === key ? 0.2 : 0.6,
-                      transition: 'color .15s, opacity .15s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--gold)'; e.currentTarget.style.opacity = '1' }}
-                    onMouseLeave={e => { e.currentTarget.style.color = 'var(--txd)'; e.currentTarget.style.opacity = sortedObjRows[0] && objectiveOrderKey(sortedObjRows[0].task.id, sortedObjRows[0].obj.id) === key ? '0.2' : '0.6' }}
-                  >↑</button>
+                  >&#8593;</button>
 
                   {/* Drag grip */}
                   <span
-                    style={{ cursor: 'grab', color: 'var(--txd)', fontSize: 14, flexShrink: 0, userSelect: 'none', lineHeight: 1 }}
+                    className="obj-row-grip"
                     title="Drag to reorder"
+                    aria-hidden="true"
                     onClick={e => e.stopPropagation()}
-                  >⠿</span>
+                  >&#10303;</span>
 
-                  {/* Description + quest name */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: 'var(--fs-sm)', color: row.doneByMembers.length === row.owners.length && row.owners.length > 0 ? 'var(--txd)' : 'var(--tx)',
-                      textDecoration: row.doneByMembers.length === row.owners.length && row.owners.length > 0 ? 'line-through' : 'none',
-                      lineHeight: 1.4,
-                    }}>
-                      {toAntifandom(row.task.wikiLink) ? (
-                        <a
-                          href={toAntifandom(row.task.wikiLink) + '#Objectives'}
-                          target="_blank" rel="noreferrer"
-                          onClick={e => e.stopPropagation()}
-                          style={{ color: 'inherit', textDecoration: 'inherit' }}
-                        >{row.obj.description}</a>
+                  <div className="obj-row-body">
+                    <div className="obj-row-desc">
+                      {wiki ? (
+                        <a href={`${wiki}#Objectives`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>
+                          {row.obj.description}
+                        </a>
                       ) : row.obj.description}
                     </div>
-                    <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {toAntifandom(row.task.wikiLink) ? (
-                        <a
-                          href={toAntifandom(row.task.wikiLink)}
-                          target="_blank" rel="noreferrer"
-                          onClick={e => e.stopPropagation()}
-                          style={{ color: 'var(--txd)', textDecoration: 'none' }}
-                          onMouseEnter={e => e.currentTarget.style.color = 'var(--gold)'}
-                          onMouseLeave={e => e.currentTarget.style.color = 'var(--txd)'}
-                        >{row.task.name}</a>
-                      ) : row.task.name}
+                    <div className="obj-row-meta">
+                      <span className="mono obj-pill obj-pill-quest" title={row.task.name}>
+                        <span className="obj-pill-swatch" style={{ background: questRailColor(row.task.id) }} aria-hidden="true" />
+                        {wiki ? (
+                          <a href={wiki} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>{row.task.name}</a>
+                        ) : row.task.name}
+                      </span>
+                      <span className="mono obj-pill">{objectiveTypeLabel(row.obj.type)}</span>
+                      {row.owners.length > 1 && (
+                        <span className="mono obj-pill obj-pill-shared" title={`${row.owners.length} party members need this objective`}>
+                          &times;{row.owners.length} SHARED
+                        </span>
+                      )}
+                      {classifyObjective(row.obj, row.task, overrides) === 'squad' && (
+                        <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
+                      )}
                     </div>
                   </div>
 
-                  {/* Type badge */}
-                  <span className="mono" style={{
-                    fontSize: 'var(--fs-xs)', flexShrink: 0, letterSpacing: '.06em',
-                    color: row.doneByMembers.length === row.owners.length && row.owners.length > 0 ? 'var(--txd)' : 'var(--txm)',
-                    background: 'var(--sur)', border: '1px solid var(--brd)',
-                    borderRadius: 2, padding: '1px 5px',
-                  }}>
-                    {objectiveTypeLabel(row.obj.type)}
-                  </span>
-                  {classifyObjective(row.obj, row.task, overrides) === 'squad' && (
-                    <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
-                  )}
-
                   {/* Member completion chips */}
-                  <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
-                    {row.owners.map(m => {
-                      const done = row.doneByMembers.includes(m)
-                      const c = memberColor(m, members)
-                      return (
-                        <span key={m} className="mono" style={{
-                          fontSize: 'var(--fs-xs)', padding: '1px 5px', borderRadius: 3,
-                          background: done ? 'rgba(90,200,90,0.15)' : c.bg,
-                          border: `1px solid ${done ? 'rgba(90,200,90,0.4)' : c.border}`,
-                          color: done ? 'var(--grn)' : c.text,
-                          letterSpacing: '.04em', flexShrink: 0,
-                          textDecoration: done ? 'line-through' : 'none',
-                        }}>{m.slice(0, 8).toUpperCase()}</span>
-                      )
-                    })}
+                  <div className="obj-row-owners">
+                    {row.owners.map(m => (
+                      <MemberPill key={m} name={m} allMembers={members} done={row.doneByMembers.includes(m)} />
+                    ))}
                   </div>
                 </div>
               )

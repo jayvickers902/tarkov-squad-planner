@@ -3,7 +3,31 @@ import { objectiveProgressKey, questDoneKey } from '../partyMembers'
 import { objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
 import { classifyObjective, classifyTask } from '../questShare'
 import { useQuestShareOverrides } from '../useQuestShareOverrides'
+import { questRailColor } from '../questColors'
+import { mapReferenceArt } from '../mapBanners'
 import Icon from './Icon'
+
+
+// Shown when this map has nothing left for the player but their list is not
+// empty — the map art keeps the panel from reading as an error.
+function NothingElseHere({ mapNorm, mapLabel, onOpenQuestManager }) {
+  const art = mapReferenceArt(mapNorm)
+  return (
+    <div className="quest-empty-card">
+      <div className="quest-empty-art" style={art ? { backgroundImage: `url('${art}')` } : undefined} aria-hidden="true" />
+      <div className="quest-empty-scrim" aria-hidden="true" />
+      <div className="quest-empty-copy">
+        <div className="mono quest-empty-title">NOTHING ELSE ON {mapLabel}</div>
+        <p className="quest-empty-note">Your remaining quests sit on other maps. Import a fresh quest log or pull one from the manager.</p>
+        <div>
+          <button type="button" className="quest-empty-action" onClick={onOpenQuestManager}>
+            <Icon name="star" size="sm" /> QUEST MANAGER
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 
 function objsForMap(objectives, mapNorm, taskMapNorm) {
@@ -16,7 +40,7 @@ function objsForMap(objectives, mapNorm, taskMapNorm) {
   })
 }
 
-export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myUserId, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, loading, settings = {}, onSetSetting }) {
+export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myUserId, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, mapName, loading, settings = {}, onSetSetting }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
   const { overrides } = useQuestShareOverrides()
 
@@ -149,6 +173,8 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
     })
   }
 
+  const mapLabel = (mapName || mapNorm || 'THIS MAP').toUpperCase()
+
   if (!rows.length) {
     const hasAnyQuests = myQuests.length > 0
     if (!hasAnyQuests && loading) {
@@ -159,26 +185,21 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
         </div>
       )
     }
+    if (hasAnyQuests) {
+      return <NothingElseHere mapNorm={mapNorm} mapLabel={mapLabel} onOpenQuestManager={onOpenQuestManager} />
+    }
     return (
       <div>
         <div style={{ textAlign: 'center', padding: '40px 24px' }}>
-        <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>
-          {hasAnyQuests ? 'NO QUESTS FOR THIS MAP' : 'NO QUESTS ADDED'}
+        <div className="mono" style={{ fontSize: 13, color: 'var(--goldtx)', letterSpacing: '.1em', marginBottom: 10 }}>NO QUESTS ADDED</div>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', lineHeight: 1.7 }}>
+          Import your quest list to fill this out.
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
+            <button onClick={onOpenQuestManager} className="btn-ghost btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--gold)', borderColor: 'var(--golddim)' }}>
+              <Icon name="star" size="sm" /> QUEST MANAGER
+            </button>
+          </div>
         </div>
-        {hasAnyQuests ? (
-          <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', lineHeight: 1.7 }}>
-            SELECT A DIFFERENT MAP OR ADD MORE QUESTS
-          </div>
-        ) : (
-          <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', lineHeight: 1.7 }}>
-            Import your quest list to fill this out.
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
-              <button onClick={onOpenQuestManager} className="btn-ghost btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--gold)', borderColor: 'var(--golddim)' }}>
-                <Icon name="star" size="sm" /> QUEST MANAGER
-              </button>
-            </div>
-          </div>
-        )}
         </div>
       </div>
     )
@@ -238,7 +259,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
             <div style={{
               background: 'var(--sur2)',
               border: `1px solid ${isDone || allObjsDone ? 'rgba(90,200,90,0.25)' : isPendingDone ? 'var(--golddim)' : 'var(--brd)'}`,
-              borderLeft: `3px solid ${isDone || allObjsDone ? 'var(--grn)' : isPendingDone ? 'var(--gold)' : 'var(--brd)'}`,
+              borderLeft: `3px solid ${isDone || allObjsDone ? 'var(--grn)' : isPendingDone ? 'var(--gold)' : questRailColor(task.id)}`,
               borderRadius: 4,
               opacity: isDone ? 0.5 : 1,
               transition: 'opacity .2s, border-color .15s',
@@ -248,9 +269,9 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                 display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
                 borderBottom: objs.length && !isDone ? '1px solid var(--brd)' : 'none',
               }}>
-                {task.trader?.imageLink && (
-                  <img src={task.trader.imageLink} alt={task.trader.name} title={task.trader.name} style={{ width: 28, height: 28, borderRadius: 3, objectFit: 'cover', flexShrink: 0, opacity: isDone ? 0.4 : 1, border: '1px solid var(--brd)' }} />
-                )}
+                {task.trader?.imageLink
+                  ? <img src={task.trader.imageLink} alt={task.trader.name} title={task.trader.name} style={{ width: 28, height: 28, borderRadius: 3, objectFit: 'cover', flexShrink: 0, opacity: isDone ? 0.4 : 1, border: '1px solid var(--brd)' }} />
+                  : <span className="quest-card-trader-slot" aria-hidden="true" />}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
                     fontSize: 'var(--fs-sm)', fontWeight: 600,
@@ -381,6 +402,10 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
           )
         })}
       </div>
+
+      {mapNorm && rows.length < myQuests.length && (
+        <NothingElseHere mapNorm={mapNorm} mapLabel={mapLabel} onOpenQuestManager={onOpenQuestManager} />
+      )}
 
       {/* Pending banner */}
       {hasPending && (
