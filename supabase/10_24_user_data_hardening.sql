@@ -74,10 +74,10 @@ execute function public.enforce_user_quest_row_cap();
 -- Defense in depth only: current RLS already prevents anonymous callers from
 -- satisfying the own-member policy, but retaining the grant is unnecessary.
 -- The live grant is 10_03_rls.sql:150-151, on (quests, quests_all). Do not add
--- character_snapshot here: 10_10_character_snapshots.sql was never applied to
--- production, the column does not exist, and nothing in src/ or companion/src/
--- references it. Revoking at table level clears every column grant anon holds,
--- whichever of those files a given database actually ran.
+-- a character_snapshot column grant here. 10_10_character_snapshots.sql claimed
+-- to add that column but was never applied to production, and no code ever wrote
+-- the column, so it was deleted in the same commit as this file. Revoking at
+-- table level clears every column grant anon holds either way.
 revoke update on table public.party_members from anon;
 grant update (quests, quests_all) on table public.party_members to authenticated;
 
