@@ -16,6 +16,13 @@ vi.mock('../EftLogSyncContext', () => ({
   useEftScreenshotSyncContext: () => null,
 }))
 vi.mock('../useCompanionSyncStatus', () => ({ useCompanionSyncStatus: () => null }))
+vi.mock('./StartRaidModal', () => ({
+  default: ({ onClose }) => (
+    <div role="dialog" aria-label="Start raid brief">
+      <button type="button" onClick={onClose}>OK — LET'S GO</button>
+    </div>
+  ),
+}))
 
 const MAPS = [
   { id: 'map-woods', name: 'Woods', normalizedName: 'woods' },
@@ -150,6 +157,17 @@ describe('Room banner header', () => {
     cleanup()
     renderRoom({ props: { myUserId: 'user-2', myName: 'BOOTS' } })
     expect(screen.queryByRole('button', { name: /START RAID/ })).not.toBeInTheDocument()
+  })
+
+  it('starts the raid and enters Raid View when the brief is confirmed', () => {
+    const { props } = renderRoom()
+
+    fireEvent.click(screen.getByRole('button', { name: /START RAID/ }))
+    fireEvent.click(screen.getByRole('button', { name: "OK — LET'S GO" }))
+
+    expect(props.onStartRaid).toHaveBeenCalledOnce()
+    expect(props.onOpenRaid).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
   })
 
   it('opens raid settings as an anchored popover and closes it on an outside click', () => {

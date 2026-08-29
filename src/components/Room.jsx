@@ -356,6 +356,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
             } else {
               setDismissedRaidStart(raidStart)
             }
+            onOpenRaid()
           }}
           onCancel={() => {
             if (startRaidPending) setStartRaidPending(false)
