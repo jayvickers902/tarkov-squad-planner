@@ -425,8 +425,6 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
           userQuests={userQuests}
           userId={userId}
           gameMode={gameMode}
-          onAdd={onAdd}
-          onBulkAdd={onBulkAdd}
           onGetQuestHistory={onGetQuestHistory}
           onApply={onReconcileLogEvents}
           sync={eftLogSync}

@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { IMPORT_ROUTES, recommendedRoute } from '../questImportRoutes'
 import { gameModeLabel } from '../gameMode'
-import QuestScanner from './QuestScanner'
-import CatchUp from './CatchUp'
 import EftLogImport from './EftLogImport'
+import DesktopAppCard from './DesktopAppCard'
 
 export default function QuestImportHub({
   open,
@@ -12,8 +11,6 @@ export default function QuestImportHub({
   userQuests,
   userId,
   gameMode,
-  onAdd,
-  onBulkAdd,
   onGetQuestHistory,
   onApply,
   sync,
@@ -25,22 +22,8 @@ export default function QuestImportHub({
 }) {
   const [selectedKey, setSelectedKey] = useState(null)
   const importStartedRef = useRef(null)
-  const mobileLikely = useMemo(() => {
-    if (typeof navigator === 'undefined') return false
-    if (navigator.userAgentData?.mobile === true) return true
-    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')
-  }, [])
-  const desktopFresh = companion?.desktopState
-    ? companion.desktopState === 'connected'
-    : companion?.desktopConnected === true && Number.isFinite(Date.parse(companion?.desktopLastSeen || ''))
-      && Date.now() - Date.parse(companion.desktopLastSeen) < 90_000
   const recommendation = recommendedRoute({
-    gameMode,
-    logsSupported: sync?.supported,
-    persistentSupported: sync?.persistentSupported,
     desktopConnected: companion?.desktopConnected,
-    desktopFresh,
-    mobileLikely,
   })
   const routes = useMemo(() => {
     const recommended = IMPORT_ROUTES.find(route => route.key === recommendation.key)
@@ -80,26 +63,6 @@ export default function QuestImportHub({
 
   function completeImport(receipt) {
     onImportComplete?.(receipt)
-  }
-
-  // QuestScanner adds its selection concurrently, so onAdd fires once per quest.
-  // Emitting a receipt from each call made the reported count depend on a merge
-  // downstream; batch the ids and report the selection once instead.
-  function handleScreenshotAdd(task, mapNorm) {
-    return beginImport('screenshot').then(() => onAdd?.(task, mapNorm))
-  }
-
-  function handleScreenshotAdded(tasks) {
-    const questIds = (Array.isArray(tasks) ? tasks : []).map(task => task.id).filter(Boolean)
-    if (!questIds.length) return
-    completeImport({ source: 'screenshot', questIds, added: questIds.length })
-  }
-
-  async function handleCatchUpAdd(tasks) {
-    const rows = Array.isArray(tasks) ? tasks : []
-    await beginImport('catchup')
-    await onBulkAdd?.(rows)
-    completeImport({ source: 'catchup', questIds: rows.map(task => task.id).filter(Boolean), added: rows.length })
   }
 
   if (!open) {
@@ -181,8 +144,7 @@ export default function QuestImportHub({
           defaultOpen
         />
       )}
-      {selectedRoute?.key === 'screenshot' && <QuestScanner allTasks={allTasks} userQuests={userQuests} onAdd={handleScreenshotAdd} onAdded={handleScreenshotAdded} defaultOpen />}
-      {selectedRoute?.key === 'catchup' && <CatchUp allTasks={allTasks} userQuests={userQuests} onBulkAdd={handleCatchUpAdd} userId={userId} defaultOpen />}
+      {selectedRoute?.key === 'desktop' && <DesktopAppCard companion={companion} showDownloads />}
     </div>
   )
 }

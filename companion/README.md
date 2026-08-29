@@ -49,3 +49,12 @@ replace the updater public-key placeholder and add signed updater endpoints in
 `src-tauri/tauri.conf.json`, then configure Windows code signing. The current
 opener/CSP allowlists assume the standard `*.supabase.co` project domain; a
 custom Supabase domain must be added explicitly.
+
+Release builds support both current 64-bit Windows and legacy 32-bit Windows
+(Windows 10 or newer):
+
+```bash
+npm run tauri:build:x64
+rustup target add i686-pc-windows-msvc
+npm run tauri:build:x86
+```

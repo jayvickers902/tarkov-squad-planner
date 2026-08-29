@@ -24,7 +24,7 @@ vi.mock('./components/EftLogImport', async importOriginal => {
 })
 
 import { blockingReason, deriveImportSteps } from './components/EftLogImport'
-import DesktopAppCard, { DesktopDownloadAction } from './components/DesktopAppCard'
+import DesktopAppCard, { DesktopDownloadActions } from './components/DesktopAppCard'
 import QuestImportHub from './components/QuestImportHub'
 
 const preview = {
@@ -55,23 +55,26 @@ describe('QuestImportHub', () => {
     expect(screen.getAllByRole('button', { name: 'GET YOUR QUESTS IN' })).toHaveLength(1)
   })
 
-  it('keeps unsupported logs visible with a reason and recommends screenshots', () => {
+  it('keeps unsupported logs visible with a reason and recommends the desktop app', () => {
     renderHub({ sync: { supported: false } })
     const logs = screen.getByRole('button', { name: /Import or sync EFT logs/i })
-    const screenshot = screen.getByRole('button', { name: /Import from a screenshot/i })
+    const desktop = screen.getByRole('button', { name: /Use the desktop app/i })
 
     expect(logs).toBeDisabled()
     expect(within(logs).getByText('Log import needs Chrome or Edge on desktop.')).toBeInTheDocument()
-    expect(within(screenshot).getByText('RECOMMENDED')).toBeInTheDocument()
+    expect(within(desktop).getByText('RECOMMENDED')).toBeInTheDocument()
   })
 
-  it('recommends supported logs and sorts that route first', () => {
+  it('recommends the desktop app and sorts it first', () => {
     renderHub({ sync: { supported: true } })
     const routeGroup = screen.getByRole('group', { name: 'Quest import routes' })
     const routes = within(routeGroup).getAllByRole('button')
 
-    expect(routes[0]).toHaveAccessibleName(/Import or sync EFT logs/i)
+    expect(routes).toHaveLength(3)
+    expect(routes[0]).toHaveAccessibleName(/Use the desktop app/i)
     expect(within(routes[0]).getByText('RECOMMENDED')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Import from a screenshot/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Rebuild progress by trader/i })).not.toBeInTheDocument()
   })
 
   it('closes before focusing manual search', () => {
@@ -85,16 +88,18 @@ describe('QuestImportHub', () => {
     expect(calls).toEqual([['open', false], ['focus']])
   })
 
-  it('opens a selected importer panel immediately', () => {
+  it('opens the desktop app download panel immediately', () => {
     renderHub()
-    fireEvent.click(screen.getByRole('button', { name: /Import from a screenshot/i }))
-    expect(screen.getByText('SCREENSHOT IMPORT PANEL')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Use the desktop app/i }))
+    expect(screen.getByRole('heading', { name: 'SYNC WITHOUT THE TAB OPEN' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'DOWNLOAD .EXE · 64-BIT' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'DOWNLOAD .MSI · 64-BIT' })).toBeInTheDocument()
   })
 
-  it('disables log import for Season mode and keeps a usable recommendation', () => {
+  it('disables log import for Season mode and keeps desktop recommended', () => {
     renderHub({ gameMode: 'pvp-season', sync: { supported: true } })
     expect(screen.getByRole('button', { name: /Import or sync EFT logs/i })).toBeDisabled()
-    expect(within(screen.getByRole('button', { name: /Import from a screenshot/i })).getByText('RECOMMENDED')).toBeInTheDocument()
+    expect(within(screen.getByRole('button', { name: /Use the desktop app/i })).getByText('RECOMMENDED')).toBeInTheDocument()
   })
 })
 
@@ -125,12 +130,11 @@ describe('EFT log import steps', () => {
 })
 
 describe('DesktopAppCard', () => {
-  it('shows an honest coming-soon card and disabled download state when no link is configured', () => {
+  it('offers the two primary 64-bit installer formats', () => {
     render(<DesktopAppCard companion={null} />)
-    expect(screen.getByRole('heading', { name: 'BACKGROUND SYNC APP · COMING SOON' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Download link coming soon' })).toBeDisabled()
-    expect(screen.queryByRole('link', { name: 'DOWNLOAD DESKTOP APP' })).not.toBeInTheDocument()
-    expect(screen.getByText(/Website folder sync pauses when this tab closes/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'SYNC WITHOUT THE TAB OPEN' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'DOWNLOAD .EXE · 64-BIT' })).toHaveAttribute('href', expect.stringMatching(/x64-setup\.exe$/))
+    expect(screen.getByRole('link', { name: 'DOWNLOAD .MSI · 64-BIT' })).toHaveAttribute('href', expect.stringMatching(/x64\.msi$/))
     expect(screen.getByText(/same Google account/i)).toBeInTheDocument()
   })
 
@@ -148,9 +152,13 @@ describe('DesktopAppCard', () => {
     expect(screen.queryByRole('heading', { name: /COMING SOON/ })).not.toBeInTheDocument()
   })
 
-  it('renders a configured download URL as an external link', () => {
-    render(<DesktopDownloadAction url="https://example.com/desktop" />)
-    expect(screen.getByRole('link', { name: 'DOWNLOAD DESKTOP APP' })).toHaveAttribute('href', 'https://example.com/desktop')
-    expect(screen.getByRole('link')).toHaveAttribute('rel', 'noopener noreferrer')
+  it('offers explicit 32-bit fallbacks without competing with the recommended downloads', () => {
+    render(<DesktopDownloadActions installers={{
+      x64Exe: 'https://example.com/x64.exe', x64Msi: 'https://example.com/x64.msi',
+      x86Exe: 'https://example.com/x86.exe', x86Msi: 'https://example.com/x86.msi',
+    }} />)
+    fireEvent.click(screen.getByText('Using 32-bit Windows?'))
+    expect(screen.getByRole('link', { name: 'Download .exe · 32-bit' })).toHaveAttribute('href', 'https://example.com/x86.exe')
+    expect(screen.getByRole('link', { name: 'Download .msi · 32-bit' })).toHaveAttribute('href', 'https://example.com/x86.msi')
   })
 })

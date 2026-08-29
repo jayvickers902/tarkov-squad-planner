@@ -1,12 +1,30 @@
 import { relativeTime } from '../syncStatus'
 
-// TODO(owner): set this to the real release URL before shipping.
-export const DESKTOP_APP_URL = ''
+export const DESKTOP_RELEASE_BASE = 'https://github.com/jayvickers902/tarkov-squad-planner/releases/latest/download'
+export const DESKTOP_INSTALLERS = {
+  x64Exe: `${DESKTOP_RELEASE_BASE}/Tarkov-Squad-Planner-Companion_x64-setup.exe`,
+  x64Msi: `${DESKTOP_RELEASE_BASE}/Tarkov-Squad-Planner-Companion_x64.msi`,
+  x86Exe: `${DESKTOP_RELEASE_BASE}/Tarkov-Squad-Planner-Companion_x86-setup.exe`,
+  x86Msi: `${DESKTOP_RELEASE_BASE}/Tarkov-Squad-Planner-Companion_x86.msi`,
+}
 
-export function DesktopDownloadAction({ url = DESKTOP_APP_URL } = {}) {
-  return url
-    ? <a className="btn-gold btn-sm" href={url} rel="noopener noreferrer">DOWNLOAD DESKTOP APP</a>
-    : <button className="btn-ghost btn-sm" type="button" disabled>Download link coming soon</button>
+export function DesktopDownloadActions({ installers = DESKTOP_INSTALLERS } = {}) {
+  return (
+    <div className="desktop-downloads">
+      <div className="desktop-downloads-primary" aria-label="64-bit Windows installers">
+        <a className="btn-gold btn-sm" href={installers.x64Exe} target="_blank" rel="noopener noreferrer">DOWNLOAD .EXE · 64-BIT</a>
+        <a className="btn-ghost btn-sm" href={installers.x64Msi} target="_blank" rel="noopener noreferrer">DOWNLOAD .MSI · 64-BIT</a>
+      </div>
+      <details className="desktop-downloads-legacy">
+        <summary>Using 32-bit Windows?</summary>
+        <p>Only choose these if Windows shows “32-bit operating system” in Settings → System → About.</p>
+        <div aria-label="32-bit Windows installers">
+          <a href={installers.x86Exe} target="_blank" rel="noopener noreferrer">Download .exe · 32-bit</a>
+          <a href={installers.x86Msi} target="_blank" rel="noopener noreferrer">Download .msi · 32-bit</a>
+        </div>
+      </details>
+    </div>
+  )
 }
 
 function desktopState(companion) {
@@ -24,7 +42,7 @@ function DesktopTimestamps({ companion }) {
   )
 }
 
-export default function DesktopAppCard({ companion }) {
+export default function DesktopAppCard({ companion, showDownloads = false }) {
   const state = desktopState(companion)
   if (state === 'connected') {
     return (
@@ -32,6 +50,7 @@ export default function DesktopAppCard({ companion }) {
         <span className="desktop-app-card-dot" aria-hidden="true" />
         <span className="mono desktop-app-card-label">DESKTOP APP CONNECTED</span>
         <DesktopTimestamps companion={companion} />
+        {showDownloads && <DesktopDownloadActions />}
       </div>
     )
   }
@@ -46,30 +65,21 @@ export default function DesktopAppCard({ companion }) {
             : 'The desktop app was set up, but it has not reported recently. Start it to resume background checks.'}
         </p>
         <DesktopTimestamps companion={companion} />
+        {showDownloads && <DesktopDownloadActions />}
       </div>
     )
   }
 
-  const downloadable = Boolean(DESKTOP_APP_URL)
   return (
-    <div className="card desktop-app-card" data-state={downloadable ? 'available' : 'coming-soon'}>
-      <h3>{downloadable ? 'SYNC WITHOUT THE TAB OPEN' : 'BACKGROUND SYNC APP · COMING SOON'}</h3>
-      {downloadable ? (
-        <>
-          <p>The browser can watch your folders only while this site is open. The desktop app keeps your quests and pings in sync in the background.</p>
-          <ol>
-            <li>Download the desktop app.</li>
-            <li>Sign in with the same Google account you use here.</li>
-            <li>That is it — this card will switch to CONNECTED once it reports in.</li>
-          </ol>
-        </>
-      ) : (
-        <p>
-          Website folder sync pauses when this tab closes. A Windows companion for continuous quest
-          and ping checks is being prepared; it will pair by using the same Google account.
-        </p>
-      )}
-      <DesktopDownloadAction />
+    <div className="card desktop-app-card" data-state="available">
+      <h3>SYNC WITHOUT THE TAB OPEN</h3>
+      <p>The desktop app keeps your quests and position pings synced in the background. It is the recommended setup for Windows.</p>
+      <ol>
+        <li>Download either the .exe installer (simplest) or the .msi installer.</li>
+        <li>Install it and sign in with the same Google account you use here.</li>
+        <li>Choose your EFT folders once; the app handles future checks.</li>
+      </ol>
+      <DesktopDownloadActions />
     </div>
   )
 }

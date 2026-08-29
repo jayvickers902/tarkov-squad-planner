@@ -1262,9 +1262,19 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .desktop-app-card[data-state="connected"] .desktop-app-card-last-sync { margin-left: auto; }
 .desktop-app-card[data-state="attention"] .desktop-app-card-last-sync,
 .desktop-app-card[data-state="offline"] .desktop-app-card-last-sync { display: block; margin-top: 8px; }
-.desktop-app-card button:disabled { cursor: not-allowed; opacity: .5; }
+.desktop-downloads { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; }
+.desktop-downloads-primary { display: flex; flex-wrap: wrap; gap: 8px; }
+.desktop-downloads-legacy { color: var(--txm); font-size: var(--fs-sm); }
+.desktop-downloads-legacy summary { color: var(--txm); cursor: pointer; }
+.desktop-downloads-legacy p { margin: 7px 0; }
+.desktop-downloads-legacy > div { display: flex; flex-wrap: wrap; gap: 12px; }
+.desktop-downloads-legacy a { color: var(--goldtx); text-decoration: underline; text-underline-offset: 3px; }
+.desktop-app-card[data-state="connected"] .desktop-downloads { flex: 1 0 100%; width: 100%; }
 
 @media (max-width: 560px) {
   .desktop-app-card[data-state="connected"] { align-items: flex-start; flex-wrap: wrap; }
   .desktop-app-card[data-state="connected"] .desktop-app-card-last-sync { width: 100%; margin-left: 17px; }
+  .desktop-downloads-primary { width: 100%; }
+  .desktop-downloads-primary .btn-gold,
+  .desktop-downloads-primary .btn-ghost { width: 100%; min-height: 44px; justify-content: center; }
 }
