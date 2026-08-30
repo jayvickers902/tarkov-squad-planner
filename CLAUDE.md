@@ -43,6 +43,7 @@ src/
   mapBanners.js        # map art URLs: wide header banner + reference art fallback
   memberColors.js      # the one member palette every surface tints from
   questColors.js       # stable quest id -> rail hue, so a quest's rows group
+  questVisibility.js   # the personal hidden-quest filter and its settings key
 
   # Hooks (all custom, no external state library)
   useAuth.js           # Google OAuth sign-in, profile + callsign creation
@@ -212,6 +213,26 @@ chains BSG named (The Tarkov Shooter, The Punisher), admin-gated by
 `profiles.is_admin` and shaped like `map_keys`. A task override of `shared` or
 `solo` forces every objective; `partial` deliberately does not, so a mixed task
 keeps its per-objective verdicts.
+
+## Quest completion and hiding
+
+Completion belongs to the EFT log sync. `MyQuestPanel` offers no control that
+marks a quest done: it used to write a `__done__:` key into party progress,
+which retired the quest in `user_quests` and pulled it out of the party, and
+nothing client-side writes that key any more. Objective ticks stay — they are
+squad coordination for the raid at hand, never rolled up into a completion. The
+remaining readers of old `__done__:` keys (`TodoList`, `raidObjectives`,
+`raidPlan`, `tarkovObjectives`) are left alone so existing party rows still
+render. The Quest Manager's `✓ DONE` (`markCompleted`) is the one deliberate
+manual path left, for a quest the sync missed.
+
+What replaced it in the panel is hiding, derived in `src/questVisibility.js`. A
+hidden quest stays saved, keeps syncing and stays shared with the party; it only
+drops out of that reader's own MY QUESTS column, into a collapsed drawer at the
+bottom of it, which is the only place to unhide one. It persists in
+`user_settings.settings.quest_hidden` as `{ [gameMode]: [questId] }` — a view
+preference, so no `user_quests` column, and it follows the account rather than
+the browser. It is keyed by game mode because each mode is a separate character.
 
 ## Quest Screenshot Scanning
 

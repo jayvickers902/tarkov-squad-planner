@@ -107,28 +107,6 @@ export default function App() {
     if (party && !questsLoading && questGameMode === gameMode) syncSavedQuests(userQuests)
   }, [party, userQuests, questsLoading, questGameMode, gameMode]) // eslint-disable-line
 
-  const prevProgressRef = useRef(null)
-  const pendingCompletedIds = useRef(new Set())
-
-  // When any quest is marked done in party progress, remove it from this
-  // user's active party list if they share that quest.
-  useEffect(() => {
-    if (!party) { prevProgressRef.current = null; return }
-    const progress = party.progress || {}
-    const prev = prevProgressRef.current ?? {}
-    prevProgressRef.current = progress
-
-    Object.entries(progress).forEach(([k, v]) => {
-      const parts = progressParts(k)
-      if (!parts.done || !v || prev[k] || parts.userId !== user?.id) return
-      const questId = parts.questId
-      const myMemberQuests = findMember(party.members, user?.id)?.quests || []
-      if (!myMemberQuests.find(q => q.id === questId)) return
-      markQuestCompleted(questId)
-      removePartyQuest(questId)
-    })
-  }, [party?.progress, user?.id]) // eslint-disable-line
-
   // Persisted objective progress in party-key format — used as fallback in MyQuestPanel across parties
   const userObjProgress = useMemo(() => {
     if (!user?.id) return {}
@@ -151,7 +129,7 @@ export default function App() {
     joinParty(
       pendingJoinCode,
       profile.callsign,
-      userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id)),
+      userQuests,
     ).then(joined => {
       if (joined?.game_mode) setPartyModeHint(normalizeGameMode(joined.game_mode))
       if (joined?.code) navigate({ screen: 'room', code: joined.code }, { replace: true })
@@ -368,12 +346,6 @@ export default function App() {
       }
     }
 
-    function handleQuestComplete(questId) {
-      pendingCompletedIds.current.add(questId)
-      markQuestCompleted(questId).then(() => pendingCompletedIds.current.delete(questId))
-      removePartyQuest(questId)
-    }
-
     async function handleLeave() {
       setLeaveConfirmOpen(false)
       try {
@@ -404,7 +376,6 @@ export default function App() {
         onSetSpawn={setSpawn}
         onToggleStar={handleToggleStar}
         onSubmitProgress={handleSubmitProgress}
-        onQuestComplete={handleQuestComplete}
         userObjProgress={userObjProgress}
         userSettings={userSettings}
         onSetUserSetting={setUserSetting}
@@ -536,20 +507,19 @@ export default function App() {
   }
 
   async function handleEnter(mode, code, requestedGameMode) {
-    const savedQuests = userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id))
     if (mode === 'create') {
       const partyMode = normalizeGameMode(requestedGameMode || userGameMode)
-      const created = await createParty(profile.callsign, partyMode, savedQuests)
+      const created = await createParty(profile.callsign, partyMode, userQuests)
       if (created?.game_mode) setPartyModeHint(normalizeGameMode(created.game_mode))
       return created
     }
-    const joined = await joinParty(code, profile.callsign, savedQuests)
+    const joined = await joinParty(code, profile.callsign, userQuests)
     if (joined?.game_mode) setPartyModeHint(normalizeGameMode(joined.game_mode))
     return joined
   }
 
   async function handleForceJoin(code) {
-    const joined = await forceJoinParty(code, profile.callsign, userQuests.filter(q => !pendingCompletedIds.current.has(q.quest_id)))
+    const joined = await forceJoinParty(code, profile.callsign, userQuests)
     if (joined?.game_mode) setPartyModeHint(normalizeGameMode(joined.game_mode))
     return joined
   }

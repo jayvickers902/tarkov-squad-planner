@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect } from 'react'
-import { objectiveProgressKey, questDoneKey } from '../partyMembers'
+import { objectiveProgressKey } from '../partyMembers'
 import { objectiveIsOnMap, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
 import { classifyObjective, classifyTask } from '../questShare'
 import { useQuestShareOverrides } from '../useQuestShareOverrides'
 import { questRailColor } from '../questColors'
 import { mapReferenceArt } from '../mapBanners'
+import { HIDDEN_QUESTS_KEY, hiddenQuestIds, withQuestHidden } from '../questVisibility'
 import Icon from './Icon'
 
 
@@ -39,9 +40,18 @@ function objsForMap(task, mapNorm) {
   })
 }
 
-export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myUserId, myName, onSubmit, onQuestComplete, onOpenQuestManager, mapNorm, mapName, loading, settings = {}, onSetSetting }) {
+export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myUserId, myName, onSubmit, onOpenQuestManager, mapNorm, mapName, loading, settings = {}, onSetSetting, gameMode = 'regular' }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
   const { overrides } = useQuestShareOverrides()
+
+  // Hiding is a view filter, not progress — see questVisibility.js. Completion
+  // itself is owned by the EFT log sync, so this panel has no way to mark a
+  // quest done; a quest the player does not want to look at gets hidden and
+  // keeps syncing. Hiding needs somewhere to persist, so the controls only
+  // appear when settings can actually be written.
+  const canHide = Boolean(onSetSetting)
+  const [showHidden, setShowHidden] = useState(false)
+  const hidden = useMemo(() => hiddenQuestIds(settings, gameMode), [settings, gameMode])
 
   const [questOrder, setQuestOrder] = useState(() => {
     const saved = myUserId ? settings.quest_order?.[myUserId] : null
@@ -77,26 +87,18 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
     setPending(p => ({ ...p, [key]: !getEffective(key) }))
   }
 
-  function toggleDone(questId) {
-    const key = questDoneKey(questId, myUserId)
-    setPending(p => ({ ...p, [key]: !getEffective(key) }))
+  function toggleHidden(questId) {
+    if (!canHide) return
+    onSetSetting(HIDDEN_QUESTS_KEY, withQuestHidden(settings, gameMode, questId, !hidden.has(questId)))
   }
 
   const pendingCount = Object.keys(pending).length
   const hasPending = pendingCount > 0
 
+  // Objective ticks are squad coordination; they are never rolled up into a
+  // quest completion here. Retiring a quest belongs to the log sync.
   function handleSubmit() {
     onSubmit({ ...pending })
-    // Find quests that are now complete (done button OR all objectives checked)
-    rows.forEach(({ task, objs }) => {
-      const doneKey = questDoneKey(task.id, myUserId)
-      const effectiveDone = pending[doneKey] !== undefined ? pending[doneKey] : (progress?.[doneKey] || false)
-      const allObjsDone = objs.length > 0 && objs.every(o => {
-        const k = objectiveProgressKey(task.id, o.id, myUserId)
-        return pending[k] !== undefined ? pending[k] : (progress?.[k] || false)
-      })
-      if (effectiveDone || allObjsDone) onQuestComplete?.(task.id)
-    })
     setPending({})
   }
 
@@ -131,15 +133,12 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
         const isMapSpecific = mapNorm
           ? (task.objectives || []).some(o => !o.optional && o.maps && o.maps.length > 0)
           : false
-        const doneKey = questDoneKey(task.id, myUserId)
-        const isDone = pending[doneKey] !== undefined ? pending[doneKey] : (progress?.[doneKey] || false)
         const doneObjCount = objs.filter(o => {
           const k = objectiveProgressKey(task.id, o.id, myUserId)
           return pending[k] !== undefined ? pending[k] : (progress?.[k] || false)
         }).length
-        const allObjsDone = objs.length > 0 && doneObjCount === objs.length
-        const isComplete = isDone || allObjsDone
-        return { task, objs, isMapSpecific, isComplete }
+        const isComplete = objs.length > 0 && doneObjCount === objs.length
+        return { task, objs, isMapSpecific, isComplete, isHidden: hidden.has(task.id) }
       })
       .filter(Boolean)
     // Sort: map-specific incomplete → any-map incomplete → map-specific complete → any-map complete
@@ -150,7 +149,12 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
       ...mapped.filter(r => r.isMapSpecific && r.isComplete).sort(byOrder),
       ...mapped.filter(r => !r.isMapSpecific && r.isComplete).sort(byOrder),
     ]
-  }, [myQuests, tasks, mapNorm, pending, progress, myUserId, questOrder])
+  }, [myQuests, tasks, mapNorm, pending, progress, myUserId, questOrder, hidden])
+
+  // Hidden rows keep the same ordering; they are simply lifted out of the list
+  // into the drawer at the bottom of the column.
+  const visibleRows = useMemo(() => rows.filter(r => !r.isHidden), [rows])
+  const hiddenRows = useMemo(() => rows.filter(r => r.isHidden), [rows])
 
   function moveToTop(questId, sectionRows) {
     setQuestOrder(prev => {
@@ -234,17 +238,14 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
 
       {/* Quest list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {rows.map(({ task, objs, isMapSpecific, isComplete }, idx) => {
-          const prev = idx > 0 ? rows[idx - 1] : null
-          const showAnyMapDivider = mapNorm && !isMapSpecific && !isComplete && (!prev || prev.isMapSpecific || prev.isComplete) && rows.some(r => r.isMapSpecific)
+        {visibleRows.map(({ task, objs, isMapSpecific, isComplete }, idx) => {
+          const prev = idx > 0 ? visibleRows[idx - 1] : null
+          const showAnyMapDivider = mapNorm && !isMapSpecific && !isComplete && (!prev || prev.isMapSpecific || prev.isComplete) && visibleRows.some(r => r.isMapSpecific)
           const showCompletedDivider = isComplete && (!prev || !prev.isComplete)
-          const doneKey = questDoneKey(task.id, myUserId)
-          const isDone = getEffective(doneKey)
-          const isPendingDone = pending[doneKey] !== undefined
           const doneObjCount = objs.filter(o => getEffective(objectiveProgressKey(task.id, o.id, myUserId))).length
           const allObjsDone = objs.length > 0 && doneObjCount === objs.length
           // Section peers for move-to-top/bottom (same isMapSpecific + isComplete group)
-          const sectionRows = rows.filter(r => r.isMapSpecific === isMapSpecific && r.isComplete === isComplete)
+          const sectionRows = visibleRows.filter(r => r.isMapSpecific === isMapSpecific && r.isComplete === isComplete)
           const sectionIdx = sectionRows.findIndex(r => r.task.id === task.id)
           const taskShare = classifyTask(task, overrides)
           const loyalty = traderGateLabel(task)
@@ -263,25 +264,22 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
             )}
             <div style={{
               background: 'var(--sur2)',
-              border: `1px solid ${isDone || allObjsDone ? 'rgba(90,200,90,0.25)' : isPendingDone ? 'var(--golddim)' : 'var(--brd)'}`,
-              borderLeft: `3px solid ${isDone || allObjsDone ? 'var(--grn)' : isPendingDone ? 'var(--gold)' : questRailColor(task.id)}`,
+              border: `1px solid ${allObjsDone ? 'rgba(90,200,90,0.25)' : 'var(--brd)'}`,
+              borderLeft: `3px solid ${allObjsDone ? 'var(--grn)' : questRailColor(task.id)}`,
               borderRadius: 4,
-              opacity: isDone ? 0.5 : 1,
-              transition: 'opacity .2s, border-color .15s',
+              transition: 'border-color .15s',
             }}>
               {/* Quest header */}
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px',
-                borderBottom: objs.length && !isDone ? '1px solid var(--brd)' : 'none',
+                borderBottom: objs.length ? '1px solid var(--brd)' : 'none',
               }}>
                 {task.trader?.imageLink
-                  ? <img src={task.trader.imageLink} alt={task.trader.name} title={task.trader.name} style={{ width: 28, height: 28, borderRadius: 3, objectFit: 'cover', flexShrink: 0, opacity: isDone ? 0.4 : 1, border: '1px solid var(--brd)' }} />
+                  ? <img src={task.trader.imageLink} alt={task.trader.name} title={task.trader.name} style={{ width: 28, height: 28, borderRadius: 3, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--brd)' }} />
                   : <span className="quest-card-trader-slot" aria-hidden="true" />}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
-                    fontSize: 'var(--fs-sm)', fontWeight: 600,
-                    color: isDone ? 'var(--txd)' : 'var(--tx)',
-                    textDecoration: isDone ? 'line-through' : 'none',
+                    fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--tx)',
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                   }}>
                     {task.name}
@@ -294,7 +292,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                       <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
                     )}
                     {objs.length > 0 && (
-                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: isDone || allObjsDone ? 'var(--grn)' : 'var(--txd)' }}>
+                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: allObjsDone ? 'var(--grn)' : 'var(--txd)' }}>
                         {doneObjCount}/{objs.length} OBJ
                       </span>
                     )}
@@ -330,24 +328,26 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                       }}>▼</button>
                   </div>
                 )}
-                <button
-                  onClick={() => toggleDone(task.id)}
-                  aria-label={`${isDone ? 'Undo completion of' : 'Mark complete'} ${task.name}`}
-                  style={{
-                    background: 'none',
-                    border: `1px solid ${isDone ? 'var(--grn)' : isPendingDone ? 'var(--golddim)' : 'var(--brd2)'}`,
-                    borderRadius: 3, padding: '2px 8px', cursor: 'pointer',
-                    fontSize: 'var(--fs-xs)', fontFamily: 'Share Tech Mono',
-                    color: isDone ? 'var(--grn)' : isPendingDone ? 'var(--gold)' : 'var(--txd)',
-                    letterSpacing: '.04em', flexShrink: 0, transition: 'all .15s',
-                  }}
-                >
-                  {isDone ? 'UNDO' : '✓ DONE'}
-                </button>
+                {canHide && (
+                  <button
+                    onClick={() => toggleHidden(task.id)}
+                    aria-label={`Hide ${task.name}`}
+                    title="Hide from this list — the quest stays saved and keeps syncing"
+                    style={{
+                      background: 'none', border: '1px solid var(--brd2)',
+                      borderRadius: 3, padding: '2px 8px', cursor: 'pointer',
+                      fontSize: 'var(--fs-xs)', fontFamily: 'Share Tech Mono',
+                      color: 'var(--txd)',
+                      letterSpacing: '.04em', flexShrink: 0, transition: 'all .15s',
+                    }}
+                  >
+                    ⊘ HIDE
+                  </button>
+                )}
               </div>
 
               {/* Objectives */}
-              {!isDone && objs.map((obj, i) => {
+              {objs.map((obj, i) => {
                 const key = objectiveProgressKey(task.id, obj.id, myUserId)
                 const checked = getEffective(key)
                 const isPendingObj = pending[key] !== undefined
@@ -408,8 +408,70 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
         })}
       </div>
 
-      {mapNorm && rows.length < myQuests.length && (
+      {visibleRows.length === 0 && (
+        <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', letterSpacing: '.08em', textAlign: 'center', padding: '22px 4px' }}>
+          EVERY QUEST HERE IS HIDDEN
+        </div>
+      )}
+
+      {mapNorm && visibleRows.length > 0 && rows.length < myQuests.length && (
         <NothingElseHere mapNorm={mapNorm} mapLabel={mapLabel} onOpenQuestManager={onOpenQuestManager} />
+      )}
+
+      {/* Hidden drawer — the one place a hidden quest can be found again. It
+          stays collapsed by default, otherwise hiding would not hide. */}
+      {canHide && hiddenRows.length > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--brd)' }}>
+          <button
+            type="button"
+            onClick={() => setShowHidden(open => !open)}
+            aria-expanded={showHidden}
+            className="mono"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+              background: 'none', border: 'none', padding: '2px 0', cursor: 'pointer',
+              fontSize: 'var(--fs-xs)', color: 'var(--txd)', letterSpacing: '.1em',
+            }}
+          >
+            <span aria-hidden="true">{showHidden ? '▾' : '▸'}</span>
+            ⊘ HIDDEN ({hiddenRows.length})
+          </button>
+
+          {showHidden && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', lineHeight: 1.6 }}>
+                Hidden quests stay saved and keep syncing — they are only kept out of the list above.
+              </div>
+              {hiddenRows.map(({ task }) => (
+                <div key={task.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                  background: 'var(--sur2)', border: '1px solid var(--brd)',
+                  borderLeft: `3px solid ${questRailColor(task.id)}`, borderRadius: 4,
+                }}>
+                  <span style={{
+                    flex: 1, minWidth: 0, fontSize: 'var(--fs-sm)', color: 'var(--txm)',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    {task.name}
+                  </span>
+                  <button
+                    onClick={() => toggleHidden(task.id)}
+                    aria-label={`Unhide ${task.name}`}
+                    title="Put this quest back in the list"
+                    style={{
+                      background: 'none', border: '1px solid var(--brd2)', borderRadius: 3,
+                      padding: '2px 8px', cursor: 'pointer', flexShrink: 0,
+                      fontSize: 'var(--fs-xs)', fontFamily: 'Share Tech Mono',
+                      color: 'var(--gold)', letterSpacing: '.04em', transition: 'all .15s',
+                    }}
+                  >
+                    UNHIDE
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Pending banner */}

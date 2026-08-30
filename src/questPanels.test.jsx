@@ -1,4 +1,5 @@
-import { render, screen, within } from '@testing-library/react'
+import { useCallback, useState } from 'react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // useQuestShareOverrides talks to Supabase. These tests drive the panels, not the
@@ -292,5 +293,93 @@ describe('map-scoped quest placeholders', () => {
 
     expect(await screen.findByText('Visit the Customs location')).toBeTruthy()
     expect(screen.queryByText('Off-map Task')).toBeNull()
+  })
+})
+
+// Completion is owned by the EFT log sync. This panel used to write a per-user
+// done flag into party progress, which retired the quest in user_quests; the
+// only per-quest control it offers now is hiding, which changes nothing but
+// this reader's own view of the column.
+describe('hiding a quest', () => {
+  async function renderHidable(initialSettings = {}) {
+    const { default: MyQuestPanel } = await import('./components/MyQuestPanel')
+
+    // onSetSetting has to be stable: the panel writes quest_order from an
+    // effect keyed on the callback, so a fresh closure per render would loop.
+    function Harness() {
+      const [settings, setSettings] = useState(initialSettings)
+      const setSetting = useCallback((key, value) => {
+        setSettings(prev => ({ ...prev, [key]: value }))
+      }, [])
+      return (
+        <MyQuestPanel
+          myQuests={MY_QUESTS}
+          tasks={TASKS}
+          progress={{}}
+          userObjProgress={{}}
+          myUserId="user-1"
+          myName="DUDGY"
+          onSubmit={() => {}}
+          mapNorm={null}
+          loading={false}
+          settings={settings}
+          onSetSetting={setSetting}
+          gameMode="regular"
+        />
+      )
+    }
+
+    render(<Harness />)
+    await screen.findByText('MY QUESTS')
+  }
+
+  it('offers no way to mark a quest complete', async () => {
+    await renderHidable()
+
+    expect(screen.queryByText(/DONE/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Mark complete/i })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Hide Shared Task' })).toBeTruthy()
+  })
+
+  it('moves a hidden quest out of the list and into the drawer', async () => {
+    await renderHidable()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide Shared Task' }))
+
+    expect(screen.queryByText('Shared Task')).toBeNull()
+    expect(screen.getByText('Mixed Task')).toBeTruthy()
+
+    const drawer = screen.getByRole('button', { name: /HIDDEN \(1\)/ })
+    expect(drawer.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.click(drawer)
+    expect(screen.getByText('Shared Task')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Unhide Shared Task' })).toBeTruthy()
+  })
+
+  it('puts an unhidden quest back in the list', async () => {
+    await renderHidable({ quest_hidden: { regular: ['task-shared'] } })
+
+    expect(screen.queryByText('Shared Task')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /HIDDEN \(1\)/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Unhide Shared Task' }))
+
+    expect(screen.getByText('Shared Task')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /HIDDEN/ })).toBeNull()
+  })
+
+  it('reads the hidden list for the active game mode only', async () => {
+    await renderHidable({ quest_hidden: { pve: ['task-shared'] } })
+
+    expect(screen.getByText('Shared Task')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /HIDDEN/ })).toBeNull()
+  })
+
+  it('says so when every quest on the map is hidden', async () => {
+    await renderHidable({ quest_hidden: { regular: MY_QUESTS.map(q => q.id) } })
+
+    expect(screen.getByText('EVERY QUEST HERE IS HIDDEN')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /HIDDEN \(3\)/ })).toBeTruthy()
   })
 })
