@@ -309,3 +309,159 @@ describe('hiding a quest', () => {
     expect(screen.getByRole('button', { name: /HIDDEN \(3\)/ })).toBeTruthy()
   })
 })
+
+// The badge is gated on provenance, not on the verdict: the inference still runs
+// and still says "shared" for task-shared, but only a curated row is shown to the
+// player. The "does not guess" test above covers the uncurated half.
+describe('curated squad badge', () => {
+  async function renderWithOverrides(overrides) {
+    vi.doMock('./useQuestShareOverrides', () => ({
+      useQuestShareOverrides: () => ({ overrides, loading: false, upsertOverride: async () => ({}) }),
+    }))
+    const { default: MyQuestPanel } = await import('./components/MyQuestPanel')
+    render(
+      <MyQuestPanel
+        myQuests={MY_QUESTS}
+        tasks={TASKS}
+        progress={{}}
+        userObjProgress={{}}
+        myUserId="user-1"
+        myName="DUDGY"
+        onSubmit={() => {}}
+        mapNorm={null}
+        loading={false}
+        settings={{}}
+      />,
+    )
+    await screen.findByText('Shared Task')
+  }
+
+  it('badges a curated shared task and leaves inferred ones bare', async () => {
+    await renderWithOverrides({
+      'task-shared': { verdict: 'shared', source: 'tarkov.help' },
+    })
+    // task-shared is curated, task-mixed is not — even though the type rule
+    // would call plantItem squad-shareable too.
+    expect(screen.getAllByText('SQUAD').length).toBeGreaterThan(0)
+    expect(within(objectiveRow('Stash the package')).queryByText('SQUAD')).toBeNull()
+  })
+
+  it('shows the weaker label for a partial task and only badges the named objective', async () => {
+    await renderWithOverrides({
+      'task-shared': {
+        verdict: 'partial',
+        source: 'tarkov.help',
+        objectives: { 'o-shoot': 'squad', 'o-visit': 'personal' },
+      },
+    })
+    expect(screen.getByText('SQUAD · SOME')).toBeTruthy()
+    expect(within(objectiveRow('Eliminate targets')).getByText('SQUAD')).toBeTruthy()
+    expect(within(objectiveRow('Locate the place')).queryByText('SQUAD')).toBeNull()
+  })
+})
+
+// The community tier is what makes the crowdsourced data useful in the UI: a
+// verdict nobody curated, resting on what players reported from raids. It must
+// look different from a curated one and must never appear below the threshold.
+describe('community squad badge and vote control', () => {
+  async function renderWithReports({ overrides = {}, tallies = {}, mine = {} } = {}) {
+    const report = vi.fn(async () => ({ error: null }))
+    vi.doMock('./useQuestShareOverrides', () => ({
+      useQuestShareOverrides: () => ({ overrides, loading: false, upsertOverride: async () => ({}) }),
+    }))
+    vi.doMock('./useQuestShareReports', () => ({
+      useQuestShareReports: () => ({ tallies, myReports: mine, loading: false, report }),
+    }))
+    const { default: MyQuestPanel } = await import('./components/MyQuestPanel')
+    render(
+      <MyQuestPanel
+        myQuests={MY_QUESTS}
+        tasks={TASKS}
+        progress={{}}
+        userObjProgress={{}}
+        myUserId="user-1"
+        myName="DUDGY"
+        onSubmit={() => {}}
+        mapNorm={null}
+        loading={false}
+        settings={{}}
+      />,
+    )
+    await screen.findByText('Shared Task')
+    return report
+  }
+
+  it('offers a vote on every objective row', async () => {
+    await renderWithReports()
+    const row = objectiveRow('Find the goods')
+    expect(within(row).getByRole('button', { name: 'SQD' })).toBeTruthy()
+    expect(within(row).getByRole('button', { name: 'SOLO' })).toBeTruthy()
+  })
+
+  it('sends a vote without also ticking the objective off', async () => {
+    // The row's own onClick toggles the objective, so a vote that bubbles would
+    // silently mark the objective done every time somebody reported it.
+    const onSubmit = vi.fn()
+    vi.doMock('./useQuestShareOverrides', () => ({
+      useQuestShareOverrides: () => ({ overrides: {}, loading: false, upsertOverride: async () => ({}) }),
+    }))
+    const report = vi.fn(async () => ({ error: null }))
+    vi.doMock('./useQuestShareReports', () => ({
+      useQuestShareReports: () => ({ tallies: {}, myReports: {}, loading: false, report }),
+    }))
+    const { default: MyQuestPanel } = await import('./components/MyQuestPanel')
+    render(
+      <MyQuestPanel
+        myQuests={MY_QUESTS}
+        tasks={TASKS}
+        progress={{}}
+        userObjProgress={{}}
+        myUserId="user-1"
+        myName="DUDGY"
+        onSubmit={onSubmit}
+        mapNorm={null}
+        loading={false}
+        settings={{}}
+      />,
+    )
+    await screen.findByText('Shared Task')
+
+    fireEvent.click(within(objectiveRow('Find the goods')).getByRole('button', { name: 'SQD' }))
+    expect(report).toHaveBeenCalledWith('task-mixed', 'o-find', 'squad')
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('retracts when the reader clicks the segment they already chose', async () => {
+    const report = await renderWithReports({ mine: { 'task-mixed': { 'o-find': 'squad' } } })
+    const button = within(objectiveRow('Find the goods')).getByRole('button', { name: 'SQD' })
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(button)
+    expect(report).toHaveBeenCalledWith('task-mixed', 'o-find', null)
+  })
+
+  it('badges an objective the community reported, marked as unverified', async () => {
+    // findItem infers to personal, so a SQUAD badge here can only be the tally.
+    await renderWithReports({ tallies: { 'task-mixed': { 'o-find': { squad: 3, personal: 0 } } } })
+
+    const badge = within(objectiveRow('Find the goods')).getByText('SQUAD')
+    expect(badge.className).toContain('quest-share-badge-community')
+    expect(badge.getAttribute('title')).toContain('Reported by players')
+    expect(badge.getAttribute('title')).toContain('3 reports')
+  })
+
+  it('shows nothing below the agreement threshold', async () => {
+    await renderWithReports({ tallies: { 'task-mixed': { 'o-find': { squad: 1, personal: 1 } } } })
+    expect(within(objectiveRow('Find the goods')).queryByText('SQUAD')).toBeNull()
+  })
+
+  it('lets a curated verdict beat the community and keeps the badge undashed', async () => {
+    await renderWithReports({
+      overrides: { 'task-mixed': { verdict: 'shared', source: 'tarkov.help' } },
+      tallies: { 'task-mixed': { 'o-find': { squad: 9, personal: 0 } } },
+    })
+    const badge = within(objectiveRow('Find the goods')).getByText('SQUAD')
+    expect(badge.className).not.toContain('quest-share-badge-community')
+    expect(badge.getAttribute('title')).toContain('tarkov.help')
+  })
+})

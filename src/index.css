@@ -1446,6 +1446,26 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 }
 .quest-empty-action:hover { background: rgba(201,168,76,.16); }
 
+/* Only ever rendered for a curated verdict — see SquadBadge.jsx. `partial` is
+   muted so it reads as the weaker claim it is next to a full SQUAD. */
+.quest-share-badge { flex: 0 0 auto; color: var(--grn); border: 1px solid rgba(102,183,120,.45); border-radius: 2px; padding: 1px 4px; font-size: var(--fs-xs); letter-spacing: .06em; line-height: 1.2; white-space: nowrap; }
+.quest-share-badge-partial { color: var(--goldtx); border-color: rgba(201,168,76,.42); }
+/* Community verdicts are dashed and carry a trailing '?': a badge resting on two
+   players' reports must not read as the same claim as a curated one. */
+.quest-share-badge-community { border-style: dashed; opacity: .85; }
+.quest-share-badge-mark { margin-left: 3px; opacity: .7; }
+
+/* Co-op vote control on an objective row. Muted until hovered or voted on: it is
+   on every row, so at rest it must read as available, not as chrome demanding a
+   decision. */
+.share-vote { flex: 0 0 auto; display: inline-flex; margin-top: 1px; border: 1px solid var(--brd); border-radius: 2px; overflow: hidden; }
+.share-vote-seg { font: inherit; font-size: var(--fs-xs); font-family: var(--mono, monospace); letter-spacing: .06em; line-height: 1.2; padding: 1px 4px; border: 0; background: transparent; color: var(--txd); cursor: pointer; transition: color .12s, background .12s; }
+.share-vote-seg + .share-vote-seg { border-left: 1px solid var(--brd); }
+.share-vote-seg:hover:not(:disabled) { color: var(--tx); background: rgba(255,255,255,.05); }
+.share-vote-seg:disabled { cursor: default; opacity: .4; }
+.share-vote-seg-on { color: var(--grn); background: rgba(102,183,120,.14); }
+.share-vote-seg-on:hover:not(:disabled) { color: var(--grn); background: rgba(102,183,120,.2); }
+
 .obj-row-distance { margin-left: auto; flex: 0 0 auto; color: var(--goldtx); font-size: var(--fs-xs); white-space: nowrap; }
 .obj-row-no-location .obj-row-distance { color: var(--txd); }
 

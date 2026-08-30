@@ -1,6 +1,11 @@
 import { useState, useMemo, useCallback, memo } from 'react'
 import { normalizeMembers, objectiveProgressKey, questDoneKey } from '../partyMembers'
 import { objectiveHasMapLocation, objectiveIsOnMap, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
+import { objectiveShare, taskShare } from '../questShare'
+import { useQuestShareOverrides } from '../useQuestShareOverrides'
+import { useQuestShareReports } from '../useQuestShareReports'
+import SquadBadge from './SquadBadge'
+import ShareVote from './ShareVote'
 import { memberColor } from '../memberColors'
 import { questRailColor } from '../questColors'
 
@@ -43,8 +48,10 @@ function objectiveOrderKey(taskId, objectiveId) {
 const QuestCard = memo(function QuestCard({
   task, owners, objs, doneCount, starred, allDone, completed, canAct, dimmed,
   isOpen, onToggleExpand, onToggleStar, onSkip, members, progress, memberIdsByName,
+  overrides, tallies, myReports, onReport,
 }) {
   const pct = objs.length ? (doneCount / objs.length) * 100 : 0
+  const share = taskShare(task, overrides, tallies)
   const loyalty = traderGateLabel(task)
   const rail = questRailColor(task.id)
 
@@ -96,6 +103,7 @@ const QuestCard = memo(function QuestCard({
                 color: 'var(--gold)', letterSpacing: '.06em',
               }}>κ</span>
             )}
+            <SquadBadge share={share} />
           </div>
           <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
             {owners.map(o => <MemberPill key={o} name={o} allMembers={members} />)}
@@ -180,6 +188,12 @@ const QuestCard = memo(function QuestCard({
                 }}>
                   {objectiveTypeLabel(obj.type)}
                 </span>
+                <SquadBadge share={objectiveShare(obj, task, overrides, tallies)} />
+                <ShareVote
+                  value={myReports[task.id]?.[obj.id] ?? null}
+                  counts={tallies[task.id]?.[obj.id]}
+                  onVote={verdict => onReport(task.id, obj.id, verdict)}
+                />
               </div>
             )
           })}
@@ -199,6 +213,8 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
   const [dragObjKey, setDragObjKey]     = useState(null)
   const [dragOverObjKey, setDragOverObjKey] = useState(null)
   const memberRows = normalizeMembers(memberQuests)
+  const { overrides } = useQuestShareOverrides()
+  const { tallies, myReports, report } = useQuestShareReports()
   const members = memberRows.map(member => member.callsign)
   const memberIdsByName = new Map(memberRows.map(member => [member.callsign, member.user_id]))
 
@@ -363,6 +379,10 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
     members,
     progress,
     memberIdsByName,
+    overrides,
+    tallies,
+    myReports,
+    onReport: report,
   }
 
   return (
@@ -524,6 +544,12 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
                           &times;{row.owners.length} SHARED
                         </span>
                       )}
+                      <SquadBadge share={objectiveShare(row.obj, row.task, overrides, tallies)} />
+                      <ShareVote
+                        value={myReports[row.task.id]?.[row.obj.id] ?? null}
+                        counts={tallies[row.task.id]?.[row.obj.id]}
+                        onVote={verdict => report(row.task.id, row.obj.id, verdict)}
+                      />
                     </div>
                   </div>
 

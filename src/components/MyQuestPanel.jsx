@@ -1,6 +1,11 @@
 import { useState, useMemo, useEffect } from 'react'
 import { objectiveProgressKey } from '../partyMembers'
 import { objectiveIsOnMap, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
+import { objectiveShare, taskShare } from '../questShare'
+import { useQuestShareOverrides } from '../useQuestShareOverrides'
+import { useQuestShareReports } from '../useQuestShareReports'
+import SquadBadge from './SquadBadge'
+import ShareVote from './ShareVote'
 import { questRailColor } from '../questColors'
 import { mapReferenceArt } from '../mapBanners'
 import { HIDDEN_QUESTS_KEY, hiddenQuestIds, withQuestHidden } from '../questVisibility'
@@ -40,6 +45,8 @@ function objsForMap(task, mapNorm) {
 
 export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myUserId, myName, onSubmit, onOpenQuestManager, mapNorm, mapName, loading, settings = {}, onSetSetting, gameMode = 'regular' }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
+  const { overrides } = useQuestShareOverrides()
+  const { tallies, myReports, report } = useQuestShareReports()
 
   // Hiding is a view filter, not progress — see questVisibility.js. Completion
   // itself is owned by the EFT log sync, so this panel has no way to mark a
@@ -245,6 +252,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
           const sectionRows = visibleRows.filter(r => r.isMapSpecific === isMapSpecific && r.isComplete === isComplete)
           const sectionIdx = sectionRows.findIndex(r => r.task.id === task.id)
           const loyalty = traderGateLabel(task)
+          const share = taskShare(task, overrides, tallies)
 
           return (
             <div key={task.id}>
@@ -284,6 +292,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                     {task.kappaRequired && (
                       <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)' }}>κ KAPPA</span>
                     )}
+                    <SquadBadge share={share} />
                     {objs.length > 0 && (
                       <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: allObjsDone ? 'var(--grn)' : 'var(--txd)' }}>
                         {doneObjCount}/{objs.length} OBJ
@@ -389,6 +398,12 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                     }}>
                       {objectiveTypeLabel(obj.type)}
                     </span>
+                    <SquadBadge share={objectiveShare(obj, task, overrides, tallies)} />
+                    <ShareVote
+                      value={myReports[task.id]?.[obj.id] ?? null}
+                      counts={tallies[task.id]?.[obj.id]}
+                      onVote={verdict => report(task.id, obj.id, verdict)}
+                    />
                   </div>
                 )
               })}

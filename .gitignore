@@ -9,3 +9,6 @@ public/garrettrage.png
 design/
 .aidesigner/*
 !.aidesigner/.gitkeep
+
+# scripts/sync-coop.mjs page cache
+.coop-cache
