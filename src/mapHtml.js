@@ -80,3 +80,17 @@ export function parseSanitizedSvg(markup, targetDocument = document) {
 
   return targetDocument.importNode(parsed.documentElement, true)
 }
+
+// Tooltip cards embed remote art — trader portraits and item icons from the
+// tarkov.dev assets host. `escapeHtml` already blocks attribute breakout, but an
+// image whose src is not an http(s) URL has no business rendering at all, so the
+// scheme is checked rather than trusted.
+export function safeImageUrl(value) {
+  if (typeof value !== 'string' || !value) return null
+  try {
+    const url = new URL(value, 'https://assets.tarkov.dev')
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null
+  } catch {
+    return null
+  }
+}

@@ -210,7 +210,7 @@ async function loadData({ label, signal, gql, rest }) {
   return { ...result, source: 'rest', fallback: false }
 }
 
-const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink trader { name imageLink } map { id normalizedName } taskRequirements { task { id } status } objectives { id description type optional maps { normalizedName } ... on TaskObjectiveItem { item { id name iconLink } count foundInRaid requiredKeys { id name iconLink } } ... on TaskObjectiveMark { markerItem { id name iconLink } requiredKeys { id name iconLink } } ... on TaskObjectiveBasic { zones { id position { x y z } map { normalizedName } } requiredKeys { id name iconLink } } ... on TaskObjectiveShoot { zones { id position { x y z } map { normalizedName } } } } } }`
+const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink trader { name imageLink } map { id normalizedName } taskRequirements { task { id } status } objectives { id description type optional maps { normalizedName } ... on TaskObjectiveItem { item { id name iconLink } count foundInRaid requiredKeys { id name iconLink } } ... on TaskObjectiveMark { markerItem { id name iconLink } requiredKeys { id name iconLink } } ... on TaskObjectiveBasic { zones { id position { x y z } map { normalizedName } } requiredKeys { id name iconLink } } ... on TaskObjectiveShoot { zones { id position { x y z } map { normalizedName } } } ... on TaskObjectiveQuestItem { questItem { id name iconLink } count zones { id position { x y z } map { normalizedName } } } } } }`
 
 export function useMaps(gameMode = 'regular') {
   const mode = resolveGameMode(gameMode)
@@ -348,6 +348,14 @@ export function useTasks(mapNorm, gameMode = 'regular') {
       signal: controller.signal,
       gql: async signal => requireArray(await gqlRetry(TASKS_QUERY, { signal }), 'tasks').map(task => ({
         ...task,
+        // `questItem` is a separate GraphQL union member from `item`, but every
+        // reader downstream asks one question — what is this objective about —
+        // so it is folded onto `item` here, exactly as the REST adapter does.
+        objectives: Array.isArray(task.objectives)
+          ? task.objectives.map(objective => (objective?.questItem && !objective.item
+            ? { ...objective, item: objective.questItem }
+            : objective))
+          : task.objectives,
         taskRequirements: Array.isArray(task.taskRequirements)
           ? task.taskRequirements
             .map(requirement => {

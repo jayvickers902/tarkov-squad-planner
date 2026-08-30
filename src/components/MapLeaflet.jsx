@@ -21,12 +21,12 @@ import {
   FACTION_STYLE, HAZARD_STYLE, switchForExtract, extractsFor, countFactions,
   lootPointsFor, outlineToLatLngs, centroid,
 } from '../tarkovZones'
-import { objectivePins, getUserColor } from '../tarkovObjectives'
+import { objectivePins, getUserColor, objectiveTypeLabel, objectiveSubjectItem } from '../tarkovObjectives'
 import { bearingRange, useMapPings } from '../useMapPings'
 import { classifyPmcSpawns } from '../tarkovSpawns'
 import { framePositionSignature } from '../squadFocus'
 import { readCameraMode, writeCameraMode } from '../cameraMode'
-import { escapeHtml, parseSanitizedSvg } from '../mapHtml'
+import { escapeHtml, parseSanitizedSvg, safeImageUrl } from '../mapHtml'
 
 const PALETTE = ['#e85d5d', '#f5a623', '#e8e85d', '#5de87a', '#5de8d4', '#5db8e8', '#c45de8', '#e85da8', '#ffffff', '#b0b0b0']
 
@@ -169,6 +169,102 @@ function makeZoneTooltip(title, color, lines) {
       ${lines.filter(Boolean).map(line => `<div style="color:#9aaa98;font-size:10px;line-height:1.35">· ${escapeHtml(line)}</div>`).join('')}
     </div>
   </div>`
+}
+
+// ─── Objective pin card ───────────────────────────────────────────────────
+// A quest pin has to answer three questions at a glance: which quest, whose it
+// is, and what you actually do when you get there. The old card answered the
+// first two and then printed the raw upstream objective type — "FINDQUESTITEM"
+// — which is neither an instruction nor English. This renders the trader's
+// portrait beside the quest name, the item art for whatever the objective is
+// about, and a verb-first action line, with the upstream sentence kept below as
+// the detail rather than the headline.
+
+// `fit` matters: trader portraits are square and fill their tile, while item
+// icons are grid-shaped (a 2x1 key card, a 1x3 rifle) and must letterbox rather
+// than be cropped down to an unrecognisable centre crop.
+function thumb(url, alt, size, radius, fit = 'contain') {
+  const src = safeImageUrl(url)
+  if (!src) return ''
+  // Remote art is decoration: if the assets host is down the card must still
+  // read, so a failed load collapses the tile rather than leaving a broken icon.
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" width="${size}" height="${size}"
+    onerror="this.style.display='none'"
+    style="width:${size}px;height:${size}px;border-radius:${radius}px;object-fit:${fit};flex:0 0 auto;background:#14171460;border:1px solid #262b25">`
+}
+
+// The hand-placed quest marker names a whole quest rather than one objective, so
+// it lists every non-optional step. Same header as the auto pin — trader art,
+// quest name, owner chip — so the two pin kinds read as one system.
+function makeQuestMarkerTooltip({ color, memberName, questName, traderName, traderImage, objectives }) {
+  return `
+    <div style="min-width:200px;max-width:290px">
+      <div style="display:flex;gap:8px;align-items:flex-start">
+        ${thumb(traderImage, traderName || 'Trader', 34, 3, 'cover')}
+        <div style="min-width:0">
+          <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;line-height:1.15">${escapeHtml(questName)}</div>
+          ${traderName ? `<div style="color:#5c6b61;font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin-top:2px">${escapeHtml(traderName)}</div>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:5px;margin-top:6px">
+        <span style="width:7px;height:7px;border-radius:50%;background:${color};flex:0 0 auto"></span>
+        <span style="color:${color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:10px;letter-spacing:.1em">${escapeHtml(String(memberName).toUpperCase())}</span>
+      </div>
+      ${objectives.length ? `<div style="border-top:1px solid #262b25;margin-top:6px;padding-top:7px;display:flex;flex-direction:column;gap:6px">
+        ${objectives.map(objective => {
+          const item = objectiveSubjectItem(objective)
+          const count = Number(objective.count) > 1 ? Number(objective.count) : 1
+          return `<div style="display:flex;gap:7px;align-items:flex-start">
+            ${thumb(item?.iconLink, item?.name || 'Objective item', 26, 2)}
+            <div style="min-width:0">
+              <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:9px;letter-spacing:.12em">${escapeHtml(objectiveTypeLabel(objective.type))}${count > 1 ? ` &times;${count}` : ''}</div>
+              <div style="color:#9aaa98;font-size:11px;line-height:1.35">${escapeHtml(objective.description)}</div>
+            </div>
+          </div>`
+        }).join('')}
+      </div>` : ''}
+    </div>`
+}
+
+function makeObjectivePinTooltip(pin) {
+  const action = escapeHtml(pin.objAction || '')
+  const countLabel = pin.count > 1 ? ` <span style="color:#c9a84c">&times;${pin.count}</span>` : ''
+  const subject = pin.itemName
+    ? `<div style="color:#e4e0d4;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;line-height:1.2">${escapeHtml(pin.itemName)}${countLabel}</div>`
+    : ''
+  const firLabel = pin.foundInRaid
+    ? '<div style="color:#c9a84c;font-size:9px;letter-spacing:.1em;margin-top:2px">FOUND IN RAID</div>'
+    : ''
+  return `
+    <div style="min-width:210px;max-width:290px">
+      <div style="display:flex;gap:8px;align-items:flex-start">
+        ${thumb(pin.traderImage, pin.traderName || 'Trader', 34, 3, 'cover')}
+        <div style="min-width:0">
+          <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;line-height:1.15">${escapeHtml(pin.questName)}</div>
+          ${pin.traderName ? `<div style="color:#5c6b61;font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin-top:2px">${escapeHtml(pin.traderName)}</div>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:5px;margin-top:6px">
+        <span style="width:7px;height:7px;border-radius:50%;background:${pin.color};flex:0 0 auto"></span>
+        <span style="color:${pin.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:10px;letter-spacing:.1em">${escapeHtml(pin.memberName.toUpperCase())}</span>
+      </div>
+      <div style="border-top:1px solid #262b25;margin-top:6px;padding-top:7px;display:flex;gap:8px;align-items:flex-start">
+        ${thumb(pin.itemIcon, pin.itemName || 'Objective item', 38, 3)}
+        <div style="min-width:0">
+          ${action ? `<div style="display:inline-block;background:#c9a84c1f;border:1px solid #c9a84c55;color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:10px;letter-spacing:.12em;padding:1px 5px;border-radius:2px">${action}</div>` : ''}
+          ${subject}
+          ${firLabel}
+          <div style="color:#9aaa98;font-size:11px;line-height:1.4;margin-top:4px">${escapeHtml(pin.objDescription)}</div>
+        </div>
+      </div>
+      ${pin.requiredKeys?.length ? `<div style="border-top:1px solid #262b25;margin-top:7px;padding-top:6px;display:flex;flex-direction:column;gap:4px">
+        <div style="color:#5c6b61;font-size:9px;letter-spacing:.12em">KEY REQUIRED</div>
+        ${pin.requiredKeys.map(key => `<div style="display:flex;gap:6px;align-items:center">
+          ${thumb(key.iconLink, key.name, 20, 2)}
+          <span style="color:#6a9aaa;font-size:10px;line-height:1.3">${escapeHtml(key.name)}</span>
+        </div>`).join('')}
+      </div>` : ''}
+    </div>`
 }
 
 // Leaflet's built-in `auto` direction only chooses left or right. Map tooltips
@@ -933,14 +1029,14 @@ export default function MapLeaflet({
       const icon = makeQuestIcon(color, escapeHtml(markerUser[0].toUpperCase()))
       const task = tasks.find(t => t.id === m.questId)
       const objectives = task?.objectives?.filter(o => !o.optional) || []
-      const tooltipHtml = `
-        <div style="min-width:160px">
-          <div style="color:${color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;margin-bottom:4px">${escapeHtml(markerUser.toUpperCase())}</div>
-          <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;line-height:1.2;margin-bottom:${objectives.length ? 6 : 0}px">${escapeHtml(m.questName)}</div>
-          ${objectives.length ? `<div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">
-            ${objectives.map(o => `<div style="color:#9aaa98;font-size:11px">· ${escapeHtml(o.description)}</div>`).join('')}
-          </div>` : ''}
-        </div>`
+      const tooltipHtml = makeQuestMarkerTooltip({
+        color,
+        memberName: markerUser,
+        questName: m.questName,
+        traderName: task?.trader?.name || null,
+        traderImage: task?.trader?.imageLink || null,
+        objectives,
+      })
       const lm = L.marker(latlng, { icon, interactive: true })
       bindTacticalTooltip(lm, tooltipHtml, { offset: [0, -20] })
       lm.addTo(map)
@@ -1203,16 +1299,7 @@ export default function MapLeaflet({
         ? (pin.key === focusKey ? 'focus' : 'dim')
         : 'normal'
       const icon = makeObjIcon(pin.color, escapeHtml(pin.initial), focusState)
-      const typeLabel = pin.objType === 'visit' ? 'LOCATE' : pin.objType?.toUpperCase() ?? ''
-      const tooltipHtml = `
-        <div style="min-width:170px;max-width:260px">
-          <div style="color:${pin.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em;margin-bottom:4px">${escapeHtml(pin.memberName.toUpperCase())}</div>
-          <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;line-height:1.2;margin-bottom:6px">${escapeHtml(pin.questName)}</div>
-          <div style="border-top:1px solid #262b25;padding-top:6px">
-            ${typeLabel ? `<div style="color:#5c6b61;font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px">${escapeHtml(typeLabel)}</div>` : ''}
-            <div style="color:#e4e0d4;font-size:11px;line-height:1.4">${escapeHtml(pin.objDescription)}</div>
-          </div>
-        </div>`
+      const tooltipHtml = makeObjectivePinTooltip(pin)
       const lm = L.marker(latlng, { icon, interactive: true, zIndexOffset: 200 })
       bindTacticalTooltip(lm, tooltipHtml, { offset: [0, -12] })
       return lm

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { escapeHtml, parseSanitizedSvg } from './mapHtml'
+import { escapeHtml, parseSanitizedSvg, safeImageUrl } from './mapHtml'
 
 describe('Leaflet HTML safety', () => {
   it('escapes values from users and upstream APIs', () => {
@@ -38,5 +38,15 @@ describe('Leaflet HTML safety', () => {
 
   it('rejects non-SVG markup', () => {
     expect(() => parseSanitizedSvg('<html><body>nope</body></html>')).toThrow('Invalid map SVG')
+  })
+})
+
+describe('safeImageUrl', () => {
+  it('passes http(s) art through and rejects every other scheme', () => {
+    expect(safeImageUrl('https://assets.tarkov.dev/x-icon.webp')).toBe('https://assets.tarkov.dev/x-icon.webp')
+    expect(safeImageUrl('javascript:alert(1)')).toBe(null)
+    expect(safeImageUrl('data:image/svg+xml,<svg onload=alert(1)>')).toBe(null)
+    expect(safeImageUrl(null)).toBe(null)
+    expect(safeImageUrl('')).toBe(null)
   })
 })

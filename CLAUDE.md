@@ -207,6 +207,19 @@ clear `inMapBounds` only on its 12% pad and render past the image edge. Icebreak
 also has zero positioned objective zones upstream, so it will never show quest
 pins. Both are upstream data gaps, not ours; see `CODEX-HANDOFF-preraid.md`.
 
+A quest pin's tooltip is a card, not a label: the trader portrait sits beside the
+quest name, the objective's item art beside a verb badge (`objectiveTypeLabel` —
+`FIND`, `KILL`, `LOCATE`), with the upstream sentence as the detail underneath and
+any required key listed with its icon. The raw upstream type is never rendered;
+`FINDQUESTITEM` is not an instruction. Art comes from `task.trader.imageLink` and
+`objectiveSubjectItem()`, which reads `markerItem` for `mark` and folds
+`questItem` onto `item` — the REST adapter already did that fold, and
+`TASKS_QUERY` now does it for the GraphQL path via `TaskObjectiveQuestItem`.
+Prebaked JSON predates that fold, so a quest-item pin has no art until live data
+arrives; every thumbnail collapses on load failure, and `safeImageUrl` in
+`mapHtml.js` rejects any non-http(s) src. Hand-placed quest markers use the same
+header so both pin kinds read as one system.
+
 Ping focus is now four per-device camera policies — FOLLOW, ALERTS (CONTACT and NEED HELP), ALL and OFF — stored in localStorage under `tsp.ping_autofocus`. Any user map interaction suppresses auto-focus for six seconds so camera control stays with the reader. See **Follow Camera** below.
 
 ## Quest Shareability

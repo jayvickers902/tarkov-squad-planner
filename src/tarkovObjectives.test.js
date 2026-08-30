@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inferredTaskMapNorm, objectiveIsOnMap, taskIsOnMap } from './tarkovObjectives'
+import { inferredTaskMapNorm, objectiveIsOnMap, objectivePins, objectiveSubjectItem, requiredKeyItems, taskIsOnMap } from './tarkovObjectives'
 
 describe('inferredTaskMapNorm', () => {
   it('assigns Supervisor-style objectives to Interchange', () => {
@@ -118,5 +118,50 @@ describe('map-planning exclusions', () => {
 
     expect(taskIsOnMap(task, 'woods')).toBe(true)
     expect(taskIsOnMap(task, 'customs')).toBe(false)
+  })
+})
+
+describe('objective pin presentation data', () => {
+  const questItem = { id: 'ledx-special', name: 'LEDX (special)', iconLink: 'https://assets.tarkov.dev/ledx-icon.webp' }
+  const task = {
+    id: 'quality-standard',
+    name: 'Quality Standard',
+    trader: { name: 'Therapist', imageLink: 'https://assets.tarkov.dev/therapist.webp' },
+    map: { normalizedName: 'the-lab' },
+    objectives: [{
+      id: 'find-ledx',
+      type: 'findQuestItem',
+      description: 'Locate and obtain the special version of the LEDX Skin Transilluminator in The Lab',
+      optional: false,
+      item: questItem,
+      count: 1,
+      requiredKeys: [[{ id: 'lab-key', name: 'Lab access keycard', iconLink: 'https://assets.tarkov.dev/keycard.webp' }]],
+      maps: [{ normalizedName: 'the-lab' }],
+      zones: [{ id: 'zone-1', position: { x: -173, y: 1, z: -374 }, map: { normalizedName: 'the-lab' } }],
+    }],
+  }
+  const members = [{ user_id: 'u1', callsign: 'Jayshalla', quests: ['quality-standard'] }]
+
+  it('carries the trader, item art and a readable verb onto the pin', () => {
+    const [pin] = objectivePins([task], members, ['Jayshalla'], {}, 'the-lab')
+    expect(pin.traderName).toBe('Therapist')
+    expect(pin.traderImage).toBe('https://assets.tarkov.dev/therapist.webp')
+    expect(pin.itemName).toBe('LEDX (special)')
+    expect(pin.itemIcon).toBe('https://assets.tarkov.dev/ledx-icon.webp')
+    expect(pin.objAction).toBe('FIND')
+    expect(pin.requiredKeys.map(key => key.name)).toEqual(['Lab access keycard'])
+  })
+
+  it('reads a mark objective from its marker item, not its quest item', () => {
+    const marker = { id: 'ms2000', name: 'MS2000 Marker', iconLink: 'https://assets.tarkov.dev/ms2000.webp' }
+    expect(objectiveSubjectItem({ type: 'mark', markerItem: marker, item: questItem })).toBe(marker)
+    expect(objectiveSubjectItem({ type: 'visit' })).toBe(null)
+  })
+
+  it('flattens alternative key sets and drops duplicates', () => {
+    const key = { id: 'k1', name: 'Key one' }
+    expect(requiredKeyItems({ requiredKeys: [[key], [key, { id: 'k2', name: 'Key two' }]] })
+      .map(entry => entry.name)).toEqual(['Key one', 'Key two'])
+    expect(requiredKeyItems({})).toEqual([])
   })
 })

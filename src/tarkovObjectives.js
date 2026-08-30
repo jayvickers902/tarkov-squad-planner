@@ -219,6 +219,30 @@ export function objectiveHasMapLocation(objective, task, mapNorm) {
   })
 }
 
+// The thing an objective is actually about, as one item reference. `mark` names
+// its marker rather than a quest item, and the REST adapter folds `questItem`
+// into `item`, so this is not simply `objective.item`.
+export function objectiveSubjectItem(objective) {
+  const item = objective?.type === 'mark'
+    ? objective.markerItem
+    : (objective?.item || objective?.questItem)
+  return item?.name ? item : null
+}
+
+// `requiredKeys` is an array of alternative key sets — any one set opens the
+// door. Flattened and de-duplicated for display; the alternatives distinction is
+// more nuance than a map pin can carry.
+export function requiredKeyItems(objective) {
+  const groups = Array.isArray(objective?.requiredKeys) ? objective.requiredKeys : []
+  const seen = new Map()
+  for (const group of groups) {
+    for (const key of Array.isArray(group) ? group : [group]) {
+      if (key?.name && !seen.has(key.id ?? key.name)) seen.set(key.id ?? key.name, key)
+    }
+  }
+  return [...seen.values()]
+}
+
 /**
  * Return uncompleted objective zones for each party_members row on one map.
  */
@@ -248,6 +272,7 @@ export function objectivePins(tasks = [], members = [], names = [], progress = {
           if (!zone.position) continue
           if (zone.map?.normalizedName && !mapNameMatches(zone.map.normalizedName, mapNorm)) continue
 
+          const subject = objectiveSubjectItem(objective)
           pins.push({
             id: `${member.user_id}::${task.id}::${objective.id}::${zone.id}`,
             key: `${task.id}::${objective.id}`,
@@ -256,8 +281,16 @@ export function objectivePins(tasks = [], members = [], names = [], progress = {
             color,
             initial,
             questName: task.name,
+            traderName: task.trader?.name || null,
+            traderImage: task.trader?.imageLink || null,
             objDescription: objective.description,
             objType: objective.type,
+            objAction: objectiveTypeLabel(objective.type),
+            itemName: subject?.name || null,
+            itemIcon: subject?.iconLink || null,
+            count: Number(objective.count) > 1 ? Number(objective.count) : 1,
+            foundInRaid: Boolean(objective.foundInRaid),
+            requiredKeys: requiredKeyItems(objective),
             lat: zone.position.z,
             lng: zone.position.x,
           })
