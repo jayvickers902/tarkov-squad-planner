@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import { normalizeGameMode } from './gameMode'
 import { FEATURED } from './constants'
 import { activeQuestRows, manualQuestStatePatch, toQuestLogEventPayload } from './questLogState'
+import { inferredTaskMapNorm } from './tarkovObjectives'
 
 const LOG_IMPORT_MODES = new Set(['regular', 'pve'])
 export const QUEST_LOG_CHUNK_SIZE = 200
@@ -185,7 +186,7 @@ export function useUserQuests(userId, gameMode = 'regular') {
       if (!task || typeof task === 'string' || !task.id) continue
       const name = String(task.name || '').trim()
       if (!name) continue
-      const mapNorm = task.map?.normalizedName || task.mapNorm || null
+      const mapNorm = inferredTaskMapNorm(task)
       byId.set(task.id, {
         name,
         mapNorm: FEATURED_MAPS.has(mapNorm) ? mapNorm : null,

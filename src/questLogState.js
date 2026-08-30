@@ -1,4 +1,5 @@
 import { FEATURED } from './constants'
+import { inferredTaskMapNorm } from './tarkovObjectives'
 
 export const QUEST_STATES = ['active', 'failed', 'completed']
 export const QUEST_STATE_SOURCES = ['manual', 'log_import', 'live', 'system']
@@ -29,7 +30,7 @@ export function taskMetadataFor(allTasks) {
   const result = new Map()
   for (const task of Array.from(allTasks || [])) {
     if (!task || typeof task === 'string' || !task.id) continue
-    const mapNorm = task.map?.normalizedName || task.mapNorm || null
+    const mapNorm = inferredTaskMapNorm(task)
     result.set(task.id, {
       questName: boundedQuestName(task.name),
       mapNorm: IMPORTABLE_MAPS.has(mapNorm) ? mapNorm : null,

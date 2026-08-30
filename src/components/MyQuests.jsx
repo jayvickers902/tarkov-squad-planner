@@ -8,6 +8,18 @@ import DesktopAppCard from './DesktopAppCard'
 import { GAME_MODES, gameModeLabel, resolvePartyMode } from '../gameMode'
 import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
 import Icon from './Icon'
+import { inferredTaskMapNorm } from '../tarkovObjectives'
+
+function validSnapshot(value, gameMode) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  if (!Array.isArray(value.quests)) return null
+  if (value.gameMode && value.gameMode !== gameMode) return null
+  return {
+    ...value,
+    gameMode: value.gameMode || gameMode,
+    quests: value.quests.filter(quest => quest && typeof quest === 'object' && !Array.isArray(quest)),
+  }
+}
 
 // Small Kappa badge — reused in search results and saved list
 function KappaBadge() {
@@ -96,7 +108,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
     try {
       const stored = localStorage.getItem(snapKey)
         || (legacySnapKey ? localStorage.getItem(legacySnapKey) : null)
-      setSnapshot(stored ? JSON.parse(stored) : null)
+      setSnapshot(stored ? validSnapshot(JSON.parse(stored), gameMode) : null)
     } catch { setSnapshot(null) }
   }, [snapKey, legacySnapKey])
   const [confirmRestore, setConfirmRestore] = useState(false)
@@ -106,8 +118,13 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
   function handleSaveSnapshot() {
     if (!snapKey) return
     const snap = { savedAt: new Date().toISOString(), gameMode, quests: userQuests }
-    localStorage.setItem(snapKey, JSON.stringify(snap))
-    setSnapshot(snap)
+    try {
+      localStorage.setItem(snapKey, JSON.stringify(snap))
+      setSnapshot(snap)
+      setRestoreError('')
+    } catch {
+      setRestoreError('The snapshot could not be saved in this browser. Your current quests are unchanged.')
+    }
   }
 
   async function handleRestore() {
@@ -198,7 +215,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
   }, [userQuests])
 
   function handleAdd(task) {
-    const autoMap = task.map?.normalizedName || null
+    const autoMap = inferredTaskMapNorm(task)
     onAdd({ id: task.id, name: task.name }, autoMap)
     setSearchQ('')
     setRecentlyAdded(prev => new Set([...prev, task.id]))

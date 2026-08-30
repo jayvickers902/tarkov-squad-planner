@@ -230,3 +230,67 @@ describe('empty state', () => {
     expect(opened).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('map-scoped quest placeholders', () => {
+  const customsTask = {
+    id: 'customs-task',
+    name: 'Customs Task',
+    trader: { name: 'Prapor', imageLink: null },
+    objectives: [{
+      id: 'customs-objective',
+      type: 'visit',
+      description: 'Visit the Customs location',
+      optional: false,
+      maps: [{ normalizedName: 'customs' }],
+      zones: [{ position: { x: 1, y: 0, z: 1 }, map: { normalizedName: 'customs' } }],
+    }],
+  }
+  const selectedQuests = [
+    { id: customsTask.id, name: customsTask.name },
+    { id: 'off-map-task', name: 'Off-map Task' },
+  ]
+
+  it('does not rebuild an off-map personal quest as an empty card', async () => {
+    const { default: MyQuestPanel } = await import('./components/MyQuestPanel')
+    render(
+      <MyQuestPanel
+        myQuests={selectedQuests}
+        tasks={[customsTask]}
+        progress={{}}
+        userObjProgress={{}}
+        myUserId="user-1"
+        myName="DUDGY"
+        onSubmit={() => {}}
+        mapNorm="customs"
+        loading={false}
+        settings={{}}
+      />,
+    )
+
+    expect(await screen.findByText('Customs Task')).toBeTruthy()
+    expect(screen.queryByText('Off-map Task')).toBeNull()
+  })
+
+  it('does not rebuild an off-map squad quest as an empty card', async () => {
+    const { default: TodoList } = await import('./components/TodoList')
+    render(
+      <TodoList
+        tasks={[customsTask]}
+        memberQuests={[{
+          user_id: 'user-1',
+          callsign: 'DUDGY',
+          quests: selectedQuests,
+          quests_all: selectedQuests,
+        }]}
+        progress={{}}
+        onToggleStar={() => {}}
+        starredQuests={{}}
+        myUserId="user-1"
+        mapNorm="customs"
+      />,
+    )
+
+    expect(await screen.findByText('Visit the Customs location')).toBeTruthy()
+    expect(screen.queryByText('Off-map Task')).toBeNull()
+  })
+})

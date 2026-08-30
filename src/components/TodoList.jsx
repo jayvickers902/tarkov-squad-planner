@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, memo } from 'react'
 import { normalizeMembers, objectiveProgressKey, questDoneKey } from '../partyMembers'
-import { objectiveHasMapLocation, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
+import { objectiveHasMapLocation, objectiveIsOnMap, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
 import { classifyObjective, classifyTask } from '../questShare'
 import { useQuestShareOverrides } from '../useQuestShareOverrides'
 import { memberColor } from '../memberColors'
@@ -27,15 +27,12 @@ function MemberPill({ name, allMembers, done = false }) {
   )
 }
 
-function objsForMap(objectives, mapNorm, taskMapNorm) {
+function objsForMap(task, mapNorm) {
+  const objectives = task?.objectives
   return (objectives || []).filter(o => {
     if (o.optional) return false
     if (!mapNorm) return true
-    if (o.maps && o.maps.length > 0) return o.maps.some(m => m.normalizedName === mapNorm)
-    // Objective has no explicit map — use task-level map as fallback so item
-    // objectives for a Shoreline quest don't bleed into Interchange, etc.
-    if (taskMapNorm) return taskMapNorm === mapNorm
-    return true  // truly any-map objective (e.g. Gunsmith)
+    return objectiveIsOnMap(o, task, mapNorm)
   })
 }
 
@@ -232,16 +229,24 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
     const allQuestEntries = memberRows.flatMap(member => member.quests)
     const ids = [...new Set(allQuestEntries.map(q => q.id))]
     return ids
-      .map(id => tasks.find(t => t.id === id) || {
-        id,
-        name: allQuestEntries.find(q => q.id === id)?.name || id,
-        objectives: [],
-        trader: null,
-        incompleteData: true,
+      .map(id => {
+        const matchedTask = tasks.find(t => t.id === id)
+        // A missing task in a map-scoped list is an off-map quest, not missing
+        // quest data. Rendering the generic fallback here creates the empty
+        // cards with no trader portrait or objective details.
+        if (mapNorm && !matchedTask) return null
+        return matchedTask || {
+          id,
+          name: allQuestEntries.find(q => q.id === id)?.name || id,
+          objectives: [],
+          trader: null,
+          incompleteData: true,
+        }
       })
+      .filter(Boolean)
       .map(task => {
         const owners    = memberRows.filter(member => member.quests.find(q => q.id === task.id)).map(member => member.callsign)
-        const objs      = objsForMap(task.objectives, mapNorm, task.map?.normalizedName)
+        const objs      = objsForMap(task, mapNorm)
         const doneCount = objs.filter(o =>
           owners.length > 0 && owners.every(m => progress?.[objectiveProgressKey(task.id, o.id, memberIdsByName.get(m))])
         ).length

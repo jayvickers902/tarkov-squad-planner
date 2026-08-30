@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import { objectiveTypeLabel } from '../tarkovObjectives'
+import { inferredTaskMapNorm, objectiveTypeLabel } from '../tarkovObjectives'
 
 function QuestTooltip({ task, anchor, mapNorm }) {
   if (!task || !anchor) return null
@@ -111,7 +111,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
                 <div style={{ fontSize: 13 }}>{t.name}</div>
                 <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', marginTop: 2 }}>
                   {t.trader?.name} · Lv.{t.minPlayerLevel || 1}
-                  {!t.map && <span style={{ marginLeft: 8, color: 'var(--txd)' }}>any map</span>}
+                  {!inferredTaskMapNorm(t) && <span style={{ marginLeft: 8, color: 'var(--txd)' }}>any map</span>}
                 </div>
               </div>
               <span style={{ color: 'var(--gold)', fontSize: 18, flexShrink: 0, marginLeft: 8 }}>+</span>

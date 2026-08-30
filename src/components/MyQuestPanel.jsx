@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { objectiveProgressKey, questDoneKey } from '../partyMembers'
-import { objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
+import { objectiveIsOnMap, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
 import { classifyObjective, classifyTask } from '../questShare'
 import { useQuestShareOverrides } from '../useQuestShareOverrides'
 import { questRailColor } from '../questColors'
@@ -30,13 +30,12 @@ function NothingElseHere({ mapNorm, mapLabel, onOpenQuestManager }) {
 }
 
 
-function objsForMap(objectives, mapNorm, taskMapNorm) {
+function objsForMap(task, mapNorm) {
+  const objectives = task?.objectives
   return (objectives || []).filter(o => {
     if (o.optional || o.type === 'giveItem' || o.type === 'giveQuestItem') return false
     if (!mapNorm) return true
-    if (o.maps && o.maps.length > 0) return o.maps.some(m => m.normalizedName === mapNorm)
-    if (taskMapNorm) return taskMapNorm === mapNorm
-    return true
+    return objectiveIsOnMap(o, task, mapNorm)
   })
 }
 
@@ -110,14 +109,20 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
     }
     const mapped = myQuests
       .map(q => {
-        const task = tasks.find(t => t.id === q.id) || {
+        const matchedTask = tasks.find(t => t.id === q.id)
+        // `tasks` is already scoped to the selected map. If a quest is absent
+        // from that list, it belongs on another map; do not turn it into an
+        // objective-less placeholder card. Keep the fallback only for the
+        // unscoped view, where genuinely incomplete imported data is useful.
+        if (mapNorm && !matchedTask) return null
+        const task = matchedTask || {
           id: q.id,
           name: q.name || q.id,
           objectives: [],
           trader: null,
           incompleteData: true,
         }
-        const objs = objsForMap(task.objectives, mapNorm, task.map?.normalizedName)
+        const objs = objsForMap(task, mapNorm)
         // If a map is selected, hide quests with non-optional objectives but none on this map
         if (mapNorm) {
           const allObjs = (task.objectives || []).filter(o => !o.optional)

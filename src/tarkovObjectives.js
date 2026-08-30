@@ -64,6 +64,130 @@ export function mapNameMatches(mapName, mapNorm) {
     || mapNorm.startsWith(`${mapName}-`)
 }
 
+// Some upstream tasks are incorrectly published as "Any Location" even though
+// every required in-raid objective names one map in its description. Only infer
+// a task map when every required raid-local objective resolves unambiguously to
+// the same place. This keeps genuinely global objectives global.
+const RAID_LOCAL_OBJECTIVE_TYPES = new Set([
+  'visit', 'mark', 'shoot', 'extract', 'plantItem', 'plantQuestItem',
+  'findQuestItem', 'useItem',
+])
+
+// A regular findItem objective can progress in any raid even though it has no
+// map metadata, so it remains useful in map planning alongside local actions.
+const MAP_PROGRESS_OBJECTIVE_TYPES = new Set([
+  ...RAID_LOCAL_OBJECTIVE_TYPES,
+  'findItem',
+])
+
+// Any-location quests made entirely of trader, hideout, account, dialogue, or
+// weapon-build work cannot progress on a selected raid map. Keep them available
+// to imports and the quest manager, but omit them from every map planning view.
+// An explicit task map is preserved even if upstream publishes only a non-raid
+// objective, since that map assignment can still carry useful quest context.
+function taskIsExcludedFromMapPlanning(task) {
+  if (!task) return false
+  if (task?.map?.normalizedName || task?.mapNorm) return false
+  const requiredObjectives = (task.objectives || []).filter(objective => !objective?.optional)
+  return requiredObjectives.length === 0
+    || !requiredObjectives.some(objective => MAP_PROGRESS_OBJECTIVE_TYPES.has(objective?.type))
+}
+
+// The API publishes the Streets variant of Tarkov Shooter Part 5 with only
+// one map, while the in-game objective is valid anywhere sniper Scavs spawn.
+// Keep that known multi-map scope explicit until upstream exposes the full set.
+const TASK_MAP_SCOPE_OVERRIDES = {
+  '5bc4836986f7740c0152911c': ['streets-of-tarkov', 'customs', 'shoreline', 'woods'],
+  // Upstream objective metadata still points at Shoreline, but the current
+  // objective text and quest guide place this item on Factory.
+  '5b478eca86f7744642012254': ['factory'],
+  // The objective text says Health Resort bunker door on Shoreline; the
+  // upstream map id is a stale The Labyrinth reference.
+  '67a0970744893b9f3f0d9b68': ['shoreline'],
+}
+
+const MAP_DESCRIPTION_PATTERNS = [
+  ['streets-of-tarkov', /\b(?:on|in|at|from|into|inside|through|across|near|around|within|or|,)\s+(?:the )?streets(?: of tarkov)?\b/i],
+  ['ground-zero', /\b(?:on|in|at|from|into|inside|through|across|near|around|within|or|,)\s+(?:the )?ground zero\b/i],
+  ['the-labyrinth', /\b(?:on|in|at|from|into|inside|through|across|near|around|within|or|,)\s+(?:the )?labyrinth\b/i],
+  ['the-lab', /\b(?:on|in|at|from|into|inside|through|across|near|around|within|or|,)\s+(?:the )?(?:lab|laboratory|labs)\b/i],
+  ...['factory', 'customs', 'woods', 'shoreline', 'interchange', 'reserve', 'lighthouse', 'terminal', 'icebreaker']
+    .map(name => [name, new RegExp(`\\b(?:on|in|at|from|into|inside|through|across|near|around|within|or|,)\\s+(?:the )?${name}\\b`, 'i')]),
+]
+
+function explicitObjectiveMaps(objective) {
+  const names = new Set()
+  for (const map of objective?.maps || []) {
+    if (map?.normalizedName) names.add(map.normalizedName)
+  }
+  for (const zone of objective?.zones || []) {
+    if (zone?.map?.normalizedName) names.add(zone.map.normalizedName)
+  }
+  for (const location of objective?.possibleLocations || []) {
+    if (location?.map?.normalizedName) names.add(location.map.normalizedName)
+  }
+  return [...names]
+}
+
+function describedObjectiveMaps(objective) {
+  const description = String(objective?.description || '')
+  return MAP_DESCRIPTION_PATTERNS
+    .filter(([, pattern]) => pattern.test(description))
+    .map(([mapNorm]) => mapNorm)
+}
+
+export function inferredTaskMapNorm(task) {
+  const taskMap = task?.map?.normalizedName || task?.mapNorm || null
+  if (taskMap) return taskMap
+  if (TASK_MAP_SCOPE_OVERRIDES[task?.id]?.length === 1) return TASK_MAP_SCOPE_OVERRIDES[task.id][0]
+
+  const localObjectives = (task?.objectives || [])
+    .filter(objective => !objective?.optional && RAID_LOCAL_OBJECTIVE_TYPES.has(objective?.type))
+  if (!localObjectives.length) return null
+
+  const resolved = []
+  for (const objective of localObjectives) {
+    const maps = explicitObjectiveMaps(objective)
+    const candidates = maps.length ? maps : describedObjectiveMaps(objective)
+    if (candidates.length !== 1) return null
+    resolved.push(candidates[0])
+  }
+  return resolved.every(mapNorm => mapNameMatches(mapNorm, resolved[0])) ? resolved[0] : null
+}
+
+export function taskMapNorms(task) {
+  const explicitTaskMap = task?.map?.normalizedName || task?.mapNorm || null
+  if (explicitTaskMap) return [explicitTaskMap]
+  if (TASK_MAP_SCOPE_OVERRIDES[task?.id]) return TASK_MAP_SCOPE_OVERRIDES[task.id]
+  const localObjectives = (task?.objectives || [])
+    .filter(objective => !objective?.optional && RAID_LOCAL_OBJECTIVE_TYPES.has(objective?.type))
+  if (!localObjectives.length) return []
+  const scopes = []
+  for (const objective of localObjectives) {
+    const maps = explicitObjectiveMaps(objective)
+    const candidates = maps.length ? maps : describedObjectiveMaps(objective)
+    if (!candidates.length) return []
+    scopes.push(candidates)
+  }
+  return [...new Set(scopes.flat())]
+}
+
+export function taskIsOnMap(task, mapNorm) {
+  if (!mapNorm) return true
+  if (taskIsExcludedFromMapPlanning(task)) return false
+  const scopes = taskMapNorms(task)
+  return scopes.length ? scopes.some(name => mapNameMatches(name, mapNorm)) : true
+}
+
+export function objectiveIsOnMap(objective, task, mapNorm) {
+  if (!mapNorm) return true
+  if (!task?.map && TASK_MAP_SCOPE_OVERRIDES[task?.id]) return taskIsOnMap(task, mapNorm)
+  const explicitMaps = explicitObjectiveMaps(objective)
+  if (explicitMaps.length) return explicitMaps.some(name => mapNameMatches(name, mapNorm))
+  const taskMap = inferredTaskMapNorm(task)
+  return taskMap ? mapNameMatches(taskMap, mapNorm) : true
+}
+
 // Raid View is a map-action rail, so an objective needs a real in-raid location
 // on the active map. Global find/hand-in/build objectives deliberately do not
 // qualify even when the quest appears in the member's active quest list.

@@ -3,13 +3,7 @@ import { useKeys } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
 import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
 import { memberColor } from '../memberColors'
-
-function objIsOnMap(obj, mapNorm, taskMapNorm) {
-  if (!mapNorm) return true
-  if (obj.maps && obj.maps.length > 0) return obj.maps.some(m => m.normalizedName === mapNorm)
-  if (taskMapNorm) return taskMapNorm === mapNorm
-  return true
-}
+import { objectiveIsOnMap } from '../tarkovObjectives'
 
 export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progress, gameMode }) {
   const memberRows = normalizeMembers(memberQuests)
@@ -34,7 +28,7 @@ export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progr
         task.objectives?.forEach(obj => {
           if (obj.optional) return
           if (progress?.[objectiveProgressKey(task.id, obj.id, memberRow.user_id)]) return
-          const isOnMap = objIsOnMap(obj, mapNorm, task.map?.normalizedName)
+          const isOnMap = objectiveIsOnMap(obj, task, mapNorm)
           if (!isOnMap) return
 
           const isPlant = obj.type === 'plantItem' && obj.item

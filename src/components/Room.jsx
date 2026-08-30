@@ -18,6 +18,7 @@ import { gameModeLabel, resolvePartyMode } from '../gameMode'
 import { normalizeMembers, findMember, memberNames, progressOwnerId, progressQuestId } from '../partyMembers'
 import { memberColor } from '../memberColors'
 import { mapBannerLayers, mapReferenceArt } from '../mapBanners'
+import { taskIsOnMap } from '../tarkovObjectives'
 
 const RaidView = lazy(() => import('./RaidView'))
 
@@ -219,7 +220,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   const { maps, loading: loadingMaps } = useMaps(gameMode)
   const { tasks: allTasks, loading: loadingTasks } = useTasks(null, gameMode)
   const tasks = useMemo(
-    () => allTasks.filter(task => !task.map || task.map?.normalizedName === party.map_norm),
+    () => allTasks.filter(task => !party.map_norm || taskIsOnMap(task, party.map_norm)),
     [allTasks, party.map_norm],
   )
   const isLeader = party.leader_id === myUserId
@@ -254,7 +255,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
       const questIdSets = {}
       activeMembers.forEach(member => {
         const ids = member.quests_all
-          .filter(q => allTasksById.get(q.id)?.map?.normalizedName === m.normalizedName)
+          .filter(q => taskIsOnMap(allTasksById.get(q.id), m.normalizedName))
           .map(q => q.id)
         perMember[member.callsign] = ids.length
         if (ids.length) questIdSets[member.callsign] = new Set(ids)
@@ -287,7 +288,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
     if (!party.map_norm) return 0
     const ids = new Set()
     members.forEach(member => member.quests.forEach(quest => {
-      if (allTasksById.get(quest.id)?.map?.normalizedName === party.map_norm) ids.add(quest.id)
+      if (taskIsOnMap(allTasksById.get(quest.id), party.map_norm)) ids.add(quest.id)
     }))
     return ids.size
   }, [members, allTasksById, party.map_norm])
@@ -618,11 +619,15 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
               const isPending = [...(pendingIn || []), ...(pendingOut || [])].some(r => r.user_id === member.user_id)
               const mQuests   = member.quests
               const displayName = m
-              const totalCount = mQuests.length
+              // quests is the map-scoped party list, so it shrinks and grows as the
+              // map changes; quests_all is the map-independent total and is what a
+              // member's quest count must read. Older rows can carry an empty
+              // quests_all, so never report fewer than the scoped list holds.
+              const totalCount = Math.max(member.quests_all.length, mQuests.length)
               const mapCount  = party.map_norm
                 ? mQuests.filter(q => {
                     const task = tasksById.get(q.id)
-                    return task?.map?.normalizedName === party.map_norm
+                    return taskIsOnMap(task, party.map_norm)
                   }).length
                 : null
               const isLeaderRow = party.leader_id === member.user_id

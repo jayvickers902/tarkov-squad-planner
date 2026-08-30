@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { TARKOV_API, FEATURED, GRAPHQL_ENABLED } from './constants'
 import { getRestMaps, getRestTasks, getRestKeys, getRestBosses, getRestExtracts, resolveGameMode } from './tarkovRest'
 import { loadPrebaked } from './data/prebaked'
+import { taskIsOnMap } from './tarkovObjectives'
 
 const MAPS_QUERY = `{ maps { id name normalizedName } }`
 const KEYS_QUERY = `{ items(types: [keys]) { id name avg24hPrice lastLowPrice wikiLink iconLink } }`
@@ -180,23 +181,10 @@ function restFallbackError(cause, fromCache) {
 // floor: the live result always wins, and a prebaked chunk that resolves after
 // the live fetch must not clobber it. Call the returned function the moment
 // live data lands.
-const PREBAKED_LOADERS = {
-  maps: () => import('./data/prebaked/maps.json'),
-  tasks: () => import('./data/prebaked/tasks.json'),
-  keys: () => import('./data/prebaked/keys.json'),
-  bosses: () => import('./data/prebaked/bosses.json'),
-  extracts: () => import('./data/prebaked/extracts.json'),
-}
-
 function loadPrebakedForMode(name, gameMode) {
-  const loader = PREBAKED_LOADERS[name]
-  return Promise.all([
-    loadPrebaked(name),
-    loader ? loader() : Promise.resolve(null),
-  ]).then(([prebaked, module]) => {
-    const stamped = module?.default ?? module
-    return prebaked && stamped?.gameMode === gameMode ? prebaked : null
-  })
+  return loadPrebaked(name).then(prebaked => (
+    prebaked?.gameMode === gameMode ? prebaked : null
+  ))
 }
 
 function seedFromPrebaked(name, gameMode, apply) {
@@ -405,7 +393,7 @@ export function useTasks(mapNorm, gameMode = 'regular') {
 
   const filtered = mapNorm === null
     ? tasks
-    : tasks.filter(t => !t.map || t.map === null || t.map?.normalizedName === mapNorm)
+    : tasks.filter(t => taskIsOnMap(t, mapNorm))
 
   return { tasks: filtered, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
 }

@@ -1,7 +1,7 @@
 import { RED_REBEL_MAPS } from './constants'
 import { normalizeMembers, objectiveProgressKey, questDoneKey } from './partyMembers'
 import { classifyObjective, classifyTask } from './questShare'
-import { mapNameMatches } from './tarkovObjectives'
+import { inferredTaskMapNorm, mapNameMatches } from './tarkovObjectives'
 
 // This module deliberately owns derivation only. The session layer can persist a
 // selected map and a plan revision later, but a score is always recomputable from
@@ -172,9 +172,13 @@ function positionKey(map, point) {
 function objectiveDetails(objective, task, targetMap) {
   const target = normalizeMapName(targetMap)
   const explicitMaps = objectiveMaps(objective)
+  // Keep the existing rule that a mapless hand-in objective on a mapped task
+  // is global; only use inference for tasks whose upstream map is actually null.
+  const explicitTaskMap = normalizeMapName(task?.map)
+  const inferredTaskMap = explicitTaskMap ? null : inferredTaskMapNorm(task)
   const mapsToMatch = explicitMaps.length
     ? explicitMaps
-    : [normalizeMapName(task?.map)].filter(Boolean)
+    : [inferredTaskMap || explicitTaskMap].filter(Boolean)
 
   const points = []
   const addPoint = (point, sourceMap) => {
@@ -193,7 +197,9 @@ function objectiveDetails(objective, task, targetMap) {
   // A task-level map is only a fallback when the objective itself has no map
   // metadata at all. This intentionally excludes mapless giveItem/giveQuestItem
   // objectives from map-located planning, even when their task has a map.
-  const hasMap = explicitMaps.some(value => sameMap(value, target)) || points.length > 0
+  const hasMap = explicitMaps.some(value => sameMap(value, target))
+    || points.length > 0
+    || (inferredTaskMap && sameMap(inferredTaskMap, target))
 
   const uniquePoints = new Map()
   for (const point of points) {

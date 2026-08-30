@@ -1,13 +1,7 @@
 import { useMemo, useState } from 'react'
 import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
 import { memberColor } from '../memberColors'
-
-function objIsOnMap(obj, mapNorm, taskMapNorm) {
-  if (!mapNorm) return true
-  if (obj.maps && obj.maps.length > 0) return obj.maps.some(m => m.normalizedName === mapNorm)
-  if (taskMapNorm) return taskMapNorm === mapNorm
-  return true
-}
+import { objectiveIsOnMap } from '../tarkovObjectives'
 
 export default function FindItems({ tasks, memberQuests = [], mapNorm, progress, myName, myUserId, userObjProgress }) {
   const memberRows = normalizeMembers(memberQuests)
@@ -31,7 +25,7 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
           const objKey = objectiveProgressKey(task.id, obj.id, memberRow.user_id)
           if (progress?.[objKey] || (memberRow.user_id === myUserId && userObjProgress?.[objKey])) return
           if (obj.type !== 'findItem' || !obj.item) return
-          if (!objIsOnMap(obj, mapNorm, task.map?.normalizedName)) return
+          if (!objectiveIsOnMap(obj, task, mapNorm)) return
 
           const key = `${obj.item.id}::${obj.foundInRaid ? 'fir' : 'nonfir'}`
           if (itemMap[key]) {

@@ -3,6 +3,7 @@ import { useBossSpawns, useExtracts, useKeys } from '../useTarkov'
 import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
 import { memberColor } from '../memberColors'
 import useDialogFocus from '../useDialogFocus'
+import { objectiveIsOnMap, taskIsOnMap } from '../tarkovObjectives'
 
 const EXTRACT_STYLES = {
   GEAR: { color: '#e8c96a', border: 'rgba(201,168,76,.42)', background: 'rgba(201,168,76,.1)', rail: '#c9a84c' },
@@ -249,16 +250,14 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
       .filter(quest => seenQuests.has(quest.id) ? false : (seenQuests.add(quest.id), true))
       .filter(quest => !progress[`__done__:${quest.id}::${member.user_id}`])
       .map(quest => taskById.get(quest.id))
-      .filter(task => task && task.map?.normalizedName === mapNorm)
+      .filter(task => task && taskIsOnMap(task, mapNorm))
 
     member.quests.forEach(quest => {
       const task = taskById.get(quest.id)
       if (!task) return
       task.objectives?.forEach(objective => {
         if (objective.optional || progress[objectiveProgressKey(task.id, objective.id, member.user_id)]) return
-        const onMap = objective.maps?.length > 0
-          ? objective.maps.some(map => map.normalizedName === mapNorm)
-          : task.map?.normalizedName === mapNorm
+        const onMap = objectiveIsOnMap(objective, task, mapNorm)
         if (!onMap) return
 
         const isPlant = objective.type === 'plantItem' && objective.item

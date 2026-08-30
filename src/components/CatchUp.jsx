@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildQuestGraph, impliedComplete, tasksByTrader, unlockedFrom } from '../questGraph'
+import { inferredTaskMapNorm } from '../tarkovObjectives'
 
 function storageKey(userId) {
   return userId ? `tsp.catchup.picks.${userId}` : null
@@ -18,8 +19,9 @@ function readPicks(userId) {
 }
 
 function taskMapName(task) {
-  return task.map?.normalizedName
-    ? task.map.normalizedName.replace(/-/g, ' ').toUpperCase()
+  const mapNorm = inferredTaskMapNorm(task)
+  return mapNorm
+    ? mapNorm.replace(/-/g, ' ').toUpperCase()
     : 'ANY MAP'
 }
 
@@ -109,7 +111,7 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
       await onBulkAdd(selectedTasks.map(task => ({
         id: task.id,
         name: task.name,
-        mapNorm: task.map?.normalizedName ?? null,
+        mapNorm: inferredTaskMapNorm(task),
       })))
       setOpen(false)
     } catch {
