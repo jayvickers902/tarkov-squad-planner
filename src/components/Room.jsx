@@ -95,6 +95,30 @@ function hasRaidWork(progress) {
   return Object.keys(progress || {}).some(key => key !== '__raid_start__')
 }
 
+// The brief is keyed on raid_id, not on __raid_start__. start_party_raid stamps
+// the timestamp from the server clock while the optimistic write uses the
+// client's, so the two never agree and the leader who just launched would be
+// briefed again the moment the real stamp landed. raid_id increments by exactly
+// one on both paths, so it is the only stable "which raid is this" the squad
+// shares. The ack is a high-water mark so acking the raid we are about to start
+// also covers the id we are still holding.
+const RAID_BRIEF_WINDOW_MS = 15 * 60 * 1000
+
+function briefAckKey(party) {
+  return `tsp.raid-brief.${party?.id || party?.code || 'local'}`
+}
+
+function readBriefAck(key) {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw === null || raw === '') return null
+    const value = Number(raw)
+    return Number.isFinite(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
 function compactMapName(map) {
   return map.normalizedName === 'streets-of-tarkov' ? 'Streets' : map.name
 }
@@ -111,7 +135,6 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   const [addBusy, setAddBusy]   = useState(false)
   const [confirmUnfriend, setConfirmUnfriend] = useState(null)
   const [chipTooltip, setChipTooltip] = useState(null)  // { task, anchor }
-  const [dismissedRaidStart, setDismissedRaidStart] = useState(null)
   const [startRaidPending, setStartRaidPending] = useState(false)
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -179,8 +202,25 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
     if (hasRouteOverlay || raidView) setOverflowOpen(false)
   }, [hasRouteOverlay, raidView])
 
-  const raidStart = party.progress?.['__raid_start__'] || null
-  const showRaidModal = startRaidPending || (!!party.map_id && raidStart !== null && raidStart !== dismissedRaidStart)
+  const raidStart = Number(party.progress?.['__raid_start__']) || null
+  const raidId = Number.isFinite(Number(party.raid_id)) ? Number(party.raid_id) : 0
+  const briefKey = briefAckKey(party)
+  const [ackedRaid, setAckedRaid] = useState(() => readBriefAck(briefKey))
+  const [openBriefRaid, setOpenBriefRaid] = useState(null)
+
+  useEffect(() => { setAckedRaid(readBriefAck(briefKey)) }, [briefKey])
+
+  // Every member opens the brief on the raid the leader just started. The
+  // freshness window keeps a party's long-dead last raid from briefing whoever
+  // walks in months later, and the ack keeps a reload from re-briefing.
+  useEffect(() => {
+    if (!party.map_id || raidStart === null) return
+    if (ackedRaid !== null && raidId <= ackedRaid) return
+    if (Date.now() - raidStart > RAID_BRIEF_WINDOW_MS) return
+    setOpenBriefRaid(raidId)
+  }, [party.map_id, raidId, raidStart, ackedRaid])
+
+  const showRaidModal = startRaidPending || openBriefRaid !== null
 
   // Work a map change would destroy — select_map_party resets exactly these four.
   // __raid_start__ is bookkeeping the modal writes, not something anyone would mourn,
@@ -191,21 +231,27 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
     || hasRaidWork(party.progress)
 
 
+  function ackBrief(id) {
+    setAckedRaid(id)
+    setOpenBriefRaid(null)
+    try { localStorage.setItem(briefKey, String(id)) } catch { /* Storage may be unavailable. */ }
+  }
+
   function handleRaidModalClose() {
     if (startRaidPending) {
-      const ts = Date.now()
       setStartRaidPending(false)
-      setDismissedRaidStart(ts)
-      onStartRaid(ts)
+      // start_party_raid increments raid_id, so ack the raid we are asking for.
+      ackBrief(raidId + 1)
+      onStartRaid()
     } else {
-      setDismissedRaidStart(raidStart)
+      ackBrief(openBriefRaid ?? raidId)
     }
     onOpenRaid()
   }
 
   function handleRaidModalCancel() {
     if (startRaidPending) setStartRaidPending(false)
-    else setDismissedRaidStart(raidStart)
+    else ackBrief(openBriefRaid ?? raidId)
   }
 
   async function handleSendRequest() {
@@ -331,6 +377,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
             gameMode={gameMode}
             onlineMemberIds={onlineMemberIds}
             presenceReady={presenceReady}
+            onSubmitProgress={onSubmitProgress}
             onClose={handleRaidModalClose}
             onCancel={handleRaidModalCancel}
           />
@@ -377,6 +424,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
           gameMode={gameMode}
           onlineMemberIds={onlineMemberIds}
           presenceReady={presenceReady}
+          onSubmitProgress={onSubmitProgress}
           onClose={handleRaidModalClose}
           onCancel={handleRaidModalCancel}
         />

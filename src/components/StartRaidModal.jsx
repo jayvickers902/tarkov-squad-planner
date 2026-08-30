@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useBossSpawns, useExtracts, useKeys } from '../useTarkov'
-import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
+import { normalizeMembers, objectiveProgressKey, prepPackedKey } from '../partyMembers'
 import { memberColor } from '../memberColors'
 import useDialogFocus from '../useDialogFocus'
 import { objectiveIsOnMap, taskIsOnMap } from '../tarkovObjectives'
@@ -39,20 +39,6 @@ function percentage(value) {
 
 function upper(value) {
   return String(value || '').toUpperCase()
-}
-
-function packedStorageKey(party, mapNorm) {
-  const partyKey = party?.id || party?.code || party?.party_code || 'local'
-  return `tsp.raid-prep.${partyKey}.${mapNorm || 'unknown'}`
-}
-
-function readPacked(key) {
-  try {
-    const value = JSON.parse(localStorage.getItem(key) || '{}')
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
-  } catch {
-    return {}
-  }
 }
 
 function classifyExtract(extract) {
@@ -108,15 +94,17 @@ function RaidClock({ seconds }) {
   )
 }
 
-function PrepItem({ item, checked, memberNames, onToggle }) {
+// A row is only tickable by someone the item belongs to: merge_progress stamps
+// the caller's uid onto every key, so a tick on a mate's row could never be
+// recorded as theirs. Everyone still reads the chips, which is the shared part.
+function PrepItem({ item, checked, mine, memberNames, onToggle }) {
+  const Row = mine ? 'button' : 'div'
+  const interactive = mine ? { type: 'button', role: 'checkbox', 'aria-checked': checked, onClick: onToggle } : {}
   return (
-    <button
-      type="button"
-      className={`start-raid-prep-row ${checked ? 'is-checked' : ''}`}
+    <Row
+      className={`start-raid-prep-row ${checked ? 'is-checked' : ''} ${mine ? '' : 'is-theirs'}`}
       style={{ '--prep-rail': ACTION_COLORS[item.action] || ACTION_COLORS.BRING }}
-      role="checkbox"
-      aria-checked={checked}
-      onClick={onToggle}
+      {...interactive}
     >
       <span className="start-raid-checkbox" aria-hidden="true">{checked ? '✓' : ''}</span>
       {item.iconLink ? (
@@ -127,7 +115,12 @@ function PrepItem({ item, checked, memberNames, onToggle }) {
         </span>
       )}
       <span className={`mono start-raid-item-action action-${item.action.toLowerCase()}`}>{item.action}</span>
-      <span className="mono start-raid-item-count">{item.count}×</span>
+      <span
+        className={`mono start-raid-item-count ${item.split ? 'is-split' : ''}`}
+        title={item.split ? `${item.count} between the squad — see the split on the right` : undefined}
+      >
+        {item.count}×
+      </span>
       <span className="start-raid-item-copy">
         <span className="start-raid-item-name">{item.name}</span>
         <span className="mono start-raid-item-quests" title={item.quests.join(' · ')}>{item.quests.join(' · ')}</span>
@@ -136,18 +129,22 @@ function PrepItem({ item, checked, memberNames, onToggle }) {
       <span className="start-raid-owners">
         {item.owners.map(owner => {
           const palette = memberColor(owner.callsign, memberNames)
+          const label = upper(owner.callsign || 'MEMBER')
+          const need = item.split ? ` needs ${owner.count}` : ''
           return (
             <span
               key={owner.user_id}
-              className="mono start-raid-owner-chip"
+              className={`mono start-raid-owner-chip ${owner.packed ? 'is-packed' : ''}`}
               style={{ '--owner-bg': palette.bg, '--owner-border': palette.border, '--owner-text': palette.text }}
+              title={owner.packed ? `${label}${need} — packed` : `${label}${need} — not ticked yet`}
             >
-              {upper(owner.callsign || 'MEMBER')}
+              <span aria-hidden="true">{owner.packed ? '✓ ' : ''}</span>{label}
+              {item.split ? <b className="start-raid-owner-count">{owner.count}×</b> : null}
             </span>
           )
         })}
       </span>
-    </button>
+    </Row>
   )
 }
 
@@ -218,12 +215,11 @@ function BriefBoss({ boss }) {
   )
 }
 
-export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlineMemberIds = [], presenceReady = false, onClose, onCancel = onClose }) {
+export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlineMemberIds = [], presenceReady = false, onSubmitProgress, onClose, onCancel = onClose }) {
   const dialogRef = useDialogFocus(true, onCancel)
   const [times, setTimes] = useState(getTarkovTimes)
   const mapNorm = party.map_norm
-  const storageKey = packedStorageKey(party, mapNorm)
-  const [packed, setPacked] = useState(() => readPacked(storageKey))
+  const progress = useMemo(() => party.progress || {}, [party.progress])
   const { getBossesForMap, loading: bossLoading } = useBossSpawns(gameMode)
   const { extracts, loading: extractsLoading } = useExtracts(mapNorm, gameMode)
   const { allKeys } = useKeys(mapNorm, gameMode)
@@ -233,17 +229,13 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
     return () => clearInterval(id)
   }, [])
 
-  useEffect(() => {
-    try { localStorage.setItem(storageKey, JSON.stringify(packed)) } catch { /* Storage may be unavailable. */ }
-  }, [packed, storageKey])
-
   const memberRows = useMemo(() => normalizeMembers(party.members), [party.members])
   const memberNames = useMemo(() => memberRows.map(member => member.callsign), [memberRows])
   const taskById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks])
   const keyIconMap = useMemo(() => Object.fromEntries(allKeys.map(key => [key.id, key.iconLink || null])), [allKeys])
 
   const squadPrep = useMemo(() => memberRows.map(member => {
-    const progress = party.progress || {}
+    const progress = useMemo(() => party.progress || {}, [party.progress])
     const items = new Map()
     const seenQuests = new Set()
     const mapQuests = member.quests
@@ -291,22 +283,53 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
   const prepItems = useMemo(() => {
     const items = new Map()
     squadPrep.forEach(member => member.items.forEach(item => {
+      const owner = {
+        user_id: member.user_id,
+        callsign: member.callsign,
+        count: item.count,
+        packed: Boolean(progress[prepPackedKey(item.key, member.user_id)]),
+      }
       const current = items.get(item.key)
       if (current) {
         current.count += item.count
-        current.owners.push({ user_id: member.user_id, callsign: member.callsign })
+        current.owners.push(owner)
         item.quests.forEach(quest => current.quests.add(quest))
         current.foundInRaid ||= item.foundInRaid
       } else {
-        items.set(item.key, { ...item, owners: [{ user_id: member.user_id, callsign: member.callsign }], quests: new Set(item.quests) })
+        items.set(item.key, { ...item, owners: [owner], quests: new Set(item.quests) })
       }
     }))
-    return [...items.values()].map(item => ({ ...item, quests: [...item.quests] }))
-  }, [squadPrep])
+    return [...items.values()].map(item => ({
+      ...item,
+      quests: [...item.quests],
+      mine: item.owners.some(owner => owner.user_id === myUserId),
+      checked: Boolean(progress[prepPackedKey(item.key, myUserId)]),
+      // "14 markers between us" is not an instruction to anybody. Once a row is
+      // shared, the row total is only useful next to each person's own share.
+      // A key is one key each, so a per-owner count there would be noise.
+      split: item.owners.length > 1 && item.action !== 'KEY',
+    }))
+  }, [myUserId, progress, squadPrep])
 
-  const checkedCount = prepItems.reduce((count, item) => count + (packed[item.key] ? 1 : 0), 0)
-  const itemsLeft = prepItems.length - checkedCount
-  const prepPct = prepItems.length ? Math.round((checkedCount / prepItems.length) * 100) : 100
+  // BRING and KEY are what you load in with; FIND is what you come back with, so
+  // only the carry list is a readiness question.
+  const carryItems = useMemo(() => prepItems.filter(item => item.action !== 'FIND'), [prepItems])
+  const findItems = useMemo(() => prepItems.filter(item => item.action === 'FIND'), [prepItems])
+
+  // Readiness counts one obligation per owner per item, so the bar means the
+  // same thing as the squad rail beside it rather than "what this reader ticked".
+  const carryTotal = carryItems.reduce((count, item) => count + item.owners.length, 0)
+  const carryPacked = carryItems.reduce((count, item) => count + item.owners.filter(owner => owner.packed).length, 0)
+  const itemsLeft = carryTotal - carryPacked
+  const prepPct = carryTotal ? Math.round((carryPacked / carryTotal) * 100) : 100
+  const findPacked = findItems.reduce((count, item) => count + item.owners.filter(owner => owner.packed).length, 0)
+  const findTotal = findItems.reduce((count, item) => count + item.owners.length, 0)
+  // The heading speaks to the reader, so it leads with the reader's own share.
+  const myCarry = carryItems.filter(item => item.mine)
+  const myLeft = myCarry.filter(item => !item.checked).length
+  const carryMeta = myCarry.length
+    ? `${myLeft} LEFT FOR YOU · ${itemsLeft} FOR THE SQUAD`
+    : `${itemsLeft} LEFT FOR THE SQUAD`
   const questCount = squadPrep.reduce((count, member) => count + member.mapQuests.length, 0)
   const raidExtracts = useMemo(() => extracts.filter(extract => extract.faction !== 'scav'), [extracts])
   const conditionalExtracts = useMemo(() => raidExtracts.map(extract => ({ ...extract, ...classifyExtract(extract) })).filter(extract => extract.tag), [raidExtracts])
@@ -315,8 +338,10 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
   const nightBosses = isFactory ? getBossesForMap('night-factory') : []
   const bosses = isFactory ? [...dayBosses, ...nightBosses] : dayBosses
 
-  function togglePacked(itemKey) {
-    setPacked(current => ({ ...current, [itemKey]: !current[itemKey] }))
+  function togglePacked(item) {
+    if (!myUserId || !item.mine) return
+    const key = prepPackedKey(item.key, myUserId)
+    onSubmitProgress?.({ [key]: !progress[key] })
   }
 
   return (
@@ -341,21 +366,23 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
           </div>
         </header>
 
-        <div className="start-raid-readiness" aria-label={`${checkedCount} of ${prepItems.length} items packed`}>
+        <div className="start-raid-readiness" aria-label={`${carryPacked} of ${carryTotal} items packed by the squad`}>
           <span className="mono">PREP CHECK</span>
           <div className="start-raid-readiness-track" aria-hidden="true"><span style={{ width: `${prepPct}%` }} /></div>
-          <strong className="mono">{checkedCount} / {prepItems.length} ITEMS PACKED</strong>
+          <strong className="mono">{carryPacked} / {carryTotal} PACKED BY SQUAD</strong>
         </div>
 
         <div className="start-raid-body">
           <main className="start-raid-main">
             <section aria-labelledby="raid-prep-items-title">
-              <SectionHeading id="raid-prep-items-title" number="1" title="QUEST ITEMS TO BRING" hint="TICK IT OFF IN YOUR STASH" meta={`${itemsLeft} STILL TO PACK`} />
-              {prepItems.length ? (
+              <SectionHeading id="raid-prep-items-title" number="1" title="QUEST ITEMS TO BRING" hint="TICK IT OFF IN YOUR STASH" meta={carryMeta} />
+              {carryItems.length ? (
                 <div className="start-raid-prep-list">
-                  {prepItems.map(item => <PrepItem key={item.key} item={item} checked={Boolean(packed[item.key])} memberNames={memberNames} onToggle={() => togglePacked(item.key)} />)}
+                  {carryItems.map(item => (
+                    <PrepItem key={item.key} item={item} checked={item.checked} mine={item.mine} memberNames={memberNames} onToggle={() => togglePacked(item)} />
+                  ))}
                 </div>
-              ) : <div className="mono start-raid-empty">NO QUEST ITEMS OR KEYS NEEDED ON THIS MAP</div>}
+              ) : <div className="mono start-raid-empty">NOTHING TO CARRY IN FOR THIS MAP</div>}
             </section>
 
             <section aria-labelledby="raid-prep-extracts-title">
@@ -363,6 +390,23 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
               {extractsLoading ? <div className="mono start-raid-empty">LOADING EXTRACTS…</div> : conditionalExtracts.length ? (
                 <div className="start-raid-extract-grid">{conditionalExtracts.map(extract => <ExtractCard key={extract.id} extract={extract} />)}</div>
               ) : <div className="mono start-raid-empty">NO SPECIAL EXTRACT REQUIREMENTS FOUND</div>}
+            </section>
+
+            <section aria-labelledby="raid-prep-find-title">
+              <SectionHeading
+                id="raid-prep-find-title"
+                number="3"
+                title="WHAT TO LOOK OUT FOR"
+                hint="PICK IT UP IN THE RAID"
+                meta={findTotal ? `${findPacked} / ${findTotal} FOUND` : null}
+              />
+              {findItems.length ? (
+                <div className="start-raid-prep-list">
+                  {findItems.map(item => (
+                    <PrepItem key={item.key} item={item} checked={item.checked} mine={item.mine} memberNames={memberNames} onToggle={() => togglePacked(item)} />
+                  ))}
+                </div>
+              ) : <div className="mono start-raid-empty">NO QUEST ITEMS TO FIND ON THIS MAP</div>}
             </section>
           </main>
 
@@ -372,8 +416,8 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
               <div className="start-raid-squad-list">
                 {squadPrep.map(member => {
                   const palette = memberColor(member.callsign, memberNames)
-                  const owned = prepItems.filter(item => item.owners.some(owner => owner.user_id === member.user_id))
-                  const left = owned.filter(item => !packed[item.key]).length
+                  const owned = carryItems.filter(item => item.owners.some(owner => owner.user_id === member.user_id))
+                  const left = owned.filter(item => !progress[prepPackedKey(item.key, member.user_id)]).length
                   const online = !presenceReady || onlineMemberIds.includes(member.user_id)
                   return (
                     <div className="start-raid-squad-row" key={member.user_id}>
@@ -391,7 +435,7 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
 
             <section className="start-raid-rail-card" aria-labelledby="start-raid-boss-title">
               <div className="start-raid-boss-heading">
-                <span className="start-raid-section-number">3</span>
+                <span className="start-raid-section-number">4</span>
                 <h2 id="start-raid-boss-title">BOSS SPAWNS</h2>
                 <span className="mono">{bosses.length} BOSS{bosses.length === 1 ? '' : 'ES'} · LIVE ODDS</span>
               </div>
@@ -404,7 +448,7 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
 
         <footer className="start-raid-footer">
           <span className={`mono start-raid-footer-status ${itemsLeft === 0 ? 'is-ready' : ''}`} role="status">
-            {itemsLeft === 0 ? 'EVERYTHING PACKED — SQUAD IS READY' : `${itemsLeft} ITEM${itemsLeft === 1 ? '' : 'S'} NOT PACKED YET — YOU CAN STILL LOAD IN`}
+            {itemsLeft === 0 ? 'EVERYTHING PACKED — SQUAD IS READY' : `${itemsLeft} ITEM${itemsLeft === 1 ? '' : 'S'} NOT PACKED ACROSS THE SQUAD — YOU CAN STILL LOAD IN`}
           </span>
           <button type="button" className="start-raid-back" onClick={onCancel}>BACK</button>
           <button type="button" data-autofocus className="start-raid-go" onClick={onClose}>OK — LET'S GO</button>

@@ -51,6 +51,13 @@ export function questDoneKey(questId, userId) {
   return `__done__:${questId}::${userId}`
 }
 
+// Pre-raid prep ticks ride in party progress so the squad sees each other pack.
+// merge_progress only accepts keys ending in the caller's uid, so a tick is
+// always attributed to whoever made it — there is no way to tick for a mate.
+export function prepPackedKey(itemKey, userId) {
+  return `__prep__:${itemKey}::${userId}`
+}
+
 export function progressOwnerId(key) {
   if (typeof key !== 'string') return null
   const separator = key.lastIndexOf('::')

@@ -378,6 +378,37 @@ Objective rows carry a 3px left rail in the quest's colour, from `questRailColor
 `memberColors.js` — one palette shared by owner chips, filter chips, sidebar rails
 and the map-recommendation bar, so a member keeps the same hue everywhere.
 
+## Raid Brief
+
+`StartRaidModal` is a squad briefing, not the leader's private checklist. Pressing
+START RAID opens it for **every** member, and its prep ticks are shared.
+
+The pop is keyed on `party.raid_id`, never on `__raid_start__`. `start_party_raid`
+stamps the timestamp from the server clock while the optimistic write in
+`useParty` uses the client's, so the two never agree — keying on the stamp meant
+the leader who had just confirmed got briefed again the moment the real value
+landed. `raid_id` increments by exactly one on both paths, so it is the only
+"which raid is this" the squad agrees on. `Room` acks it as a high-water mark in
+`localStorage` under `tsp.raid-brief.<party>`, which is what stops a reload
+re-briefing, and only briefs an unacked raid whose stamp is under
+`RAID_BRIEF_WINDOW_MS` (15 min) old so a party's long-dead last raid does not
+brief whoever walks in months later.
+
+Prep ticks live in party progress under `__prep__:<itemId>:<ACTION>::<uid>`, so
+they need no migration — `merge_progress` already accepts any boolean key ending
+in the caller's uid, and the readers that parse progress keys all filter on
+`__done__:` first. That uid stamp is also why a row is **only tickable by an
+owner**: a tick on a mate's row could never be recorded as theirs, so it is
+rendered read-only with their chip instead, the same self-only rule
+`MyTasksPanel` follows. Chips carry each owner's own count, because "14 markers
+between us" is not an instruction to anybody.
+
+The brief splits by what the tick means: BRING and KEY are what you load in with
+and are the only readiness question, so PREP CHECK, `READY` and the squad rail
+count one obligation per owner per carry item. FIND items are what you come back
+with and sit in their own `WHAT TO LOOK OUT FOR` section at the bottom, outside
+the readiness math.
+
 ## Map Page
 
 The map is **one destination with two states**, not a MAP tab and a separate raid

@@ -129,7 +129,7 @@ function renderRoom(overrides = {}) {
   return { props, ...render(<Room {...props} />) }
 }
 
-beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }) })
+beforeEach(() => { localStorage.clear(); vi.useFakeTimers({ shouldAdvanceTime: true }) })
 afterEach(() => { vi.useRealTimers(); cleanup() })
 
 describe('Room banner header', () => {
@@ -160,13 +160,41 @@ describe('Room banner header', () => {
   })
 
   it('starts the raid and enters Raid View when the brief is confirmed', () => {
-    const { props } = renderRoom()
+    const { props, rerender } = renderRoom()
 
     fireEvent.click(screen.getByRole('button', { name: /START RAID/ }))
     fireEvent.click(screen.getByRole('button', { name: "OK — LET'S GO" }))
 
     expect(props.onStartRaid).toHaveBeenCalledOnce()
     expect(props.onOpenRaid).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+
+    // The leader must not be re-briefed when the raid they just started lands.
+    // The server stamps __raid_start__ off its own clock, so it never matches
+    // the value the optimistic write guessed — raid_id is what both agree on.
+    rerender(<Room {...props} party={makeParty({ raid_id: 1, progress: { __raid_start__: Date.now() } })} />)
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+  })
+
+  it('briefs a member who did not press the button when the leader starts a raid', () => {
+    const { props, rerender } = renderRoom({ props: { myUserId: 'user-2', myName: 'BOOTS' } })
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+
+    const started = { raid_id: 1, progress: { __raid_start__: Date.now() } }
+    rerender(<Room {...props} party={makeParty(started)} />)
+    expect(screen.getByRole('dialog', { name: 'Start raid brief' })).toBeInTheDocument()
+
+    // Dismissed, it stays dismissed for that raid — including across a reload.
+    fireEvent.click(screen.getByRole('button', { name: "OK — LET'S GO" }))
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+
+    cleanup()
+    renderRoom({ props: { myUserId: 'user-2', myName: 'BOOTS' }, party: started })
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+  })
+
+  it('does not brief anyone on a raid that ended long ago', () => {
+    renderRoom({ party: { raid_id: 4, progress: { __raid_start__: Date.now() - 60 * 60 * 1000 } } })
     expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
   })
 

@@ -461,6 +461,9 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .start-raid-item-action.action-find { color: #e85a5a; }
 .start-raid-item-action.action-bring { color: var(--txm); }
 .start-raid-item-count { color: var(--goldtx); font-size: 14px; font-weight: 700; white-space: nowrap; }
+/* A shared row's headline number is a squad total, so it steps back and lets the
+   per-owner split on the right carry the instruction. */
+.start-raid-item-count.is-split { color: var(--txd); font-weight: 400; }
 .start-raid-item-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .start-raid-item-name { overflow: hidden; color: var(--txb); font-size: 14px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .start-raid-prep-row.is-checked .start-raid-item-name { color: #7d8a7a; text-decoration: line-through; }
@@ -468,6 +471,15 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .start-raid-fir { flex-shrink: 0; padding: 1px 5px; color: #e85a5a; background: rgba(232,90,90,.1); border: 1px solid rgba(232,90,90,.4); border-radius: 2px; font-size: var(--fs-xs); }
 .start-raid-owners { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 3px; }
 .start-raid-owner-chip { padding: 1px 6px; background: var(--owner-bg); border: 1px solid var(--owner-border); border-left-width: 3px; border-radius: 3px; color: var(--owner-text); font-size: var(--fs-xs); line-height: 1.35; white-space: nowrap; }
+/* A teammate's row is read-only: merge_progress can only record a tick under the
+   caller's own uid, so offering the checkbox would promise a write that fails. */
+.start-raid-prep-row.is-theirs { cursor: default; }
+.start-raid-prep-row.is-theirs:hover { border-color: var(--brd); background: var(--sur2); }
+.start-raid-prep-row.is-theirs:nth-child(even):hover { background: #161a15; }
+.start-raid-prep-row.is-theirs .start-raid-checkbox { border-style: dashed; opacity: .45; }
+.start-raid-owner-chip.is-packed { border-left-color: var(--grn); }
+.start-raid-owner-count { margin-left: 5px; font-weight: 700; }
+.start-raid-owner-chip:not(.is-packed) { opacity: .58; }
 .start-raid-empty { padding: 10px 11px; background: var(--pill); border: 1px dashed #33392f; border-radius: 4px; color: var(--txd); font-size: var(--fs-xs); }
 .start-raid-extract-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .start-raid-extract-card { min-width: 0; display: flex; flex-direction: column; gap: 5px; padding: 9px 11px; background: var(--sur2); border: 1px solid var(--brd); border-left: 3px solid var(--extract-rail); border-radius: 4px; }
