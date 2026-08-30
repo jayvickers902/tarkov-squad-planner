@@ -138,6 +138,15 @@ describe('StartRaidModal', () => {
     expect(screen.getByText('CO-OP')).toBeInTheDocument()
   })
 
+  it('puts lookouts before conditional extracts in the numbered brief', () => {
+    const { container } = renderModal()
+    const sections = [...container.querySelectorAll('.start-raid-main > section')]
+
+    expect(sections.map(section => section.querySelector('.start-raid-section-number')?.textContent)).toEqual(['1', '2', '3'])
+    expect(sections[1]).toHaveAttribute('aria-labelledby', 'raid-prep-find-title')
+    expect(sections[2]).toHaveAttribute('aria-labelledby', 'raid-prep-extracts-title')
+  })
+
   // The prep memos are only warm on the second render, so a hook called inside
   // one of them renders fine and then throws when the memo is cached. Every
   // other test here renders once, which is precisely how that shipped.

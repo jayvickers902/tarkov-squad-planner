@@ -384,17 +384,10 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
               ) : <div className="mono start-raid-empty">NOTHING TO CARRY IN FOR THIS MAP</div>}
             </section>
 
-            <section aria-labelledby="raid-prep-extracts-title">
-              <SectionHeading id="raid-prep-extracts-title" number="2" title="EXTRACTS THAT NEED SOMETHING" meta={`${raidExtracts.length} EXTRACTS · ${conditionalExtracts.length} CONDITIONAL`} />
-              {extractsLoading ? <div className="mono start-raid-empty">LOADING EXTRACTS…</div> : conditionalExtracts.length ? (
-                <div className="start-raid-extract-grid">{conditionalExtracts.map(extract => <ExtractCard key={extract.id} extract={extract} />)}</div>
-              ) : <div className="mono start-raid-empty">NO SPECIAL EXTRACT REQUIREMENTS FOUND</div>}
-            </section>
-
             <section aria-labelledby="raid-prep-find-title">
               <SectionHeading
                 id="raid-prep-find-title"
-                number="3"
+                number="2"
                 title="WHAT TO LOOK OUT FOR"
                 hint="PICK IT UP IN THE RAID"
                 meta={findTotal ? `${findPacked} / ${findTotal} FOUND` : null}
@@ -406,6 +399,13 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
                   ))}
                 </div>
               ) : <div className="mono start-raid-empty">NO QUEST ITEMS TO FIND ON THIS MAP</div>}
+            </section>
+
+            <section aria-labelledby="raid-prep-extracts-title">
+              <SectionHeading id="raid-prep-extracts-title" number="3" title="EXTRACTS THAT NEED SOMETHING" meta={`${raidExtracts.length} EXTRACTS · ${conditionalExtracts.length} CONDITIONAL`} />
+              {extractsLoading ? <div className="mono start-raid-empty">LOADING EXTRACTS…</div> : conditionalExtracts.length ? (
+                <div className="start-raid-extract-grid">{conditionalExtracts.map(extract => <ExtractCard key={extract.id} extract={extract} />)}</div>
+              ) : <div className="mono start-raid-empty">NO SPECIAL EXTRACT REQUIREMENTS FOUND</div>}
             </section>
           </main>
 
