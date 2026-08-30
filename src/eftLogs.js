@@ -617,13 +617,24 @@ function collectHostModeSignals(text) {
 
   let sawPve = false
   let sawRegular = false
+  let sawSeason = false
   for (const host of hosts) {
     if (!/escapefromtarkov\.com/.test(host)) continue
     const withoutPort = host.replace(/:\d+$/, '')
+    // Seasonal is tested first and claims the host outright. The seasonal
+    // gateway is literally `gw-pvp-season`, so the permanent-PvP token test
+    // below matches it too. Without this a seasonal session resolves to
+    // `regular` with no competing signal for resolveMode to catch, and a
+    // seasonal character's quests import onto the permanent one.
+    if (/(?:^|[.-])(?:pvp-season|pvpseason|season)(?:$|[.-])/.test(withoutPort)) {
+      sawSeason = true
+      continue
+    }
     if (/(?:^|[.-])pve(?:$|[.-])/.test(withoutPort)) sawPve = true
     // A generic production/shared endpoint is deliberately not regular evidence.
     if (/(?:^|[.-])(?:pvp|regular)(?:$|[.-])/.test(withoutPort)) sawRegular = true
   }
+  if (sawSeason) incrementModeSignal(result, 'pvp-season')
   if (sawPve) incrementModeSignal(result, 'pve')
   if (sawRegular) incrementModeSignal(result, 'regular')
   return result
@@ -1182,6 +1193,7 @@ export const __eftLogInternals = {
   extractVersion,
   modeFromValue,
   resolveMode,
+  collectHostModeSignals,
   normalizeDate,
   identityComponentsForSessions,
   collectProfileGroups,

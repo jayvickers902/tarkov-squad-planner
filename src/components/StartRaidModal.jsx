@@ -235,7 +235,6 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
   const keyIconMap = useMemo(() => Object.fromEntries(allKeys.map(key => [key.id, key.iconLink || null])), [allKeys])
 
   const squadPrep = useMemo(() => memberRows.map(member => {
-    const progress = useMemo(() => party.progress || {}, [party.progress])
     const items = new Map()
     const seenQuests = new Set()
     const mapQuests = member.quests
@@ -278,7 +277,7 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
       })
     })
     return { ...member, mapQuests, items: [...items.values()] }
-  }), [keyIconMap, mapNorm, memberRows, party.progress, taskById])
+  }), [keyIconMap, mapNorm, memberRows, progress, taskById])
 
   const prepItems = useMemo(() => {
     const items = new Map()

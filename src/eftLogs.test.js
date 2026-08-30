@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { handleEftLogWorkerMessage } from './eftLogWorker.js'
-import { isRelevantEftLogFile, parseEftLogAppend, parseEftLogFiles } from './eftLogs.js'
+import { __eftLogInternals, isRelevantEftLogFile, parseEftLogAppend, parseEftLogFiles } from './eftLogs.js'
 import { QUEST_LOG_EVENT_FIELDS, toQuestLogEventPayload } from './questLogState.js'
 
 const fixtureRoot = resolve(process.cwd(), 'src/test/fixtures/eft-logs/Logs')
@@ -664,5 +664,65 @@ describe('EFT log worker protocol', () => {
 
     expect(response).toEqual({ type: 'error', requestId: 'request-error', error: 'Unable to parse EFT logs.' })
     expect(JSON.stringify(response)).not.toContain(secret)
+  })
+})
+
+describe('seasonal gateway attribution', () => {
+  const { collectHostModeSignals } = __eftLogInternals
+
+  function hostSignals(host) {
+    return Object.fromEntries(collectHostModeSignals(`connecting to https://${host}/client`))
+  }
+
+  // `gw-pvp-season` contains `pvp` as a hyphen-delimited token, so the
+  // permanent-PvP rule matches it unless seasonal is tested first.
+  it('reads the seasonal gateway as seasonal and never as regular', () => {
+    expect(hostSignals('gw-pvp-season.escapefromtarkov.com')).toEqual({ 'pvp-season': 1 })
+    expect(hostSignals('wsn-pvp-season-02.escapefromtarkov.com')).toEqual({ 'pvp-season': 1 })
+  })
+
+  it('still reads the permanent and PvE gateways', () => {
+    expect(hostSignals('gw-pvp.escapefromtarkov.com')).toEqual({ regular: 1 })
+    expect(hostSignals('gw-pve.escapefromtarkov.com')).toEqual({ pve: 1 })
+  })
+
+  it('treats shared endpoints as no evidence', () => {
+    expect(hostSignals('lobby.escapefromtarkov.com')).toEqual({})
+    expect(hostSignals('wsn-01.escapefromtarkov.com')).toEqual({})
+    expect(hostSignals('s3-prod.escapefromtarkov.com')).toEqual({})
+  })
+
+  function session(dir, host, extraHost) {
+    const backend = [`[2026-08-25 12:00:00] {"backend":"https://${host}/client"}`]
+    if (extraHost) backend.push(`[2026-08-25 12:00:01] {"backend":"https://${extraHost}/client"}`)
+    return [
+      { name: `Logs/${dir}/backend.log`, text: backend.join('\n'), size: 100, lastModified: 0 },
+      { name: `Logs/${dir}/notifications.log`, text: jsonNotification({ eventId: `${dir}-event` }), size: 100, lastModified: 0 },
+    ]
+  }
+
+  it('excludes a seasonal session from a regular import', () => {
+    const result = parse(session('0.16.9.0-season', 'gw-pvp-season.escapefromtarkov.com'))
+    expect(result.matchedEvents).toHaveLength(1)
+    expect(result.matchedEvents[0].gameMode).toBe('pvp-season')
+    expect(result.sessions.every(entry => entry.hasSeasonalSignal)).toBe(true)
+  })
+
+  // The real shape: a seasonal launch still pings the permanent gateway a
+  // couple of times. That must resolve conflicted, not silently regular.
+  it('conflicts a session that touches both gateways', () => {
+    const result = parse(session('0.16.9.0-mixed', 'gw-pvp-season.escapefromtarkov.com', 'gw-pvp.escapefromtarkov.com'))
+    expect(result.matchedEvents).toHaveLength(1)
+    expect(result.matchedEvents[0].gameMode).toBeNull()
+    expect(result.matchedEvents[0].modeConfidence).toBe('conflicted')
+    expect(result.sessions.every(entry => entry.hasSeasonalSignal)).toBe(true)
+  })
+
+  it('leaves a permanent-only session importable', () => {
+    const result = parse(session('0.16.9.0-perm', 'gw-pvp.escapefromtarkov.com'))
+    expect(result.matchedEvents).toHaveLength(1)
+    expect(result.matchedEvents[0].gameMode).toBe('regular')
+    expect(result.matchedEvents[0].modeConfidence).toBe('certain')
+    expect(result.sessions.some(entry => entry.hasSeasonalSignal)).toBe(false)
   })
 })

@@ -3,18 +3,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import StartRaidModal from './StartRaidModal'
 
-vi.mock('../useTarkov', () => ({
-  useBossSpawns: () => ({ getBossesForMap: () => [], loading: false }),
-  useExtracts: () => ({
-    loading: false,
-    extracts: [
-      { id: 'power', name: 'D-2', faction: 'pmc', switchIds: ['switch'] },
-      { id: 'coop', name: 'Scav Lands (Co-Op)', faction: 'shared', switchIds: [] },
-      { id: 'scav', name: 'Scav Camp (Co-Op)', faction: 'scav', switchIds: [] },
-    ],
-  }),
-  useKeys: () => ({ allKeys: [] }),
-}))
+// The real hooks hand back stable references, and so must these: a mock that
+// allocates a fresh array every render busts every downstream memo, which hides
+// anything that only misbehaves once a memo is actually cached.
+vi.mock('../useTarkov', () => {
+  const allKeys = []
+  const bosses = []
+  const extracts = [
+    { id: 'power', name: 'D-2', faction: 'pmc', switchIds: ['switch'] },
+    { id: 'coop', name: 'Scav Lands (Co-Op)', faction: 'shared', switchIds: [] },
+    { id: 'scav', name: 'Scav Camp (Co-Op)', faction: 'scav', switchIds: [] },
+  ]
+  const getBossesForMap = () => bosses
+  return {
+    useBossSpawns: () => ({ getBossesForMap, loading: false }),
+    useExtracts: () => ({ loading: false, extracts }),
+    useKeys: () => ({ allKeys }),
+  }
+})
 
 const item = { id: 'marker', name: 'MS2000 Marker', iconLink: null }
 const salewa = { id: 'salewa', name: 'Salewa First Aid Kit', iconLink: null }
@@ -130,5 +136,24 @@ describe('StartRaidModal', () => {
     expect(screen.getByText('2 EXTRACTS · 2 CONDITIONAL')).toBeInTheDocument()
     expect(screen.getByText('POWER')).toBeInTheDocument()
     expect(screen.getByText('CO-OP')).toBeInTheDocument()
+  })
+
+  // The prep memos are only warm on the second render, so a hook called inside
+  // one of them renders fine and then throws when the memo is cached. Every
+  // other test here renders once, which is precisely how that shipped.
+  it('survives a re-render once its memos are warm', () => {
+    const props = {
+      party,
+      myUserId: 'me',
+      tasks,
+      gameMode: 'regular',
+      onSubmitProgress: vi.fn(),
+      onClose: () => {},
+    }
+    const { rerender } = render(<StartRaidModal {...props} />)
+
+    rerender(<StartRaidModal {...props} onlineMemberIds={['me']} />)
+
+    expect(screen.getByText('MS2000 Marker')).toBeInTheDocument()
   })
 })

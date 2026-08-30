@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RELEASE_VERSION, RELEASES } from './whatsNew'
 import { WELCOME_SETTINGS_KEY } from './welcome'
@@ -233,7 +233,8 @@ describe('App welcome guide button', () => {
     render(<App />)
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'GUIDE' }))
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary navigation' }))
+      .getByRole('button', { name: 'GUIDE' }))
 
     expect(setupHeading()).toBeInTheDocument()
 
