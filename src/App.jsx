@@ -572,8 +572,11 @@ export default function App() {
         route={route}
         party={party}
         raidLive={raidLive}
+        callsign={profile.callsign}
         onNavigate={navigate}
         onRequestLeave={() => setLeaveConfirmOpen(true)}
+        onOpenGuide={openWelcomeGuide}
+        onLogout={logout}
       />
       {signedInView}
     </EftLogSyncProvider>

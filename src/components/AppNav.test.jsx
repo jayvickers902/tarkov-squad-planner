@@ -38,10 +38,17 @@ describe('AppNav', () => {
   })
 
   it('shows Lobby when there is no active party', () => {
-    render(<AppNav route={{ screen: 'lobby' }} party={null} raidLive={false} onNavigate={vi.fn()} onRequestLeave={vi.fn()} />)
+    const onOpenGuide = vi.fn()
+    const onLogout = vi.fn()
+    render(<AppNav route={{ screen: 'lobby' }} party={null} raidLive={false} callsign="Raven" onNavigate={vi.fn()} onRequestLeave={vi.fn()} onOpenGuide={onOpenGuide} onLogout={onLogout} />)
 
     expect(screen.getByRole('button', { name: 'LOBBY' })).toHaveAttribute('aria-current', 'page')
     expect(screen.queryByRole('button', { name: 'LEAVE' })).not.toBeInTheDocument()
+    expect(document.querySelector('.app-nav-callsign')).toHaveTextContent('RAVEN')
+    fireEvent.click(screen.getByRole('button', { name: 'GUIDE' }))
+    fireEvent.click(screen.getByRole('button', { name: 'LOGOUT' }))
+    expect(onOpenGuide).toHaveBeenCalledTimes(1)
+    expect(onLogout).toHaveBeenCalledTimes(1)
   })
 
   it('navigates Quest Manager with the active party code', () => {

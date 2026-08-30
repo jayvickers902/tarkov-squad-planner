@@ -1,5 +1,6 @@
-export default function AppNav({ route, party, raidLive, onNavigate, onRequestLeave }) {
+export default function AppNav({ route, party, raidLive, callsign, onNavigate, onRequestLeave, onOpenGuide, onLogout }) {
   const code = party?.code
+  const isLobbyHome = route.screen === 'lobby' && !party
   const destinations = [
     { screen: 'lobby', label: party ? 'LEAVE' : 'LOBBY', route: { screen: 'lobby' }, destructive: Boolean(party) },
     { screen: 'quests', label: 'QUEST MANAGER', route: code ? { screen: 'quests', code } : { screen: 'quests' } },
@@ -18,8 +19,14 @@ export default function AppNav({ route, party, raidLive, onNavigate, onRequestLe
   }
 
   return (
-    <nav className="app-nav" aria-label="Primary navigation">
+    <nav className={`app-nav${isLobbyHome ? ' app-nav-lobby' : ''}`} aria-label="Primary navigation">
       <div className="app-nav-inner">
+        {isLobbyHome ? (
+          <div className="app-nav-brand" aria-label="Squad Planner">
+            <span aria-hidden="true" />
+            <strong>SQUAD PLANNER</strong>
+          </div>
+        ) : null}
         {destinations.map(destination => {
           const active = route.screen === destination.screen
           return (
@@ -34,6 +41,13 @@ export default function AppNav({ route, party, raidLive, onNavigate, onRequestLe
             </button>
           )
         })}
+        {isLobbyHome ? (
+          <div className="app-nav-account">
+            <span className="app-nav-callsign mono"><span aria-hidden="true">◆</span> {callsign?.toUpperCase()}</span>
+            <button type="button" className="btn-ghost btn-sm" onClick={onOpenGuide}>GUIDE</button>
+            <button type="button" className="btn-ghost btn-sm" onClick={onLogout}>LOGOUT</button>
+          </div>
+        ) : null}
       </div>
     </nav>
   )

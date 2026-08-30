@@ -3,21 +3,21 @@ import { supabase } from '../supabase'
 import { GAME_MODES, gameModeLabel, normalizeGameMode } from '../gameMode'
 import Icon from './Icon'
 
-export default function Lobby({ userId, callsign, userGameMode = 'regular', onEnter, onForceJoin, onManageQuests, onLogout, onOpenGuide, onAdmin, isAdmin, error, friendsError = '', loading, autoJoinCode, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
-  const [mode, setMode]         = useState('home')
+const EMPTY_LIST = []
+
+export default function Lobby({ userId, callsign, userGameMode = 'regular', onEnter, onForceJoin, onManageQuests, onAdmin, isAdmin, error, friendsError = '', loading, autoJoinCode, friends = EMPTY_LIST, pendingIn = EMPTY_LIST, pendingOut = EMPTY_LIST, onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
   const [createGameMode, setCreateGameMode] = useState(() => normalizeGameMode(userGameMode))
-  const [code, setCode]         = useState('')
-  const [local, setLocal]       = useState('')
+  const [code, setCode] = useState('')
+  const [local, setLocal] = useState('')
   const [lastCode, setLastCode] = useState(() => {
     try { return localStorage.getItem('lastPartyCode') } catch { return null }
   })
   const [rejoinLookup, setRejoinLookup] = useState('loading')
-  const [friendJoinCode, setFriendJoinCode] = useState(null)  // tracks which friend party was attempted
+  const [friendJoinCode, setFriendJoinCode] = useState(null)
   const [confirmUnfriend, setConfirmUnfriend] = useState(null)
-  const [showFriends, setShowFriends] = useState(false)
   const [addInput, setAddInput] = useState('')
   const [addError, setAddError] = useState('')
-  const [addBusy, setAddBusy]   = useState(false)
+  const [addBusy, setAddBusy] = useState(false)
   const [addSuccess, setAddSuccess] = useState(false)
   const [rejoinGameMode, setRejoinGameMode] = useState(null)
   const [friendPartyModes, setFriendPartyModes] = useState({})
@@ -27,14 +27,16 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
   }, [userGameMode])
 
   useEffect(() => {
+    onRefreshFriends?.()
+  }, [onRefreshFriends])
+
+  useEffect(() => {
     let cancelled = false
     let hint = null
     try { hint = localStorage.getItem('lastPartyCode') } catch { /* offline hint is optional */ }
     if (hint) setLastCode(hint)
 
     async function findCurrentParty() {
-      // The membership row is the authoritative rejoin lookup. The local code
-      // remains only as an offline hint while this query runs.
       if (!userId) return
       const { data: membership, error: membershipError } = await supabase
         .from('party_members')
@@ -86,10 +88,12 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
 
   async function handleSendRequest() {
     if (!addInput.trim()) return
-    setAddBusy(true); setAddError(''); setAddSuccess(false)
-    const err = await onSendRequest(addInput)
-    if (err) {
-      setAddError(err)
+    setAddBusy(true)
+    setAddError('')
+    setAddSuccess(false)
+    const requestError = await onSendRequest(addInput)
+    if (requestError) {
+      setAddError(requestError)
     } else {
       setAddInput('')
       setAddSuccess(true)
@@ -99,274 +103,241 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
   }
 
   function create() {
-    setLocal(''); onEnter('create', '', createGameMode)
+    setLocal('')
+    onEnter('create', '', createGameMode)
   }
+
   function join() {
-    const c = code.trim().toUpperCase()
-    if (!c) { setLocal('Enter a party code'); return }
-    setLocal(''); setFriendJoinCode(null); onEnter('join', c)
+    const normalizedCode = code.trim().toUpperCase()
+    if (!normalizedCode) {
+      setLocal('Enter a party code')
+      return
+    }
+    setLocal('')
+    setFriendJoinCode(null)
+    onEnter('join', normalizedCode)
   }
 
   const err = local || error || friendsError
   const totalFriends = friends.length
   const hasPending = pendingIn.length > 0
+  const displayCallsign = callsign?.toUpperCase() || 'OPERATOR'
 
   return (
-    <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ width: '100%', maxWidth: 430 }}>
+    <main className="lobby-screen">
+      <div className="lobby-art" aria-hidden="true" />
+      <div className="lobby-scrim" aria-hidden="true" />
+      <div className="lobby-vignette" aria-hidden="true" />
 
-        <div style={{ textAlign: 'center', marginBottom: 48 }}>
-          <div style={{ position: 'relative', width: '100%', height: 180, marginBottom: 24, borderRadius: 6, overflow: 'hidden' }}>
-            <img
-              src="/splash.jpg"
-              alt=""
-              style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }}
-            />
-            <div style={{
-              position: 'absolute', inset: 0,
-              background: `
-                linear-gradient(to right,  #0c0e0d 0%, transparent 40%, transparent 60%, #0c0e0d 100%),
-                linear-gradient(to bottom, #0c0e0d 0%, transparent 45%, transparent 55%, #0c0e0d 100%)
-              `,
-            }} />
-          </div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-            <div style={{ width: 5, height: 34, background: 'var(--gold)', borderRadius: 2 }} />
-            <h1 style={{ fontSize: 36, fontWeight: 700 }}>SQUAD PLANNER</h1>
-          </div>
-          <p className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)', letterSpacing: '0.1em' }}>
-            ESCAPE FROM TARKOV // RAID COORDINATOR
-          </p>
-          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-            <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--goldtx)' }}>
-              ◆ {callsign.toUpperCase()}
-            </span>
-            <button className="btn-ghost btn-sm" onClick={() => onOpenGuide?.()} style={{ fontSize: 'var(--fs-sm)' }}>GUIDE</button>
-            <button className="btn-ghost btn-sm" onClick={onLogout} style={{ fontSize: 'var(--fs-sm)' }}>LOGOUT</button>
-          </div>
-        </div>
+      <div className="lobby-board">
+        <section className="lobby-left" aria-labelledby="lobby-title">
+          <header className="lobby-identity fade-in">
+            <div className="lobby-eyebrow mono">
+              <span>ESCAPE FROM TARKOV</span>
+              <span className="lobby-eyebrow-divider" aria-hidden="true" />
+              <span className="room-banner-mode">RAID COORDINATOR</span>
+            </div>
+            <div className="lobby-headline">
+              <span className="lobby-headline-rail" aria-hidden="true" />
+              <h1 id="lobby-title">
+                <span>READY UP,</span>
+                <span className="lobby-callsign" title={displayCallsign}>{displayCallsign}</span>
+              </h1>
+            </div>
+            <p className="lobby-intro">
+              Start a party and share the code, or drop into one that's already running. Your quest list is synced and waiting.
+            </p>
+          </header>
 
-        {autoJoinCode && (
-          <div className="card fade-in" style={{ padding: 20, textAlign: 'center', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-              <div style={{ width: 16, height: 16, border: '2px solid var(--brd)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
-              <div>
-                <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>JOINING PARTY</div>
-                <div className="mono" style={{ fontSize: 20, color: 'var(--gold)', letterSpacing: '0.2em', marginTop: 2 }}>{autoJoinCode}</div>
+          {autoJoinCode ? (
+            <div className="lobby-auto-join lobby-glass-card fade-in" role="status">
+              <span className="lobby-spinner" aria-hidden="true" />
+              <span>
+                <span className="lobby-auto-label mono">JOINING PARTY</span>
+                <span className="lobby-auto-code mono">{autoJoinCode}</span>
+              </span>
+              {err ? <span className="lobby-error mono" role="alert">⚠ {err}</span> : null}
+            </div>
+          ) : (
+            <div className="lobby-actions fade-in">
+              <button type="button" className="room-start-raid lobby-create" onClick={create} disabled={loading}>
+                <span className="room-start-raid-copy">
+                  <span className="lobby-create-title">CREATE PARTY</span>
+                  <span className="lobby-create-detail mono">GENERATES A 6-LETTER CODE</span>
+                </span>
+                <span className="lobby-create-arrow mono" aria-hidden="true">→</span>
+              </button>
+
+              <div className="lobby-mode-picker">
+                <span className="lobby-mode-label mono">NEW PARTY MODE</span>
+                <div className="lobby-mode-options" role="group" aria-label="New party game mode">
+                  {GAME_MODES.map(value => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={createGameMode === value ? 'is-selected' : ''}
+                      onClick={() => setCreateGameMode(value)}
+                      aria-pressed={createGameMode === value}
+                    >
+                      {gameModeLabel(value)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="lobby-join-wrap">
+                <div className="lobby-join-row">
+                  <label className="lobby-join-label mono" htmlFor="party-code">JOIN WITH CODE</label>
+                  <input
+                    id="party-code"
+                    name="party-code"
+                    autoComplete="off"
+                    placeholder="ABCDEF"
+                    value={code}
+                    onChange={event => { setCode(event.target.value.toUpperCase()); setLocal('') }}
+                    onKeyDown={event => event.key === 'Enter' && join()}
+                    maxLength={6}
+                    aria-describedby="lobby-join-status"
+                  />
+                  <button type="button" className="lobby-join-button" onClick={join} disabled={loading}>JOIN</button>
+                </div>
+                <div id="lobby-join-status" className="lobby-join-status mono" aria-live="polite">
+                  {err ? <span className="lobby-error" role="alert">⚠ {err}</span> : loading ? <span>JOINING...</span> : null}
+                </div>
+              </div>
+
+              <div className="lobby-secondary-actions">
+                <button type="button" className="lobby-secondary lobby-secondary-gold" onClick={onManageQuests}>
+                  <Icon name="star" size="md" /> QUEST MANAGER
+                </button>
+                {isAdmin ? (
+                  <button type="button" className="lobby-secondary" onClick={onAdmin}>
+                    <Icon name="settings" size="md" /> KEY ADMIN
+                  </button>
+                ) : null}
               </div>
             </div>
-            {err && (
-              <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 'var(--fs-sm)', marginTop: 10 }}>⚠ {err}</p>
-            )}
-          </div>
-        )}
+          )}
 
-        {lastCode && !autoJoinCode && (
-          <div className="card fade-in" style={{ padding: '14px 16px', marginBottom: 12, borderColor: 'var(--golddim)' }}>
-            <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)', marginBottom: 6 }}>{rejoinLookup === 'offline' ? 'OFFLINE REJOIN HINT' : 'ACTIVE PARTY'}</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="mono" style={{ fontSize: 20, color: 'var(--gold)', letterSpacing: '0.2em', flex: 1 }}>{lastCode}</span>
-              <button className="btn-gold btn-sm" disabled={loading}
-                onClick={() => onForceJoin(lastCode)}>
-                REJOIN
-              </button>
-              <button className="btn-danger btn-sm"
-                onClick={() => { try { localStorage.removeItem('lastPartyCode') } catch {} setLastCode(null) }}>
-                LEAVE
-              </button>
-            </div>
-            <div className="mono party-list-mode">MODE · {gameModeLabel(rejoinGameMode)}</div>
-            {err && <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 'var(--fs-sm)', marginTop: 6 }}>⚠ {err}</p>}
-          </div>
-        )}
+          <p className="lobby-footer mono">QUEST DATA VIA TARKOV.DEV — COMMUNITY MAINTAINED</p>
+        </section>
 
-        {mode === 'home' && !autoJoinCode && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }} className="fade-in">
-            <button className="btn-gold" style={{ padding: '14px 24px', fontSize: 16 }} onClick={create}>
-              CREATE PARTY
-            </button>
-            <div className="party-mode-picker">
-              <span className="mono party-mode-picker-label">NEW PARTY MODE</span>
-              <div className="party-mode-options" role="group" aria-label="New party game mode">
-                {GAME_MODES.map(value => (
+        <aside className="lobby-right" aria-label="Squad status">
+          {lastCode ? (
+            <section className="lobby-glass-card lobby-active-party fade-in" aria-labelledby="active-party-title">
+              <div className="lobby-card-head lobby-active-head">
+                <h2 id="active-party-title" className="mono">{rejoinLookup === 'offline' ? 'OFFLINE REJOIN HINT' : 'ACTIVE PARTY'}</h2>
+                <span className="mono">MODE · {gameModeLabel(rejoinGameMode)}</span>
+              </div>
+              <div className="lobby-active-body">
+                <div className={`lobby-active-code mono${rejoinLookup === 'loading' ? ' is-loading' : ''}`} aria-label={rejoinLookup === 'loading' ? 'Loading active party code' : `Party code ${lastCode}`}>
+                  {rejoinLookup === 'loading' ? <span aria-hidden="true" /> : lastCode}
+                </div>
+                <div className="lobby-active-actions">
+                  <button type="button" className="btn-gold" disabled={loading || rejoinLookup === 'loading'} onClick={() => onForceJoin(lastCode)}>REJOIN</button>
                   <button
-                    key={value}
-                    className={createGameMode === value ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
-                    onClick={() => setCreateGameMode(value)}
-                    aria-pressed={createGameMode === value}
+                    type="button"
+                    className="btn-danger"
+                    onClick={() => {
+                      try { localStorage.removeItem('lastPartyCode') } catch { /* offline hint is optional */ }
+                      setLastCode(null)
+                    }}
                   >
-                    {gameModeLabel(value)}
+                    LEAVE
                   </button>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          <section className="lobby-glass-card lobby-friends fade-in" aria-labelledby="lobby-friends-title">
+            <div className="lobby-card-head lobby-friends-head">
+              <h2 id="lobby-friends-title" className="mono">FRIENDS <span>({totalFriends})</span></h2>
+              {hasPending ? <span className="lobby-request-badge mono">{pendingIn.length} REQ</span> : null}
+            </div>
+
+            {pendingIn.length > 0 ? (
+              <div className="lobby-request-list">
+                <div className="lobby-request-title mono">FRIEND REQUESTS ({pendingIn.length})</div>
+                {pendingIn.map(request => (
+                  <div className="lobby-friend-row" key={request.id}>
+                    <span className="lobby-friend-name mono">{request.callsign}</span>
+                    <button type="button" className="lobby-row-gold" onClick={() => onAcceptRequest(request.id)}>ACCEPT</button>
+                    <button type="button" className="lobby-row-icon" onClick={() => onRemoveRequest(request.id)} title="Decline" aria-label={`Decline ${request.callsign}'s friend request`}>×</button>
+                  </div>
                 ))}
               </div>
-            </div>
-            <button className="btn-ghost" style={{ padding: '14px 24px', fontSize: 16 }} onClick={() => setMode('join')}>
-              JOIN PARTY
-            </button>
-            <button className="btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '14px 24px', fontSize: 16, color: 'var(--gold)', borderColor: 'var(--golddim)' }} onClick={onManageQuests}>
-              <Icon name="star" size="md" /> QUEST MANAGER
-            </button>
-            {isAdmin && (
-              <button className="btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '14px 24px', fontSize: 16, color: 'var(--txm)' }} onClick={onAdmin}>
-                <Icon name="settings" size="md" /> KEY ADMIN
-              </button>
-            )}
+            ) : null}
 
-            {/* Friends panel */}
-            <div style={{ marginTop: 6 }}>
-              <button
-                className="btn-ghost"
-                style={{ width: '100%', padding: '10px 16px', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-                onClick={() => { setShowFriends(v => !v); if (!showFriends) onRefreshFriends() }}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  FRIENDS
-                  {totalFriends > 0 && <span style={{ color: 'var(--txm)' }}>({totalFriends})</span>}
-                  {hasPending && (
-                    <span className="mono" style={{
-                      fontSize: 'var(--fs-xs)', padding: '1px 6px', borderRadius: 3,
-                      background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)',
-                      color: 'var(--gold)',
-                    }}>{pendingIn.length} REQ</span>
-                  )}
-                </span>
-                <span style={{ color: 'var(--txd)', fontSize: 'var(--fs-xs)' }}>{showFriends ? '▲' : '▼'}</span>
-              </button>
+            <div className="lobby-friend-list">
+              {friends.length === 0 && pendingIn.length === 0 && pendingOut.length === 0 ? (
+                <div className="lobby-friends-empty mono">NO FRIENDS ADDED YET</div>
+              ) : null}
 
-              {showFriends && (
-                <div className="card fade-in" style={{ marginTop: 6, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 0 }}>
-
-                  {/* Incoming requests */}
-                  {pendingIn.length > 0 && (
-                    <div style={{ marginBottom: 10 }}>
-                      <div className="lbl" style={{ color: 'var(--gold)', marginBottom: 6 }}>
-                        FRIEND REQUESTS ({pendingIn.length})
-                      </div>
-                      {pendingIn.map(r => (
-                        <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                          <span className="mono" style={{ flex: 1, fontSize: 13, color: 'var(--tx)' }}>{r.callsign}</span>
-                          <button className="btn-gold btn-sm" onClick={() => onAcceptRequest(r.id)} style={{ fontSize: 'var(--fs-sm)' }}>ACCEPT</button>
-                          <button
-                            className="btn-ghost btn-sm"
-                            style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
-                            onClick={() => onRemoveRequest(r.id)}
-                            title="Decline"
-                          >×</button>
-                        </div>
-                      ))}
-                      <div style={{ borderBottom: '1px solid var(--brd)', marginBottom: 10, marginTop: 4 }} />
-                    </div>
-                  )}
-
-                  {/* Accepted friends */}
-                  {friends.length === 0 && pendingIn.length === 0 && pendingOut.length === 0 && (
-                    <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', textAlign: 'center', padding: '6px 0' }}>
-                      NO FRIENDS ADDED YET
-                    </div>
-                  )}
-
-                  {friends.map(f => (
-                    <div key={f.user_id} style={{ marginBottom: 6 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: f.partyCode ? 'var(--gold)' : 'var(--txd)', flexShrink: 0 }} />
-                        <span className="mono" style={{ flex: 1, fontSize: 13, color: f.partyCode ? 'var(--tx)' : 'var(--txm)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {f.callsign}
-                        </span>
-                        {f.partyCode && (
-                          <>
-                            <span className="mono party-list-mode">{gameModeLabel(friendPartyModes[f.user_id])}</span>
-                            <button className="btn-gold btn-sm" disabled={loading}
-                              onClick={() => { setFriendJoinCode(f.partyCode); onEnter('join', f.partyCode) }}>
-                              JOIN
-                            </button>
-                          </>
-                        )}
-                        {confirmUnfriend === f.user_id ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                            <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txm)' }}>REMOVE?</span>
-                            <button className="btn-danger btn-sm" style={{ fontSize: 'var(--fs-xs)', padding: '2px 7px' }} onClick={() => { onRemoveFriend(f.user_id); setConfirmUnfriend(null) }}>YES</button>
-                            <button className="btn-ghost btn-sm" style={{ fontSize: 'var(--fs-xs)', padding: '2px 7px' }} onClick={() => setConfirmUnfriend(null)}>NO</button>
-                          </div>
-                        ) : (
-                          <button
-                            className="btn-ghost btn-sm"
-                            style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
-                            onClick={() => setConfirmUnfriend(f.user_id)}
-                            title="Unfriend"
-                          >×</button>
-                        )}
-                      </div>
-                      {friendJoinCode === f.partyCode && error && (
-                        <div style={{ marginTop: 6, marginLeft: 16 }}>
-                          <p className="mono" style={{ color: 'var(--red)', fontSize: 'var(--fs-sm)' }}>⚠ {error}</p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-
-                  {/* Pending outgoing */}
-                  {pendingOut.map(r => (
-                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--txd)', flexShrink: 0 }} />
-                      <span className="mono" style={{ flex: 1, fontSize: 13, color: 'var(--txd)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {r.callsign}
+              {friends.map(friend => (
+                <div key={friend.user_id}>
+                  <div className="lobby-friend-row">
+                    <span className={`lobby-presence${friend.partyCode ? ' is-online' : ''}`} aria-hidden="true" />
+                    <span className={`lobby-friend-name mono${friend.partyCode ? ' is-online' : ''}`}>{friend.callsign}</span>
+                    {friend.partyCode ? (
+                      <>
+                        <span className="lobby-friend-mode mono">{gameModeLabel(friendPartyModes[friend.user_id])}</span>
+                        <button
+                          type="button"
+                          className="lobby-row-gold"
+                          disabled={loading}
+                          onClick={() => { setFriendJoinCode(friend.partyCode); onEnter('join', friend.partyCode) }}
+                        >
+                          JOIN
+                        </button>
+                      </>
+                    ) : <span className="lobby-friend-offline mono">OFFLINE</span>}
+                    {confirmUnfriend === friend.user_id ? (
+                      <span className="lobby-unfriend-confirm">
+                        <span className="mono">REMOVE?</span>
+                        <button type="button" className="btn-danger" onClick={() => { onRemoveFriend(friend.user_id); setConfirmUnfriend(null) }}>YES</button>
+                        <button type="button" className="btn-ghost" onClick={() => setConfirmUnfriend(null)}>NO</button>
                       </span>
-                      <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>PENDING</span>
-                      <button
-                        className="btn-ghost btn-sm"
-                        style={{ color: 'var(--txd)', borderColor: 'transparent', padding: '4px 7px' }}
-                        onClick={() => onRemoveRequest(r.id)}
-                        title="Withdraw request"
-                      >×</button>
-                    </div>
-                  ))}
-
-                  {/* Add friend input */}
-                  <div style={{ display: 'flex', gap: 6, marginTop: 8, borderTop: '1px solid var(--brd)', paddingTop: 10 }}>
-                    <input
-                      aria-label="Friend callsign"
-                      placeholder="Add by callsign"
-                      value={addInput}
-                      onChange={e => { setAddInput(e.target.value); setAddError('') }}
-                      onKeyDown={e => e.key === 'Enter' && handleSendRequest()}
-                      style={{ fontSize: 13 }}
-                      disabled={addBusy}
-                    />
-                    <button className="btn-ghost btn-sm" onClick={handleSendRequest} disabled={addBusy} style={{ whiteSpace: 'nowrap' }}>
-                      + ADD
-                    </button>
+                    ) : (
+                      <button type="button" className="lobby-row-icon" onClick={() => setConfirmUnfriend(friend.user_id)} title="Unfriend" aria-label={`Remove ${friend.callsign} from friends`}>×</button>
+                    )}
                   </div>
-                  {addError && <p className="mono" role="alert" style={{ color: 'var(--red)', fontSize: 'var(--fs-sm)', marginTop: 4 }}>⚠ {addError}</p>}
-                  {addSuccess && <p className="mono" role="status" style={{ color: 'var(--grn)', fontSize: 'var(--fs-sm)', marginTop: 4 }}>✓ REQUEST SENT</p>}
+                  {friendJoinCode === friend.partyCode && error ? <p className="lobby-friend-error mono" role="alert">⚠ {error}</p> : null}
                 </div>
-              )}
-            </div>
-          </div>
-        )}
+              ))}
 
-        {mode === 'join' && (
-          <div className="card fade-in" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <h2 style={{ fontSize: 22, color: 'var(--goldtx)' }}>JOIN PARTY</h2>
-            <div>
-              <label className="lbl" htmlFor="party-code">PARTY CODE</label>
-              <input id="party-code" name="party-code" autoComplete="off" placeholder="6-letter code" value={code}
-                onChange={e => { setCode(e.target.value.toUpperCase()); setLocal('') }}
-                style={{ fontFamily: 'Share Tech Mono', letterSpacing: '0.2em', fontSize: 20 }}
-                maxLength={6} autoFocus onKeyDown={e => e.key === 'Enter' && join()} />
+              {pendingOut.map(request => (
+                <div className="lobby-friend-row" key={request.id}>
+                  <span className="lobby-presence" aria-hidden="true" />
+                  <span className="lobby-friend-name mono">{request.callsign}</span>
+                  <span className="lobby-friend-offline mono">PENDING</span>
+                  <button type="button" className="lobby-row-icon" onClick={() => onRemoveRequest(request.id)} title="Withdraw request" aria-label={`Withdraw friend request to ${request.callsign}`}>×</button>
+                </div>
+              ))}
             </div>
-            {err && <p className="mono" style={{ color: 'var(--red)', fontSize: 'var(--fs-sm)' }}>⚠ {err}</p>}
-            {loading && <p className="mono" style={{ color: 'var(--txm)', fontSize: 'var(--fs-sm)' }}>JOINING...</p>}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-ghost" onClick={() => { setMode('home'); setLocal(''); setFriendJoinCode(null) }}>BACK</button>
-              <button className="btn-gold" style={{ flex: 1 }} onClick={join} disabled={loading}>JOIN</button>
-            </div>
-          </div>
-        )}
 
-        <p className="mono" style={{ textAlign: 'center', marginTop: 28, fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
-          QUEST DATA VIA TARKOV.DEV — COMMUNITY MAINTAINED
-        </p>
+            <div className="lobby-add-friend">
+              <input
+                aria-label="Friend callsign"
+                placeholder="Add by callsign"
+                value={addInput}
+                onChange={event => { setAddInput(event.target.value); setAddError('') }}
+                onKeyDown={event => event.key === 'Enter' && handleSendRequest()}
+                disabled={addBusy}
+              />
+              <button type="button" className="btn-ghost" onClick={handleSendRequest} disabled={addBusy}>+ ADD</button>
+            </div>
+            <div className="lobby-add-status mono" aria-live="polite">
+              {addError ? <span className="lobby-error" role="alert">⚠ {addError}</span> : addSuccess ? <span className="lobby-success">✓ REQUEST SENT</span> : null}
+            </div>
+          </section>
+
+          <div className="lobby-glass-card lobby-sync mono">
+            <span>QUEST SYNC</span>
+            <span className="lobby-sync-state"><span aria-hidden="true" /> REAL-TIME</span>
+          </div>
+        </aside>
       </div>
-    </div>
+    </main>
   )
 }
