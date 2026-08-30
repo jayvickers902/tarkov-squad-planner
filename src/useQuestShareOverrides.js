@@ -39,12 +39,24 @@ export function useQuestShareOverrides() {
     return () => { active = false }
   }, [])
 
-  const upsertOverride = useCallback(async ({ taskId, taskName, verdict, note }) => {
+  // `objectives` is the per-objective map ({ objectiveId: 'squad' | 'personal' }).
+  // Editing through the admin UI is a hand judgement, so `source` defaults to
+  // 'manual' — a row mirrored from tarkov.help passes its own source explicitly.
+  //
+  // An omitted field keeps whatever the row already holds. The admin editor only
+  // sends a verdict and a note, and an upsert is a whole-row write: without this
+  // it would silently erase a mirrored row's per-objective map, which is the one
+  // piece of data the type inference cannot reconstruct.
+  const upsertOverride = useCallback(async ({ taskId, taskName, verdict, note, objectives, source, sourceRef }) => {
+    const existing = overrides[taskId]
     const { data, error } = await supabase.from('quest_share_overrides').upsert({
       task_id: taskId,
       task_name: taskName || null,
       verdict,
       note: note || null,
+      objectives: objectives ?? existing?.objectives ?? {},
+      source: source || 'manual',
+      source_ref: sourceRef ?? existing?.source_ref ?? null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'task_id' }).select().single()
     if (!error && data) {
@@ -54,7 +66,9 @@ export function useQuestShareOverrides() {
       if (overridesPromise) overridesPromise = overridesPromise.then(current => ({ ...current, [data.task_id]: data }))
     }
     return { data, error }
-  }, [])
+    // `overrides` is read to preserve fields the caller omitted, so it has to be
+    // a dependency — with [] this would always see the first, empty snapshot.
+  }, [overrides])
 
   return { overrides, loading, upsertOverride }
 }
