@@ -58,7 +58,7 @@ export default function App() {
     bulkAddQuests,
     toggleImportant, toggleSkipped, clearAllQuests, restoreSnapshot, markCompleted: markQuestCompleted,
     saveObjectiveProgress,
-    repairQuestNames,
+    repairQuestRows,
     reconcileLogEvents,
     getQuestHistory,
   } = useUserQuests(user?.id, questGameMode)
@@ -81,6 +81,7 @@ export default function App() {
   } = useParty(user?.id, userSettings, {
     callsign: profile?.callsign,
     savedQuests: userQuests,
+    savedQuestsMode: questGameMode,
     questsLoading,
     settingsLoading,
     pendingJoinCode,
@@ -313,7 +314,11 @@ export default function App() {
 
     async function handleAddPartyQuest(quest) {
       addPartyQuest(quest)
-      await saveQuest({ id: quest.id, name: quest.name }, party.map_norm || null)
+      // Deliberately unscoped. `user_quests.map_norm` is a single scalar while a
+      // quest's steps can span maps, so stamping the map it happened to be added
+      // on hides it on every other one -- `questsForMap` filters the party row on
+      // exactly this column.
+      await saveQuest({ id: quest.id, name: quest.name }, null)
     }
 
     function handleRemovePartyQuest(questId) {
@@ -562,7 +567,7 @@ export default function App() {
       myName={myName}
       gameMode={gameMode}
       onApply={reconcileLogEvents}
-      onRepairNames={repairQuestNames}
+      onRepairRows={repairQuestRows}
       questsLoading={questsLoading || questGameMode !== gameMode}
       onAddPing={party ? addPing : null}
       mapNorm={party?.map_norm || null}

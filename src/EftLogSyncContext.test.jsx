@@ -53,58 +53,58 @@ describe('EftLogSyncProvider', () => {
 
   it('repairs names once when tasks arrive after the initial quest load', async () => {
     taskState.current = { tasks: [], loading: false }
-    const onRepairNames = vi.fn().mockResolvedValue(1)
+    const onRepairRows = vi.fn().mockResolvedValue(1)
     const { rerender } = render(
-      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairNames={onRepairNames}>
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairRows={onRepairRows}>
         <Consumer />
       </EftLogSyncProvider>,
     )
-    expect(onRepairNames).not.toHaveBeenCalled()
+    expect(onRepairRows).not.toHaveBeenCalled()
 
     taskState.current = { tasks: [{ id: 'task-1', name: 'Task One' }], loading: false }
     rerender(
-      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairNames={onRepairNames}>
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairRows={onRepairRows}>
         <Consumer />
       </EftLogSyncProvider>,
     )
-    await waitFor(() => expect(onRepairNames).toHaveBeenCalledTimes(1))
-    expect(onRepairNames).toHaveBeenCalledWith([{ id: 'task-1', name: 'Task One' }])
+    await waitFor(() => expect(onRepairRows).toHaveBeenCalledTimes(1))
+    expect(onRepairRows).toHaveBeenCalledWith([{ id: 'task-1', name: 'Task One' }])
   })
 
   it('waits while the initial quest load is pending and does not re-fire on rerender', async () => {
-    const onRepairNames = vi.fn().mockResolvedValue(1)
+    const onRepairRows = vi.fn().mockResolvedValue(1)
     const { rerender } = render(
-      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={true} onApply={() => {}} onRepairNames={onRepairNames}>
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={true} onApply={() => {}} onRepairRows={onRepairRows}>
         <Consumer />
       </EftLogSyncProvider>,
     )
-    expect(onRepairNames).not.toHaveBeenCalled()
+    expect(onRepairRows).not.toHaveBeenCalled()
 
     rerender(
-      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairNames={onRepairNames}>
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairRows={onRepairRows}>
         <Consumer />
       </EftLogSyncProvider>,
     )
-    await waitFor(() => expect(onRepairNames).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onRepairRows).toHaveBeenCalledTimes(1))
     rerender(
-      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairNames={onRepairNames}>
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairRows={onRepairRows}>
         <Consumer />
       </EftLogSyncProvider>,
     )
-    expect(onRepairNames).toHaveBeenCalledTimes(1)
+    expect(onRepairRows).toHaveBeenCalledTimes(1)
   })
 
   it('does not surface a failed repair to the provider consumer', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const onRepairNames = vi.fn().mockRejectedValue(new Error('offline'))
+    const onRepairRows = vi.fn().mockRejectedValue(new Error('offline'))
     render(
-      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairNames={onRepairNames}>
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questsLoading={false} onApply={() => {}} onRepairRows={onRepairRows}>
         <Consumer />
       </EftLogSyncProvider>,
     )
-    await waitFor(() => expect(onRepairNames).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onRepairRows).toHaveBeenCalledTimes(1))
     expect(screen.getByText('1:idle')).toBeInTheDocument()
-    expect(warnSpy).toHaveBeenCalledWith('Quest name repair failed', expect.any(Error))
+    expect(warnSpy).toHaveBeenCalledWith('Quest row repair failed', expect.any(Error))
     warnSpy.mockRestore()
   })
 })

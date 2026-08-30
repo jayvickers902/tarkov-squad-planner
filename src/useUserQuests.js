@@ -9,10 +9,24 @@ const LOG_IMPORT_MODES = new Set(['regular', 'pve'])
 export const QUEST_LOG_CHUNK_SIZE = 200
 export const QUEST_PRUNE_CHUNK_SIZE = 100
 const QUEST_NAME_REPAIR_CAP = 200
+const QUEST_SCOPE_REPAIR_CHUNK = 100
 const FEATURED_MAPS = new Set(FEATURED)
 
 function throwIfError(error) {
   if (error) throw error
+}
+
+// Distinct target values are bounded by the featured map list, so grouping
+// turns an unbounded row count into a handful of writes. The null bucket is
+// keyed separately because a Map key of null is not the string 'null'.
+export function groupByMapNorm(repairs) {
+  const buckets = new Map()
+  for (const { questId, mapNorm } of repairs) {
+    const key = mapNorm == null ? null : mapNorm
+    if (!buckets.has(key)) buckets.set(key, [])
+    buckets.get(key).push(questId)
+  }
+  return [...buckets.entries()]
 }
 
 function activeRows(data) {
@@ -170,10 +184,22 @@ export function useUserQuests(userId, gameMode = 'regular') {
     if (activeModeRef.current === mode) setQuests(prev => prev.map(q => q.quest_id === questId ? { ...q, obj_progress: objProgress } : q))
   }, [userId, mode])
 
-  // Repair rows written by an unenriched log import. The task list is already
-  // in memory, so keep this bounded and update each row independently rather
-  // than using an upsert that could overwrite protected quest state.
-  const repairQuestNames = useCallback(async (taskIndex) => {
+  // Repair rows against live task data: names left unresolved by an unenriched
+  // log import, and map scopes that no longer match what the task itself says.
+  //
+  // `map_norm` is one scalar for a quest whose steps can span maps, so its only
+  // defensible value is the one the task derives -- `inferredTaskMapNorm`, which
+  // returns null the moment two objectives disagree. Every writer now agrees on
+  // that, but rows predating it were stamped with whichever map the party
+  // happened to be on when the quest was added, and `questsForMap` filters the
+  // party row on this column: a wrong stamp makes the quest vanish from every
+  // other map silently, with no empty card and no error. Recompute rather than
+  // clear, or the 279 genuinely single-map stamps go too.
+  //
+  // The task list is already in memory, so keep this bounded and update rows
+  // independently rather than using an upsert that could overwrite protected
+  // quest state.
+  const repairQuestRows = useCallback(async (taskIndex) => {
     if (!userId) return 0
 
     const tasks = taskIndex instanceof Map
@@ -203,37 +229,64 @@ export function useUserQuests(userId, gameMode = 'regular') {
       repairs.push({
         questId,
         questName: task.name,
-        mapNorm: row.map_norm == null ? task.mapNorm : null,
+        mapNorm: task.mapNorm,
       })
     }
 
-    if (repairs.length === 0) return 0
+    // Everything the name pass did not claim, checked for a stale map scope.
+    // Only rows whose stored value actually differs are written, so a second
+    // run of this pass is a no-op.
+    const named = new Set(repairs.map(item => item.questId))
+    const scopeRepairs = []
+    for (const row of questsRef.current) {
+      const questId = row?.quest_id
+      if (!questId || named.has(questId)) continue
+      const task = byId.get(questId)
+      if (!task) continue
+      const current = row.map_norm == null ? null : row.map_norm
+      if (current === task.mapNorm) continue
+      scopeRepairs.push({ questId, mapNorm: task.mapNorm })
+    }
+
+    if (repairs.length === 0 && scopeRepairs.length === 0) return 0
 
     await Promise.all(repairs.map(async ({ questId, questName, mapNorm }) => {
-      const update = { quest_name: questName }
-      if (mapNorm) update.map_norm = mapNorm
       const result = await supabase
         .from('user_quests')
-        .update(update)
+        .update({ quest_name: questName, map_norm: mapNorm })
         .eq('user_id', userId)
         .eq('game_mode', mode)
         .eq('quest_id', questId)
       throwIfError(result.error)
     }))
 
+    // Grouped by target value: a scope pass touches far more rows than a name
+    // pass, and there are at most as many distinct targets as there are
+    // featured maps plus null -- so this stays a handful of requests whether it
+    // repairs ten rows or five hundred.
+    await Promise.all(groupByMapNorm(scopeRepairs).map(async ([mapNorm, questIds]) => {
+      for (let offset = 0; offset < questIds.length; offset += QUEST_SCOPE_REPAIR_CHUNK) {
+        const result = await supabase
+          .from('user_quests')
+          .update({ map_norm: mapNorm })
+          .eq('user_id', userId)
+          .eq('game_mode', mode)
+          .in('quest_id', questIds.slice(offset, offset + QUEST_SCOPE_REPAIR_CHUNK))
+        throwIfError(result.error)
+      }
+    }))
+
     if (activeModeRef.current === mode) {
       const repaired = new Map(repairs.map(item => [item.questId, item]))
+      const rescoped = new Map(scopeRepairs.map(item => [item.questId, item.mapNorm]))
       setQuests(prev => prev.map(row => {
         const repair = repaired.get(row.quest_id)
-        if (!repair) return row
-        return {
-          ...row,
-          quest_name: repair.questName,
-          ...(repair.mapNorm ? { map_norm: repair.mapNorm } : {}),
-        }
+        if (repair) return { ...row, quest_name: repair.questName, map_norm: repair.mapNorm }
+        if (rescoped.has(row.quest_id)) return { ...row, map_norm: rescoped.get(row.quest_id) }
+        return row
       }))
     }
-    return repairs.length
+    return repairs.length + scopeRepairs.length
   }, [userId, mode])
 
   // Mark a quest as completed while retaining terminal history in the database.
@@ -404,7 +457,7 @@ export function useUserQuests(userId, gameMode = 'regular') {
     restoreSnapshot,
     markCompleted,
     saveObjectiveProgress,
-    repairQuestNames,
+    repairQuestRows,
     reconcileLogEvents,
     getQuestHistory,
   }

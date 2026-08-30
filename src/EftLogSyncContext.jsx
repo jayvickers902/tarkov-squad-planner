@@ -15,7 +15,7 @@ export function EftLogSyncProvider({
   myName,
   gameMode,
   onApply,
-  onRepairNames,
+  onRepairRows,
   questsLoading = false,
   onAddPing,
   mapNorm,
@@ -29,14 +29,14 @@ export function EftLogSyncProvider({
   const repairedScopesRef = useRef(new Set())
 
   useEffect(() => {
-    if (!userId || questsLoading || !Array.isArray(allTasks) || allTasks.length === 0 || typeof onRepairNames !== 'function') return
+    if (!userId || questsLoading || !Array.isArray(allTasks) || allTasks.length === 0 || typeof onRepairRows !== 'function') return
     const scope = `${userId}:${gameMode}`
     if (repairedScopesRef.current.has(scope)) return
     repairedScopesRef.current.add(scope)
-    Promise.resolve(onRepairNames(allTasks)).catch(error => {
-      console.warn('Quest name repair failed', error)
+    Promise.resolve(onRepairRows(allTasks)).catch(error => {
+      console.warn('Quest row repair failed', error)
     })
-  }, [allTasks, gameMode, onRepairNames, questsLoading, userId])
+  }, [allTasks, gameMode, onRepairRows, questsLoading, userId])
   const screenshotController = useEftScreenshotController({
     userId,
     myName,

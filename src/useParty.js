@@ -123,15 +123,37 @@ function completedQuestIds(progress, userId) {
   )
 }
 
-function mergeQuestsForMap(currentQuests, savedQuests, mapNorm, progress, userId) {
+/**
+ * A member's party row is *derived* from their own `user_quests`, never merged
+ * into. Nothing else can repair it: `party_members.quests` is written only by
+ * that member's own client, so an entry that survives a sync survives forever
+ * and shows every teammate an owner chip for a quest its owner does not have.
+ *
+ * There is deliberately no "keep what is already in the row" branch. The one
+ * thing such a branch would protect -- a quest added ad-hoc inside the party --
+ * does not need it: the only path that adds one (`handleAddPartyQuest`) also
+ * writes it to `user_quests`, so it comes back through `savedQuests` on its own.
+ */
+export function derivePartyQuestRow(savedQuests, mapNorm, progress, userId) {
   const completedIds = completedQuestIds(progress, userId)
-  const kept = (currentQuests || []).filter(quest => !completedIds.has(quest.id))
-  const incoming = questsForMap(savedQuests, mapNorm).filter(quest => !completedIds.has(quest.id))
-  const merged = [...kept]
-  incoming.forEach(quest => {
-    if (!merged.find(existing => existing.id === quest.id)) merged.push(quest)
-  })
-  return merged
+  return {
+    quests: questsForMap(savedQuests, mapNorm).filter(quest => !completedIds.has(quest.id)),
+    questsAll: allQuestEntries(savedQuests),
+  }
+}
+
+/**
+ * The quest payload an auto-rejoin may seed a member row with.
+ *
+ * On load the party is not known yet, so the quest list belongs to whichever
+ * character the *user-level* `game_mode` selected. Seeding a party row with
+ * another character's quests is silent and permanent -- `autoRejoinAttemptedRef`
+ * allows exactly one attempt -- so a mode we cannot vouch for contributes
+ * nothing and the mode-matched sync fills the row instead.
+ */
+export function autoRejoinQuestPayload(partyGameMode, savedQuestsMode, savedQuests = []) {
+  if (partyGameMode && partyGameMode !== savedQuestsMode) return []
+  return savedQuests
 }
 
 function isPartyFullMessage(message) {
@@ -141,6 +163,7 @@ function isPartyFullMessage(message) {
 export function useParty(userId, userSettings = {}, {
   callsign = '',
   savedQuests = [],
+  savedQuestsMode = null,
   questsLoading = true,
   settingsLoading = false,
   pendingJoinCode = null,
@@ -415,7 +438,7 @@ export function useParty(userId, userSettings = {}, {
 
     const mine = findMember(current.members, currentUserId)
     if (!mine) return
-    const merged = mergeQuestsForMap(mine.quests, savedQuestsRef.current, current.map_norm, current.progress, currentUserId)
+    const { quests: merged } = derivePartyQuestRow(savedQuestsRef.current, current.map_norm, current.progress, currentUserId)
     const changed = JSON.stringify(merged) !== JSON.stringify(mine.quests)
     if (changed) updateMemberDB({ quests: merged })
   }, [party?.map_norm, userId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -612,7 +635,7 @@ export function useParty(userId, userSettings = {}, {
 
         const { data: partyRow, error: partyError } = await supabase
           .from('parties')
-          .select('code')
+          .select('code, game_mode')
           .eq('id', partyId)
           .maybeSingle()
 
@@ -626,7 +649,8 @@ export function useParty(userId, userSettings = {}, {
           return
         }
 
-        await forceJoinParty(partyRow.code, callsign, savedQuests, { autoRejoin: true })
+        const payload = autoRejoinQuestPayload(partyRow.game_mode, savedQuestsMode, savedQuests)
+        await forceJoinParty(partyRow.code, callsign, payload, { autoRejoin: true })
         settle()
       } catch {
         // A failed lookup or join still resolves the route bootstrap.
@@ -636,7 +660,7 @@ export function useParty(userId, userSettings = {}, {
 
     autoRejoin()
     return undefined
-  }, [userId, callsign, savedQuests, questsLoading, settingsLoading, pendingJoinCode, userSettings, forceJoinParty])
+  }, [userId, callsign, savedQuests, savedQuestsMode, questsLoading, settingsLoading, pendingJoinCode, userSettings, forceJoinParty])
 
   const selectMap = useCallback(async map => {
     const current = partyRef.current
@@ -646,8 +670,7 @@ export function useParty(userId, userSettings = {}, {
       raid: current.settings || {}, unit: null, user: userSettingsRef.current,
     }) !== true) return
 
-    const mine = findMember(current.members, currentUserId)
-    const merged = mergeQuestsForMap(mine?.quests, savedQuestsRef.current, map.normalizedName, current.progress, currentUserId)
+    const { quests: merged } = derivePartyQuestRow(savedQuestsRef.current, map.normalizedName, current.progress, currentUserId)
     const optimisticMembers = normalizeMembers(current.members).map(member =>
       member.user_id === currentUserId ? { ...member, quests: merged } : member,
     )
@@ -1000,7 +1023,6 @@ export function useParty(userId, userSettings = {}, {
   }, [refreshParty])
 
   const syncSavedQuests = useCallback(quests => {
-    const previousSaved = savedQuestsRef.current
     savedQuestsRef.current = quests
     const current = partyRef.current
     const currentUserId = userIdRef.current
@@ -1008,19 +1030,7 @@ export function useParty(userId, userSettings = {}, {
     const mine = findMember(current.members, currentUserId)
     if (!mine) return
 
-    const completedIds = completedQuestIds(current.progress, currentUserId)
-    const kept = mine.quests.filter(quest =>
-      !quests.find(saved => saved.quest_id === quest.id)
-      && !previousSaved.find(saved => saved.quest_id === quest.id)
-      && !completedIds.has(quest.id),
-    )
-    const applicable = questsForMap(quests, current.map_norm).filter(quest => !completedIds.has(quest.id))
-    const merged = [...kept]
-    applicable.forEach(quest => { if (!merged.find(existing => existing.id === quest.id)) merged.push(quest) })
-
-    const savedIds = new Set(quests.map(quest => quest.quest_id))
-    const questsAll = allQuestEntries(quests)
-    kept.forEach(quest => { if (!savedIds.has(quest.id)) questsAll.push(quest) })
+    const { quests: merged, questsAll } = derivePartyQuestRow(quests, current.map_norm, current.progress, currentUserId)
     const changed = JSON.stringify(merged) !== JSON.stringify(mine.quests)
     const allChanged = JSON.stringify(questsAll) !== JSON.stringify(mine.quests_all)
     if (changed || allChanged) patchOwnMember({

@@ -180,7 +180,7 @@ describe('game mode contract', () => {
     expect(db.rows.filter(row => row.game_mode === 'regular').map(row => row.quest_id)).toEqual(['regular-1'])
   })
 
-  it('repairs eligible hex names and fills only missing featured maps', async () => {
+  it('repairs eligible hex names and recomputes every map scope', async () => {
     const hexId = '59c9392986f7742f6923add2'
     const mappedId = '5ae449d986f774453a54a7e1'
     const absentId = '5b4795fb86f7745876267770'
@@ -195,21 +195,76 @@ describe('game mode contract', () => {
 
     let repaired
     await act(async () => {
-      repaired = await result.current.repairQuestNames([
+      repaired = await result.current.repairQuestRows([
         { id: hexId, name: 'Aid Stations', map: { normalizedName: 'customs' } },
         { id: mappedId, name: 'Supervisor', map: { normalizedName: 'interchange' } },
         { id: 'normal-quest', name: 'Would not overwrite', map: { normalizedName: 'factory' } },
       ])
     })
 
-    expect(repaired).toBe(2)
+    // Three, not two: the map scope is recomputed from the task rather than
+    // only backfilled when absent, so a stale stamp is corrected (mappedId,
+    // woods -> interchange) and a correctly-named row is no longer exempt
+    // ('normal-quest', null -> factory). A row with no task is left alone.
+    expect(repaired).toBe(3)
     expect(db.rows.map(row => [row.quest_id, row.quest_name, row.map_norm])).toEqual([
       [hexId, 'Aid Stations', 'customs'],
-      [mappedId, 'Supervisor', 'woods'],
+      [mappedId, 'Supervisor', 'interchange'],
       [absentId, absentId, null],
-      ['normal-quest', 'Already named', null],
+      ['normal-quest', 'Already named', 'factory'],
     ])
     expect(result.current.quests.find(row => row.quest_id === hexId)).toMatchObject({ quest_name: 'Aid Stations', map_norm: 'customs' })
+  })
+
+  it('clears a stamp the task no longer supports and is idempotent', async () => {
+    // The reported defect: a multi-map quest stamped with whichever map the
+    // party was on is filtered off every other map by questsForMap.
+    const butcher = '67a09673972c11a3f507731d'
+    const woodsOnly = '5ae449d986f774453a54a7e2'
+    db.rows = [
+      { user_id: 'user-1', game_mode: 'regular', quest_id: butcher, quest_name: 'The Tarkov Butcher', map_norm: 'streets-of-tarkov', state: 'active' },
+      { user_id: 'user-1', game_mode: 'regular', quest_id: woodsOnly, quest_name: 'Woods Only', map_norm: 'woods', state: 'active' },
+    ]
+    // A task whose objectives disagree infers null; one with an explicit map keeps it.
+    const tasks = [
+      { id: butcher, name: 'The Tarkov Butcher', objectives: [
+        { type: 'findQuestItem', optional: false, maps: [{ normalizedName: 'ground-zero' }] },
+        { type: 'plantQuestItem', optional: false, maps: [{ normalizedName: 'streets-of-tarkov' }] },
+      ] },
+      { id: woodsOnly, name: 'Woods Only', map: { normalizedName: 'woods' } },
+    ]
+
+    const { result } = renderHook(() => useUserQuests('user-1', 'regular'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let repaired
+    await act(async () => { repaired = await result.current.repairQuestRows(tasks) })
+
+    expect(repaired).toBe(1)
+    expect(db.rows.map(row => [row.quest_id, row.map_norm])).toEqual([
+      [butcher, null],
+      [woodsOnly, 'woods'],
+    ])
+
+    // A second pass must write nothing.
+    await act(async () => { repaired = await result.current.repairQuestRows(tasks) })
+    expect(repaired).toBe(0)
+  })
+
+  it('drops a non-featured map to null rather than storing it', async () => {
+    const questId = '5b4795fb86f7745876267771'
+    db.rows = [
+      { user_id: 'user-1', game_mode: 'regular', quest_id: questId, quest_name: 'Labyrinth Run', map_norm: 'customs', state: 'active' },
+    ]
+    const { result } = renderHook(() => useUserQuests('user-1', 'regular'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => {
+      // the-labyrinth is in tarkovMapConfigs but deliberately not in FEATURED.
+      await result.current.repairQuestRows([{ id: questId, name: 'Labyrinth Run', map: { normalizedName: 'the-labyrinth' } }])
+    })
+
+    expect(db.rows[0].map_norm).toBeNull()
   })
 
   it('caps quest name repair at 200 rows', async () => {
@@ -223,7 +278,7 @@ describe('game mode contract', () => {
 
     let repaired
     await act(async () => {
-      repaired = await result.current.repairQuestNames(rows.map(row => ({ id: row.quest_id, name: `Quest ${row.quest_id}` })))
+      repaired = await result.current.repairQuestRows(rows.map(row => ({ id: row.quest_id, name: `Quest ${row.quest_id}` })))
     })
 
     expect(repaired).toBe(200)
