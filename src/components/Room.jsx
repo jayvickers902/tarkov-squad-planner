@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback, lazy, Suspense } from 'react'
-import { useMaps, useTasks, useExtracts } from '../useTarkov'
+import { useMaps, useTasks } from '../useTarkov'
 import { useIsMobile } from '../useIsMobile'
 import QuestSearch from './QuestSearch'
 import TodoList from './TodoList'
@@ -15,11 +15,10 @@ import Icon from './Icon'
 import useEphemeralSweep from '../useEphemeralSweep'
 import { resolveSetting } from '../settings'
 import { gameModeLabel, resolvePartyMode } from '../gameMode'
-import { normalizeMembers, findMember, memberIds, memberNames, progressOwnerId, progressQuestId } from '../partyMembers'
+import { normalizeMembers, findMember, memberNames, progressOwnerId, progressQuestId } from '../partyMembers'
 import { memberColor } from '../memberColors'
 import { mapBannerLayers, mapReferenceArt } from '../mapBanners'
 
-const MapLeaflet = lazy(() => import('./MapLeaflet'))
 const RaidView = lazy(() => import('./RaidView'))
 
 function Spin({ s = 20 }) {
@@ -124,10 +123,6 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   useEphemeralSweep({ party, userId: myUserId, userSettings, onSweep: onSweepEphemeral })
 
   useEffect(() => {
-    if (tab === 'map') setSidebarOpen(false)
-  }, [tab])
-
-  useEffect(() => {
     function onKeyDown(event) {
       if (!settingsOpen || hasRouteOverlay || raidView) return
       const target = event.target
@@ -195,6 +190,23 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
     || hasRaidWork(party.progress)
 
 
+  function handleRaidModalClose() {
+    if (startRaidPending) {
+      const ts = Date.now()
+      setStartRaidPending(false)
+      setDismissedRaidStart(ts)
+      onStartRaid(ts)
+    } else {
+      setDismissedRaidStart(raidStart)
+    }
+    onOpenRaid()
+  }
+
+  function handleRaidModalCancel() {
+    if (startRaidPending) setStartRaidPending(false)
+    else setDismissedRaidStart(raidStart)
+  }
+
   async function handleSendRequest() {
     if (!addInput.trim()) return
     setAddBusy(true); setAddError('')
@@ -210,17 +222,13 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
     () => allTasks.filter(task => !task.map || task.map?.normalizedName === party.map_norm),
     [allTasks, party.map_norm],
   )
-  const { extracts: mapExtracts } = useExtracts(party.map_norm, gameMode)
   const isLeader = party.leader_id === myUserId
   const ownGameMode = resolvePartyMode(null, userSettings)
   const partyModeDiffers = ownGameMode !== gameMode
   const settingLayers = { raid: party.settings || {}, unit: null, user: userSettings }
-  const pingTtlMs = Number(resolveSetting('ping_ttl_ms', settingLayers))
-  const replayEnabled = resolveSetting('replay_enabled', settingLayers)
   const canChangeMap = isLeader || resolveSetting('members_can_change_map', settingLayers) === true
   const members  = useMemo(() => normalizeMembers(party.members), [party.members])
   const memberNameList = useMemo(() => memberNames(members), [members])
-  const memberIdList = useMemo(() => memberIds(members), [members])
   const mineMember = findMember(members, myUserId)
   const mine = mineMember?.quests || []
   const allTasksById = useMemo(() => new Map(allTasks.map(task => [task.id, task])), [allTasks])
@@ -312,28 +320,47 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
 
   if (raidView && party.map_id) {
     return (
-      <Suspense fallback={<div className="raid-loading" role="status"><Spin s={28} /><span className="mono">LOADING RAID MAP...</span></div>}>
-        <RaidView
-          party={party}
-          myUserId={myUserId}
-          myName={myName}
-          members={members}
-          tasks={tasks}
-          allTasks={allTasks}
-          gameMode={gameMode}
-          loadingTasks={loadingTasks}
-          skippedQuestIds={skippedQuestIds}
-          onToggleStar={onToggleStar}
-          onAddStroke={onAddStroke}
-          onClearMyStrokes={onClearMyStrokes}
-          onAddMarker={onAddMarker}
-          onClearMyMarkers={onClearMyMarkers}
-          onClearPings={onClearPings}
-          userSettings={userSettings}
-          onSetSetting={onSetUserSetting}
-          onClose={onCloseRaid}
-        />
-      </Suspense>
+      <>
+        {showRaidModal && (
+          <StartRaidModal
+            party={party}
+            myUserId={myUserId}
+            myName={myName}
+            tasks={allTasks}
+            gameMode={gameMode}
+            onlineMemberIds={onlineMemberIds}
+            presenceReady={presenceReady}
+            onClose={handleRaidModalClose}
+            onCancel={handleRaidModalCancel}
+          />
+        )}
+        <Suspense fallback={<div className="raid-loading" role="status"><Spin s={28} /><span className="mono">LOADING MAP...</span></div>}>
+          <RaidView
+            party={party}
+            myUserId={myUserId}
+            myName={myName}
+            members={members}
+            tasks={tasks}
+            allTasks={allTasks}
+            gameMode={gameMode}
+            loadingTasks={loadingTasks}
+            isLeader={isLeader}
+            onlineMemberIds={onlineMemberIds}
+            presenceReady={presenceReady}
+            onAddStroke={onAddStroke}
+            onClearMyStrokes={onClearMyStrokes}
+            onAddMarker={onAddMarker}
+            onClearMyMarkers={onClearMyMarkers}
+            onClearPings={onClearPings}
+            onSubmitProgress={onSubmitProgress}
+            userObjProgress={userObjProgress}
+            userSettings={userSettings}
+            onSetSetting={onSetUserSetting}
+            onStartRaid={() => setStartRaidPending(true)}
+            onClose={onCloseRaid}
+          />
+        </Suspense>
+      </>
     )
   }
 
@@ -349,21 +376,8 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
           gameMode={gameMode}
           onlineMemberIds={onlineMemberIds}
           presenceReady={presenceReady}
-          onClose={() => {
-            if (startRaidPending) {
-              const ts = Date.now()
-              setStartRaidPending(false)
-              setDismissedRaidStart(ts)
-              onStartRaid(ts)
-            } else {
-              setDismissedRaidStart(raidStart)
-            }
-            onOpenRaid()
-          }}
-          onCancel={() => {
-            if (startRaidPending) setStartRaidPending(false)
-            else setDismissedRaidStart(raidStart)
-          }}
+          onClose={handleRaidModalClose}
+          onCancel={handleRaidModalCancel}
         />
       )}
 
@@ -415,7 +429,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
               </button>
               {party.map_id && (
                 <button type="button" className="room-banner-btn" onClick={onOpenRaid}>
-                  <Icon name="tent" size="sm" /> RAID VIEW
+                  <Icon name="tent" size="sm" /> MAP
                 </button>
               )}
 
@@ -782,7 +796,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                     <button className="btn-ghost btn-sm" onClick={() => setMapSelectorOpen(true)}>CHANGE</button>
                   </div>
                 )}
-                {[['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['find', 'WHAT TO LOOK FOR'], ['map', 'MAP / ROUTE'], ['bosses', 'BOSS SPAWNS / KEYS']].map(([id, lbl]) => (
+                {[['todo', 'TODO LIST'], ['items', 'REQUIRED ITEMS'], ['find', 'WHAT TO LOOK FOR'], ['bosses', 'BOSS SPAWNS / KEYS']].map(([id, lbl]) => (
                   <button
                     key={id}
                     type="button"
@@ -879,43 +893,6 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                 </div>
               )}
 
-              {tab === 'map' && (
-                <div className="card fade-in" style={{ padding: 16 }}>
-                  <div className="room-map-surface">
-                    <Suspense fallback={<Spin />}>
-                      <MapLeaflet
-                        mapNorm={party.map_norm}
-                        mapName={party.map_name}
-                        gameMode={gameMode}
-                        drawings={party.drawings || []}
-                        markers={party.markers || []}
-                        pings={party.pings || []}
-                        extracts={mapExtracts}
-                        pingLog={party.ping_log}
-                        pingTtlMs={pingTtlMs}
-                        replayEnabled={replayEnabled}
-                        myUserId={myUserId}
-                        myName={myName}
-                        memberNames={memberNameList}
-                        memberIds={memberIdList}
-                        myQuests={mine}
-                        memberQuests={members}
-                        tasks={allTasks}
-                        progress={party.progress || {}}
-                        onAddStroke={onAddStroke}
-                        onClearMyStrokes={onClearMyStrokes}
-                        onAddMarker={onAddMarker}
-                        onClearMyMarkers={onClearMyMarkers}
-                        onClearPings={onClearPings}
-                        raidKey={raidStart}
-                        fill
-                        chrome="overlay"
-                        hideStyleControls={raidView}
-                      />
-                    </Suspense>
-                  </div>
-                </div>
-              )}
             </>
           )}
 

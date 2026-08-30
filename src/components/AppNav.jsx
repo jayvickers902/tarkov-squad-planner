@@ -4,7 +4,9 @@ export default function AppNav({ route, party, raidLive, onNavigate, onRequestLe
     { screen: 'lobby', label: party ? 'LEAVE' : 'LOBBY', route: { screen: 'lobby' }, destructive: Boolean(party) },
     { screen: 'quests', label: 'QUEST MANAGER', route: code ? { screen: 'quests', code } : { screen: 'quests' } },
     ...(party ? [{ screen: 'room', label: 'PARTY', route: { screen: 'room', code } }] : []),
-    ...(party && raidLive ? [{ screen: 'raid', label: 'RAID', route: { screen: 'raid', code } }] : []),
+    // One map destination in both states — PLAN out of raid, LIVE in one. The
+    // label carries the state so the nav still says a raid is running.
+    ...(party?.map_id ? [{ screen: 'raid', label: raidLive ? 'MAP · LIVE' : 'MAP', route: { screen: 'raid', code } }] : []),
   ]
 
   function selectDestination(destination) {

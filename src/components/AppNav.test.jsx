@@ -12,10 +12,15 @@ describe('AppNav', () => {
     )
 
     expect(screen.getByRole('button', { name: 'PARTY' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.queryByRole('button', { name: 'RAID' })).not.toBeInTheDocument()
+    // No map selected yet, so there is no map destination to offer.
+    expect(screen.queryByRole('button', { name: /^MAP/ })).not.toBeInTheDocument()
 
-    rerender(<AppNav route={{ screen: 'raid', code: party.code }} party={party} raidLive onNavigate={vi.fn()} onRequestLeave={vi.fn()} />)
-    expect(screen.getByRole('button', { name: 'RAID' })).toHaveAttribute('aria-current', 'page')
+    const mapped = { ...party, map_id: 'map-1' }
+    rerender(<AppNav route={{ screen: 'room', code: party.code }} party={mapped} raidLive={false} onNavigate={vi.fn()} onRequestLeave={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'MAP' })).not.toHaveAttribute('aria-current')
+
+    rerender(<AppNav route={{ screen: 'raid', code: party.code }} party={mapped} raidLive onNavigate={vi.fn()} onRequestLeave={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'MAP · LIVE' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('shows a destructive Leave action and uses the confirmation callback in a live party', () => {

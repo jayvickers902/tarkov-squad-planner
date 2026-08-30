@@ -24,6 +24,8 @@ import {
 import { objectivePins, getUserColor } from '../tarkovObjectives'
 import { bearingRange, useMapPings } from '../useMapPings'
 import { classifyPmcSpawns } from '../tarkovSpawns'
+import { framePositionSignature } from '../squadFocus'
+import { readCameraMode, writeCameraMode } from '../cameraMode'
 import { escapeHtml, parseSanitizedSvg } from '../mapHtml'
 
 const PALETTE = ['#e85d5d', '#f5a623', '#e8e85d', '#5de87a', '#5de8d4', '#5db8e8', '#c45de8', '#e85da8', '#ffffff', '#b0b0b0']
@@ -434,6 +436,10 @@ export default function MapLeaflet({
   hoverPingId,
   onFocusPing,
   overviewNonce = 0,
+  autofocusMode,          // controlled camera policy; undefined keeps the local one
+  onAutofocusMode,
+  hideAutofocusControl = false,
+  followFrame = null,     // squadFrame() result — world coords, converted here
 }) {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
@@ -453,15 +459,14 @@ export default function MapLeaflet({
   const [showPings, setShowPings] = useState(true)
   const [internalFocusPingId, setInternalFocusPingId] = useState(null)
   const [internalHoverPingId, setInternalHoverPingId] = useState(null)
-  const [pingAutofocus, setPingAutofocus] = useState(() => {
-    if (typeof window === 'undefined') return 'alerts'
-    try {
-      const stored = window.localStorage.getItem('tsp.ping_autofocus')
-      return ['off', 'alerts', 'all'].includes(stored) ? stored : 'alerts'
-    } catch {
-      return 'alerts'
-    }
-  })
+  // The camera policy is controllable so the map page can put the segmented
+  // control in its header; uncontrolled it keeps its own, same stored value.
+  const [internalAutofocus, setInternalAutofocus] = useState(readCameraMode)
+  const pingAutofocus = autofocusMode !== undefined ? autofocusMode : internalAutofocus
+  const setPingAutofocus = useCallback(next => {
+    if (autofocusMode !== undefined) onAutofocusMode?.(next)
+    else setInternalAutofocus(next)
+  }, [autofocusMode, onAutofocusMode])
   const [offscreenChevrons, setOffscreenChevrons] = useState([])
   // Off by default: Reserve alone carries 64 points, and a map that opens under
   // a blanket of loot icons is worse than one you have to ask for them on.
@@ -499,6 +504,8 @@ export default function MapLeaflet({
   const lastAppliedFocusPingRef = useRef(null)
   const lastAutoFocusAnnouncementRef = useRef(null)
   const lastOverviewNonceRef = useRef(overviewNonce)
+  const followFlightRef = useRef(false)
+  const followSigRef = useRef('')
   const announcementHoverRef = useRef(false)
   const announcementFocusRef = useRef(false)
 
@@ -816,11 +823,7 @@ export default function MapLeaflet({
   }, [mapNorm])
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem('tsp.ping_autofocus', pingAutofocus)
-    } catch {
-      // A private window or a blocked storage policy should not affect the map.
-    }
+    writeCameraMode(pingAutofocus)
   }, [pingAutofocus])
 
   useEffect(() => {
@@ -1224,6 +1227,10 @@ export default function MapLeaflet({
     const matching = autoObjPins.filter(pin => pin.key === focusKey)
     if (!matching.length) return
     const points = matching.map(pin => L.latLng(pin.lat, pin.lng))
+    // An objective the reader asked for outranks a standing camera policy, so
+    // this stamps the same guard a drag does: FOLLOW yields for six seconds and
+    // then re-frames the squad on its own.
+    lastUserInteractionRef.current = Date.now()
     if (points.length === 1) {
       const zoom = Math.min(cfg.maxZoom, Math.max(map.getZoom(), cfg.minZoom + 1))
       map.flyTo(points[0], zoom, { duration: 0.55 })
@@ -1237,10 +1244,14 @@ export default function MapLeaflet({
     onFocusPing?.(null)
   }, [onFocusPing])
 
-  const focusPing = useCallback((pingId) => {
+  // `fromUser` marks an explicit destination — a card, a chevron, the toast, a
+  // rail row. Those outrank a standing camera policy, so they stamp the same
+  // interaction guard a drag does and follow yields for the usual six seconds.
+  const focusPing = useCallback((pingId, { fromUser = false } = {}) => {
     const map = mapRef.current
     const target = pingCards.find(card => card.ping.id === pingId)
     if (!map || !target || !cfg) return false
+    if (fromUser) lastUserInteractionRef.current = Date.now()
 
     const companions = pingCompanionCards(target, pingCards)
     const points = [target, ...companions].map(card => L.latLng(card.ping.z, card.ping.x))
@@ -1270,7 +1281,7 @@ export default function MapLeaflet({
     if (lastAppliedFocusPingRef.current === applyKey) return
     if (!pingCards.some(card => card.ping.id === focusPingId)) return
     lastAppliedFocusPingRef.current = applyKey
-    focusPing(focusPingId)
+    focusPing(focusPingId, { fromUser: true })
   }, [focusPing, focusPingId, mapNorm, pingCards])
 
   useEffect(() => {
@@ -1285,17 +1296,85 @@ export default function MapLeaflet({
     setInternalHoverPingId(null)
   }, [clearPingFocus, showPings])
 
+  // Overview has to leave FOLLOW, not just fit the bounds: otherwise follow
+  // re-frames on the next ping and the button reads as broken. ALERTS is the
+  // right landing state — the reader still hears about contact.
   const focusOverview = useCallback(() => {
     clearPingFocus()
     setInternalHoverPingId(null)
+    if (pingAutofocus === 'follow') setPingAutofocus('alerts')
+    lastUserInteractionRef.current = Date.now()
     if (mapRef.current && boundsRef.current) mapRef.current.fitBounds(boundsRef.current)
-  }, [clearPingFocus])
+  }, [clearPingFocus, pingAutofocus, setPingAutofocus])
 
   useEffect(() => {
     if (overviewNonce === lastOverviewNonceRef.current) return
     lastOverviewNonceRef.current = overviewNonce
     focusOverview()
   }, [focusOverview, overviewNonce])
+
+  // ─── FOLLOW camera ──────────────────────────────────────────────────────────
+  // The framing arithmetic is in squadFocus.js; this converts its world box to
+  // latLng(z, x) and applies it. Keyed on a position signature, never on
+  // `pingSig`: that folds a 15-second age bucket into itself, so the camera
+  // would re-frame every 15 seconds with nobody having moved.
+  const followSig = useMemo(() => framePositionSignature(followFrame), [followFrame])
+
+  // One flight at a time — re-flying mid-flight stutters. This tracks the same
+  // lifecycle as the map itself, which is created by an effect declared above.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return undefined
+    followFlightRef.current = false
+    const clearFlight = () => { followFlightRef.current = false }
+    map.on('moveend', clearFlight)
+    return () => { map.off('moveend', clearFlight) }
+  }, [mapNorm])
+
+  // Leaving and re-entering FOLLOW must re-frame even if nobody moved meanwhile.
+  useEffect(() => { followSigRef.current = '' }, [pingAutofocus, mapNorm])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !cfg || !followSig || !followFrame?.bounds) return undefined
+    if (pingAutofocus !== 'follow' || replayOn || !showPings || mode === 'draw') return undefined
+
+    let timer = null
+
+    function apply() {
+      timer = null
+      // The interaction guard already owns the camera for six seconds after a
+      // drag, wheel, touch or double-click. Follow waits it out, then re-frames
+      // once, so looking at something never becomes a fight with the camera.
+      const since = Date.now() - lastUserInteractionRef.current
+      if (since < 6000) { timer = setTimeout(apply, 6000 - since + 60); return }
+      if (followFlightRef.current) { timer = setTimeout(apply, 260); return }
+      if (followSigRef.current === followSig) return
+
+      const box = followFrame.bounds
+      const bounds = L.latLngBounds(L.latLng(box.minZ, box.minX), L.latLng(box.maxZ, box.maxX))
+      const centre = bounds.getCenter()
+      const fitted = map.getBoundsZoom(bounds, false, L.point(90, 90))
+      const targetZoom = Math.max(cfg.minZoom, Math.min(cfg.maxZoom - 0.5, fitted))
+
+      // Compare in pixels rather than world units: 30 m matters at high zoom and
+      // does not at low, and a camera that creeps on every ping is unreadable.
+      const drift = map
+        .latLngToContainerPoint(centre)
+        .distanceTo(map.latLngToContainerPoint(map.getCenter()))
+      if (drift < 48 && Math.abs(targetZoom - map.getZoom()) < 0.25) {
+        followSigRef.current = followSig
+        return
+      }
+
+      followSigRef.current = followSig
+      followFlightRef.current = true
+      map.flyTo(centre, targetZoom, { duration: 0.4 })
+    }
+
+    apply()
+    return () => { if (timer !== null) clearTimeout(timer) }
+  }, [cfg, followFrame, followSig, mode, pingAutofocus, replayOn, showPings])
 
   // ─── Sync position ping markers ─────────────────────────────────────────────
   // Keyed on a coarse signature rather than on pingCards itself: the tick that
@@ -1364,7 +1443,10 @@ export default function MapLeaflet({
     lastAutoFocusAnnouncementRef.current = announcementId
 
     const card = pingCards.find(candidate => candidate.ping.id === announcementId)
-    if (!card || pingAutofocus === 'off' || replayOn || !showPings || mode === 'draw') return
+    // FOLLOW owns the camera outright. Two policies fighting over flyTo is the
+    // failure this replaces; the announcement toast is still a clickable jump.
+    if (!card || pingAutofocus === 'off' || pingAutofocus === 'follow') return
+    if (replayOn || !showPings || mode === 'draw') return
     if (Date.now() - lastUserInteractionRef.current < 6000) return
     if (card.ping.user_id === myUserId || card.ping.user === myName) return
     if (pingAutofocus === 'alerts' && (Number(card.ping.taps) || 1) < 2) return
@@ -1821,13 +1903,14 @@ export default function MapLeaflet({
               ▲ PINGS ({pingList.length})
             </button>
           )}
-          {pingList.length > 0 && (
-            <div className="ping-autofocus-control" role="group" aria-label="Ping auto-focus mode">
-              <span className="mono ping-autofocus-label">AUTO</span>
+          {pingList.length > 0 && !hideAutofocusControl && (
+            <div className="ping-autofocus-control" role="group" aria-label="Camera mode">
+              <span className="mono ping-autofocus-label">CAMERA</span>
               {[
-                ['off', 'OFF'],
+                ['follow', 'FOLLOW'],
                 ['alerts', 'ALERTS'],
                 ['all', 'ALL'],
+                ['off', 'OFF'],
               ].map(([value, label]) => (
                 <button
                   key={value}
@@ -2103,7 +2186,7 @@ export default function MapLeaflet({
               className="mono map-ping-announcement-go"
               onClick={event => {
                 event.stopPropagation()
-                focusPing(pingAnnouncement.id)
+                focusPing(pingAnnouncement.id, { fromUser: true })
                 dismissPingAnnouncement()
               }}>
               ⌘ GO
@@ -2130,7 +2213,7 @@ export default function MapLeaflet({
               onMouseDown={event => event.stopPropagation()}
               onClick={event => {
                 event.stopPropagation()
-                focusPing(chevron.id)
+                focusPing(chevron.id, { fromUser: true })
               }}>
               <span className="map-offscreen-chevron-glyph">›</span>
               <span className="mono map-offscreen-chevron-label" style={{ transform: `rotate(${-chevron.angle}deg)` }}>
@@ -2241,11 +2324,11 @@ export default function MapLeaflet({
                 onMouseLeave={() => {
                   if (!hasExternalHoverPing) setInternalHoverPingId(null)
                 }}
-                onClick={() => focusPing(card.ping.id)}
+                onClick={() => focusPing(card.ping.id, { fromUser: true })}
                 onKeyDown={event => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
-                    focusPing(card.ping.id)
+                    focusPing(card.ping.id, { fromUser: true })
                   }
                 }}>
                 <div className="ping-card-head">

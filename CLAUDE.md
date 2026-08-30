@@ -62,9 +62,10 @@ src/
   components/
     AuthScreen.jsx     # Google sign-in + callsign selection
     Lobby.jsx          # party create/join, rejoin, friends list
-    Room.jsx           # active party view — map, quests, todo, keys, bosses tabs
-    RaidView.jsx       # in-raid view
-    RaidRail.jsx       # in-raid side rail
+    Room.jsx           # active party view — quests, todo, items, bosses tabs
+    RaidView.jsx       # the map page — one destination, PLAN / LIVE states
+    MyTasksPanel.jsx   # map page left column — my objectives, self-only ticks
+    RaidRail.jsx       # map page right column — squad readiness / live echo
     RaidSettings.jsx   # leader settings popover with inherited-value sources
     MapLeaflet.jsx     # active Leaflet renderer (drawings, markers, spawns)
     MyQuests.jsx       # standalone "Quest Manager" page
@@ -193,7 +194,7 @@ clear `inMapBounds` only on its 12% pad and render past the image edge. Icebreak
 also has zero positioned objective zones upstream, so it will never show quest
 pins. Both are upstream data gaps, not ours; see `CODEX-HANDOFF-preraid.md`.
 
-Ping focus has three per-device auto-focus modes: OFF, ALERTS (CONTACT and NEED HELP), and ALL. The selected mode is stored in localStorage under `tsp.ping_autofocus`. Any user map interaction suppresses auto-focus for six seconds so camera control stays with the reader.
+Ping focus is now four per-device camera policies — FOLLOW, ALERTS (CONTACT and NEED HELP), ALL and OFF — stored in localStorage under `tsp.ping_autofocus`. Any user map interaction suppresses auto-focus for six seconds so camera control stays with the reader. See **Follow Camera** below.
 
 ## Quest Shareability
 
@@ -253,6 +254,74 @@ Objective rows carry a 3px left rail in the quest's colour, from `questRailColor
 (stable hash of the quest id over five hues). Members are tinted from
 `memberColors.js` — one palette shared by owner chips, filter chips, sidebar rails
 and the map-recommendation bar, so a member keeps the same hue everywhere.
+
+## Map Page
+
+The map is **one destination with two states**, not a MAP tab and a separate raid
+screen. `RaidView.jsx` renders it at `route.screen === 'raid'`; Room's tab strip
+has no map tab, and the banner's `MAP` button and the nav's `MAP` / `MAP · LIVE`
+entry both lead here.
+
+- **PLAN** — no raid stamp. Spawns, routes, prep checks, squad readiness, START RAID.
+- **LIVE** — raid stamp set. Live pings, follow camera, distance-sorted objectives.
+
+The flip is derived from `party.progress.__raid_start__`, not chosen. There is one
+wrinkle: `merge_progress` explicitly rejects `__raid_start__`, so no client can
+clear it for the whole party. `END RAID · SYNC PROGRESS` therefore records the
+stamp it ended in the reader's own `user_settings.raid_ended_stamp`, and LIVE is
+`raidKey !== null && raid_ended_stamp !== raidKey`. That is per-reader on purpose —
+you extract, your squad may not have. A party-wide end needs an RPC that does not
+exist yet.
+
+Layout is `322px | 1fr | 336px`: MY TASKS left, `MapLeaflet` centre at `fill` with
+`chrome="overlay"`, SQUAD right (`RaidRail.jsx`). `Q` toggles the tasks column
+(`raid_tasks_open`), `M` the squad column (`raidview_rail_open`), `D` draw, `F`
+fullscreen, `O` overview, `Escape` leaves the page. At ≤768px the squad column
+becomes a draggable bottom sheet and hosts the tasks panel inside it, because a
+floating column would collide with the sheet.
+
+`MyTasksPanel.jsx` is **self-only**: `merge_progress` rejects any progress key that
+does not end in the caller's uid, so a tick on a teammate's row would fail silently
+at the database and is never offered — the squad column renders their objectives
+read-only and without a checkbox. Ticks write immediately through
+`onSubmitProgress`; there is no pending state and no SUBMIT, because mid-raid there
+is no review moment. The panel **never** calls `onQuestComplete` — that retires the
+quest in `user_quests` and removes it from the party, which would make it vanish
+off a teammate's rail mid-raid. Rolling a quest up belongs to a debrief.
+
+`raidObjectives.js` is the shared derivation behind both columns. Its
+`includeUnplaced` option keeps map-relevant objectives that have no zone — extract,
+kill counts — on the personal checklist while the shared list stays a map-action
+list. `groupRowsByQuest` takes the caller's `isDone` predicate rather than reading
+progress itself, so a group tally can never disagree with the checkbox beside it.
+
+## Follow Camera
+
+The camera has four per-device policies — **FOLLOW · ALERTS · ALL · OFF** — stored
+in localStorage under `tsp.ping_autofocus` (`src/cameraMode.js`), defaulting to
+FOLLOW. The map page renders the control in its header with OFF and OVERVIEW in the
+`▾` overflow; `MapLeaflet` keeps its own copy for any uncontrolled mount.
+
+FOLLOW is exclusive: while it is on, alert auto-focus does not call `flyTo` at all.
+Two policies fighting over the camera is the failure this replaces, and the
+announcement toast is still a clickable jump. `⌖ OVERVIEW` and `O` leave FOLLOW for
+ALERTS, or the button reads as broken.
+
+`src/squadFocus.js` holds the framing arithmetic — pure, no React, no Leaflet. It
+is anchor-and-radius, not clustering: anchor on my latest ping (or the mean when I
+have none), include members within 250 m of it over a 180 s age window, and clamp
+the fitted box to a 120–500 m span so a stacked squad does not slam to max zoom and
+a spread one does not zoom past what the radius implies. Floor is deliberately not
+a filter — a teammate one storey up is still somewhere you want on screen. Dropped
+members are served by the existing off-screen chevrons and the `OFF FRAME` chip.
+
+`MapLeaflet` absorbs one effect that converts that world box to `latLng(z, x)`.
+Three rules keep the camera still: it keys on a **position signature**, never on
+`pingSig` (which folds a 15-second age bucket into itself and would re-frame every
+15 s with nobody moving); it skips a re-frame under 48 **pixels** of drift and 0.25
+zoom; and it holds one flight at a time. It also obeys the existing six-second
+interaction guard, and every explicit destination — a ping card, a chevron, the
+toast, an objective row — stamps that guard so it outranks the standing policy.
 
 ## Welcome / What's New
 

@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.12'
+export const RELEASE_VERSION = '2026.13'
 
 export const SETUP_STEPS = [
   {
@@ -16,6 +16,25 @@ export const SETUP_STEPS = [
 ]
 
 export const RELEASES = [
+  {
+    version: '2026.13',
+    date: '2026-08-29',
+    title: 'ONE MAP, TWO STATES',
+    items: [
+      {
+        title: 'MAP TAB AND RAID VIEW ARE ONE PAGE',
+        body: 'There is one MAP destination now. Out of raid it plans — spawns, routes, prep and squad readiness. The moment the leader starts a raid it becomes live, with pings, distances and raid time elapsed, without you moving anywhere.',
+      },
+      {
+        title: 'MY TASKS, TICKABLE MID-RAID',
+        body: 'A personal objective list sits beside the map, grouped by quest and sorted by distance from your last ping. One tap ticks an objective and it saves immediately — no SUBMIT, and it never retires the quest off your squad’s list.',
+      },
+      {
+        title: 'FOLLOW CAMERA',
+        body: 'The camera can hold your squad in frame instead of jumping to each new ping. FOLLOW keeps everyone within 250 m of you on screen, zooms to fit, and gets out of the way for six seconds whenever you pan.',
+      },
+    ],
+  },
   {
     version: '2026.12',
     date: '2026-08-27',
