@@ -147,6 +147,22 @@ describe('StartRaidModal', () => {
     expect(sections[2]).toHaveAttribute('aria-labelledby', 'raid-prep-extracts-title')
   })
 
+  it('resets the dialog scroll position after the initial focus lands', () => {
+    const originalFocus = HTMLElement.prototype.focus
+    vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function focus(...args) {
+      originalFocus.apply(this, args)
+      const dialog = this.closest('[role="dialog"]')
+      if (dialog) dialog.scrollTop = 999
+    })
+
+    try {
+      const { container } = renderModal()
+      expect(container.querySelector('[role="dialog"]')).toHaveProperty('scrollTop', 0)
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
   // The prep memos are only warm on the second render, so a hook called inside
   // one of them renders fine and then throws when the memo is cached. Every
   // other test here renders once, which is precisely how that shipped.

@@ -220,6 +220,14 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
   const [times, setTimes] = useState(getTarkovTimes)
   const mapNorm = party.map_norm
   const progress = useMemo(() => party.progress || {}, [party.progress])
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    dialog.scrollTop = 0
+    dialog.scrollLeft = 0
+  }, [dialogRef])
+
   const { getBossesForMap, loading: bossLoading } = useBossSpawns(gameMode)
   const { extracts, loading: extractsLoading } = useExtracts(mapNorm, gameMode)
   const { allKeys } = useKeys(mapNorm, gameMode)
