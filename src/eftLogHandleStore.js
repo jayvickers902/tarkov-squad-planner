@@ -71,6 +71,12 @@ function sanitiseCheckpoint(checkpoint) {
 
   const profileKey = input.profileKey == null ? null : String(input.profileKey).slice(0, 128)
   const unknownModeTarget = VALID_MODES.has(input.unknownModeTarget) ? input.unknownModeTarget : null
+  const unknownModeTargets = input.unknownModeTargets && typeof input.unknownModeTargets === 'object'
+    ? Object.fromEntries(Object.entries(input.unknownModeTargets)
+      .slice(0, 4096)
+      .filter(([, mode]) => VALID_MODES.has(mode))
+      .map(([sessionKey, mode]) => [String(sessionKey).slice(0, 160), mode]))
+    : {}
   const gameMode = VALID_MODES.has(input.gameMode) ? input.gameMode : null
 
   return {
@@ -79,6 +85,7 @@ function sanitiseCheckpoint(checkpoint) {
     includedVersions,
     profileKey,
     unknownModeTarget,
+    unknownModeTargets,
     gameMode,
     autoSync: input.autoSync === true,
     ...(input.watchSessionKey == null ? {} : { watchSessionKey: String(input.watchSessionKey).slice(0, 160) }),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { parseEftLogFiles } from './eftLogs'
+import { parseEftLogFiles, resolveWipeBoundary } from './eftLogs'
 import {
   classifyChangedEftLogMetadata,
   enumerateRelevantEftLogFiles,
@@ -95,6 +95,24 @@ function safeProfileKey(profile) {
   return profile?.profileKey ?? profile?.key ?? profile?.id ?? null
 }
 
+// A preview parsed before wipe boundaries were profile-scoped carries only the
+// flat value, so fall back to it rather than dropping the boundary entirely.
+function previewWipeBoundary(preview, profileKey) {
+  const boundaries = preview?.wipeBoundaryByProfile
+  if (boundaries && Object.keys(boundaries).length) {
+    return resolveWipeBoundary(boundaries, preview?.discoveredProfiles, profileKey)
+  }
+  return preview?.wipeBoundaryAt || null
+}
+
+function currentProfileKeyForCheckpoint(preview, storedKey) {
+  if (!storedKey) return null
+  const profile = (preview?.discoveredProfiles || []).find(candidate => (
+    safeProfileKey(candidate) === storedKey || (candidate?.legacyProfileKeys || []).includes(storedKey)
+  ))
+  return safeProfileKey(profile) || storedKey
+}
+
 function normaliseMalformedRecords(value) {
   if (!Array.isArray(value)) return []
   return value.slice(0, MAX_PREVIEW_DETAIL_ROWS).flatMap(record => {
@@ -153,7 +171,12 @@ function normalisePreview(preview, sourceMetadata = [], knownTaskIds = []) {
     malformedRecords: normaliseMalformedRecords(value.malformedRecords),
     ambiguousModeEvents: Number.isFinite(value.ambiguousModeEvents) ? value.ambiguousModeEvents : 0,
     selectedProfileKey: value.selectedProfileKey || null,
-    unknownModeTarget: value.unknownModeTarget || null,
+    unknownModeTargets: value.unknownModeTargets && typeof value.unknownModeTargets === 'object' ? { ...value.unknownModeTargets } : {},
+    includePreWipeHistory: value.includePreWipeHistory === true,
+    wipeBoundaryAt: typeof value.wipeBoundaryAt === 'string' ? value.wipeBoundaryAt : null,
+    wipeBoundaryByProfile: value.wipeBoundaryByProfile && typeof value.wipeBoundaryByProfile === 'object' ? { ...value.wipeBoundaryByProfile } : {},
+    sessions: Array.isArray(value.sessions) ? value.sessions : [],
+    modeConfidenceDistribution: value.modeConfidenceDistribution && typeof value.modeConfidenceDistribution === 'object' ? { ...value.modeConfidenceDistribution } : {},
     sourceMetadata,
   }
 }
@@ -233,7 +256,8 @@ function checkpointFrom(sourceMetadata, preview, selection, autoSync, gameMode, 
     })),
     includedVersions: preview.includedVersions,
     profileKey: selection.profileKey,
-    unknownModeTarget: selection.unknownModeTarget,
+    unknownModeTargets: selection.unknownModeTargets,
+    includePreWipeHistory: selection.includePreWipeHistory === true,
     gameMode,
     autoSync,
     updatedAt: Date.now(),
@@ -246,17 +270,27 @@ function selectedEvents(preview, selection, targetMode, knownTaskIds = null, tas
   if (profileRequired && !selection.profileKey) throw new Error('Select one local EFT profile before importing.')
   const sourceEvents = Array.isArray(preview.matchedEvents) ? preview.matchedEvents : preview.events
   const knownIds = knownTaskIds ? new Set(knownTaskIds) : null
+  const seasonalSessions = new Set((preview.sessions || []).filter(session => session.hasSeasonalSignal).map(session => session.sessionKey))
+  const boundary = selection.includePreWipeHistory ? null : Date.parse(previewWipeBoundary(preview, selection.profileKey) || '')
   const candidates = sourceEvents.filter(event => {
     if (knownIds && !knownIds.has(event?.taskId)) return false
     if (selectedVersions.size && !selectedVersions.has(String(event?.version || ''))) return false
-    if (profileRequired && safeProfileKey(event) !== selection.profileKey && event?.profileKey !== selection.profileKey) return false
+    if (profileRequired && safeProfileKey(event) !== selection.profileKey && event?.profileKey !== selection.profileKey
+      && !(event?.legacyProfileKeys || []).includes(selection.profileKey)) return false
+    if (Number.isFinite(boundary)) {
+      const occurredAt = Date.parse(event?.occurredAt || '')
+      if (!Number.isFinite(occurredAt) || occurredAt < boundary) return false
+    }
     return true
   })
-  const unknownEvents = candidates.filter(event => !event?.gameMode)
-  if (unknownEvents.length && !selection.unknownModeTarget) throw new Error('Choose Regular or PvE for events without a clear mode.')
   return candidates
     .filter(event => {
-      const eventMode = event?.gameMode || selection.unknownModeTarget
+      if (event?.gameMode === 'pvp-season' || seasonalSessions.has(event?.sessionKey)) return false
+      const eventMode = event?.gameMode || selection.unknownModeTargets?.[event?.sessionKey]
+      if (!event?.gameMode && !selection.unknownModeTargets?.[event?.sessionKey]) return false
+      if (event?.modeConfidence === 'conflicted' || event?.modeConfidence === 'absent') {
+        if (!selection.unknownModeTargets?.[event?.sessionKey]) return false
+      }
       return VALID_MODES.has(eventMode) && eventMode === targetMode
     })
     .map(event => {
@@ -345,7 +379,7 @@ export function useEftLogImport({
   const observerFlushAfterScanRef = useRef(false)
   const observerFlushRef = useRef(() => {})
   const pendingTextRef = useRef(new Map())
-  const selectionRef = useRef({ includedVersions: [], profileKey: null, unknownModeTarget: null })
+  const selectionRef = useRef({ includedVersions: [], profileKey: null, unknownModeTargets: {}, includePreWipeHistory: false })
   const documentRef = useRef(documentObject)
   const pollRef = useRef(() => null)
   documentRef.current = documentObject
@@ -459,7 +493,8 @@ export function useEftLogImport({
     selectionRef.current = {
       includedVersions: nextPreview.includedVersions,
       profileKey: profiles.length === 1 ? safeProfileKey(profiles[0]) : null,
-      unknownModeTarget: null,
+      unknownModeTargets: {},
+      includePreWipeHistory: false,
     }
     if (mountedRef.current) {
       setPreview(nextPreview)
@@ -526,7 +561,8 @@ export function useEftLogImport({
       const selection = {
         includedVersions: checkpointRef.current?.includedVersions || [],
         profileKey: checkpointRef.current?.profileKey || null,
-        unknownModeTarget: checkpointRef.current?.unknownModeTarget || null,
+        unknownModeTargets: checkpointRef.current?.unknownModeTargets || {},
+        includePreWipeHistory: checkpointRef.current?.includePreWipeHistory === true,
       }
       const mode = checkpointRef.current?.gameMode || targetModeRef.current
 
@@ -587,6 +623,7 @@ export function useEftLogImport({
             const event = {
               ...sourceEvent,
               gameMode: sourceEvent.gameMode || mode,
+              modeConfidence: sourceEvent.modeConfidence || (mode ? 'certain' : 'absent'),
               profileKey: sourceEvent.profileKey || selection.profileKey || null,
               version: sourceEvent.version || (selection.includedVersions.length === 1 ? selection.includedVersions[0] : null),
             }
@@ -644,8 +681,9 @@ export function useEftLogImport({
       if (!autoApply) return { changed: true, metadata, preview: nextPreview }
       const nextSelection = {
         includedVersions: checkpointRef.current?.includedVersions || nextPreview.includedVersions,
-        profileKey: checkpointRef.current?.profileKey || null,
-        unknownModeTarget: checkpointRef.current?.unknownModeTarget || null,
+        profileKey: currentProfileKeyForCheckpoint(nextPreview, checkpointRef.current?.profileKey),
+        unknownModeTargets: checkpointRef.current?.unknownModeTargets || {},
+        includePreWipeHistory: checkpointRef.current?.includePreWipeHistory === true,
       }
       if (mode !== targetModeRef.current) return { changed: false, metadata, preview: nextPreview }
       const events = selectedEvents(nextPreview, nextSelection, mode, taskIdsFor(allTasksRef.current), taskMetadataFor(allTasksRef.current))
@@ -940,14 +978,29 @@ export function useEftLogImport({
       const valid = current.discoveredProfiles.some(profile => safeProfileKey(profile) === profileKey)
       if (!valid && profileKey !== null) return current
       selectionRef.current = { ...selectionRef.current, profileKey: profileKey || null }
-      return { ...current, selectedProfileKey: profileKey || null }
+      // The parser runs once, so the disclosed boundary has to follow the
+      // choice here or the panel keeps quoting the previous profile's date.
+      return {
+        ...current,
+        selectedProfileKey: profileKey || null,
+        wipeBoundaryAt: previewWipeBoundary(current, profileKey || null),
+      }
     })
   }, [])
 
-  const setUnknownModeTarget = useCallback(mode => {
-    if (mode !== null && !VALID_MODES.has(mode)) return
-    selectionRef.current = { ...selectionRef.current, unknownModeTarget: mode }
-    setPreview(current => current ? { ...current, unknownModeTarget: mode } : current)
+  const setUnknownModeTarget = useCallback((sessionKey, mode) => {
+    if (!sessionKey || (mode !== null && !VALID_MODES.has(mode))) return
+    const unknownModeTargets = { ...selectionRef.current.unknownModeTargets }
+    if (mode) unknownModeTargets[sessionKey] = mode
+    else delete unknownModeTargets[sessionKey]
+    selectionRef.current = { ...selectionRef.current, unknownModeTargets }
+    setPreview(current => current ? { ...current, unknownModeTargets } : current)
+  }, [])
+
+  const setWipeScope = useCallback(includePreWipeHistory => {
+    const widened = includePreWipeHistory === true
+    selectionRef.current = { ...selectionRef.current, includePreWipeHistory: widened }
+    setPreview(current => current ? { ...current, includePreWipeHistory: widened } : current)
   }, [])
 
   // The job engine reports failure by returning a paused job rather than
@@ -1131,7 +1184,7 @@ export function useEftLogImport({
     generationRef.current += 1
     terminateWorker()
     stopWatching()
-    selectionRef.current = { includedVersions: [], profileKey: null, unknownModeTarget: null }
+    selectionRef.current = { includedVersions: [], profileKey: null, unknownModeTargets: {}, includePreWipeHistory: false }
     if (mountedRef.current) {
       setPreview(null)
       setError(null)
@@ -1147,7 +1200,7 @@ export function useEftLogImport({
     const effectGeneration = ++generationRef.current
     terminateWorker()
     stopWatching()
-    selectionRef.current = { includedVersions: [], profileKey: null, unknownModeTarget: null }
+    selectionRef.current = { includedVersions: [], profileKey: null, unknownModeTargets: {}, includePreWipeHistory: false }
     setPreview(null)
     setError(null)
     if (!persistentSupported) return () => {
@@ -1211,6 +1264,7 @@ export function useEftLogImport({
     setIncludedVersions,
     setProfileSelection,
     setUnknownModeTarget,
+    setWipeScope,
     confirmImport,
     forgetFolder,
     reset,

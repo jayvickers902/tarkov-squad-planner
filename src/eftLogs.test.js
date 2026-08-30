@@ -242,8 +242,17 @@ describe('parseEftLogFiles', () => {
     ]
     const preview = parse(files)
 
-    expect(preview.events.every(event => event.gameMode === null)).toBe(true)
+    expect(preview.events.every(event => event.gameMode === null && event.modeConfidence === 'absent' || event.modeConfidence === 'conflicted')).toBe(true)
     expect(preview.ambiguousModeEvents).toBe(2)
+  })
+
+  it('resolves a non-seasonal conflict only when the dominant tally is safe', () => {
+    const regular = Array.from({ length: 6 }, (_, index) => `{"sessionMode":"PVP","event":${index}}`).join('\n')
+    const preview = parse([
+      { name: 'Logs/0.16.9/session/notifications.log', text: jsonNotification({ eventId: 'dominant' }) },
+      { name: 'Logs/0.16.9/session/backend.log', text: `${regular}\n{"sessionMode":"PVE"}` },
+    ])
+    expect(preview.events[0]).toMatchObject({ gameMode: 'regular', modeConfidence: 'dominant' })
   })
 
   it('discovers opaque profile groups and supports local profile selection', () => {
@@ -264,6 +273,51 @@ describe('parseEftLogFiles', () => {
     const selected = parse(files, [regularTask], { profileKey: preview.discoveredProfiles[0].profileKey })
     expect(selected.events).toHaveLength(1)
     expect(selected.events[0].profileKey).toBe(preview.discoveredProfiles[0].profileKey)
+  })
+
+  it('scopes wipe detection to one profile rather than the mixed corpus', () => {
+    // Three tasks finished on one character and started on another is two
+    // histories interleaved, not a wipe. Detecting across the mixed corpus
+    // drew a boundary here and silently dropped the earlier character's
+    // history -- from the readers who own several characters, only.
+    const done = [regularTask, secondTask, pveTask]
+      .map((taskId, index) => jsonNotification({ type: 12, taskId, dt: 1700000000, eventId: `done-${index}` }))
+      .join('\n')
+    const started = [regularTask, secondTask, pveTask]
+      .map((taskId, index) => jsonNotification({ type: 10, taskId, dt: 1700086400, eventId: `start-${index}` }))
+      .join('\n')
+    const preview = parse([
+      { name: 'Logs/0.16.9/a/notifications.log', text: done },
+      { name: 'Logs/0.16.9/a/backend.log', text: '{"sessionMode":"PVP","profileId":"wipe-profile-a"}' },
+      { name: 'Logs/0.16.9/b/notifications.log', text: started },
+      { name: 'Logs/0.16.9/b/backend.log', text: '{"sessionMode":"PVP","profileId":"wipe-profile-b"}' },
+    ])
+
+    expect(preview.discoveredProfiles).toHaveLength(2)
+    expect(preview.wipeBoundaryByProfile).toEqual({})
+    expect(preview.wipeBoundaryAt).toBeNull()
+  })
+
+  it('reports a real within-profile wipe against the profile that lived it', () => {
+    const done = [regularTask, secondTask, pveTask]
+      .map((taskId, index) => jsonNotification({ type: 12, taskId, dt: 1700000000, eventId: `done-${index}` }))
+      .join('\n')
+    const started = [regularTask, secondTask, pveTask]
+      .map((taskId, index) => jsonNotification({ type: 10, taskId, dt: 1700086400, eventId: `start-${index}` }))
+      .join('\n')
+    const files = [
+      { name: 'Logs/0.16.9/before/notifications.log', text: done },
+      { name: 'Logs/0.16.9/before/backend.log', text: '{"sessionMode":"PVP","profileId":"one-character"}' },
+      { name: 'Logs/0.16.9/after/notifications.log', text: started },
+      { name: 'Logs/0.16.9/after/backend.log', text: '{"sessionMode":"PVP","profileId":"one-character"}' },
+    ]
+    const preview = parse(files)
+
+    expect(preview.discoveredProfiles).toHaveLength(1)
+    const profileKey = preview.discoveredProfiles[0].profileKey
+    expect(preview.wipeBoundaryByProfile[profileKey]).toBe('2023-11-15T22:13:20.000Z')
+    // A lone profile needs no explicit choice, so the boundary is disclosed.
+    expect(preview.wipeBoundaryAt).toBe('2023-11-15T22:13:20.000Z')
   })
 
   it('does not silently assign a profile-less event when one session contains mixed profiles', () => {
@@ -362,7 +416,7 @@ describe('parseEftLogFiles', () => {
     expect(preview.sessionsScanned).toBe(1)
   })
 
-  it('keeps Permanent, Seasonal, and PvE candidates separate when account IDs overlap', () => {
+  it('keeps mode facets on one identity when account IDs overlap', () => {
     const files = [
       { name: 'Logs/0.16.9/permanent/notifications.log', text: jsonNotification({ eventId: 'permanent', dt: 1700000000 }) },
       { name: 'Logs/0.16.9/permanent/backend.log', text: '{"sessionMode":"PVP","accountId":"same-account","profileId":"permanent-profile"}' },
@@ -372,14 +426,14 @@ describe('parseEftLogFiles', () => {
       { name: 'Logs/0.16.9/pve/backend.log', text: '{"sessionMode":"PVE","accountId":"same-account","profileId":"pve-profile"}' },
     ]
     const preview = parse(files, [regularTask], { gameMode: 'regular' })
-    expect(preview.discoveredProfiles.map(profile => profile.mode).sort()).toEqual(['pve', 'pvp-season', 'regular'])
-    expect(new Set(preview.discoveredProfiles.map(profile => profile.profileKey)).size).toBe(3)
-    expect(preview.recommendedProfile.mode).toBe('regular')
-    expect(preview.discoveredProfiles.find(profile => profile.mode === 'pvp-season')).toMatchObject({
-      displayName: 'PvP Seasonal',
-      gameModes: ['pvp-season'],
-      matchedEventCount: 1,
+    expect(preview.discoveredProfiles).toHaveLength(1)
+    expect(preview.discoveredProfiles[0]).toMatchObject({
+      mode: null,
+      gameModes: ['pve', 'pvp-season', 'regular'],
+      modeCounts: { pve: 1, 'pvp-season': 1, regular: 1 },
+      matchedEventCount: 3,
     })
+    expect(preview.discoveredProfiles[0].legacyProfileKeys).toHaveLength(2)
     const seasonalEvent = preview.events.find(event => event.eventKey === 'event:seasonal')
     expect(seasonalEvent.gameMode).toBe('pvp-season')
   })

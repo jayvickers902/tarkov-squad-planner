@@ -4,6 +4,10 @@ import { inferredTaskMapNorm } from './tarkovObjectives'
 export const QUEST_STATES = ['active', 'failed', 'completed']
 export const QUEST_STATE_SOURCES = ['manual', 'log_import', 'live', 'system']
 export const MAX_QUEST_NAME_BYTES = 160
+// Protect against an import that would unexpectedly complete many active
+// quests, either by absolute count or by share of the current character.
+export const IMPORT_REGRESSION_TASKS = 10
+export const IMPORT_REGRESSION_SHARE = 0.3
 
 // The reconciliation RPC validates map_norm against the same allowlist, and it
 // rejects the whole payload on a single unknown value. Upstream tasks can sit
@@ -150,6 +154,31 @@ export function reduceQuestLogState(events = [], existing = {}) {
 
 export function reduceQuestLogEvents(events = [], existing = {}) {
   return Object.values(reduceQuestLogState(events, existing))
+}
+
+export function assessQuestLogRegression(events = [], existing = {}) {
+  const before = existing instanceof Map
+    ? Object.fromEntries(existing)
+    : Array.isArray(existing)
+      ? Object.fromEntries(existing.filter(row => row?.quest_id).map(row => [row.quest_id, row]))
+      : { ...(existing || {}) }
+  const after = reduceQuestLogState(events, before)
+  let activeToCompleted = 0
+  let changedRows = 0
+  for (const [taskId, row] of Object.entries(after)) {
+    const previous = before[taskId]
+    if (previous?.state !== row?.state) changedRows += 1
+    if (previous?.state === 'active' && row?.state === 'completed') activeToCompleted += 1
+  }
+  const totalRows = Object.keys(before).length
+  return {
+    before,
+    after,
+    activeToCompleted,
+    changedRows,
+    totalRows,
+    requiresConfirmation: activeToCompleted > IMPORT_REGRESSION_TASKS || (totalRows > 0 && changedRows / totalRows > IMPORT_REGRESSION_SHARE),
+  }
 }
 
 /**

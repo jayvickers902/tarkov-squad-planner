@@ -10,6 +10,16 @@ import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
 import Icon from './Icon'
 import { inferredTaskMapNorm } from '../tarkovObjectives'
 
+export const IMPORT_RESTORE_STORAGE_KEY = 'tsp.quest_import_restore.v1'
+export const IMPORT_RESTORE_TTL_MS = 24 * 60 * 60 * 1000
+
+function validImportRestorePoint(value, userId, gameMode, now = Date.now()) {
+  if (!value || typeof value !== 'object' || !Array.isArray(value.quests)) return null
+  if (value.version !== 1 || value.userId !== userId || value.gameMode !== gameMode) return null
+  if (!Number.isFinite(value.expiresAt) || value.expiresAt <= now) return null
+  return { ...value, quests: value.quests.filter(quest => quest && typeof quest === 'object' && !Array.isArray(quest)) }
+}
+
 function validSnapshot(value, gameMode) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   if (!Array.isArray(value.quests)) return null
@@ -91,9 +101,16 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
     // An undo point belongs to one character mode and must never be replayed
     // into another mode after the user switches tabs.
     setImportReceipt(null)
-    setImportRestorePoint(null)
     setUndoError('')
-  }, [gameMode])
+    try {
+      const stored = JSON.parse(localStorage.getItem(IMPORT_RESTORE_STORAGE_KEY) || 'null')
+      const valid = validImportRestorePoint(stored, userId, gameMode)
+      setImportRestorePoint(valid)
+      if (!valid && stored?.expiresAt && stored.expiresAt <= Date.now()) localStorage.removeItem(IMPORT_RESTORE_STORAGE_KEY)
+    } catch {
+      setImportRestorePoint(null)
+    }
+  }, [gameMode, userId])
 
   const snapKey = userId ? `tarkov_quests_${userId}_${gameMode}` : null
   // Snapshots predating mode scoping were saved unsuffixed, and every quest row
@@ -250,7 +267,16 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
         // The active list is still a safe fallback when history is unavailable.
       }
     }
-    setImportRestorePoint(restoreRows.map(quest => ({ ...quest })))
+    const restorePoint = {
+      version: 1,
+      userId,
+      gameMode,
+      savedAt: Date.now(),
+      expiresAt: Date.now() + IMPORT_RESTORE_TTL_MS,
+      quests: restoreRows.map(quest => ({ ...quest })),
+    }
+    setImportRestorePoint(restorePoint)
+    try { localStorage.setItem(IMPORT_RESTORE_STORAGE_KEY, JSON.stringify(restorePoint)) } catch { /* the in-memory affordance still works */ }
     setImportReceipt(null)
   }
 
@@ -279,16 +305,17 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
   }
 
   async function handleUndoImport() {
-    if (!importRestorePoint || typeof onRestore !== 'function') return
+    if (!importRestorePoint || importRestorePoint.gameMode !== gameMode || typeof onRestore !== 'function') return
     setUndoingImport(true)
     setUndoError('')
     try {
       // The undo point came from getQuestHistory, so it describes every row in
       // this mode and anything absent from it belongs to the import.
-      await onRestore(importRestorePoint, { scope: 'all' })
+      await onRestore(importRestorePoint.quests, { scope: 'all' })
       setHubOpen(false)
       setImportReceipt(null)
       setImportRestorePoint(null)
+      try { localStorage.removeItem(IMPORT_RESTORE_STORAGE_KEY) } catch { /* best effort */ }
       setManualSearchVisible(false)
     } catch {
       // The restore point is deliberately kept so the user can retry.
@@ -309,7 +336,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
         importReceipt.states.failed ? `${importReceipt.states.failed} failed` : null,
       ].filter(Boolean)
     : []
-  const showExpandedContent = userQuests.length > 0 || Boolean(importReceipt)
+  const showExpandedContent = userQuests.length > 0 || Boolean(importReceipt) || Boolean(importRestorePoint)
   const showManualSearch = showExpandedContent || manualSearchVisible
 
   return (
@@ -427,9 +454,22 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                 {undoingImport ? 'RESTORING...' : 'UNDO IMPORT'}
               </button>
             )}
-            <button className="btn-ghost btn-sm" onClick={() => { setImportReceipt(null); setImportRestorePoint(null); setUndoError('') }}>DISMISS</button>
+            <button className="btn-ghost btn-sm" onClick={() => { setImportReceipt(null); setUndoError('') }}>DISMISS</button>
           </div>
           {undoError && <p className="mono eft-log-import-error" role="alert">{undoError}</p>}
+        </div>
+      )}
+
+      {!importReceipt && importRestorePoint && (
+        <div className="quest-import-receipt" role="status">
+          <div className="quest-import-receipt-copy">
+            <div className="mono quest-import-receipt-title">IMPORT RESTORE AVAILABLE</div>
+            <p>This undo point is available until {new Date(importRestorePoint.expiresAt).toLocaleString()} for this character mode.</p>
+          </div>
+          <div className="quest-import-receipt-actions">
+            <button className="btn-ghost btn-sm" onClick={handleUndoImport} disabled={undoingImport}>{undoingImport ? 'RESTORING...' : 'UNDO IMPORT'}</button>
+            {undoError && <p className="mono eft-log-import-error" role="alert">{undoError}</p>}
+          </div>
         </div>
       )}
 

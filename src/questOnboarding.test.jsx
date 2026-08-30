@@ -109,7 +109,7 @@ describe('EFT log import blockingReason', () => {
     expect(blockingReason({ logModeSupported: true, preview: null })).toBeNull()
     expect(blockingReason({ logModeSupported: true, preview, profileRequired: true, changingCount: 1 })).toBe('Select which profile these logs belong to.')
     expect(blockingReason({ logModeSupported: true, preview: { ...preview, availableVersions: ['0.16'], includedVersions: [] }, versionScopeValid: false, changingCount: 1 })).toBe('Select at least one wipe/version to import from.')
-    expect(blockingReason({ logModeSupported: true, preview: { ...preview, ambiguousModeEvents: 1 }, versionScopeValid: true, changingCount: 1 })).toBe('Choose whether the unknown-mode events are PVP or PVE.')
+    expect(blockingReason({ logModeSupported: true, preview: { ...preview, ambiguousModeEvents: 1 }, versionScopeValid: true, changingCount: 1 })).toBeNull()
     expect(blockingReason({ logModeSupported: true, preview, versionScopeValid: true, changingCount: 0 })).toBe('Your saved quests already match these logs. Nothing to import.')
     expect(blockingReason({ logModeSupported: true, preview, versionScopeValid: true, changingCount: 1 })).toBeNull()
   })
@@ -124,7 +124,7 @@ describe('EFT log import steps', () => {
       includedVersions: [],
       ambiguousModeEvents: 1,
     })
-    expect(steps.map(step => step.key)).toEqual(['folder', 'profile', 'scope', 'mode', 'review'])
+    expect(steps.map(step => step.key)).toEqual(['folder', 'profile', 'scope', 'review'])
     expect(steps.filter(step => step.state === 'current').map(step => step.key)).toEqual(['profile'])
   })
 })

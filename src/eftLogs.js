@@ -1,3 +1,5 @@
+import { detectQuestWipeBoundary } from './questWipe.js'
+
 const NOTIFICATION_FILE_RE = /^(?:notifications|push-notifications)(?:[_-]\d+)?\.log$/i
 const CONTEXT_FILE_RE = /^(?:backend|application)(?:[_-]\d+)?\.log$/i
 const TASK_ID_RE = /^[a-f0-9]{24}$/i
@@ -8,6 +10,10 @@ const MAX_PARSE_ERROR_DETAILS = 100
 // Incremental scans retain only a small in-memory prefix around an unfinished
 // record. It is deliberately never part of a persisted checkpoint.
 const MAX_INCREMENTAL_PENDING_CHARS = 4096
+// These thresholds stop one stray endpoint or malformed context record from
+// outweighing the mode evidence that represents the launch.
+export const MODE_DOMINANCE_RATIO = 5
+export const MODE_DOMINANCE_FLOOR = 3
 
 export { MAX_INCREMENTAL_PENDING_CHARS }
 
@@ -515,19 +521,35 @@ function collectProfileGroups(value, result = [], seen = new Set()) {
   return result
 }
 
-function profileKeyForEvent(ids, session, components, mode = null) {
+function identityIdsForEvent(ids, session, components) {
   const eventIds = new Set(ids)
   if (!eventIds.size) {
     const sessionComponents = uniqueComponentsForIds(session.profileIds, components)
     return sessionComponents.length === 1
-      ? makeProfileKey([...sessionComponents[0]], mode)
+      ? [...sessionComponents[0]]
       : null
   }
 
   const matchingComponents = uniqueComponentsForIds(eventIds, components)
-  if (matchingComponents.length === 1) return makeProfileKey([...matchingComponents[0]], mode)
+  if (matchingComponents.length === 1) return [...matchingComponents[0]]
   if (matchingComponents.length > 1) return null
-  return session.profileGroups.length ? null : makeProfileKey([...eventIds], mode)
+  return session.profileGroups.length ? null : [...eventIds]
+}
+
+function profileKeyForEvent(ids, session, components) {
+  const identityIds = identityIdsForEvent(ids, session, components)
+  return identityIds ? makeProfileKey(identityIds) : null
+}
+
+function legacyProfileKeysForIds(ids) {
+  const values = uniqueSorted(ids)
+  if (!values.length) return []
+  return ['pve', 'pvp-season'].map(mode => `profile-${hashString(`${values.join('|')}|mode:${mode}`)}`)
+}
+
+function legacyProfileKeysForEvent(ids, session, components) {
+  const identityIds = identityIdsForEvent(ids, session, components)
+  return identityIds ? legacyProfileKeysForIds(identityIds) : []
 }
 
 function modeFromValue(value) {
@@ -542,14 +564,27 @@ function modeFromValue(value) {
   return null
 }
 
-function collectModeSignals(value, result = new Set(), seen = new Set()) {
+function incrementModeSignal(result, mode, count = 1) {
+  if (!mode || !(result instanceof Map)) return result
+  result.set(mode, (result.get(mode) || 0) + count)
+  return result
+}
+
+function mergeModeSignals(result, source) {
+  if (!(result instanceof Map)) return result
+  if (source instanceof Map) for (const [mode, count] of source) incrementModeSignal(result, mode, count)
+  else if (source instanceof Set) for (const mode of source) incrementModeSignal(result, mode)
+  return result
+}
+
+function collectModeSignals(value, result = new Map(), seen = new Set()) {
   if (!isPlainObject(value) || seen.has(value)) return result
   seen.add(value)
   for (const [key, child] of Object.entries(value)) {
     const normalizedKey = key.toLowerCase().replace(/[\s_-]/g, '')
     if (MODE_KEYS.has(key.toLowerCase()) || MODE_KEYS.has(normalizedKey)) {
       const mode = modeFromValue(child)
-      if (mode) result.add(mode)
+      incrementModeSignal(result, mode)
     }
     if (isPlainObject(child)) collectModeSignals(child, result, seen)
     else if (Array.isArray(child)) child.forEach(item => collectModeSignals(item, result, seen))
@@ -558,18 +593,18 @@ function collectModeSignals(value, result = new Set(), seen = new Set()) {
 }
 
 function collectTextModeSignals(text) {
-  const result = new Set()
+  const result = new Map()
   const pattern = /(?:session|game)\s*mode\s*(?:\||:|=|->)\s*(pvp-season|seasonal|regular|pvp|pve)/ig
   let match
   while ((match = pattern.exec(text))) {
     const mode = modeFromValue(match[1])
-    if (mode) result.add(mode)
+    incrementModeSignal(result, mode)
   }
   return result
 }
 
 function collectHostModeSignals(text) {
-  const result = new Set()
+  const result = new Map()
   const hosts = new Set()
   const urlPattern = /https?:\/\/([^\s/"'<>]+)/ig
   let match
@@ -580,22 +615,37 @@ function collectHostModeSignals(text) {
   const hostPattern = /[a-z0-9.-]{0,64}escapefromtarkov\.com(?::\d+)?/ig
   while ((match = hostPattern.exec(text))) hosts.add(match[0].toLowerCase())
 
+  let sawPve = false
+  let sawRegular = false
   for (const host of hosts) {
     if (!/escapefromtarkov\.com/.test(host)) continue
     const withoutPort = host.replace(/:\d+$/, '')
-    if (/(?:^|[.-])pve(?:$|[.-])/.test(withoutPort)) result.add('pve')
+    if (/(?:^|[.-])pve(?:$|[.-])/.test(withoutPort)) sawPve = true
     // A generic production/shared endpoint is deliberately not regular evidence.
-    if (/(?:^|[.-])(?:pvp|regular)(?:$|[.-])/.test(withoutPort)) result.add('regular')
+    if (/(?:^|[.-])(?:pvp|regular)(?:$|[.-])/.test(withoutPort)) sawRegular = true
   }
+  if (sawPve) incrementModeSignal(result, 'pve')
+  if (sawRegular) incrementModeSignal(result, 'regular')
   return result
 }
 
 function resolveMode(signals) {
-  const modes = new Set(signals)
-  if (modes.size === 1 && modes.has('regular')) return 'regular'
-  if (modes.size === 1 && modes.has('pve')) return 'pve'
-  if (modes.size === 1 && modes.has('pvp-season')) return 'pvp-season'
-  return null
+  const tally = signals instanceof Map
+    ? signals
+    : new Map([...new Set(signals || [])].map(mode => [mode, 1]))
+  const entries = [...tally.entries()].filter(([, count]) => Number(count) > 0)
+  if (!entries.length) return { mode: null, confidence: 'absent' }
+  if (entries.length === 1) return { mode: entries[0][0], confidence: 'certain' }
+
+  // Seasonal evidence is never safe to guess away: a permanent character can
+  // otherwise receive a seasonal character's progress.
+  if (tally.has('pvp-season')) return { mode: null, confidence: 'conflicted' }
+  const [dominantMode, dominantCount] = [...entries].sort((left, right) => right[1] - left[1])[0]
+  const otherCount = entries.reduce((sum, [, count]) => sum + count, 0) - dominantCount
+  if (dominantCount >= MODE_DOMINANCE_RATIO * otherCount && dominantCount >= MODE_DOMINANCE_FLOOR) {
+    return { mode: dominantMode, confidence: 'dominant' }
+  }
+  return { mode: null, confidence: 'conflicted' }
 }
 
 function getTimestamp(message, record) {
@@ -651,18 +701,13 @@ function makeSessionKey(path) {
   return `session-${hashString(normalizedPath(path).toLowerCase())}`
 }
 
-function makeProfileKey(ids, mode = null) {
+function makeProfileKey(ids) {
   const values = uniqueSorted(ids)
   if (!values.length) return null
-  // Mode is part of the local grouping key.  An account can legitimately
-  // have Permanent, Seasonal, and PvE characters; sharing an account id must
-  // merge identity evidence without mixing their quest histories.
-  const modeSuffix = modeFromValue(mode) || (mode === 'regular' || mode === 'pve' || mode === 'pvp-season' ? mode : null)
-  // The former scanner used the unsuffixed digest for its default Permanent
-  // profile. Preserve that key so an existing Permanent checkpoint remains
-  // usable after upgrading; the new modes still get isolated keys.
-  if (modeSuffix === 'regular') return `profile-${hashString(values.join('|'))}`
-  return `profile-${hashString(`${values.join('|')}|mode:${modeSuffix || 'unknown'}`)}`
+  // The unsuffixed digest is the character identity. Mode is a facet stored
+  // separately on quest rows, and the former Permanent key already used this
+  // digest, preserving its checkpoint continuity without a migration.
+  return `profile-${hashString(values.join('|'))}`
 }
 
 function sessionInfoFor(files) {
@@ -679,7 +724,7 @@ function sessionInfoFor(files) {
         files: [],
         profileIds: new Set(),
         profileGroups: [],
-        modeSignals: new Set(),
+        modeSignals: new Map(),
         lastSeen: [],
       })
     }
@@ -746,11 +791,13 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
       if (file.context) {
         parsed.objects.forEach(record => {
           collectProfileGroups(record.value).forEach(group => addProfileGroup(session, group))
-          collectModeSignals(record.value, session.modeSignals)
+          mergeModeSignals(session.modeSignals, collectModeSignals(record.value))
         })
         if (!parsed.objects.length) collectProfileIdsFromText(text, session)
-        collectTextModeSignals(text).forEach(mode => session.modeSignals.add(mode))
-        collectHostModeSignals(text).forEach(mode => session.modeSignals.add(mode))
+        mergeModeSignals(session.modeSignals, collectTextModeSignals(text))
+        // Host evidence is intentionally one contribution per context file.
+        // Repeated mentions in a large file must not outweigh other files.
+        mergeModeSignals(session.modeSignals, collectHostModeSignals(text))
       }
 
       if (!file.notification) continue
@@ -793,20 +840,24 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
   const candidates = rawEvents
     .map(event => {
       const session = sessionByKey.get(event.sessionKey)
-      const gameMode = sessionModes.get(event.sessionKey) || null
-      const profileKey = session ? profileKeyForEvent(event.profileIds, session, identityComponents, gameMode) : null
+      const verdict = sessionModes.get(event.sessionKey) || { mode: null, confidence: 'absent' }
+      const gameMode = verdict.mode
+      const profileKey = session ? profileKeyForEvent(event.profileIds, session, identityComponents) : null
+      const legacyProfileKeys = session ? legacyProfileKeysForEvent(event.profileIds, session, identityComponents) : []
       return {
         eventKey: event.eventKey,
         taskId: event.taskId,
         state: event.state,
         occurredAt: event.occurredAt,
         gameMode,
+        modeConfidence: verdict.confidence,
         profileKey,
+        legacyProfileKeys,
         sessionKey: event.sessionKey,
         version: event.version,
       }
     })
-    .filter(event => !selectedProfile || event.profileKey === selectedProfile)
+    .filter(event => !selectedProfile || event.profileKey === selectedProfile || event.legacyProfileKeys.includes(selectedProfile))
 
   // Sort before deduplication so duplicate event IDs produce the same result
   // regardless of the order in which the browser returned files.
@@ -844,14 +895,17 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
   // keeps context-only IDs out of the chooser.
   const allEvents = rawEvents.map(event => {
     const session = sessionByKey.get(event.sessionKey)
-    const gameMode = sessionModes.get(event.sessionKey) || null
+    const verdict = sessionModes.get(event.sessionKey) || { mode: null, confidence: 'absent' }
+    const gameMode = verdict.mode
     return {
       eventKey: event.eventKey,
       taskId: event.taskId,
       state: event.state,
       occurredAt: event.occurredAt,
       gameMode,
-      profileKey: session ? profileKeyForEvent(event.profileIds, session, identityComponents, gameMode) : null,
+      modeConfidence: verdict.confidence,
+      profileKey: session ? profileKeyForEvent(event.profileIds, session, identityComponents) : null,
+      legacyProfileKeys: session ? legacyProfileKeysForEvent(event.profileIds, session, identityComponents) : [],
       sessionKey: event.sessionKey,
       version: event.version,
     }
@@ -874,6 +928,10 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
       gameModes: new Set(),
       versions: new Set(),
       sessionKeys: new Set(),
+      sessionDates: new Map(),
+      modeCounts: new Map(),
+      modeConfidences: new Set(),
+      legacyProfileKeys: new Set(),
       eventCount: 0,
       matchedEventCount: 0,
       activeEventCount: 0,
@@ -882,8 +940,14 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
     }
     descriptor.lastSeen = latestDate([descriptor.lastSeen, event.occurredAt])
     if (event.gameMode) descriptor.gameModes.add(event.gameMode)
+    if (event.gameMode) descriptor.modeCounts.set(event.gameMode, (descriptor.modeCounts.get(event.gameMode) || 0) + 1)
+    if (event.modeConfidence) descriptor.modeConfidences.add(event.modeConfidence)
+    event.legacyProfileKeys.forEach(key => descriptor.legacyProfileKeys.add(key))
     if (event.version) descriptor.versions.add(event.version)
     descriptor.sessionKeys.add(event.sessionKey)
+    const sessionDates = descriptor.sessionDates.get(event.sessionKey) || []
+    if (event.occurredAt) sessionDates.push(event.occurredAt)
+    descriptor.sessionDates.set(event.sessionKey, sessionDates)
     descriptor.eventCount += 1
     if (knownTaskIds.has(event.taskId)) descriptor.matchedEventCount += 1
     if (event.state === 'active') descriptor.activeEventCount += 1
@@ -943,16 +1007,31 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
         description: [
           modeLabel(mode),
           currentVersion ? `EFT ${currentVersion}` : null,
-          descriptor.lastSeen ? `last seen ${descriptor.lastSeen}` : null,
+          descriptor.sessionDates.size ? `sessions ${[...descriptor.sessionDates.values()].flat().sort()[0]} to ${[...descriptor.sessionDates.values()].flat().sort().pop()}` : null,
+          Object.entries(Object.fromEntries(descriptor.modeCounts)).map(([key, count]) => `${count} ${modeLabel(key)}`).join(' / ') || null,
           `${descriptor.matchedEventCount} quest events`,
+          descriptor.gameModes.size > 1 && !descriptor.modeConfidences.has('conflicted') ? 'multiple mode facets' : null,
+          descriptor.modeConfidences.has('dominant') ? 'mode resolved by dominance' : null,
+          descriptor.modeConfidences.has('conflicted') || descriptor.modeConfidences.has('absent') ? 'mode unresolved' : null,
         ].filter(Boolean).join(' · '),
         mode,
         gameMode: mode,
         gameModes: uniqueSorted([...descriptor.gameModes]),
+        modeCounts: Object.fromEntries([...descriptor.modeCounts.entries()]),
+        modeConfidence: descriptor.modeConfidences.size === 1 ? [...descriptor.modeConfidences][0] : 'mixed',
+        modeStatus: descriptor.modeConfidences.has('conflicted') || descriptor.modeConfidences.has('absent')
+          ? 'unresolved'
+          : descriptor.modeConfidences.has('dominant')
+            ? 'dominant'
+            : descriptor.gameModes.size > 1 ? 'multiple' : 'certain',
+        modeConfidences: uniqueSorted([...descriptor.modeConfidences]),
+        legacyProfileKeys: uniqueSorted([...descriptor.legacyProfileKeys]),
         versions: uniqueSorted([...descriptor.versions]),
         currentVersion,
         latestVersion: currentVersion,
         lastSeen: descriptor.lastSeen,
+        sessionDateFrom: [...descriptor.sessionDates.values()].flat().sort()[0] || null,
+        sessionDateTo: [...descriptor.sessionDates.values()].flat().sort().pop() || null,
         sessionCount: descriptor.sessionKeys.size,
         eventCount: descriptor.eventCount,
         activityShare: candidateEventTotal ? descriptor.eventCount / candidateEventTotal : 0,
@@ -989,6 +1068,64 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
     : null
   discoveredProfiles.forEach(profile => { profile.recommended = profile.profileKey === recommendedProfileKey })
 
+  // Wipe detection is profile-scoped. A task completed on one character and
+  // later active on another is two histories interleaved, not a wipe, and a
+  // boundary drawn across the mixed corpus silently drops real history for
+  // exactly the multi-profile readers this parser exists to serve. Boundaries
+  // are computed per profile over the complete corpus so choosing a profile
+  // later resolves to the right one without a rescan.
+  const wipeEventsByProfile = new Map()
+  for (const event of allDeduped) {
+    if (!event.profileKey) continue
+    const events = wipeEventsByProfile.get(event.profileKey) || []
+    events.push(event)
+    wipeEventsByProfile.set(event.profileKey, events)
+  }
+  const wipeBoundaryByProfile = {}
+  for (const [profileKey, profileEvents] of wipeEventsByProfile) {
+    const boundary = detectQuestWipeBoundary(profileEvents, knownTaskIds)
+    if (boundary) wipeBoundaryByProfile[profileKey] = boundary
+  }
+  // Alias the pre-suffix keys so a checkpoint saved before profile keys lost
+  // their mode suffix still resolves to its boundary.
+  for (const profile of discoveredProfiles) {
+    const boundary = wipeBoundaryByProfile[profile.profileKey]
+    if (!boundary) continue
+    for (const legacyKey of profile.legacyProfileKeys || []) {
+      if (!(legacyKey in wipeBoundaryByProfile)) wipeBoundaryByProfile[legacyKey] = boundary
+    }
+  }
+  discoveredProfiles.forEach(profile => { profile.wipeBoundaryAt = wipeBoundaryByProfile[profile.profileKey] || null })
+  const wipeBoundaryAt = resolveWipeBoundary(wipeBoundaryByProfile, discoveredProfiles, selectedProfile)
+
+  const sessionEvents = new Map()
+  for (const event of deduped) {
+    const events = sessionEvents.get(event.sessionKey) || []
+    events.push(event)
+    sessionEvents.set(event.sessionKey, events)
+  }
+  const sessionsSummary = [...sessions.values()].sort((left, right) => left.sessionKey.localeCompare(right.sessionKey))
+    .map(session => {
+      const events = sessionEvents.get(session.sessionKey) || []
+      const dates = events.map(event => event.occurredAt).filter(Boolean).sort()
+      const verdict = sessionModes.get(session.sessionKey) || { mode: null, confidence: 'absent' }
+      return {
+        sessionKey: session.sessionKey,
+        eventCount: events.length,
+        dateFrom: dates[0] || null,
+        dateTo: dates[dates.length - 1] || null,
+        mode: verdict.mode,
+        modeConfidence: verdict.confidence,
+        modeSignals: Object.fromEntries(session.modeSignals),
+        hasSeasonalSignal: session.modeSignals.has('pvp-season'),
+      }
+    })
+    .filter(session => session.eventCount > 0)
+  const modeConfidenceDistribution = deduped.reduce((counts, event) => {
+    counts[event.modeConfidence] = (counts[event.modeConfidence] || 0) + 1
+    return counts
+  }, {})
+
   return {
     filesScanned: inputFiles.length,
     filesParsed: validFiles.length,
@@ -1005,11 +1142,31 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
     selectedProfile: selectedProfileDescriptor,
     events: deduped,
     matchedEvents,
+    sessions: sessionsSummary,
+    modeConfidenceDistribution,
+    wipeBoundaryAt,
+    wipeBoundaryByProfile,
     unmatchedTaskIds,
     unmatchedTaskDetails,
     malformedRecords,
-    ambiguousModeEvents: deduped.filter(event => event.gameMode === null).length,
+    ambiguousModeEvents: deduped.filter(event => event.modeConfidence === 'conflicted' || event.modeConfidence === 'absent').length,
   }
+}
+
+/**
+ * Resolve which per-profile wipe boundary applies to the current choice.
+ *
+ * With more than one profile discovered and none chosen there is no
+ * attributable boundary, so the disclosure stays silent rather than quoting a
+ * date derived from somebody else's character. A lone profile needs no explicit
+ * choice, matching the importer's own profile-required rule.
+ */
+export function resolveWipeBoundary(boundaries, profiles = [], selectedProfileKey = null) {
+  const map = boundaries && typeof boundaries === 'object' ? boundaries : {}
+  if (selectedProfileKey) return map[selectedProfileKey] || null
+  const list = Array.isArray(profiles) ? profiles : []
+  if (list.length !== 1) return null
+  return map[list[0]?.profileKey] || null
 }
 
 function collectProfileIdsFromText(text, session) {

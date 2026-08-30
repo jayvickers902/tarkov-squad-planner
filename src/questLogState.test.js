@@ -3,6 +3,7 @@ import {
   activeQuestRows,
   reduceQuestLogEvents,
   reduceQuestLogState,
+  assessQuestLogRegression,
   shouldApplyQuestLogEvent,
   sortQuestLogEvents,
 } from './questLogState'
@@ -72,5 +73,14 @@ describe('quest log state reduction', () => {
     ])
     expect(rows[0].state).toBe('completed')
     expect(rows[0].source_event_key).toBe('b')
+  })
+
+  it('reports large active-to-completed regressions from the reduced before/after pair', () => {
+    const existing = Array.from({ length: 10 }, (_, index) => ({ quest_id: `q${index}`, state: 'active', state_at: '2026-08-01T00:00:00Z' }))
+    const result = assessQuestLogRegression(
+      Array.from({ length: 4 }, (_, index) => event(`q${index}`, 'completed', '2026-08-02T00:00:00Z')),
+      existing,
+    )
+    expect(result).toMatchObject({ activeToCompleted: 4, changedRows: 4, totalRows: 10, requiresConfirmation: true })
   })
 })

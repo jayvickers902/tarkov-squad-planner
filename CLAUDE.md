@@ -43,7 +43,9 @@ src/
   mapBanners.js        # map art URLs: wide header banner + reference art fallback
   memberColors.js      # the one member palette every surface tints from
   questColors.js       # stable quest id -> rail hue, so a quest's rows group
+  questDiagnostic.js   # clipboard-only, privacy-safe import diagnostic
   questVisibility.js   # the personal hidden-quest filter and its settings key
+  questWipe.js         # pure corroborated completed-to-active wipe boundary detection
 
   # Hooks (all custom, no external state library)
   useAuth.js           # Google OAuth sign-in, profile + callsign creation
@@ -125,6 +127,13 @@ started/failed/completed task events and explicitly confirms the changes. Chromi
 retain a read-only directory handle in IndexedDB for incremental checks while the site is open;
 other browsers use the universal picker each time. Raw log text, paths, filenames, profile IDs,
 and account IDs never leave the device. Only bounded normalized quest events reach Supabase.
+Mode evidence is tallied per session; only certain or safely dominant regular/PvE sessions are
+importable. Conflicting, absent, and any seasonal-signal session is excluded. Profile keys hash
+identity IDs alone, with legacy mode-suffixed keys retained only for local checkpoint lookup.
+Wipe boundaries are detected per profile, never across the mixed corpus: a task completed on one
+character and started on another is two histories interleaved, not a wipe, and a boundary drawn
+across both silently drops the earlier character's history. With more than one profile discovered
+and none chosen there is no attributable boundary, so none is disclosed until the reader picks one.
 Seasonal logs, objective counters, inventory, and hideout progress are not supported. The Windows
 companion is the separate path for continuing folder checks after the website closes.
 
@@ -134,9 +143,12 @@ The REST dataset supports `regular`, `pve`, and `pvp-season`. The active game mo
 
 Quest Manager starts with character mode, a short setup checklist, and a `GET YOUR QUESTS IN` hub
 that recommends a route from device and browser capabilities. Selecting a route replaces the route
-list with that importer; EFT log imports reveal only the next required profile/scope/mode choice,
-then a review step. Successful imports leave a receipt with affected-state counts, a saved-list
-destination, and an undo action backed by the complete pre-import quest history. Sync status keeps
+list with that importer; EFT log imports reveal only the next required profile/scope choice and
+offer per-session mode opt-ins for unresolved non-seasonal sessions, then a review step.
+Successful imports leave a receipt with affected-state counts, a saved-list
+destination, and a device-local undo action backed by the complete pre-import quest history. The
+restore point uses localStorage key `tsp.quest_import_restore.v1`, carries the character mode, and
+expires after 24 hours; it is refused after a mode switch. Sync status keeps
 website and desktop sources distinct and reports last heartbeat separately from the last successful
 folder check. The desktop companion pairs by signing in with the same Google account used on the
 site and keeps quests and screenshot pings in sync while the site is closed.

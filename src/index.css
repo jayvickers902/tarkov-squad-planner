@@ -795,6 +795,18 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .eft-log-import-task > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .eft-log-import-task > span:last-child { flex-shrink: 0; color: var(--goldtx); font-size: var(--fs-xs); }
 .eft-log-import-success { padding: 8px 10px; color: var(--grn); border: 1px solid rgba(102,183,120,.4); border-radius: 3px; font-size: var(--fs-xs); }
+.eft-log-import-wipe-note,
+.eft-log-import-sessions,
+.eft-log-import-regression { padding: 9px 10px; border: 1px solid var(--golddim); border-radius: 4px; background: var(--sur2); }
+.eft-log-import-wipe-note p,
+.eft-log-import-sessions p,
+.eft-log-import-regression p,
+.eft-log-import-review-note { margin: 0; color: var(--txm); font-size: var(--fs-sm); line-height: 1.5; }
+.eft-log-import-wipe-note .eft-log-import-check { margin-top: 7px; }
+.eft-log-import-sessions { display: flex; flex-direction: column; gap: 7px; }
+.eft-log-import-session { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border: 1px solid var(--brd); border-radius: 3px; color: var(--txm); }
+.eft-log-import-session select { min-width: 110px; padding: 4px 6px; border: 1px solid var(--brd2); border-radius: 3px; background: var(--sur3); color: var(--tx); font-family: 'Share Tech Mono', monospace; font-size: var(--fs-xs); }
+.eft-log-import-regression { border-color: var(--red); }
 
 .quest-mode-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 16px; padding: 8px 10px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur); }
 .quest-mode-label { color: var(--txm); font-size: var(--fs-xs); }

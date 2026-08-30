@@ -83,6 +83,7 @@ export function EftLogSyncProvider({
     controller.setIncludedVersions,
     controller.setProfileSelection,
     controller.setUnknownModeTarget,
+    controller.setWipeScope,
     controller.confirmImport,
     controller.forgetFolder,
     controller.reset,

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { gameModeLabel } from '../gameMode'
+import { assessQuestLogRegression, IMPORT_REGRESSION_SHARE, IMPORT_REGRESSION_TASKS } from '../questLogState'
+import { buildQuestLogDiagnostic } from '../questDiagnostic'
 
 const STATE_LABELS = {
   active: 'STARTED',
@@ -25,7 +27,16 @@ function profileModeLabel(profile) {
 }
 
 function profileDisplay(profile, index = 0) {
-  return `PROFILE ${index + 1} · LAST SEEN ${safeDate(profile?.lastSeen)} · ${profileModeLabel(profile)}`
+  const modeCounts = Object.entries(profile?.modeCounts || {}).map(([mode, count]) => `${count} ${gameModeLabel(mode)}`).join(' / ')
+  const dates = profile?.sessionDateFrom && profile?.sessionDateTo
+    ? `SESSIONS ${safeDate(profile.sessionDateFrom)}–${safeDate(profile.sessionDateTo)}`
+    : `LAST SEEN ${safeDate(profile?.lastSeen)}`
+  const confidence = profile?.modeStatus === 'dominant' || profile?.modeConfidence === 'dominant'
+    ? 'MODE RESOLVED BY DOMINANCE'
+    : profile?.modeStatus === 'unresolved' || profile?.modeConfidence === 'conflicted' || profile?.modeConfidence === 'absent'
+      ? 'MODE UNRESOLVED'
+      : profile?.modeStatus === 'multiple' ? 'MULTIPLE MODE FACETS' : null
+  return `PROFILE ${index + 1} · ${dates} · ${modeCounts || profileModeLabel(profile)}${confidence ? ` · ${confidence}` : ''}`
 }
 
 /**
@@ -65,7 +76,6 @@ export function blockingReason({ logModeSupported, preview, versionScopeValid, p
   if (!preview) return null
   if (profileRequired && !preview.selectedProfileKey) return 'Select which profile these logs belong to.'
   if (!versionScopeValid) return 'Select at least one wipe/version to import from.'
-  if (preview.ambiguousModeEvents > 0 && !preview.unknownModeTarget) return 'Choose whether the unknown-mode events are PVP or PVE.'
   if (changingCount === 0) return NO_CHANGES_REASON
   return null
 }
@@ -73,11 +83,9 @@ export function blockingReason({ logModeSupported, preview, versionScopeValid, p
 export function deriveImportSteps(preview) {
   const profileRequired = (preview?.discoveredProfiles || []).length > 1
   const scopeRequired = (preview?.availableVersions || []).length > 0
-  const modeRequired = (preview?.ambiguousModeEvents || 0) > 0
   const steps = [{ key: 'folder', label: 'FOLDER', done: Boolean(preview) }]
   if (profileRequired) steps.push({ key: 'profile', label: 'PROFILE', done: Boolean(preview.selectedProfileKey) })
   if (scopeRequired) steps.push({ key: 'scope', label: 'SCOPE', done: (preview.includedVersions || []).length > 0 })
-  if (modeRequired) steps.push({ key: 'mode', label: 'MODE', done: Boolean(preview.unknownModeTarget) })
   steps.push({ key: 'review', label: 'REVIEW', done: false })
 
   const currentIndex = steps.findIndex(step => !step.done)
@@ -98,6 +106,8 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
   const [applySucceeded, setApplySucceeded] = useState(false)
   const [showUnmatched, setShowUnmatched] = useState(false)
   const [questHistory, setQuestHistory] = useState([])
+  const [regressionConfirmed, setRegressionConfirmed] = useState(false)
+  const [diagnosticMessage, setDiagnosticMessage] = useState('')
   const {
     supported,
     persistentSupported,
@@ -116,6 +126,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
     setIncludedVersions,
     setProfileSelection,
     setUnknownModeTarget,
+    setWipeScope = () => {},
     confirmImport,
     forgetFolder,
     reset,
@@ -142,18 +153,32 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
 
   const tasksById = useMemo(() => new Map((Array.isArray(allTasks) ? allTasks : []).map(task => [task.id, task])), [allTasks])
   const knownTaskIds = useMemo(() => new Set(tasksById.keys()), [tasksById])
-  const selectedEvents = useMemo(() => {
+  const scopedEvents = useMemo(() => {
     if (!preview) return []
     const versions = new Set(preview.includedVersions || [])
     const profileRequired = (preview.discoveredProfiles || []).length > 1
     return (preview.events || []).filter(event => {
       if (!knownTaskIds.has(event?.taskId)) return false
       if (versions.size && !versions.has(String(event?.version || ''))) return false
-      if (profileRequired && event?.profileKey !== preview.selectedProfileKey) return false
-      const eventMode = event?.gameMode || preview.unknownModeTarget
-      return eventMode === gameMode
+      if (profileRequired && event?.profileKey !== preview.selectedProfileKey && !(event?.legacyProfileKeys || []).includes(preview.selectedProfileKey)) return false
+      if (!preview.includePreWipeHistory && preview.wipeBoundaryAt) {
+        const eventTime = Date.parse(event?.occurredAt || '')
+        const boundary = Date.parse(preview.wipeBoundaryAt)
+        if (!Number.isFinite(eventTime) || eventTime < boundary) return false
+      }
+      return true
     })
   }, [gameMode, knownTaskIds, preview])
+  const seasonalSessionKeys = useMemo(() => new Set((preview?.sessions || []).filter(session => session.hasSeasonalSignal).map(session => session.sessionKey)), [preview])
+  const selectedEvents = useMemo(() => scopedEvents.filter(event => {
+    if (event?.gameMode === 'pvp-season' || seasonalSessionKeys.has(event?.sessionKey)) return false
+    const eventMode = event?.gameMode || preview?.unknownModeTargets?.[event?.sessionKey]
+    if (!event?.gameMode && !preview?.unknownModeTargets?.[event?.sessionKey]) return false
+    if (event?.modeConfidence === 'conflicted' || event?.modeConfidence === 'absent') {
+      if (!preview?.unknownModeTargets?.[event?.sessionKey]) return false
+    }
+    return eventMode === gameMode
+  }), [gameMode, preview, scopedEvents, seasonalSessionKeys])
   const counts = useMemo(() => eventCounts(selectedEvents), [selectedEvents])
   const latest = useMemo(() => latestByTask(selectedEvents), [selectedEvents])
   const activeIds = useMemo(() => new Set((Array.isArray(userQuests) ? userQuests : []).map(quest => quest.quest_id)), [userQuests])
@@ -162,6 +187,13 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
     const current = activeIds.has(taskId) ? 'active' : historyById.get(taskId)?.state || null
     return { taskId, event, task: tasksById.get(taskId), current }
   }).filter(entry => entry.current !== entry.event.state), [latest, activeIds, historyById, tasksById])
+  const existingRows = useMemo(() => {
+    const rows = new Map((Array.isArray(questHistory) ? questHistory : []).map(row => [row.quest_id, row]))
+    for (const row of Array.isArray(userQuests) ? userQuests : []) if (!rows.has(row.quest_id)) rows.set(row.quest_id, row)
+    return [...rows.values()]
+  }, [questHistory, userQuests])
+  const regression = useMemo(() => assessQuestLogRegression(selectedEvents, existingRows), [existingRows, selectedEvents])
+  useEffect(() => { setRegressionConfirmed(false) }, [selectedEvents])
 
   async function handleFiles(event, fromDirectory = true) {
     const files = Array.from(event.target.files || [])
@@ -253,6 +285,16 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
     await discardPendingJob()
   }
 
+  async function handleCopyDiagnostic() {
+    setDiagnosticMessage('')
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(buildQuestLogDiagnostic(preview), null, 2))
+      setDiagnosticMessage('Diagnostic summary copied to this device clipboard.')
+    } catch {
+      setDiagnosticMessage('The diagnostic summary could not be copied. Clipboard access is unavailable.')
+    }
+  }
+
   function closePanel() {
     // Closing mid-apply would unmount the progress bar while chunks are still
     // being written. The job itself survives -- it is checkpointed after every
@@ -280,6 +322,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
   // emptied selection out of real choices should block confirmation.
   const versionScopeValid = !preview?.availableVersions?.length || preview.includedVersions?.length > 0
   const canConfirm = logModeSupported && preview && changingTasks.length > 0 && state !== 'applying' && state !== 'reading' && versionScopeValid
+    && (!regression.requiresConfirmation || regressionConfirmed)
   const profileChoices = Array.isArray(preview?.discoveredProfiles) ? preview.discoveredProfiles : []
   const profileRequired = profileChoices.length > 1
   const blockedReason = blockingReason({ logModeSupported, preview, versionScopeValid, profileRequired, changingCount: changingTasks.length })
@@ -287,18 +330,24 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
   const currentStep = importSteps.findIndex(step => step.state === 'current')
   const stepState = key => importSteps.find(step => step.key === key)?.state
   const ambiguousCount = preview?.ambiguousModeEvents ?? 0
+  const unknownSessions = (preview?.sessions || []).filter(session => !session.hasSeasonalSignal && (session.modeConfidence === 'conflicted' || session.modeConfidence === 'absent'))
+  const seasonalExcludedCount = scopedEvents.filter(event => event?.gameMode === 'pvp-season' || seasonalSessionKeys.has(event?.sessionKey)).length
+  const unresolvedExcludedCount = scopedEvents.filter(event => !event?.gameMode && !preview?.unknownModeTargets?.[event?.sessionKey] && !seasonalSessionKeys.has(event?.sessionKey)).length
   const unmatchedTaskIds = Array.isArray(preview?.unmatchedTaskIds) ? preview.unmatchedTaskIds : []
   const unmatchedTaskDetails = Array.isArray(preview?.unmatchedTaskDetails) && preview.unmatchedTaskDetails.length
     ? preview.unmatchedTaskDetails
     : unmatchedTaskIds.map(taskId => ({ taskId, occurrences: null, states: [], versions: [], lastSeen: null }))
   const malformedRecords = Array.isArray(preview?.malformedRecords) ? preview.malformedRecords : []
-  const hasImportNotes = unmatchedTaskIds.length > 0 || ambiguousCount > 0 || (preview?.parseErrors || 0) > 0
+  const hasImportNotes = unmatchedTaskIds.length > 0 || ambiguousCount > 0 || seasonalExcludedCount > 0 || (preview?.parseErrors || 0) > 0
   // Show the bar for any in-flight apply, including one that only just started
   // and has no chunk result yet, so the reader never sees a frozen APPLYING...
   const activeProgress = (state === 'applying' || busy) && progress && progress.total > 0 ? progress : null
   const progressPercent = activeProgress
     ? Math.min(100, Math.round((activeProgress.applied / activeProgress.total) * 100))
     : 0
+  const regressionWarning = regression.requiresConfirmation
+    ? `This import would change ${regression.changedRows} of ${regression.totalRows} saved quest rows and move ${regression.activeToCompleted} active quests to completed. This exceeds the ${IMPORT_REGRESSION_TASKS}-task or ${IMPORT_REGRESSION_SHARE * 100}% share safety threshold. Confirm these counts before continuing.`
+    : null
 
   return (
     <div className="card eft-log-import-panel">
@@ -444,18 +493,35 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
               ))}
             </div>
           )}
-          {preview.ambiguousModeEvents > 0 && stepState('mode') !== 'upcoming' && (
-            <label className="mono eft-log-import-field">UNKNOWN MODE — CHOOSE TARGET
-              <select value={preview.unknownModeTarget || ''} onChange={event => setUnknownModeTarget(event.target.value)}>
-                <option value="">SELECT TARGET</option>
-                <option value="regular">REGULAR</option>
-                <option value="pve">PVE</option>
-              </select>
-            </label>
+          {preview.wipeBoundaryAt && (
+            <div className="eft-log-import-wipe-note">
+              <p>A wipe boundary was detected on {safeDate(preview.wipeBoundaryAt)}. Events before that date are excluded by default.</p>
+              <label className="mono eft-log-import-check">
+                <input type="checkbox" checked={preview.includePreWipeHistory === true} onChange={event => setWipeScope(event.target.checked)} /> INCLUDE FULL HISTORY
+              </label>
+            </div>
+          )}
+          {unknownSessions.length > 0 && (
+            <div className="eft-log-import-sessions">
+              <div className="mono eft-log-import-meta">UNRESOLVED SESSIONS</div>
+              <p>Unresolved events are excluded unless you opt in to one session and choose its mode.</p>
+              {unknownSessions.map(session => (
+                <label className="mono eft-log-import-session" key={session.sessionKey}>
+                  <span>{safeDate(session.dateFrom)}–{safeDate(session.dateTo)} · {session.eventCount} EVENTS</span>
+                  <select value={preview.unknownModeTargets?.[session.sessionKey] || ''} onChange={event => setUnknownModeTarget(session.sessionKey, event.target.value || null)}>
+                    <option value="">EXCLUDE</option>
+                    <option value="regular">REGULAR</option>
+                    <option value="pve">PVE</option>
+                  </select>
+                </label>
+              ))}
+            </div>
           )}
           {stepState('review') === 'current' && (
             <>
               <div className="mono eft-log-import-meta">SEASONAL LOG IMPORT IS DISABLED UNTIL ITS LOG SIGNALS ARE VERIFIED.</div>
+              {unresolvedExcludedCount > 0 && <p className="eft-log-import-review-note">{unresolvedExcludedCount} events are excluded because their mode evidence is absent or conflicting.</p>}
+              {seasonalExcludedCount > 0 && <p className="eft-log-import-review-note">{seasonalExcludedCount} events are excluded because seasonal log import is disabled.</p>}
               <div className="eft-log-import-task-list">
                 <div className="lbl">TASKS WHOSE STATE WILL CHANGE</div>
                 {changingTasks.length ? changingTasks.map(({ taskId, event, task, current }) => (
@@ -493,6 +559,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
                 </details>
               )}
               {ambiguousCount > 0 && <div className="mono eft-log-import-note-line">{ambiguousCount} AMBIGUOUS MODE EVENTS</div>}
+              {seasonalExcludedCount > 0 && <div className="mono eft-log-import-note-line">{seasonalExcludedCount} SEASONAL EVENTS EXCLUDED</div>}
               {(preview.parseErrors || 0) > 0 && (
                 <details className="eft-log-import-detail">
                   <summary className="mono">{preview.parseErrors} MALFORMED RECORDS SKIPPED</summary>
@@ -511,6 +578,14 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
                   ) : <div className="mono eft-log-import-detail-secondary">DETAILS UNAVAILABLE FOR THIS IMPORT.</div>}
                 </details>
               )}
+            </div>
+          )}
+          <button className="btn-ghost btn-sm" onClick={handleCopyDiagnostic}>COPY DIAGNOSTIC SUMMARY</button>
+          {diagnosticMessage && <p className="mono eft-log-import-review-note" role="status">{diagnosticMessage}</p>}
+          {regressionWarning && (
+            <div className="eft-log-import-regression" role="alert">
+              <p>{regressionWarning}</p>
+              {!regressionConfirmed && <button className="btn-ghost btn-sm" onClick={() => setRegressionConfirmed(true)}>I UNDERSTAND THESE COUNTS</button>}
             </div>
           )}
           {applyMessage && <div className="mono eft-log-import-success" role="status">{applyMessage}</div>}

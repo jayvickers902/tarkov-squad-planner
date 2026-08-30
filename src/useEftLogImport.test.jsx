@@ -217,13 +217,14 @@ describe('useEftLogImport', () => {
     expect(workers[0].terminate).toHaveBeenCalled()
   })
 
-  it('requires explicit mode/profile choices and does not silently default ambiguous events', async () => {
+  it('excludes ambiguous events until a session-specific mode opt-in is supplied', async () => {
     const ambiguous = preview({
-      events: [{ ...preview().events[0], gameMode: null, profileKey: 'profile-a' }],
+      events: [{ ...preview().events[0], gameMode: null, modeConfidence: 'conflicted', profileKey: 'profile-a', sessionKey: 'session-a' }],
       discoveredProfiles: [
         { profileKey: 'profile-a', label: 'PROFILE 1' },
         { profileKey: 'profile-b', label: 'PROFILE 2' },
       ],
+      sessions: [{ sessionKey: 'session-a', eventCount: 1, modeConfidence: 'conflicted', hasSeasonalSignal: false }],
       ambiguousModeEvents: 1,
     })
     const onApply = vi.fn(async () => ({ applied: 1 }))
@@ -237,10 +238,57 @@ describe('useEftLogImport', () => {
     await act(async () => { await result.current.parseSelectedFiles([logFile()]) })
     await expect(result.current.confirmImport()).rejects.toThrow('Select one local EFT profile')
     act(() => result.current.setProfileSelection('profile-a'))
-    await expect(result.current.confirmImport()).rejects.toThrow('Choose Regular or PvE')
-    act(() => result.current.setUnknownModeTarget('regular'))
+    await act(async () => { await result.current.confirmImport() })
+    expect(onApply).not.toHaveBeenCalled()
+    act(() => result.current.setUnknownModeTarget('session-a', 'regular'))
     await act(async () => { await result.current.confirmImport() })
     expect(onApply).toHaveBeenCalledWith('regular', expect.arrayContaining([expect.objectContaining({ task_id: taskId })]))
+  })
+
+  it('resolves the wipe boundary against the chosen profile, not the mixed corpus', async () => {
+    // The parser runs once, so the boundary has to follow the profile choice
+    // in the hook. Quoting one character's wipe date while importing another's
+    // history silently drops everything before it.
+    const sample = overrides => ({ ...preview().events[0], ...overrides })
+    const scoped = preview({
+      events: [
+        sample({ eventKey: 'a-old', profileKey: 'profile-a', occurredAt: '2026-06-01T00:00:00.000Z' }),
+        sample({ eventKey: 'a-new', profileKey: 'profile-a', occurredAt: '2026-08-25T00:00:00.000Z' }),
+        sample({ eventKey: 'b-old', profileKey: 'profile-b', occurredAt: '2026-07-01T00:00:00.000Z' }),
+        sample({ eventKey: 'b-new', profileKey: 'profile-b', occurredAt: '2026-08-27T00:00:00.000Z' }),
+      ],
+      discoveredProfiles: [
+        { profileKey: 'profile-a', label: 'PROFILE 1' },
+        { profileKey: 'profile-b', label: 'PROFILE 2' },
+      ],
+      wipeBoundaryAt: null,
+      wipeBoundaryByProfile: {
+        'profile-a': '2026-08-20T00:00:00.000Z',
+        'profile-b': '2026-08-26T00:00:00.000Z',
+      },
+    })
+    const onApply = vi.fn(async () => ({ applied: 1 }))
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: [{ id: taskId }],
+      gameMode: 'regular',
+      environment: universalEnvironment(),
+      workerFactory: workerFactoryWith(scoped),
+      onApply,
+    }))
+    await act(async () => { await result.current.parseSelectedFiles([logFile()]) })
+    // With two profiles and no choice made there is no attributable boundary,
+    // so the panel quotes no date at all.
+    expect(result.current.preview.wipeBoundaryAt).toBeNull()
+
+    act(() => result.current.setProfileSelection('profile-a'))
+    expect(result.current.preview.wipeBoundaryAt).toBe('2026-08-20T00:00:00.000Z')
+    await act(async () => { await result.current.confirmImport() })
+    expect(onApply.mock.calls[0][1].map(event => event.event_key)).toEqual(['a-new'])
+
+    act(() => result.current.setProfileSelection('profile-b'))
+    expect(result.current.preview.wipeBoundaryAt).toBe('2026-08-26T00:00:00.000Z')
+    await act(async () => { await result.current.confirmImport() })
+    expect(onApply.mock.calls[1][1].map(event => event.event_key)).toEqual(['b-new'])
   })
 
   it('does not allow clearing the last included version', async () => {
