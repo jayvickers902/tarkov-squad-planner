@@ -622,30 +622,110 @@ select {
 select:focus { border-color: var(--gold); }
 select:disabled { opacity: .6; cursor: not-allowed; }
 
-/* ── Auth and A1 settings ─────────────────────────────────────────────────── */
-.auth-screen { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.auth-shell { width: 100%; max-width: 430px; }
-.auth-brand { text-align: center; margin-bottom: 48px; }
-.auth-splash { position: relative; width: 100%; height: 180px; margin-bottom: 24px; border-radius: 6px; overflow: hidden; }
-.auth-splash img { width: 100%; height: 100%; object-fit: cover; object-position: center; display: block; }
-.auth-splash-fade { position: absolute; inset: 0; background: linear-gradient(to right, #0c0e0d 0%, transparent 40%, transparent 60%, #0c0e0d 100%), linear-gradient(to bottom, #0c0e0d 0%, transparent 45%, transparent 55%, #0c0e0d 100%); }
-.auth-title { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-.auth-title-bar { width: 5px; height: 34px; background: var(--gold); border-radius: 2px; }
-.auth-title h1 { font-size: 36px; font-weight: 700; }
-.auth-subtitle { font-size: var(--fs-sm); color: var(--txm); letter-spacing: .1em; }
-.auth-actions { display: flex; flex-direction: column; gap: 12px; }
-.auth-google-primary { padding: 14px 24px; font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 10px; }
-.auth-migration-link { background: none; color: var(--txm); padding: 3px; font-family: 'Share Tech Mono', monospace; font-size: var(--fs-sm); letter-spacing: .02em; }
-.auth-migration-link:hover { color: var(--goldtx); text-decoration: underline; }
-.auth-card { padding: 24px; display: flex; flex-direction: column; gap: 14px; }
-.auth-card h2 { font-size: 22px; color: var(--goldtx); }
+/* -- Auth: split brief (art left, sign-in panel right) --------------------- */
+.auth-screen { min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr) 496px; background: var(--bg); }
+
+/* Art column. The scrim fades to solid --bg at the seam so the art dissolves
+   into the panel rather than stopping at a hard edge. */
+.auth-art { position: relative; overflow: hidden; }
+.auth-art-layer {
+  position: absolute;
+  inset: 0;
+  background-image: url('/splash-1280.webp');
+  background-image: -webkit-image-set(url('/splash-1280.webp') 1x, url('/splash-2560.webp') 2x);
+  background-image: image-set(url('/splash-1280.webp') 1x, url('/splash-2560.webp') 2x);
+  background-size: cover;
+  background-position: 52% 55%;
+}
+.auth-art-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(12,14,13,.86) 0%, rgba(12,14,13,.34) 34%, rgba(12,14,13,.5) 74%, var(--bg) 100%); }
+.auth-art-vignette { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(12,14,13,.7) 0%, rgba(12,14,13,0) 40%, rgba(12,14,13,.78) 100%); }
+
+.auth-art-inner { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: space-between; padding: 44px; }
+.auth-mark { display: flex; align-items: stretch; gap: 12px; }
+.auth-mark-rail { flex: 0 0 3px; border-radius: 2px; background: linear-gradient(180deg, var(--goldtx), var(--golddim)); }
+.auth-mark-copy { display: flex; flex-direction: column; gap: 4px; }
+.auth-mark-copy h1 { font-size: 22px; font-weight: 700; letter-spacing: .12em; color: var(--txt); text-shadow: 0 2px 18px rgba(0,0,0,.95); }
+.auth-mark-sub { font-size: var(--fs-xs); letter-spacing: .16em; color: var(--txm); }
+
+.auth-pitch { display: flex; flex-direction: column; gap: 16px; width: 420px; max-width: 100%; }
+/* The line breaks are authored, not wrapped - three lines at 46px is the
+   intended silhouette. Re-check for orphans if the copy changes. */
+.auth-pitch h2 { font-size: 46px; font-weight: 700; line-height: .96; letter-spacing: .03em; color: var(--txt); text-shadow: 0 2px 22px rgba(0,0,0,.95); }
+.auth-chips { display: flex; flex-direction: column; gap: 8px; }
+.auth-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--brdm);
+  border-radius: 4px;
+  background: var(--glass);
+  backdrop-filter: blur(6px);
+  font-size: var(--fs-sm);
+  letter-spacing: .06em;
+  color: var(--txb);
+}
+.auth-chip-num { color: var(--gold); }
+
+/* Panel column. */
+.auth-panel { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 22px; padding: 56px; background: var(--bg); border-left: 1px solid var(--brd); }
+.auth-panel::before { content: ''; position: absolute; left: -1px; top: 0; bottom: 0; width: 1px; background: linear-gradient(180deg, rgba(201,168,76,0) 0%, rgba(201,168,76,.5) 45%, rgba(201,168,76,0) 100%); }
+.auth-panel > * { position: relative; }
+
+.auth-head { display: flex; flex-direction: column; gap: 6px; }
+.auth-eyebrow { font-size: var(--fs-label); letter-spacing: .18em; color: var(--txf); }
+.auth-head h2 { font-size: 34px; font-weight: 700; letter-spacing: .05em; color: var(--goldtx); }
+.auth-head p { font-size: 14px; line-height: 1.6; color: var(--txm); text-wrap: pretty; }
+
+.auth-card { padding: 22px; display: flex; flex-direction: column; gap: 12px; }
+.auth-card h3 { font-size: 22px; color: var(--goldtx); }
+.auth-google-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 15px 24px;
+  border: none;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #d8b85c, #bf9c3e);
+  color: var(--bg);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  box-shadow: 0 0 0 1px rgba(232,201,106,.45), 0 8px 26px rgba(201,168,76,.2);
+}
+.auth-google-primary:hover:not(:disabled) { background: linear-gradient(180deg, #e6c76a, #cba948); }
+/* The dot is hollow because the callsign is the *next* step, not a done one. */
+.auth-step { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); letter-spacing: .06em; color: var(--txf); }
+.auth-step-dot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--golddim); }
+
+.auth-facts { border: 1px solid var(--brd); border-radius: 6px; overflow: hidden; background: var(--sur); }
+.auth-fact { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--brdo); font-size: var(--fs-xs); letter-spacing: .1em; }
+.auth-fact:last-child { border-bottom: 0; }
+.auth-fact-label { color: var(--txm); }
+.auth-fact-value { color: var(--goldtx); }
+.auth-fact-live { display: flex; align-items: center; gap: 7px; color: var(--grn); }
+.auth-fact-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--grn); }
+
 .auth-note { font-size: var(--fs-sm); color: var(--txm); }
 .auth-error { color: var(--red); font-size: var(--fs-sm); }
 .auth-busy { color: var(--txm); font-size: var(--fs-sm); }
-.auth-home-error { text-align: center; margin-top: 12px; }
 .auth-form-actions { display: flex; gap: 8px; margin-top: 4px; }
 .auth-form-actions .btn-gold { flex: 1; }
-.auth-footer { text-align: center; margin-top: 28px; font-size: var(--fs-xs); color: var(--txd); }
+.auth-footer { font-size: var(--fs-xs); letter-spacing: .08em; color: var(--txf); }
+
+@media (max-width: 900px) {
+  .auth-screen { grid-template-columns: minmax(0, 1fr); }
+  .auth-art { height: 220px; }
+  .auth-art-inner { justify-content: flex-start; padding: 24px; }
+  /* The pitch block is the part that does not survive a 220px band. */
+  .auth-pitch { display: none; }
+  .auth-panel { padding: 32px 24px; border-left: 0; border-top: 1px solid var(--brd); }
+  .auth-panel::before { display: none; }
+  .auth-head h2 { font-size: 28px; }
+}
+
 .legacy-auth-banner { padding: 12px 14px; margin-bottom: 14px; border-color: var(--golddim); }
 .legacy-auth-title { color: var(--gold); font-size: var(--fs-xs); letter-spacing: .08em; }
 .legacy-auth-copy { color: var(--txm); font-size: var(--fs-xs); line-height: 1.6; margin-top: 4px; }

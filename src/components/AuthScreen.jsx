@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { FEATURED } from '../constants'
 
 function GoogleIcon() {
   return (
@@ -10,6 +11,18 @@ function GoogleIcon() {
     </svg>
   )
 }
+
+// The map count is the allowlist's length, not a hardcoded number, so it can
+// never drift from what the picker actually offers. Build-time import - this
+// screen must not depend on network state.
+const MAP_COUNT = FEATURED.length
+
+const CHIPS = [
+  ['01', 'READ-ONLY LOG SYNC - NEVER TOUCHES THE GAME'],
+  ['02', 'QUESTS ADD + CLEAR THEMSELVES'],
+  ['03', 'BEST MAP FROM QUEST OVERLAP'],
+  ['04', 'LIVE MAP FOLLOWS YOU IN RAID'],
+]
 
 export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsign, error, profileError, setError }) {
   const [mode, setMode]         = useState(needsCallsign ? 'callsign' : 'home')
@@ -52,29 +65,57 @@ export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsi
 
   return (
     <div className="auth-screen">
-      <div className="auth-shell">
-        <div className="auth-brand">
-          <div className="auth-splash">
-            <img src="/splash.jpg" alt="" />
-            <div className="auth-splash-fade" />
+      <div className="auth-art">
+        <div className="auth-art-layer" />
+        <div className="auth-art-scrim" />
+        <div className="auth-art-vignette" />
+        <div className="auth-art-inner">
+          <div className="auth-mark">
+            <div className="auth-mark-rail" />
+            <div className="auth-mark-copy">
+              <h1>SQUAD PLANNER</h1>
+              <p className="mono auth-mark-sub">ESCAPE FROM TARKOV // RAID COORDINATOR</p>
+            </div>
           </div>
-          <div className="auth-title"><div className="auth-title-bar" /><h1>SQUAD PLANNER</h1></div>
-          <p className="mono auth-subtitle">ESCAPE FROM TARKOV // RAID COORDINATOR</p>
+
+          <div className="auth-pitch">
+            <h2>ONE CODE.<br />ONE MAP.<br />WHOLE SQUAD.</h2>
+            <div className="auth-chips">
+              {CHIPS.map(([num, copy]) => (
+                <div className="mono auth-chip" key={num}>
+                  <span className="auth-chip-num">{num}</span>
+                  <span>{copy}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="auth-panel">
+        <div className="auth-head">
+          <p className="mono auth-eyebrow">{mode === 'callsign' ? 'ONE MORE STEP' : 'SIGN IN'}</p>
+          <h2>{mode === 'callsign' ? 'CHOOSE YOUR CALLSIGN' : 'JOIN YOUR SQUAD'}</h2>
+          <p>
+            {mode === 'callsign'
+              ? 'This is the name your squad sees on the map, on every ping and beside every objective. Use your in-game name.'
+              : "Sign in once, then drop into a raid with a live map that follows you, your team's positions and only the objectives that matter."}
+          </p>
         </div>
 
         {mode === 'home' && (
-          <div className="auth-actions fade-in">
-            <button className="btn-gold auth-google-primary" onClick={handleGoogle} disabled={busy}>
+          <div className="card auth-card fade-in">
+            <button className="auth-google-primary" onClick={handleGoogle} disabled={busy}>
               <GoogleIcon />
               CONTINUE WITH GOOGLE
             </button>
+            <p className="mono auth-step"><span className="auth-step-dot" />NEXT STEP · CHOOSE YOUR CALLSIGN</p>
+            {err && <p className="mono auth-error" role="alert">! {err}</p>}
           </div>
         )}
 
         {mode === 'callsign' && (
           <div className="card auth-card fade-in">
-            <h2>CHOOSE YOUR CALLSIGN</h2>
-            <p className="mono auth-note">THIS IS YOUR IN-GAME NAME - CHOOSE WISELY</p>
             <div><label className="lbl" htmlFor="callsign">CALLSIGN</label><input id="callsign" name="callsign" autoComplete="nickname" placeholder="Your in-game name" value={callsign} onChange={event => { setCallsign(event.target.value); setLocal(''); setError('') }} disabled={busy || profileBlocked} autoFocus onKeyDown={event => event.key === 'Enter' && handleCallsign()} /></div>
             {err && <p className="mono auth-error" role="alert">! {err}</p>}
             {busy && <p className="mono auth-busy">SAVING...</p>}
@@ -85,7 +126,12 @@ export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsi
           </div>
         )}
 
-        {err && mode === 'home' && <p className="mono auth-error auth-home-error" role="alert">! {err}</p>}
+        <div className="auth-facts">
+          <div className="mono auth-fact"><span className="auth-fact-label">QUEST DATA</span><span className="auth-fact-value">TARKOV.DEV</span></div>
+          <div className="mono auth-fact"><span className="auth-fact-label">MAPS</span><span className="auth-fact-value">{MAP_COUNT} · PVP / PVE / SEASON</span></div>
+          <div className="mono auth-fact"><span className="auth-fact-label">PARTY SYNC</span><span className="auth-fact-live"><span className="auth-fact-dot" />REAL-TIME</span></div>
+        </div>
+
         <p className="mono auth-footer">QUEST DATA VIA TARKOV.DEV - COMMUNITY MAINTAINED</p>
       </div>
     </div>
