@@ -2,18 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePositionPingCadence } from './usePositionPingCadence'
 import {
   getEftScreenshotMetadata,
-  isNewEftScreenshot,
   MAX_SCREENSHOT_METADATA,
+  parseEftScreenshotFilename,
   screenshotPingSourceId,
   toEftScreenshotPosition,
 } from './eftScreenshots'
 import { createEftLogHandleStore, isIndexedDbSupported } from './eftLogHandleStore'
+import { SYSTEM_DEFAULTS } from './settings'
 
 const DEFAULT_POLL_MS = 15000
 const DEFAULT_OBSERVER_DEBOUNCE_MS = 200
 // A screenshot found much later is history, not a live position. This still
 // leaves room for a throttled background tab and the bounded polling fallback.
-export const MAX_SCREENSHOT_CATCHUP_MS = 2 * 60 * 1000
+export const MAX_SCREENSHOT_CATCHUP_MS = SYSTEM_DEFAULTS.ping_ttl_ms / 2
 
 function currentTime() {
   return Date.now()
@@ -57,20 +58,19 @@ async function directoryEntries(directory) {
   throw directoryError('This browser cannot enumerate the selected Screenshots folder.')
 }
 
-async function enumerateScreenshots(directory, prefix = '', output = []) {
+async function enumerateScreenshots(directory) {
+  const output = []
   try {
     for await (const item of await directoryEntries(directory)) {
       const handle = Array.isArray(item) ? item[1] : item
       const name = Array.isArray(item) ? item[0] : item?.name
       if (!handle || !name) continue
-      const relativeFilename = prefix ? `${prefix}/${name}` : name
-      if (handle.kind === 'directory' || typeof handle.values === 'function' || typeof handle.entries === 'function') {
-        await enumerateScreenshots(handle, relativeFilename, output)
-        continue
-      }
+      if (handle.kind === 'directory' || typeof handle.getFile !== 'function') continue
+      // EFT writes screenshots flat. Reject unrelated names before getFile(),
+      // keeping the hidden-tab polling fallback cheap in long-lived folders.
+      if (!parseEftScreenshotFilename(name)) continue
       // Filename and metadata only. getFile() is needed for size/time, but its
       // bytes are never read or sent anywhere.
-      if (relativeFilename.includes('/') || typeof handle.getFile !== 'function') continue
       let file
       try { file = await handle.getFile() } catch { throw directoryError('An EFT screenshot could not be inspected.') }
       const metadata = getEftScreenshotMetadata({ filename: name, size: file?.size, lastModified: file?.lastModified })
@@ -122,6 +122,7 @@ export function useEftScreenshotSync({
   const [folderName, setFolderName] = useState(null)
   const [lastSuccessfulCheck, setLastSuccessfulCheck] = useState(null)
   const [lastScreenshot, setLastScreenshot] = useState(null)
+  const [lastSkipped, setLastSkipped] = useState(null)
   const handleRef = useRef(null)
   const checkpointRef = useRef(null)
   const observerRef = useRef(null)
@@ -191,7 +192,6 @@ export function useEftScreenshotSync({
       checkAgainRef.current = true
       return checkInFlightRef.current
     }
-    if (documentObject?.visibilityState && documentObject.visibilityState !== 'visible') return null
     const generation = generationRef.current
     const sessionGeneration = sessionGenerationRef.current
     const promise = (async () => {
@@ -205,20 +205,26 @@ export function useEftScreenshotSync({
         resetCadence()
         await saveCheckpoint(files)
         sessionRef.current = { partyId: partyId || null, mapNorm: mapNorm || null }
-        if (mountedRef.current) { setError(null); setState('watching') }
-        return { files, emitted: 0, baseline: true }
+        if (mountedRef.current) { setLastSkipped(null); setError(null); setState('watching') }
+        return { files, emitted: 0, skipped: 0, baseline: true }
       }
       // A screenshot can surface first at size zero and then again after its
       // PNG bytes finish flushing. Filename identity is the user action;
       // metadata changes to that same file must not become extra taps.
       const previousNames = new Set(previous.map(file => file.filename))
-      const fresh = files.filter(file => !previousNames.has(file.filename) && isNewEftScreenshot(previous, file))
+      const fresh = files.filter(file => !previousNames.has(file.filename))
       let emitted = 0
+      let skipped = 0
+      let oldestAgeMs = 0
       for (const file of fresh) {
         const receivedAt = now()
-        if (!file.lastModified
-          || receivedAt - file.lastModified > MAX_SCREENSHOT_CATCHUP_MS
-          || file.lastModified > receivedAt + 5000) continue
+        const ageMs = receivedAt - file.lastModified
+        if (!file.lastModified || ageMs > MAX_SCREENSHOT_CATCHUP_MS) {
+          skipped += 1
+          oldestAgeMs = Math.max(oldestAgeMs, ageMs)
+          continue
+        }
+        if (file.lastModified > receivedAt + 5000) continue
         const position = toEftScreenshotPosition(file.filename, mapNorm)
         if (!position?.ok) continue
         // Match the existing monitor contract. Screenshot names are only
@@ -229,8 +235,13 @@ export function useEftScreenshotSync({
         emitted += 1
       }
       await saveCheckpoint(files)
-      if (mountedRef.current) { setError(null); setState('watching') }
-      return { files, emitted, baseline: false }
+      if (mountedRef.current) {
+        if (skipped > 0) setLastSkipped({ count: skipped, oldestAgeMs })
+        else if (emitted > 0) setLastSkipped(null)
+        setError(null)
+        setState('watching')
+      }
+      return { files, emitted, skipped, baseline: false }
     })().catch(caught => {
       if (isCancelled(caught)) return null
       if (mountedRef.current) {
@@ -248,7 +259,7 @@ export function useEftScreenshotSync({
     })
     checkInFlightRef.current = promise
     return promise
-  }, [documentObject, handlePosition, mapNorm, now, partyId, resetCadence, saveCheckpoint])
+  }, [handlePosition, mapNorm, now, partyId, resetCadence, saveCheckpoint])
 
   checkRef.current = checkNow
 
@@ -288,7 +299,7 @@ export function useEftScreenshotSync({
           else trigger()
         })
         observerRef.current = observer
-        const observed = observer.observe(handle, { recursive: true })
+        const observed = observer.observe(handle)
         // Some implementations return a promise from observe(). Keep the
         // observer active; errors fall back to bounded polling below.
         Promise.resolve(observed).catch(fallback)
@@ -378,7 +389,7 @@ export function useEftScreenshotSync({
     resetCadence()
     try { await store.forget(key) } catch { /* best effort */ }
     if (mountedRef.current) {
-      setFolderName(null); setLastScreenshot(null); setLastSuccessfulCheck(null); setError(null); setState('idle')
+      setFolderName(null); setLastScreenshot(null); setLastSkipped(null); setLastSuccessfulCheck(null); setError(null); setState('idle')
     }
   }, [key, resetCadence, stopWatching, store])
 
@@ -428,9 +439,10 @@ export function useEftScreenshotSync({
     rememberedFolderName: folderName,
     lastSuccessfulCheck,
     lastScreenshot,
+    lastSkipped,
     pending,
     lastPing,
-    status: { pending, lastPing, state, folderName, readyForPings: Boolean(partyId && mapNorm) },
+    status: { pending, lastPing, lastSkipped, state, folderName, readyForPings: Boolean(partyId && mapNorm) },
     connect,
     reconnect,
     forget,

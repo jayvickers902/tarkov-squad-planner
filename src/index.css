@@ -1279,11 +1279,17 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 /* Map */
 .mr-map { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #0a0c0a; }
 .mr-map > .map-leaflet { width: 100%; height: 100%; }
-.mr-map-caption {
+.mr-map-caption-row {
   position: absolute;
   left: 14px;
   top: 12px;
   z-index: 1001;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 28px);
+}
+.mr-map-caption {
   padding: 3px 8px;
   background: var(--glass);
   border-radius: 3px;
@@ -1291,6 +1297,37 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   font-size: var(--fs-xs);
   letter-spacing: .14em;
   pointer-events: none;
+}
+.mr-shot-sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--brdm);
+  border-radius: 3px;
+  background: var(--glass);
+  color: var(--txd);
+  font-size: var(--fs-xs);
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+.mr-shot-sync-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: currentColor; }
+.mr-shot-sync[data-tone='live'] { color: var(--grn); border-color: rgba(102,183,120,.34); }
+.mr-shot-sync[data-tone='live'] .mr-shot-sync-dot { animation: monPulse 1.8s ease-in-out infinite; }
+.mr-shot-sync[data-tone='warning'] { color: var(--goldtx); border-color: var(--brdg); }
+.mr-shot-sync[data-tone='error'] { color: var(--red); border-color: rgba(224,107,107,.4); }
+.mr-shot-sync button {
+  min-height: 20px;
+  padding: 0 0 0 6px;
+  border: 0;
+  border-left: 1px solid currentColor;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 /* The caption owns the top-left corner, so the spawn brief drops below it. */
 .mr-map .map-leaflet-overlay > .pmc-spawn-brief { top: 40px; }
@@ -1962,6 +1999,8 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   .mr-map-meta, .mr-header-divider, .mr-camera-label { display: none; }
   .mr-camera { flex: 1 1 100%; order: 3; }
   .mr-camera-readout { flex: 1; }
+  .mr-map-caption-row { left: 7px; top: 7px; max-width: calc(100% - 14px); flex-wrap: wrap; }
+  .mr-shot-sync button { min-height: 32px; }
   .mr-grid { position: relative; display: block; }
   .mr-map { position: absolute; inset: 0; }
   /* A floating tasks column would collide with the sheet, so on mobile the

@@ -1,7 +1,7 @@
 import { cadenceOf } from '../tarkovPings'
 import { useEftScreenshotSyncContext } from '../EftLogSyncContext'
 
-const STATE_TEXT = {
+export const STATE_TEXT = {
   idle: 'NOT SET UP',
   reading: 'CHECKING…',
   watching: 'WATCHING',
@@ -16,8 +16,11 @@ export default function EftScreenshotPings() {
   const watching = sync.state === 'watching'
   const busy = sync.state === 'reading'
   const cadence = sync.lastPing ? cadenceOf(sync.lastPing.taps) : null
+  const skippedCount = sync.lastSkipped?.count || 0
   const status = !sync.persistentSupported
     ? 'CHROME / EDGE DESKTOP REQUIRED'
+    : skippedCount > 0
+      ? `${skippedCount} SCREENSHOT${skippedCount === 1 ? '' : 'S'} TOO OLD TO PING`
     : watching && !sync.readyForPings
       ? 'WAITING FOR PARTY MAP'
     : STATE_TEXT[sync.state] || 'READY'
@@ -55,6 +58,11 @@ export default function EftScreenshotPings() {
           : 'ONE-TIME SETUP: CHOOSE DOCUMENTS\\ESCAPE FROM TARKOV\\SCREENSHOTS. EXISTING SCREENSHOTS ARE BASELINED, NOT REPLAYED.'}
       </div>
       {sync.error && <div role="alert" style={{ marginTop: 5, color: 'var(--red)', fontSize: 'var(--fs-xs)' }}>{sync.error}</div>}
+      {skippedCount > 0 && (
+        <div role="alert" style={{ marginTop: 5, color: 'var(--goldtx)', fontSize: 'var(--fs-xs)' }}>
+          {skippedCount} SCREENSHOT{skippedCount === 1 ? '' : 'S'} TOO OLD TO PING · KEEP THIS TAB OPEN OR USE THE DESKTOP APP
+        </div>
+      )}
       {cadence && (
         <div role="status" style={{ marginTop: 5, color: cadence.color, fontSize: 'var(--fs-xs)' }}>
           PING SENT · {cadence.label}{sync.lastPing.floor ? ` · ${sync.lastPing.floor}` : ''}

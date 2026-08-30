@@ -69,4 +69,11 @@ describe('EFT screenshot foundation', () => {
       updatedAt: expect.any(Number),
     })
   })
+
+  it('dedupes metadata stably while preserving first-seen order', () => {
+    const first = getEftScreenshotMetadata({ name: current, size: 12, lastModified: 10 })
+    const second = getEftScreenshotMetadata({ name: secondsTimestamp, size: 13, lastModified: 11 })
+    expect(dedupeEftScreenshotMetadata([second, first, { ...second }, { ...first }])).toEqual([second, first])
+    expect(dedupeEftScreenshotMetadata([second, first, { ...second }, { ...first }])).toEqual([second, first])
+  })
 })

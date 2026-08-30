@@ -18,6 +18,8 @@ import { normalizeMembers, findMember, memberIds as getMemberIds, memberNames as
 import { buildObjectiveRows, groupRowsByQuest, nearestRange } from '../raidObjectives'
 import { squadFrame } from '../squadFocus'
 import { CAMERA_MODES, readCameraMode, writeCameraMode } from '../cameraMode'
+import { useEftScreenshotSyncContext } from '../EftLogSyncContext'
+import { STATE_TEXT } from './EftScreenshotPings'
 
 const SQUAD_ROW_LIMIT = 3
 
@@ -29,6 +31,41 @@ function elapsedLabel(startedAt, now) {
 
 function metres(value) {
   return value >= 1000 ? `${(value / 1000).toFixed(1)} KM` : `${value} M`
+}
+
+function ScreenshotSyncChip({ sync }) {
+  const skipped = sync?.lastSkipped?.count || 0
+  const tone = !sync?.persistentSupported
+    ? 'idle'
+    : sync.state === 'error'
+      ? 'error'
+      : sync.state === 'permission-needed' || skipped > 0
+        ? 'warning'
+        : sync.state === 'watching'
+          ? 'live'
+          : 'idle'
+  const label = !sync?.persistentSupported
+    ? 'NOT SUPPORTED'
+    : sync.state === 'error' || sync.state === 'reading'
+      ? STATE_TEXT[sync.state]
+      : !sync.folderName
+        ? STATE_TEXT.idle
+        : skipped > 0
+          ? `${skipped} TOO OLD`
+          : sync.state === 'watching' && !sync.readyForPings
+            ? 'WAITING FOR PARTY MAP'
+            : STATE_TEXT[sync.state] || 'READY'
+  const urgent = tone === 'error' || tone === 'warning'
+
+  return (
+    <span className="mr-shot-sync mono" data-tone={tone} role={urgent ? 'alert' : 'status'}>
+      <span className="mr-shot-sync-dot" aria-hidden="true" />
+      <span>SCREENSHOTS · {label}</span>
+      {sync?.folderName && sync.state === 'permission-needed' && (
+        <button type="button" className="mono" onClick={() => sync.reconnect()}>RECONNECT</button>
+      )}
+    </span>
+  )
 }
 
 export default function RaidView({
@@ -49,6 +86,7 @@ export default function RaidView({
   onClose,
 }) {
   const isMobile = useIsMobile()
+  const shots = useEftScreenshotSyncContext({ optional: true })
   const rootRef = useRef(null)
   const memberRows = normalizeMembers(members || party.members)
   const memberNames = getMemberNames(memberRows)
@@ -549,9 +587,12 @@ export default function RaidView({
             hideAutofocusControl
             followFrame={live ? followFrame : null}
           />
-          <span className="mono mr-map-caption">
-            {live ? 'LIVE PINGS · SCREENSHOT SYNC' : 'PLANNING · SPAWNS & ROUTES'}
-          </span>
+          <div className="mr-map-caption-row">
+            <span className="mono mr-map-caption">
+              {live ? 'LIVE PINGS · SCREENSHOT SYNC' : 'PLANNING · SPAWNS & ROUTES'}
+            </span>
+            {live && <ScreenshotSyncChip sync={shots} />}
+          </div>
         </main>
 
         {/* On mobile the sheet is the only home the tasks panel has, so a rail

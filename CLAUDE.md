@@ -136,6 +136,9 @@ across both silently drops the earlier character's history. With more than one p
 and none chosen there is no attributable boundary, so none is disclosed until the reader picks one.
 Seasonal logs, objective counters, inventory, and hideout progress are not supported. The Windows
 companion is the separate path for continuing folder checks after the website closes.
+Browser screenshot sync also checks while the tab is hidden and reports screenshots beyond its
+five-minute freshness window instead of dropping them silently. For fullscreen play on a single
+monitor, the desktop companion remains the reliable path because browsers throttle background work.
 
 The REST dataset supports `regular`, `pve`, and `pvp-season`. The active game mode is a resolved setting rather than a module constant. Prebaked JSON is only a valid floor for the mode recorded in its stamp, and another mode must wait for its REST response.
 

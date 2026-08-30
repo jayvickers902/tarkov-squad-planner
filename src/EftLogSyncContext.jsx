@@ -54,6 +54,7 @@ export function EftLogSyncProvider({
     screenshotController.rememberedFolderName,
     screenshotController.lastSuccessfulCheck,
     screenshotController.lastScreenshot,
+    screenshotController.lastSkipped,
     screenshotController.pending,
     screenshotController.lastPing,
     screenshotController.connect,

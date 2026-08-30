@@ -144,10 +144,16 @@ export function classifyScreenshotMetadata(previous, next) {
 
 export function dedupeEftScreenshotMetadata(metadata) {
   const seen = new Set()
-  return (Array.isArray(metadata) ? metadata : [])
-    .map(metadataFrom)
-    .filter(value => value && !seen.has(screenshotMetadataKey(value)) && seen.add(screenshotMetadataKey(value)))
-    .sort((left, right) => left.filename.localeCompare(right.filename) || left.lastModified - right.lastModified)
+  const unique = []
+  for (const input of Array.isArray(metadata) ? metadata : []) {
+    const value = metadataFrom(input)
+    if (!value) continue
+    const key = `${value.filename}:${value.size}:${value.lastModified}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(value)
+  }
+  return unique
 }
 
 export function newEftScreenshotMetadata(previous, current) {

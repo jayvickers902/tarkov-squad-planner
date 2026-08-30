@@ -95,7 +95,7 @@ describe('useEftScreenshotSync', () => {
     await act(async () => { await result.current.connect(); await flush() })
     expect(onAddPing).not.toHaveBeenCalled()
     expect(result.current.state).toBe('watching')
-    expect(observer.observe).toHaveBeenCalledWith(handle, { recursive: true })
+    expect(observer.observe).toHaveBeenCalledWith(handle)
     expect(env.showDirectoryPicker).toHaveBeenCalledWith({ id: 'eft-screenshots', mode: 'read', startIn: 'documents' })
 
     clock += 1000
@@ -148,8 +148,11 @@ describe('useEftScreenshotSync', () => {
 
     await act(async () => { await result.current.connect(); await flush() })
     files.push({ name: secondName, size: 101, lastModified: clock - MAX_SCREENSHOT_CATCHUP_MS - 1 })
-    await act(async () => { await result.current.checkNow(); await vi.advanceTimersByTimeAsync(1800) })
+    let check
+    await act(async () => { check = await result.current.checkNow(); await vi.advanceTimersByTimeAsync(1800) })
     expect(onAddPing).not.toHaveBeenCalled()
+    expect(check).toMatchObject({ emitted: 0, skipped: 1, baseline: false })
+    expect(result.current.lastSkipped).toEqual({ count: 1, oldestAgeMs: MAX_SCREENSHOT_CATCHUP_MS + 1 })
 
     files.push({
       name: '2026-08-26[12-36]_14.50, 0.00, -10.25_0.000, 0.000, 0.000, 1.000 (3).png',
@@ -157,6 +160,71 @@ describe('useEftScreenshotSync', () => {
       lastModified: clock,
     })
     await act(async () => { rerender({ partyId: 'party:8' }); await flush(); await vi.advanceTimersByTimeAsync(1800) })
+    expect(onAddPing).not.toHaveBeenCalled()
+  })
+
+  it('emits a new screenshot while the document is hidden', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('crypto', { randomUUID: () => 'local-ping' })
+    let clock = 3_000_000
+    const files = [{ name: firstName, size: 100, lastModified: clock - 1000 }]
+    const handle = directory(files)
+    const env = environment(handle)
+    const onAddPing = vi.fn()
+    const { result } = renderHook(() => useEftScreenshotSync({
+      userId: 'user-1',
+      myName: 'PMC',
+      onAddPing,
+      mapNorm: 'customs',
+      partyId: 'party:7',
+      environment: env,
+      handleStore: memoryStore(),
+      observerFactory: vi.fn(() => ({ observe: vi.fn(), disconnect: vi.fn() })),
+      now: () => clock,
+    }))
+
+    await act(async () => { await result.current.connect(); await flush() })
+    env.document.visibilityState = 'hidden'
+    clock += 1000
+    files.push({ name: secondName, size: 101, lastModified: clock })
+    let check
+    await act(async () => {
+      check = await result.current.checkNow()
+      await vi.advanceTimersByTimeAsync(1800)
+    })
+
+    expect(check).toMatchObject({ emitted: 1, skipped: 0, baseline: false })
+    expect(onAddPing).toHaveBeenCalledTimes(1)
+  })
+
+  it('repeated checks over an unchanged folder emit nothing', async () => {
+    vi.useFakeTimers()
+    const clock = 4_000_000
+    const files = [{ name: firstName, size: 100, lastModified: clock - 1000 }]
+    const onAddPing = vi.fn()
+    const { result } = renderHook(() => useEftScreenshotSync({
+      userId: 'user-1',
+      myName: 'PMC',
+      onAddPing,
+      mapNorm: 'customs',
+      partyId: 'party:7',
+      environment: environment(directory(files)),
+      handleStore: memoryStore(),
+      observerFactory: vi.fn(() => ({ observe: vi.fn(), disconnect: vi.fn() })),
+      now: () => clock,
+    }))
+
+    await act(async () => { await result.current.connect(); await flush() })
+    let firstCheck
+    let secondCheck
+    await act(async () => {
+      firstCheck = await result.current.checkNow()
+      secondCheck = await result.current.checkNow()
+      await vi.advanceTimersByTimeAsync(1800)
+    })
+
+    expect(firstCheck).toMatchObject({ emitted: 0, skipped: 0, baseline: false })
+    expect(secondCheck).toMatchObject({ emitted: 0, skipped: 0, baseline: false })
     expect(onAddPing).not.toHaveBeenCalled()
   })
 })

@@ -18,6 +18,12 @@ function saveLastPartyCode(code) {
   } catch { /* local storage is optional */ }
 }
 
+export function settleOptimisticPing(pings, storedPing, now = Date.now(), ttl) {
+  const current = Array.isArray(pings) ? pings : []
+  if (!storedPing || !current.some(existing => existing.id === storedPing.id)) return null
+  return prunePings(current, now, ttl)
+}
+
 function normalizeParty(data, fallbackMembers = []) {
   if (!data) return null
   return {
@@ -892,11 +898,21 @@ export function useParty(userId, userSettings = {}, {
       const latestTtl = Number(resolveSetting('ping_ttl_ms', {
         raid: latest.settings || {}, unit: null, user: userSettingsRef.current,
       }))
-      const mergedPings = prunePings(
-        [...(latest.pings || []), storedPing],
+      // The optimistic ping is also the in-flight clear guard: if CLEAR removed
+      // it while the RPC was pending, the response must not resurrect it.
+      const mergedPings = settleOptimisticPing(
+        latest.pings,
+        storedPing,
         Date.now(),
         Number.isFinite(latestTtl) ? latestTtl : undefined,
       )
+      if (!mergedPings) {
+        setError('')
+        return { data: stored, error: null }
+      }
+      // source_event_id round-trips as the ping id, so the optimistic entry is
+      // already authoritative for this list. Keep it instead of stacking the
+      // stored event at the same coordinates.
       const mergedLog = latest.ping_log?.some(existing => existing.id === storedPing.id)
         ? latest.ping_log
         : appendLog(latest.ping_log, storedPing)
