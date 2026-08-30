@@ -1434,7 +1434,6 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 }
 .quest-empty-action:hover { background: rgba(201,168,76,.16); }
 
-.quest-share-badge { flex: 0 0 auto; color: var(--grn); border: 1px solid rgba(102,183,120,.45); border-radius: 2px; padding: 1px 4px; font-size: var(--fs-xs); letter-spacing: .06em; line-height: 1.2; }
 .obj-row-distance { margin-left: auto; flex: 0 0 auto; color: var(--goldtx); font-size: var(--fs-xs); white-space: nowrap; }
 .obj-row-no-location .obj-row-distance { color: var(--txd); }
 

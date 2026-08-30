@@ -1,8 +1,6 @@
 import { useState, useMemo, useCallback, memo } from 'react'
 import { normalizeMembers, objectiveProgressKey, questDoneKey } from '../partyMembers'
 import { objectiveHasMapLocation, objectiveIsOnMap, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
-import { classifyObjective, classifyTask } from '../questShare'
-import { useQuestShareOverrides } from '../useQuestShareOverrides'
 import { memberColor } from '../memberColors'
 import { questRailColor } from '../questColors'
 
@@ -45,10 +43,8 @@ function objectiveOrderKey(taskId, objectiveId) {
 const QuestCard = memo(function QuestCard({
   task, owners, objs, doneCount, starred, allDone, completed, canAct, dimmed,
   isOpen, onToggleExpand, onToggleStar, onSkip, members, progress, memberIdsByName,
-  overrides,
 }) {
   const pct = objs.length ? (doneCount / objs.length) * 100 : 0
-  const taskShare = classifyTask(task, overrides)
   const loyalty = traderGateLabel(task)
   const rail = questRailColor(task.id)
 
@@ -99,9 +95,6 @@ const QuestCard = memo(function QuestCard({
                 background: 'rgba(201,168,76,0.15)', border: '1px solid var(--golddim)',
                 color: 'var(--gold)', letterSpacing: '.06em',
               }}>κ</span>
-            )}
-            {taskShare === 'shared' && (
-              <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
             )}
           </div>
           <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -187,9 +180,6 @@ const QuestCard = memo(function QuestCard({
                 }}>
                   {objectiveTypeLabel(obj.type)}
                 </span>
-                {classifyObjective(obj, task, overrides) === 'squad' && (
-                  <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
-                )}
               </div>
             )
           })}
@@ -209,7 +199,6 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
   const [dragObjKey, setDragObjKey]     = useState(null)
   const [dragOverObjKey, setDragOverObjKey] = useState(null)
   const memberRows = normalizeMembers(memberQuests)
-  const { overrides } = useQuestShareOverrides()
   const members = memberRows.map(member => member.callsign)
   const memberIdsByName = new Map(memberRows.map(member => [member.callsign, member.user_id]))
 
@@ -374,7 +363,6 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
     members,
     progress,
     memberIdsByName,
-    overrides,
   }
 
   return (
@@ -535,9 +523,6 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
                         <span className="mono obj-pill obj-pill-shared" title={`${row.owners.length} party members need this objective`}>
                           &times;{row.owners.length} SHARED
                         </span>
-                      )}
-                      {classifyObjective(row.obj, row.task, overrides) === 'squad' && (
-                        <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
                       )}
                     </div>
                   </div>

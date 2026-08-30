@@ -1,8 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { objectiveProgressKey } from '../partyMembers'
 import { objectiveIsOnMap, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
-import { classifyObjective, classifyTask } from '../questShare'
-import { useQuestShareOverrides } from '../useQuestShareOverrides'
 import { questRailColor } from '../questColors'
 import { mapReferenceArt } from '../mapBanners'
 import { HIDDEN_QUESTS_KEY, hiddenQuestIds, withQuestHidden } from '../questVisibility'
@@ -42,7 +40,6 @@ function objsForMap(task, mapNorm) {
 
 export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myUserId, myName, onSubmit, onOpenQuestManager, mapNorm, mapName, loading, settings = {}, onSetSetting, gameMode = 'regular' }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
-  const { overrides } = useQuestShareOverrides()
 
   // Hiding is a view filter, not progress — see questVisibility.js. Completion
   // itself is owned by the EFT log sync, so this panel has no way to mark a
@@ -247,7 +244,6 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
           // Section peers for move-to-top/bottom (same isMapSpecific + isComplete group)
           const sectionRows = visibleRows.filter(r => r.isMapSpecific === isMapSpecific && r.isComplete === isComplete)
           const sectionIdx = sectionRows.findIndex(r => r.task.id === task.id)
-          const taskShare = classifyTask(task, overrides)
           const loyalty = traderGateLabel(task)
 
           return (
@@ -287,9 +283,6 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                     {task.kappaRequired && (
                       <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)' }}>κ KAPPA</span>
-                    )}
-                    {taskShare === 'shared' && (
-                      <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
                     )}
                     {objs.length > 0 && (
                       <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: allObjsDone ? 'var(--grn)' : 'var(--txd)' }}>
@@ -396,9 +389,6 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
                     }}>
                       {objectiveTypeLabel(obj.type)}
                     </span>
-                    {classifyObjective(obj, task, overrides) === 'squad' && (
-                      <span className="quest-share-badge" title="Shareability is inferred from the objective type; the game does not publish this verdict.">SQUAD</span>
-                    )}
                   </div>
                 )
               })}

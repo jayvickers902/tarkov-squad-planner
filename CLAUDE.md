@@ -206,8 +206,9 @@ anything ending in your inventory or on your profile is personal, and a
 `foundInRaid` item is always personal whatever its type. `classifyTask` rolls the
 non-optional objectives up to `shared` / `partial` / `solo`.
 
-Because it is inference, every surface that renders a verdict marks it as derived,
-and unknown input always resolves to the *less* shareable answer. The
+Quest and objective panels do not render this inference as a `SQUAD` badge: the
+type rule produces too many false verdicts to present as player guidance. Unknown
+input always resolves to the *less* shareable answer. The
 `quest_share_overrides` table is the curated correction path for the solo-only
 chains BSG named (The Tarkov Shooter, The Punisher), admin-gated by
 `profiles.is_admin` and shaped like `map_keys`. A task override of `shared` or
