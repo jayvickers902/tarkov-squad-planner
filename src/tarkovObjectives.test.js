@@ -65,16 +65,47 @@ describe('map-planning exclusions', () => {
     expect(taskIsOnMap(task, 'customs')).toBe(false)
   })
 
-  it('keeps any-location find-in-raid quests because they can progress during a raid', () => {
+  it('excludes any-location find-in-raid-only quests from map planning', () => {
     const task = {
       id: 'fir-task',
       name: 'Find Supplies',
       map: null,
-      objectives: [{ id: 'find', type: 'findItem', optional: false, maps: [], zones: [] }],
+      objectives: [
+        { id: 'find', type: 'findItem', foundInRaid: true, optional: false, maps: [], zones: [] },
+        { id: 'give', type: 'giveItem', foundInRaid: true, optional: false, maps: [], zones: [] },
+      ],
     }
 
-    expect(taskIsOnMap(task, 'customs')).toBe(true)
-    expect(taskIsOnMap(task, 'shoreline')).toBe(true)
+    expect(taskIsOnMap(task, 'customs')).toBe(false)
+    expect(taskIsOnMap(task, 'shoreline')).toBe(false)
+    expect(taskIsOnMap(task, null)).toBe(true)
+  })
+
+  it('excludes obtain-item-only quests from map planning', () => {
+    const task = {
+      id: 'obtain-task',
+      name: 'Obtain Supplies',
+      map: null,
+      objectives: [
+        { id: 'find', type: 'findItem', foundInRaid: false, optional: false, maps: [], zones: [] },
+        { id: 'give', type: 'giveItem', foundInRaid: false, optional: false, maps: [], zones: [] },
+      ],
+    }
+
+    expect(taskIsOnMap(task, 'factory')).toBe(false)
+  })
+
+  it('keeps only the approved item-only Icebreaker exceptions', () => {
+    const itemObjective = { id: 'find', type: 'findItem', optional: false, maps: [], zones: [] }
+    const exceptions = [
+      ['69ce21e990144e437802b1e0', 'Fresh Stock'],
+      ['69ce1de03e15cd80bd06f6c9', 'Oil Change'],
+      ['69ce204c8702b378f9091e4b', 'War Never Changes'],
+    ]
+    for (const [id, name] of exceptions) {
+      expect(taskIsOnMap({ id, name, map: { normalizedName: 'icebreaker' }, objectives: [itemObjective] }, 'icebreaker')).toBe(true)
+    }
+    expect(taskIsOnMap({ id: '59675d6c86f7740a842fc482', name: 'Ice Cream Cones', map: { normalizedName: 'woods' }, objectives: [itemObjective] }, 'woods')).toBe(false)
   })
 
   it('preserves explicit map assignments even when the published objective is a hand-in', () => {

@@ -73,22 +73,37 @@ const RAID_LOCAL_OBJECTIVE_TYPES = new Set([
   'findQuestItem', 'useItem',
 ])
 
-// A regular findItem objective can progress in any raid even though it has no
-// map metadata, so it remains useful in map planning alongside local actions.
+// Item collection by itself is deliberately omitted from map planning: it can
+// happen anywhere and does not give the player a reason to select one map over
+// another. It remains useful when paired with a genuinely map-local action.
 const MAP_PROGRESS_OBJECTIVE_TYPES = new Set([
   ...RAID_LOCAL_OBJECTIVE_TYPES,
   'findItem',
 ])
 
+const ITEM_ACQUISITION_OBJECTIVE_TYPES = new Set(['findItem', 'giveItem'])
+
+// These current Icebreaker quests are published as item-only objectives, but
+// their explicit Icebreaker assignment is useful raid context and intentional.
+const MAP_PLANNING_ITEM_ONLY_EXCEPTIONS = new Set([
+  '69ce21e990144e437802b1e0', // Fresh Stock
+  '69ce1de03e15cd80bd06f6c9', // Oil Change
+  '69ce204c8702b378f9091e4b', // War Never Changes
+])
+
 // Any-location quests made entirely of trader, hideout, account, dialogue, or
 // weapon-build work cannot progress on a selected raid map. Keep them available
 // to imports and the quest manager, but omit them from every map planning view.
-// An explicit task map is preserved even if upstream publishes only a non-raid
-// objective, since that map assignment can still carry useful quest context.
+// An explicit task map is generally preserved even if upstream publishes only
+// a non-raid objective. Item-acquisition-only quests are the exception, apart
+// from the three intentionally retained Icebreaker tasks above.
 function taskIsExcludedFromMapPlanning(task) {
   if (!task) return false
-  if (task?.map?.normalizedName || task?.mapNorm) return false
   const requiredObjectives = (task.objectives || []).filter(objective => !objective?.optional)
+  const isItemAcquisitionOnly = requiredObjectives.some(objective => objective?.type === 'findItem')
+    && requiredObjectives.every(objective => ITEM_ACQUISITION_OBJECTIVE_TYPES.has(objective?.type))
+  if (isItemAcquisitionOnly && !MAP_PLANNING_ITEM_ONLY_EXCEPTIONS.has(task.id)) return true
+  if (task?.map?.normalizedName || task?.mapNorm) return false
   return requiredObjectives.length === 0
     || !requiredObjectives.some(objective => MAP_PROGRESS_OBJECTIVE_TYPES.has(objective?.type))
 }
