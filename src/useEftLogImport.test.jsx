@@ -831,6 +831,33 @@ describe('useEftLogImport', () => {
     expect(onApply).toHaveBeenCalledTimes(2)
   })
 
+  // A quest is handed in with the game fullscreen, so the tab is hidden for
+  // exactly the check that matters. Refusing to poll then held the completion
+  // until the player alt-tabbed back, which reads as the quest never leaving
+  // the party TODO list.
+  it('applies a completion found while the tab is hidden', async () => {
+    vi.useFakeTimers()
+    const sourceFile = logFile()
+    const environment = persistentEnvironment(directoryHandle(sourceFile))
+    const onApply = vi.fn(async () => ({ inserted: 0, updated: 1 }))
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: [{ id: taskId }],
+      environment,
+      observerFactory: vi.fn(() => { throw new Error('unsupported') }),
+      workerFactory: workerFactoryWith(preview()),
+      handleStore: memoryStore(),
+      onApply,
+      pollIntervalMs: 100,
+    }))
+    await act(async () => { await result.current.connectRememberedFolder() })
+    await act(async () => { await result.current.confirmImport({ autoSync: true }) })
+    environment.document.visibilityState = 'hidden'
+    sourceFile.size = 99
+    sourceFile.lastModified = 2
+    await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+    expect(onApply).toHaveBeenCalledTimes(2)
+  })
+
   it('reports observer permission errors and disconnects instead of silently polling', async () => {
     const sourceFile = logFile()
     const environment = persistentEnvironment(directoryHandle(sourceFile))

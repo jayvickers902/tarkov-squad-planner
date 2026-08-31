@@ -745,11 +745,19 @@ export function useEftLogImport({
     return promise
   }, [scanDirectory, stopWatching])
 
+  // Deliberately not gated on visibility. A quest is handed in with EFT
+  // fullscreen, which is exactly when this tab is hidden, so declining to check
+  // then meant a completion only landed once the player alt-tabbed back --
+  // which reads as the quest never leaving the party TODO list at all. The
+  // screenshot sync has always polled while hidden for the same reason. The
+  // browser throttles a hidden tab's timer to roughly one call a minute, which
+  // caps the cost on its own and is well inside the latency a hand-in
+  // tolerates; the focus/visibility listeners still force an immediate
+  // catch-up check on return.
   const pollRememberedFolder = useCallback(() => {
     if (!watchingRef.current || !directoryHandleRef.current) return null
-    if (documentObject?.visibilityState && documentObject.visibilityState !== 'visible') return null
     return runFolderCheck(directoryHandleRef.current, true)
-  }, [documentObject, runFolderCheck])
+  }, [runFolderCheck])
 
   // CHECK NOW works whether or not automatic sync is on. Without auto-sync it
   // rescans into a preview and never writes, matching the rule that a
