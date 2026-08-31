@@ -41,8 +41,11 @@ export function useUserQuests(userId, gameMode = 'regular') {
   const [loadedGameMode, setLoadedGameMode] = useState(null)
   const [error, setError] = useState(null)
   const activeModeRef = useRef(mode)
+  const activeUserIdRef = useRef(userId)
   const questsRef = useRef(quests)
+  const loadRequestRef = useRef(0)
   activeModeRef.current = mode
+  activeUserIdRef.current = userId
   questsRef.current = quests
 
   const loadMode = useCallback(async (requestedUserId, requestedMode) => {
@@ -54,6 +57,7 @@ export function useUserQuests(userId, gameMode = 'regular') {
   useEffect(() => {
     let cancelled = false
     if (!userId) {
+      loadRequestRef.current += 1
       setQuests([])
       setLoadedUserId(null)
       setLoadedGameMode(null)
@@ -66,24 +70,95 @@ export function useUserQuests(userId, gameMode = 'regular') {
     setLoadedGameMode(null)
     setLoading(true)
     setError(null)
+    const requestId = ++loadRequestRef.current
     loadMode(userId, mode)
       .then(data => {
-        if (cancelled) return
+        if (cancelled || requestId !== loadRequestRef.current) return
         setQuests(data)
         setLoadedUserId(userId)
         setLoadedGameMode(mode)
       })
       .catch(loadError => {
-        if (!cancelled) {
+        if (!cancelled && requestId === loadRequestRef.current) {
           setError(loadError)
           setLoadedUserId(userId)
           setLoadedGameMode(mode)
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled && requestId === loadRequestRef.current) setLoading(false)
       })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      if (requestId === loadRequestRef.current) loadRequestRef.current += 1
+    }
+  }, [userId, mode, loadMode])
+
+  // The desktop scanner is a separate Supabase client. Its reconciliation RPC
+  // updates user_quests without passing through this hook, so an already-open
+  // planner needs the row change to refresh its active list. Re-read the whole
+  // mode instead of trying to interpret the payload: completed and failed rows
+  // must disappear, active rows may be inserted, and DELETE payloads do not
+  // reliably include every identifying column unless replica identity is FULL.
+  // A visibility refresh repairs a missed or temporarily disconnected channel.
+  useEffect(() => {
+    if (!userId) return undefined
+    let cancelled = false
+    let refreshInFlight = false
+    let refreshQueued = false
+
+    async function refreshFromDatabase() {
+      if (refreshInFlight) {
+        refreshQueued = true
+        return
+      }
+      refreshInFlight = true
+      const requestId = ++loadRequestRef.current
+      try {
+        const data = await loadMode(userId, mode)
+        if (cancelled || requestId !== loadRequestRef.current) return
+        if (activeUserIdRef.current !== userId || activeModeRef.current !== mode) return
+        setQuests(data)
+        setLoadedUserId(userId)
+        setLoadedGameMode(mode)
+        setError(null)
+      } catch (refreshError) {
+        if (!cancelled && requestId === loadRequestRef.current) setError(refreshError)
+      } finally {
+        if (!cancelled && requestId === loadRequestRef.current) setLoading(false)
+        refreshInFlight = false
+        if (refreshQueued && !cancelled) {
+          refreshQueued = false
+          void refreshFromDatabase()
+        }
+      }
+    }
+
+    const channel = supabase
+      .channel(`user-quests-${userId}-${mode}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'user_quests', filter: `user_id=eq.${userId}`,
+      }, () => { void refreshFromDatabase() })
+      .subscribe(status => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') void refreshFromDatabase()
+      })
+
+    const hasDocument = typeof document !== 'undefined'
+    const hasWindow = typeof window !== 'undefined'
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void refreshFromDatabase()
+    }
+    const handlePageShow = () => { void refreshFromDatabase() }
+    if (hasDocument) document.addEventListener('visibilitychange', handleVisibilityChange)
+    if (hasWindow) window.addEventListener('pageshow', handlePageShow)
+
+    return () => {
+      cancelled = true
+      refreshQueued = false
+      if (hasDocument) document.removeEventListener('visibilitychange', handleVisibilityChange)
+      if (hasWindow) window.removeEventListener('pageshow', handlePageShow)
+      supabase.removeChannel(channel)
+    }
   }, [userId, mode, loadMode])
 
   // Add a quest to the user's saved list

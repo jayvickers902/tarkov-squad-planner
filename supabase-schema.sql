@@ -108,6 +108,20 @@ create policy "User quests insert" on public.user_quests for insert with check (
 create policy "User quests update" on public.user_quests for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "User quests delete" on public.user_quests for delete using (auth.uid() = user_id);
 
+-- Keep an open planner synchronized with quest-log changes made by the desktop
+-- companion. RLS still limits each subscriber to its own user_quests rows.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'user_quests'
+  ) then
+    alter publication supabase_realtime add table public.user_quests;
+  end if;
+end $$;
+
 -- Profiles: users can read all (for callsign display), edit only their own
 drop policy if exists "Profiles public read"  on public.profiles;
 drop policy if exists "Profiles own update"   on public.profiles;

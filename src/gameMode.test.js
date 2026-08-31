@@ -6,9 +6,27 @@ import { useUserQuests } from './useUserQuests'
 const db = vi.hoisted(() => ({
   rows: [],
   from: vi.fn(),
+  changeHandler: null,
+  channel: vi.fn(),
+  removeChannel: vi.fn(),
 }))
 
-vi.mock('./supabase', () => ({ supabase: { from: db.from } }))
+vi.mock('./supabase', () => ({ supabase: {
+  from: db.from,
+  channel: db.channel,
+  removeChannel: db.removeChannel,
+} }))
+
+db.channel.mockImplementation(() => {
+  const channel = {
+    on: vi.fn((_type, _filter, handler) => {
+      db.changeHandler = handler
+      return channel
+    }),
+    subscribe: vi.fn(() => channel),
+  }
+  return channel
+})
 
 function createQueryBuilder() {
   const filters = {}
@@ -59,6 +77,9 @@ db.from.mockImplementation(() => createQueryBuilder())
 describe('game mode contract', () => {
   beforeEach(() => {
     db.rows = [{ user_id: 'user-1', game_mode: 'regular', quest_id: 'regular-1', quest_name: 'Regular quest', state: 'active' }]
+    db.changeHandler = null
+    db.channel.mockClear()
+    db.removeChannel.mockClear()
   })
 
   it('round-trips every mode through its display label', () => {
@@ -103,6 +124,19 @@ describe('game mode contract', () => {
     rerender({ mode: 'regular' })
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.quests.map(quest => quest.quest_id)).toEqual(['regular-1', 'regular-2'])
+  })
+
+  it('removes a quest when the desktop scanner completes it in another client', async () => {
+    const { result } = renderHook(() => useUserQuests('user-1', 'regular'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.quests.map(quest => quest.quest_id)).toEqual(['regular-1'])
+
+    db.rows[0] = { ...db.rows[0], state: 'completed', state_source: 'log_import' }
+    await act(async () => {
+      db.changeHandler({ eventType: 'UPDATE', new: db.rows[0] })
+    })
+
+    await waitFor(() => expect(result.current.quests).toEqual([]))
   })
 
   it('clears active quests only in the active mode and preserves terminal history', async () => {
