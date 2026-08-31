@@ -14,6 +14,7 @@
         { "url": "https://accounts.google.com/*" }
       ]
     },
-    "updater:default"
+    "updater:default",
+    "process:allow-restart"
   ]
 }

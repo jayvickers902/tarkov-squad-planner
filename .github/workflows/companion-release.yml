@@ -27,6 +27,8 @@ jobs:
     env:
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,13 +40,30 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - run: npm ci
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/companion-v')
+        shell: pwsh
+        run: |
+          $configuredVersion = (Get-Content -Raw src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $tagVersion = $env:GITHUB_REF_NAME.Substring('companion-v'.Length)
+          if ($tagVersion -ne $configuredVersion) {
+            throw "Release tag $env:GITHUB_REF_NAME does not match configured application version $configuredVersion."
+          }
       - run: npm run tauri -- build --target ${{ matrix.target }}
       - name: Stage stable installer names
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          Copy-Item "src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe" "release/Tarkov-Squad-Planner-Companion_${{ matrix.label }}-setup.exe"
-          Copy-Item "src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi" "release/Tarkov-Squad-Planner-Companion_${{ matrix.label }}.msi"
+          $nsis = @(Get-ChildItem -LiteralPath "src-tauri/target/${{ matrix.target }}/release/bundle/nsis" -Filter "*-setup.exe")
+          if ($nsis.Count -ne 1) { throw "Expected exactly one NSIS installer for ${{ matrix.label }}, found $($nsis.Count)." }
+          $nsisSignature = "$($nsis[0].FullName).sig"
+          if (-not (Test-Path -LiteralPath $nsisSignature)) { throw "Missing NSIS signature for ${{ matrix.label }}." }
+          $msi = @(Get-ChildItem -LiteralPath "src-tauri/target/${{ matrix.target }}/release/bundle/msi" -Filter "*.msi")
+          if ($msi.Count -ne 1) { throw "Expected exactly one MSI installer for ${{ matrix.label }}, found $($msi.Count)." }
+          Copy-Item -LiteralPath $nsis[0].FullName -Destination "release/Tarkov-Squad-Planner-Companion_${{ matrix.label }}-setup.exe"
+          Copy-Item -LiteralPath $nsisSignature -Destination "release/Tarkov-Squad-Planner-Companion_${{ matrix.label }}-setup.exe.sig"
+          Copy-Item -LiteralPath $msi[0].FullName -Destination "release/Tarkov-Squad-Planner-Companion_${{ matrix.label }}.msi"
+          if (-not (Test-Path -LiteralPath "release/Tarkov-Squad-Planner-Companion_${{ matrix.label }}-setup.exe.sig")) { throw "Staged signature is missing for ${{ matrix.label }}." }
       - uses: actions/upload-artifact@v4
         with:
           name: companion-windows-${{ matrix.label }}
@@ -55,11 +74,17 @@ jobs:
     needs: windows
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions/download-artifact@v4
         with:
           pattern: companion-windows-*
           path: release
           merge-multiple: true
+      - name: Generate and validate updater manifest
+        run: node scripts/create-companion-manifest.mjs release "$GITHUB_REF_NAME"
       - uses: softprops/action-gh-release@v2
         with:
           files: release/*

@@ -326,8 +326,8 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
-        // Endpoints and the release public key are configured in tauri.conf.json
-        // when a signed release channel is available. Empty endpoints are safe.
+        .plugin(tauri_plugin_process::init())
+        // The updater endpoint and release public key are configured in tauri.conf.json.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let native_state = app.state::<NativeState>();

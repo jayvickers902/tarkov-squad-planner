@@ -29,6 +29,7 @@ button:focus-visible, summary:focus-visible { outline: 2px solid #f0c568; outlin
 .rescan-card { align-items: flex-start; }
 .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .metric { padding: 15px 16px; border-radius: 11px; } .metric span { display: block; margin-bottom: 7px; color: #80939d; font-size: 11px; } .metric strong { display: block; color: #e1e8eb; font-size: 14px; font-weight: 600; }
 .settings-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 19px 20px; border-radius: 13px; } .settings-card h2 { font-size: 16px; } .settings-card p:not(.eyebrow) { max-width: 430px; font-size: 12px; }
+.update-card { align-items: flex-start; } .update-copy { min-width: 0; } .update-available { margin-top: 8px; color: #9adaaa !important; font-weight: 700; } .update-notes { display: -webkit-box; margin-top: 7px; overflow: hidden; color: #c5d0d4 !important; -webkit-box-orient: vertical; -webkit-line-clamp: 2; } .update-progress { display: block; width: min(100%, 360px); height: 7px; margin-top: 11px; accent-color: #e7b34b; } .update-status { min-height: 17px; margin-top: 7px; color: #80939d !important; font-size: 11px !important; }
 .folder-settings { display: block; }
 .folder-settings.is-setup-priority { border-color: #e7b34b55; box-shadow: 0 16px 40px #00000022, inset 3px 0 #e7b34b; }
 .settings-heading { margin-bottom: 14px; }
@@ -77,6 +78,8 @@ footer { margin-top: auto; padding-top: 26px; color: #657780; text-align: center
   .setup-action { grid-column: 2; width: 100%; }
   .folder-row { align-items: flex-start; flex-direction: column; }
   .folder-row .secondary-button { width: 100%; }
+  .update-card { align-items: stretch; flex-direction: column; }
+  .update-card .secondary-button { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .toggle, .toggle span:first-child { transition: none; } }
 
