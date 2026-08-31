@@ -222,6 +222,56 @@ describe('MyQuests ordering', () => {
     expect(dragHandle('Bravo')).toHaveFocus()
   })
 
+  // HTML5 drag never fires for touch, so the handle runs a pointer gesture too.
+  // Reordering by finger is the only path a phone has: the buttons this replaced
+  // were onClick, and Alt+arrow needs a keyboard.
+  // jsdom has no elementFromPoint at all, which is why the component calls it
+  // optionally; stub it rather than spy on it.
+  function overPoint(target, run) {
+    document.elementFromPoint = () => target
+    try { run() } finally { delete document.elementFromPoint }
+  }
+
+  function pointerDrag(fromName, toName, { finish = 'up' } = {}) {
+    const handle = dragHandle(fromName)
+    const target = screen.getByText(toName).closest('.quest-row')
+    overPoint(target, () => {
+      fireEvent.pointerDown(handle, { pointerId: 7, pointerType: 'touch' })
+      fireEvent.pointerMove(handle, { pointerId: 7, pointerType: 'touch', clientX: 10, clientY: 40 })
+      if (finish === 'up') fireEvent.pointerUp(handle, { pointerId: 7, pointerType: 'touch' })
+      else fireEvent.pointerCancel(handle, { pointerId: 7, pointerType: 'touch' })
+    })
+  }
+
+  it('reorders from a touch drag on the handle', () => {
+    render(<MyQuests {...baseProps} userQuests={three} />)
+
+    pointerDrag('Bravo', 'Alpha')
+
+    expect(names()).toEqual(['Bravo', 'Alpha', 'Charlie'])
+  })
+
+  it('leaves the order alone when a touch drag is cancelled', () => {
+    render(<MyQuests {...baseProps} userQuests={three} />)
+
+    pointerDrag('Bravo', 'Alpha', { finish: 'cancel' })
+
+    expect(names()).toEqual(['Alpha', 'Bravo', 'Charlie'])
+  })
+
+  it('leaves a mouse pointer to the native drag path so one gesture is not handled twice', () => {
+    render(<MyQuests {...baseProps} userQuests={three} />)
+    const target = screen.getByText('Alpha').closest('.quest-row')
+
+    overPoint(target, () => {
+      fireEvent.pointerDown(dragHandle('Bravo'), { pointerId: 3, pointerType: 'mouse' })
+      fireEvent.pointerMove(dragHandle('Bravo'), { pointerId: 3, pointerType: 'mouse', clientX: 10, clientY: 40 })
+      fireEvent.pointerUp(dragHandle('Bravo'), { pointerId: 3, pointerType: 'mouse' })
+    })
+
+    expect(names()).toEqual(['Alpha', 'Bravo', 'Charlie'])
+  })
+
   it('ignores an arrow key without Alt so the row is not reordered by browsing', () => {
     render(<MyQuests {...baseProps} userQuests={three} />)
 

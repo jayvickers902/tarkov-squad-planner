@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { useState, useMemo, useEffect, useId, useRef, useCallback } from 'react'
 import { useTasks } from '../useTarkov'
 import { useEftLogSync, useEftScreenshotSyncContext } from '../EftLogSyncContext'
 import { FEATURED } from '../constants'
@@ -14,7 +14,7 @@ export const IMPORT_RESTORE_STORAGE_KEY = 'tsp.quest_import_restore.v1'
 export const IMPORT_RESTORE_TTL_MS = 24 * 60 * 60 * 1000
 export const COLLAPSED_MAPS_STORAGE_KEY = 'tsp.quest_collapsed_maps.v1'
 
-const HISTORY_LIMIT = 400
+const HISTORY_LIMIT = 1000
 const HISTORY_PREVIEW_ROWS = 8
 // The banner falls back to the splash art: with no quests there is no map to
 // pick, and an empty background layer would paint nothing at all.
@@ -45,7 +45,7 @@ function KappaBadge() {
 
 function QuestEmptyState({ onOpenHub, onManualSearch }) {
   return (
-    <div className="card quest-empty-card">
+    <div className="card quest-empty-card quest-empty-card-page">
       <div className="quest-empty-state">
         <h3>NO QUESTS YET</h3>
         <p>Import your quest list to get started — it takes about a minute.</p>
@@ -88,7 +88,7 @@ function historyDate(value) {
   return at.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }).toUpperCase()
 }
 
-export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onRestore, onDone, inParty, userSettings = {}, onSetUserSetting, onMarkCompleted, onReconcileLogEvents, onGetQuestHistory, gameMode: passedGameMode = null }) {
+export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onRestore, onDone, inParty, userSettings = {}, onSetUserSetting, onMarkCompleted, onReconcileLogEvents, onGetQuestHistory, gameMode: passedGameMode = null }) {
   const [mapFilter, setMapFilter]     = useState('all')
   const [searchMap, setSearchMap]     = useState('any')
   const [searchQ, setSearchQ]         = useState('')
@@ -112,6 +112,11 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
   const [historyExpanded, setHistoryExpanded] = useState(false)
   const [dragId, setDragId] = useState(null)
   const [dropId, setDropId] = useState(null)
+  // HTML5 drag never fires for touch, so the same handle also runs a pointer
+  // gesture. The in-flight state is a ref: a move must not re-render per frame,
+  // and the commit must not read a stale dropId out of a closure.
+  const pointerDragRef = useRef(null)
+  const kappaOnlyId = useId()
   const searchInputRef = useRef(null)
   const savedQuestsRef = useRef(null)
   const handleRefs = useRef(new Map())
@@ -367,6 +372,35 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
     handleRefs.current.get(pending)?.focus?.()
   })
 
+  // Mouse keeps the native drag path; touch and pen come through here.
+  function beginPointerDrag(event, questId) {
+    if (event.pointerType === 'mouse') return
+    event.preventDefault()
+    pointerDragRef.current = { pointerId: event.pointerId, questId, overId: null }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    setDragId(questId)
+  }
+
+  function movePointerDrag(event) {
+    const drag = pointerDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    event.preventDefault()
+    const row = document.elementFromPoint?.(event.clientX, event.clientY)?.closest?.('.quest-row')
+    const overId = row?.dataset?.questId || null
+    drag.overId = overId
+    setDropId(current => (current === overId ? current : overId))
+  }
+
+  function endPointerDrag(event, { commit }) {
+    const drag = pointerDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    pointerDragRef.current = null
+    if (commit && drag.overId) reorder(drag.questId, drag.overId)
+    setDragId(null)
+    setDropId(null)
+  }
+
   function handleRowKeyDown(event, questId) {
     if (!event.altKey) return
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
@@ -427,6 +461,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
     setHistoryLoading(true)
     try {
       const rows = await onGetQuestHistory(HISTORY_LIMIT)
+      setHistoryTruncated(Array.isArray(rows) && rows.length >= HISTORY_LIMIT)
       setHistoryRows(Array.isArray(rows) ? rows.filter(row => row?.state === 'completed' || row?.state === 'failed') : [])
     } catch {
       setHistoryRows([])
@@ -452,6 +487,8 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
 
   const historyCompleted = historyRows ? historyRows.filter(row => row.state === 'completed').length : 0
   const historyFailed = historyRows ? historyRows.filter(row => row.state === 'failed').length : 0
+  // getQuestHistory bounds to HISTORY_LIMIT, so a full page means there may be more.
+  const [historyTruncated, setHistoryTruncated] = useState(false)
   const historyVisible = historyRows
     ? (historyExpanded ? historyRows : historyRows.slice(0, HISTORY_PREVIEW_ROWS))
     : []
@@ -654,12 +691,12 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
             ))}
           </div>
           <div className="quest-kappa-only">
-            <span className="mono" id="quest-kappa-only-label">κ ONLY</span>
+            <span className="mono" id={kappaOnlyId}>κ ONLY</span>
             <button
               type="button"
               className="quest-switch"
               aria-pressed={kappaOnly}
-              aria-labelledby="quest-kappa-only-label"
+              aria-labelledby={kappaOnlyId}
               onClick={() => setKappaOnly(value => !value)}
             >
               <span className="quest-switch-knob" aria-hidden="true" />
@@ -667,7 +704,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
           </div>
         </div>
         {selectionSize > 0 && (
-          <div className="quest-bulkbar">
+          <div className="quest-bulkbar" role="status">
             <span className="mono quest-bulk-count">{selectionSize} SELECTED</span>
             <button className="quest-bulk-btn is-done" onClick={() => runBulk(id => onMarkCompleted?.(id))}>✓ MARK DONE</button>
             <button className="quest-bulk-btn" onClick={() => runBulk(id => {
@@ -733,6 +770,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                     {group.rows.map(({ quest: q, task, kappa }) => (
                       <div
                         key={q.quest_id}
+                        data-quest-id={q.quest_id}
                         className={[
                           'quest-row',
                           q.important && !q.skipped ? 'is-starred' : '',
@@ -759,6 +797,10 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                           draggable
                           onDragStart={event => { setDragId(q.quest_id); event.dataTransfer.effectAllowed = 'move' }}
                           onDragEnd={() => { setDragId(null); setDropId(null) }}
+                          onPointerDown={event => beginPointerDrag(event, q.quest_id)}
+                          onPointerMove={movePointerDrag}
+                          onPointerUp={event => endPointerDrag(event, { commit: true })}
+                          onPointerCancel={event => endPointerDrag(event, { commit: false })}
                           onKeyDown={event => handleRowKeyDown(event, q.quest_id)}
                           title="Drag to reorder — or Alt + arrow keys"
                           aria-label={`Reorder ${q.quest_name}. Hold Alt and press the up or down arrow to move it.`}
@@ -864,6 +906,10 @@ export default function MyQuests({ userId, userQuests, onAdd, onBulkAdd, onRemov
                           <button className="btn-ghost btn-sm quest-history-more" onClick={() => setHistoryExpanded(true)}>
                             SHOW ALL {historyRows.length} RECORDS
                           </button>
+                        )}
+                        {/* "All" of a capped set reads as data loss unless the cap says so. */}
+                        {historyTruncated && (
+                          <div className="mono quest-rail-note">SHOWING THE MOST RECENT {HISTORY_LIMIT} RECORDS</div>
                         )}
                       </div>
                     )

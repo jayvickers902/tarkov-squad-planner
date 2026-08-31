@@ -55,7 +55,6 @@ export default function App() {
   const {
     quests: userQuests, loading: questsLoading,
     addQuest: saveQuest, removeQuest: removeSavedQuest,
-    bulkAddQuests,
     toggleImportant, toggleSkipped, clearAllQuests, restoreSnapshot, markCompleted: markQuestCompleted,
     saveObjectiveProgress,
     repairQuestRows,
@@ -424,7 +423,6 @@ export default function App() {
                 userId={user?.id}
                 userQuests={userQuests}
                 onAdd={saveQuest}
-                onBulkAdd={bulkAddQuests}
                 onRemove={removeSavedQuest}
                 onToggleImportant={toggleImportant}
                 onToggleSkipped={toggleSkipped}
@@ -480,7 +478,6 @@ export default function App() {
             userId={user?.id}
             userQuests={userQuests}
             onAdd={saveQuest}
-            onBulkAdd={bulkAddQuests}
             onRemove={removeSavedQuest}
             onToggleImportant={toggleImportant}
             onToggleSkipped={toggleSkipped}
