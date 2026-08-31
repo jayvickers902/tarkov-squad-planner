@@ -345,6 +345,114 @@ function markerInPrefix(text, start, previousEnd) {
   return from < start && NOTIFICATION_MARKER_RE.test(text.slice(from, start))
 }
 
+/**
+ * Every relevant log line starts with the client's own wall clock. That clock is
+ * the only one shared by the gateway requests in `backend_*.log` and the quest
+ * notifications in `push-notifications_*.log`, so it is the only safe basis for
+ * placing an event on the mode timeline.
+ *
+ * The normalized `occurredAt` cannot be used for this: it derives from the
+ * server-stamped `dt` epoch, which sits a whole timezone offset away from the
+ * log's wall clock (+3h on the corpus this was built against). That offset is a
+ * property of the player's machine, not a constant, so comparing a normalized
+ * timestamp against a raw one would mis-place events by hours for most users.
+ */
+const LOG_LINE_CLOCK_RE = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d{3})\|/
+
+function logLineClockAt(text, lineStart) {
+  const match = LOG_LINE_CLOCK_RE.exec(text.slice(lineStart, lineStart + 32))
+  if (!match) return null
+  // Parsed as UTC purely to get a comparable number. Both sides of every
+  // comparison come from the same log's wall clock, so the absolute value is
+  // never used and never leaves this module.
+  return Date.UTC(+match[1], +match[2] - 1, +match[3], +match[4], +match[5], +match[6], +match[7])
+}
+
+function lineStartBefore(text, index) {
+  const newline = text.lastIndexOf('\n', index)
+  return newline === -1 ? 0 : newline + 1
+}
+
+/**
+ * Read the wall clock of the log line that introduces a record. The JSON body
+ * begins on the line after its `Got notification` header, so the record's own
+ * line carries no timestamp and the header's has to be found by walking back.
+ * Bounded by the previous record so a timestamp belonging to an earlier record
+ * cannot leak forward, exactly as `markerInPrefix` is.
+ */
+function recordClockAt(text, start, previousEnd) {
+  const floor = Math.max(previousEnd + 1, start - MARKER_LOOKBACK, 0)
+  let cursor = lineStartBefore(text, start)
+  while (cursor >= floor) {
+    const at = logLineClockAt(text, cursor)
+    if (at !== null) return at
+    if (cursor === 0) break
+    // Step past this line's own newline. Searching from `cursor - 1` would find
+    // that newline and return `cursor` again, and the walk would never advance;
+    // the guard below keeps termination a property of the loop rather than of
+    // the search.
+    const earlier = lineStartBefore(text, cursor - 2)
+    if (earlier >= cursor) break
+    cursor = earlier
+  }
+  return null
+}
+
+/**
+ * Build the ordered record of which gateway the client was talking to, minute by
+ * minute, from the timestamped request lines in a context log.
+ *
+ * This is what makes mode attribution exact rather than merely safe. A player who
+ * checks a seasonal character and switches back without restarting the game
+ * produces one launch containing both, and a session-level tally can only call
+ * that conflicted. The request log already says which character was active at any
+ * moment, so an event can be placed against it directly.
+ */
+function collectModeTransitions(text) {
+  const transitions = []
+  // Anchored on the one domain this acts on, for the same reason
+  // `collectHostModeSignals` is: a general host pattern backtracks
+  // catastrophically on adversarial text, and a log may be up to 32 MiB.
+  const pattern = /https?:\/\/([a-z0-9.-]{0,64}escapefromtarkov\.com)(?::\d+)?/ig
+  let match
+  while ((match = pattern.exec(text))) {
+    const mode = hostMode(match[1])
+    if (!mode) continue
+    const at = logLineClockAt(text, lineStartBefore(text, match.index))
+    if (at === null) continue
+    transitions.push({ at, mode })
+  }
+  return transitions
+}
+
+/** Sort by clock and drop repeats, leaving one entry per change of gateway. */
+function collapseModeTransitions(transitions) {
+  const ordered = [...transitions].sort((left, right) => left.at - right.at)
+  const collapsed = []
+  for (const transition of ordered) {
+    if (collapsed.length && collapsed[collapsed.length - 1].mode === transition.mode) continue
+    collapsed.push(transition)
+  }
+  return collapsed
+}
+
+/**
+ * Resolve one event's mode from the gateway last contacted at or before it. An
+ * event with no preceding transition is not guessed at: it falls back to the
+ * session verdict, preserving the property that anything we cannot place stays
+ * excluded.
+ */
+function attributeEventMode(transitions, at, sessionVerdict) {
+  if (!Number.isFinite(at) || !transitions?.length) return { ...sessionVerdict, attributed: false }
+  let mode = null
+  for (const transition of transitions) {
+    if (transition.at > at) break
+    mode = transition.mode
+  }
+  if (!mode) return { ...sessionVerdict, attributed: false }
+  return { mode, confidence: 'attributed', attributed: true }
+}
+
 function findNotificationMessages(value, result = [], seen = new Set(), markedByPrefix = false) {
   if (!isPlainObject(value) || seen.has(value)) return result
   seen.add(value)
@@ -603,6 +711,27 @@ function collectTextModeSignals(text) {
   return result
 }
 
+/**
+ * Classify one EFT host into a game mode. Shared by the session-level tally and
+ * the per-event gateway timeline, so the two can never disagree about what a
+ * host means.
+ *
+ * Seasonal is tested first and claims the host outright. The seasonal gateway is
+ * literally `gw-pvp-season`, so the permanent-PvP token test below matches it
+ * too. Without this a seasonal session resolves to `regular` with no competing
+ * signal for resolveMode to catch, and a seasonal character's quests import onto
+ * the permanent one.
+ */
+function hostMode(host) {
+  if (typeof host !== 'string' || !/escapefromtarkov\.com/.test(host)) return null
+  const withoutPort = host.toLowerCase().replace(/:\d+$/, '')
+  if (/(?:^|[.-])(?:pvp-season|pvpseason|season)(?:$|[.-])/.test(withoutPort)) return 'pvp-season'
+  if (/(?:^|[.-])pve(?:$|[.-])/.test(withoutPort)) return 'pve'
+  // A generic production/shared endpoint is deliberately not regular evidence.
+  if (/(?:^|[.-])(?:pvp|regular)(?:$|[.-])/.test(withoutPort)) return 'regular'
+  return null
+}
+
 function collectHostModeSignals(text) {
   const result = new Map()
   const hosts = new Set()
@@ -619,25 +748,30 @@ function collectHostModeSignals(text) {
   let sawRegular = false
   let sawSeason = false
   for (const host of hosts) {
-    if (!/escapefromtarkov\.com/.test(host)) continue
-    const withoutPort = host.replace(/:\d+$/, '')
-    // Seasonal is tested first and claims the host outright. The seasonal
-    // gateway is literally `gw-pvp-season`, so the permanent-PvP token test
-    // below matches it too. Without this a seasonal session resolves to
-    // `regular` with no competing signal for resolveMode to catch, and a
-    // seasonal character's quests import onto the permanent one.
-    if (/(?:^|[.-])(?:pvp-season|pvpseason|season)(?:$|[.-])/.test(withoutPort)) {
-      sawSeason = true
-      continue
-    }
-    if (/(?:^|[.-])pve(?:$|[.-])/.test(withoutPort)) sawPve = true
-    // A generic production/shared endpoint is deliberately not regular evidence.
-    if (/(?:^|[.-])(?:pvp|regular)(?:$|[.-])/.test(withoutPort)) sawRegular = true
+    const mode = hostMode(host)
+    if (mode === 'pvp-season') sawSeason = true
+    else if (mode === 'pve') sawPve = true
+    else if (mode === 'regular') sawRegular = true
   }
   if (sawSeason) incrementModeSignal(result, 'pvp-season')
   if (sawPve) incrementModeSignal(result, 'pve')
   if (sawRegular) incrementModeSignal(result, 'regular')
   return result
+}
+
+/**
+ * Whether an event must be excluded because it belongs to a seasonal character.
+ *
+ * The parser places each event against its session's gateway timeline, so a
+ * brief seasonal peek no longer condemns the permanent-character events around
+ * it — `hasSeasonalSignal` is that placed answer. A preview parsed before
+ * per-event attribution existed carries no such field, so the session-level
+ * signal stays the fallback and those cached previews behave exactly as before.
+ */
+export function isSeasonalEvent(event, seasonalSessionKeys) {
+  if (event?.gameMode === 'pvp-season') return true
+  if (typeof event?.hasSeasonalSignal === 'boolean') return event.hasSeasonalSignal
+  return Boolean(seasonalSessionKeys?.has?.(event?.sessionKey))
 }
 
 function resolveMode(signals) {
@@ -736,6 +870,7 @@ function sessionInfoFor(files) {
         profileIds: new Set(),
         profileGroups: [],
         modeSignals: new Map(),
+        modeTransitions: [],
         lastSeen: [],
       })
     }
@@ -809,12 +944,17 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
         // Host evidence is intentionally one contribution per context file.
         // Repeated mentions in a large file must not outweigh other files.
         mergeModeSignals(session.modeSignals, collectHostModeSignals(text))
+        // The timeline is the opposite: every request counts, because it is
+        // ordering rather than weight that places an event. Parts of a rolled-over
+        // log contribute independently and are ordered by clock afterwards.
+        session.modeTransitions.push(...collectModeTransitions(text))
       }
 
       if (!file.notification) continue
       let previousEnd = -1
       for (const { value: record, start, end } of parsed.objects) {
         const messages = findNotificationMessages(record, [], new Set(), markerInPrefix(text, start, previousEnd))
+        const clockAt = recordClockAt(text, start, previousEnd)
         previousEnd = end
         for (const { record: notification, message } of messages) {
           const type = messageType(message)
@@ -829,6 +969,9 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
             taskId,
             state,
             occurredAt: getTimestamp(message, notification),
+            // Raw log wall clock, kept only to place this event on its session's
+            // gateway timeline. Never persisted and never compared to occurredAt.
+            clockAt,
             profileIds,
             sessionKey: session.sessionKey,
             version: session.version,
@@ -844,6 +987,9 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
   const identityComponents = identityComponentsForSessions(sessions)
   const sessionModes = new Map([...sessions.values()].map(session => [session.sessionKey, resolveMode(session.modeSignals)]))
   const sessionByKey = new Map([...sessions.values()].map(session => [session.sessionKey, session]))
+  for (const session of sessions.values()) {
+    session.modeTransitions = collapseModeTransitions(session.modeTransitions)
+  }
 
   // Version selection is preview metadata, not a parsing filter. Keeping the
   // complete event corpus here lets the UI/hook change its selected version set
@@ -851,7 +997,8 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
   const candidates = rawEvents
     .map(event => {
       const session = sessionByKey.get(event.sessionKey)
-      const verdict = sessionModes.get(event.sessionKey) || { mode: null, confidence: 'absent' }
+      const sessionVerdict = sessionModes.get(event.sessionKey) || { mode: null, confidence: 'absent' }
+      const verdict = attributeEventMode(session?.modeTransitions, event.clockAt, sessionVerdict)
       const gameMode = verdict.mode
       const profileKey = session ? profileKeyForEvent(event.profileIds, session, identityComponents) : null
       const legacyProfileKeys = session ? legacyProfileKeysForEvent(event.profileIds, session, identityComponents) : []
@@ -862,6 +1009,14 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
         occurredAt: event.occurredAt,
         gameMode,
         modeConfidence: verdict.confidence,
+        // Seasonal exclusion is a property of the event once it can be placed:
+        // a permanent-character quest started an hour after a seasonal peek is
+        // not seasonal. An event we could not place inherits its session's
+        // signal, so anything unplaceable stays excluded exactly as before.
+        hasSeasonalSignal: verdict.attributed
+          ? gameMode === 'pvp-season'
+          : Boolean(session?.modeSignals?.has('pvp-season')),
+        modeAttributed: Boolean(verdict.attributed),
         profileKey,
         legacyProfileKeys,
         sessionKey: event.sessionKey,
@@ -1120,6 +1275,7 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
       const events = sessionEvents.get(session.sessionKey) || []
       const dates = events.map(event => event.occurredAt).filter(Boolean).sort()
       const verdict = sessionModes.get(session.sessionKey) || { mode: null, confidence: 'absent' }
+      const unplaced = events.filter(event => !event.modeAttributed)
       return {
         sessionKey: session.sessionKey,
         eventCount: events.length,
@@ -1129,6 +1285,11 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
         modeConfidence: verdict.confidence,
         modeSignals: Object.fromEntries(session.modeSignals),
         hasSeasonalSignal: session.modeSignals.has('pvp-season'),
+        // The gateway timeline resolves most sessions event by event, so a
+        // session's own verdict no longer decides whether the reader is asked
+        // about it. Only events the timeline could not place still need an
+        // answer, and only they can be offered for one.
+        unplacedEventCount: unplaced.length,
       }
     })
     .filter(session => session.eventCount > 0)
@@ -1194,6 +1355,11 @@ export const __eftLogInternals = {
   modeFromValue,
   resolveMode,
   collectHostModeSignals,
+  hostMode,
+  collectModeTransitions,
+  collapseModeTransitions,
+  attributeEventMode,
+  recordClockAt,
   normalizeDate,
   identityComponentsForSessions,
   collectProfileGroups,

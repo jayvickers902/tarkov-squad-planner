@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { parseEftLogFiles, resolveWipeBoundary } from './eftLogs'
+import { parseEftLogFiles, resolveWipeBoundary, isSeasonalEvent } from './eftLogs'
 import {
   classifyChangedEftLogMetadata,
   enumerateRelevantEftLogFiles,
@@ -285,7 +285,7 @@ function selectedEvents(preview, selection, targetMode, knownTaskIds = null, tas
   })
   return candidates
     .filter(event => {
-      if (event?.gameMode === 'pvp-season' || seasonalSessions.has(event?.sessionKey)) return false
+      if (isSeasonalEvent(event, seasonalSessions)) return false
       const eventMode = event?.gameMode || selection.unknownModeTargets?.[event?.sessionKey]
       if (!event?.gameMode && !selection.unknownModeTargets?.[event?.sessionKey]) return false
       if (event?.modeConfidence === 'conflicted' || event?.modeConfidence === 'absent') {
@@ -620,6 +620,12 @@ export function useEftLogImport({
             ? resultPreview.matchedEvents
             : (resultPreview.events || []).filter(event => knownTaskIds.has(event?.taskId))
           for (const sourceEvent of resultEvents) {
+            // An append carries notification lines with no gateway context of
+            // their own, so most events here are unclassified and fall through
+            // to the target mode below. Where the parser did positively place
+            // one on a seasonal gateway, honour that rather than importing a
+            // seasonal character's quest onto the permanent one.
+            if (isSeasonalEvent(sourceEvent, null)) continue
             const event = {
               ...sourceEvent,
               gameMode: sourceEvent.gameMode || mode,

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { gameModeLabel } from '../gameMode'
 import { assessQuestLogRegression, IMPORT_REGRESSION_SHARE, IMPORT_REGRESSION_TASKS } from '../questLogState'
 import { buildQuestLogDiagnostic } from '../questDiagnostic'
+import { isSeasonalEvent } from '../eftLogs'
 
 const STATE_LABELS = {
   active: 'STARTED',
@@ -171,7 +172,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
   }, [gameMode, knownTaskIds, preview])
   const seasonalSessionKeys = useMemo(() => new Set((preview?.sessions || []).filter(session => session.hasSeasonalSignal).map(session => session.sessionKey)), [preview])
   const selectedEvents = useMemo(() => scopedEvents.filter(event => {
-    if (event?.gameMode === 'pvp-season' || seasonalSessionKeys.has(event?.sessionKey)) return false
+    if (isSeasonalEvent(event, seasonalSessionKeys)) return false
     const eventMode = event?.gameMode || preview?.unknownModeTargets?.[event?.sessionKey]
     if (!event?.gameMode && !preview?.unknownModeTargets?.[event?.sessionKey]) return false
     if (event?.modeConfidence === 'conflicted' || event?.modeConfidence === 'absent') {
@@ -330,9 +331,17 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
   const currentStep = importSteps.findIndex(step => step.state === 'current')
   const stepState = key => importSteps.find(step => step.key === key)?.state
   const ambiguousCount = preview?.ambiguousModeEvents ?? 0
-  const unknownSessions = (preview?.sessions || []).filter(session => !session.hasSeasonalSignal && (session.modeConfidence === 'conflicted' || session.modeConfidence === 'absent'))
-  const seasonalExcludedCount = scopedEvents.filter(event => event?.gameMode === 'pvp-season' || seasonalSessionKeys.has(event?.sessionKey)).length
-  const unresolvedExcludedCount = scopedEvents.filter(event => !event?.gameMode && !preview?.unknownModeTargets?.[event?.sessionKey] && !seasonalSessionKeys.has(event?.sessionKey)).length
+  // Only events the gateway timeline could not place still need the reader to
+  // answer for them, so a session whose events were all attributed is no longer
+  // offered as unresolved. A preview parsed before attribution existed reports no
+  // unplaced count, and falls back to its whole event count as before.
+  const unknownSessions = (preview?.sessions || []).filter(session => (
+    (session.unplacedEventCount ?? session.eventCount) > 0
+    && !session.hasSeasonalSignal
+    && (session.modeConfidence === 'conflicted' || session.modeConfidence === 'absent')
+  ))
+  const seasonalExcludedCount = scopedEvents.filter(event => isSeasonalEvent(event, seasonalSessionKeys)).length
+  const unresolvedExcludedCount = scopedEvents.filter(event => !event?.gameMode && !preview?.unknownModeTargets?.[event?.sessionKey] && !isSeasonalEvent(event, seasonalSessionKeys)).length
   const unmatchedTaskIds = Array.isArray(preview?.unmatchedTaskIds) ? preview.unmatchedTaskIds : []
   const unmatchedTaskDetails = Array.isArray(preview?.unmatchedTaskDetails) && preview.unmatchedTaskDetails.length
     ? preview.unmatchedTaskDetails

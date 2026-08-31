@@ -726,3 +726,139 @@ describe('seasonal gateway attribution', () => {
     expect(result.sessions.some(entry => entry.hasSeasonalSignal)).toBe(false)
   })
 })
+
+/**
+ * A session is one game launch, and a player switches character without
+ * restarting. Tallying mode per session therefore let a two-minute look at a
+ * seasonal character discard a two-hour permanent session around it — silently,
+ * because the seasonal signal also suppressed the per-session opt-in that would
+ * have let the reader rescue it.
+ *
+ * These fixtures use the live client's real line format, which the fixtures
+ * above deliberately do not: those keep exercising the fallback for a log whose
+ * lines carry no readable clock.
+ */
+describe('per-event gateway attribution', () => {
+  const { collectModeTransitions, collapseModeTransitions, attributeEventMode, recordClockAt } = __eftLogInternals
+
+  const clock = (time, host, path = 'client/game/start') =>
+    `2026-08-28 ${time}|1.1.0.1.46911|Info|backend|---> Request HTTPS, id [1]: URL: https://${host}.escapefromtarkov.com/${path}.`
+  const notified = (time, body) =>
+    `2026-08-28 ${time}|1.1.0.1.46911|Info|push-notifications|Got notification | ChatMessageReceived\n${body}`
+
+  function launch(dir, backendLines, notificationLines) {
+    return [
+      { name: `Logs/${dir}/2026.08.28_12-29-37_1.1.0.1.46911 backend_000.log`, text: backendLines.join('\n'), size: 100, lastModified: 0 },
+      { name: `Logs/${dir}/2026.08.28_12-29-37_1.1.0.1.46911 push-notifications_000.log`, text: notificationLines.join('\n'), size: 100, lastModified: 0 },
+    ]
+  }
+
+  it('reads the gateway timeline from real client request lines', () => {
+    const transitions = collapseModeTransitions(collectModeTransitions([
+      clock('12:29:48.463', 'gw-pvp', 'client/game/mode'),
+      clock('12:30:14.363', 'gw-pvp-season'),
+      clock('12:32:43.100', 'gw-pvp-season', 'client/game/keepalive'),
+      clock('12:34:29.000', 'gw-pvp', 'client/game/mode'),
+    ].join('\n')))
+    expect(transitions.map(entry => entry.mode)).toEqual(['regular', 'pvp-season', 'regular'])
+  })
+
+  it('orders transitions by clock across a rolled-over log', () => {
+    const transitions = collapseModeTransitions([
+      ...collectModeTransitions(clock('12:34:29.000', 'gw-pvp')),
+      ...collectModeTransitions(clock('12:30:14.363', 'gw-pvp-season')),
+    ])
+    expect(transitions.map(entry => entry.mode)).toEqual(['pvp-season', 'regular'])
+  })
+
+  // The worked case from the corpus: seasonal ran 12:30:14 to 12:32:43, and two
+  // quests were started six and sixty-two minutes after it closed.
+  it('keeps permanent events that follow a brief seasonal window in the same launch', () => {
+    const result = parse(launch('log_2026.08.28_12-29-37', [
+      clock('12:29:48.463', 'gw-pvp', 'client/game/mode'),
+      clock('12:30:14.363', 'gw-pvp-season'),
+      clock('12:32:43.100', 'gw-pvp-season', 'client/game/keepalive'),
+      clock('12:34:29.000', 'gw-pvp', 'client/game/mode'),
+      clock('14:54:41.000', 'gw-pvp', 'client/game/logout'),
+    ], [
+      notified('12:31:00.000', jsonNotification({ eventId: 'seasonal-peek' })),
+      notified('12:38:31.000', jsonNotification({ eventId: 'after-peek', taskId: secondTask })),
+    ]))
+
+    const byEvent = Object.fromEntries(result.matchedEvents.map(event => [event.eventKey.includes('seasonal-peek') ? 'peek' : 'after', event]))
+    expect(result.matchedEvents).toHaveLength(2)
+    expect(byEvent.peek.gameMode).toBe('pvp-season')
+    expect(byEvent.peek.hasSeasonalSignal).toBe(true)
+    expect(byEvent.after.gameMode).toBe('regular')
+    expect(byEvent.after.hasSeasonalSignal).toBe(false)
+    expect(byEvent.after.modeConfidence).toBe('attributed')
+  })
+
+  // The regression guard: a launch that only ever reaches the seasonal gateway
+  // must still be excluded in full.
+  it('excludes every event of a seasonal-only launch', () => {
+    const result = parse(launch('log_2026.08.04_12-29-59', [
+      // The launcher's mode probe is the one permanent request such a session
+      // makes. It must not make the session look permanent.
+      clock('12:30:09.000', 'gw-pvp', 'client/game/mode'),
+      clock('12:30:09.500', 'gw-pvp-season'),
+      clock('13:40:00.000', 'gw-pvp-season', 'client/game/keepalive'),
+    ], [
+      notified('12:49:00.000', jsonNotification({ eventId: 'seasonal-only' })),
+    ]))
+    expect(result.matchedEvents).toHaveLength(1)
+    expect(result.matchedEvents[0].gameMode).toBe('pvp-season')
+    expect(result.matchedEvents[0].hasSeasonalSignal).toBe(true)
+  })
+
+  it('leaves a permanent-only launch resolved and importable', () => {
+    const result = parse(launch('log_2026.08.30_15-58-22', [
+      clock('15:58:33.000', 'gw-pvp', 'client/game/mode'),
+      clock('18:19:44.000', 'gw-pvp', 'client/game/logout'),
+    ], [
+      notified('17:04:00.000', jsonNotification({ eventId: 'permanent-only' })),
+    ]))
+    expect(result.matchedEvents[0].gameMode).toBe('regular')
+    expect(result.matchedEvents[0].hasSeasonalSignal).toBe(false)
+    expect(result.sessions[0].unplacedEventCount).toBe(0)
+  })
+
+  // Anything we cannot place keeps the old behaviour exactly: the session
+  // verdict decides, and a seasonal session stays excluded in full.
+  it('falls back to the session verdict for an event before any gateway contact', () => {
+    const result = parse(launch('log_2026.08.28_before', [
+      clock('13:00:00.000', 'gw-pvp'),
+      clock('13:10:00.000', 'gw-pvp-season'),
+    ], [
+      notified('12:00:00.000', jsonNotification({ eventId: 'before-any-gateway' })),
+    ]))
+    expect(result.matchedEvents[0].modeAttributed).toBe(false)
+    expect(result.matchedEvents[0].modeConfidence).toBe('conflicted')
+    expect(result.matchedEvents[0].hasSeasonalSignal).toBe(true)
+    expect(result.sessions[0].unplacedEventCount).toBe(1)
+  })
+
+  it('attributes an event to the last gateway at or before it, and never after', () => {
+    const transitions = [{ at: 100, mode: 'regular' }, { at: 200, mode: 'pvp-season' }]
+    const fallback = { mode: null, confidence: 'conflicted' }
+    expect(attributeEventMode(transitions, 150, fallback)).toEqual({ mode: 'regular', confidence: 'attributed', attributed: true })
+    expect(attributeEventMode(transitions, 200, fallback).mode).toBe('pvp-season')
+    expect(attributeEventMode(transitions, 50, fallback)).toEqual({ ...fallback, attributed: false })
+    expect(attributeEventMode([], 150, fallback)).toEqual({ ...fallback, attributed: false })
+    expect(attributeEventMode(transitions, null, fallback)).toEqual({ ...fallback, attributed: false })
+  })
+
+  // Walking back for the header line must terminate. Searching from the
+  // character before a line start finds that line's own newline and returns the
+  // same position, which spun forever on the first log without a readable clock.
+  it('terminates when no timestamped line precedes the record', () => {
+    expect(recordClockAt('\n\n\n{"a":1}', 6, -1)).toBeNull()
+    expect(recordClockAt('{"a":1}', 0, -1)).toBeNull()
+    expect(recordClockAt('no clock here\n{"a":1}', 14, -1)).toBeNull()
+  })
+
+  it('reads the clock from the header line above a record', () => {
+    const text = notified('12:38:31.000', '{"a":1}')
+    expect(recordClockAt(text, text.indexOf('{'), -1)).toBe(Date.UTC(2026, 7, 28, 12, 38, 31, 0))
+  })
+})
