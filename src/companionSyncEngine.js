@@ -41,7 +41,11 @@ export const SCREENSHOT_FRESHNESS_MS = 2 * 60 * 1000
 export const MAX_SCREENSHOT_CATCHUP_MS = SCREENSHOT_FRESHNESS_MS
 export const SCREENSHOT_PINGS_PER_MINUTE = 20
 export const PING_RATE_LIMIT_PER_MINUTE = SCREENSHOT_PINGS_PER_MINUTE
-export const QUEST_LOG_SCANNER_VERSION = '0.2.2'
+// 0.3.0 changes how identity is derived: squadmate account ids are no longer
+// collected as characters, and one `Logs` directory resolves to one account.
+// Every stored profile key predates that and names nothing this scanner can
+// produce, so the bump is what forces the full rescan that replaces them.
+export const QUEST_LOG_SCANNER_VERSION = '0.3.0'
 
 const VALID_MODES = new Set(['regular', 'pve', 'pvp-season'])
 const MAX_SAFE_ID = 128
@@ -302,13 +306,29 @@ function latestVersion(versions) {
   })[0] || null
 }
 
+/**
+ * Name the character this card stands for.
+ *
+ * One account holds a character per mode, so a candidate commonly carries
+ * several mode facets. Naming it after whichever facet sorts first called a
+ * reader's permanent character "PvP Seasonal" while importing their permanent
+ * quests; the facet being imported is the one the card is about.
+ *
+ * A candidate with no facet at all used to fall through to the target mode,
+ * which printed the planner's own mode as though the logs had confirmed it —
+ * the reader's question echoed back as an answer. That case says so plainly.
+ */
 function formatCandidateMode(candidate, targetMode) {
-  const modes = Array.isArray(candidate?.gameModes) ? candidate.gameModes : []
-  const mode = canonicalMode(candidate?.gameMode) || canonicalMode(modes[0]) || canonicalMode(targetMode)
+  const modes = (Array.isArray(candidate?.gameModes) ? candidate.gameModes : []).map(canonicalMode).filter(Boolean)
+  const target = canonicalMode(targetMode)
+  const mode = canonicalMode(candidate?.gameMode)
+    || (target && modes.includes(target) ? target : null)
+    || modes[0]
+    || null
   if (mode === 'pve') return 'PvE'
   if (mode === 'pvp-season') return 'PvP Seasonal'
   if (mode === 'regular') return 'PvP Permanent'
-  return 'EFT'
+  return 'EFT character'
 }
 
 function candidateDetails(preview, { mode, taskIds }) {
@@ -338,7 +358,11 @@ function candidateDetails(preview, { mode, taskIds }) {
       + (lastSeen ? Math.min(new Date(lastSeen).getTime() / 86400000, 100000) / 100 : 0)
     const versionLabel = current ? 'current version' : versions.length ? `version ${versions[versions.length - 1]}` : 'version unknown'
     const seenLabel = lastSeen ? `last seen ${new Date(lastSeen).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })}` : 'last seen unknown'
-    const label = `${formatCandidateMode({ ...profile, gameMode: candidateMode, gameModes: modes }, targetMode)} · ${seenLabel} · ${versionLabel} · ${eventCount} quest events`
+    // The descriptor's own mode, which is null for a multi-facet character, not
+    // `candidateMode` — that already collapses to the first facet for the
+    // eligibility test below, and handing it to the label reintroduces exactly
+    // the first-facet naming the label is trying to avoid.
+    const label = `${formatCandidateMode({ gameMode: canonicalMode(profile.gameMode), gameModes: modes }, targetMode)} · ${seenLabel} · ${versionLabel} · ${eventCount} quest events`
     return {
       ...profile,
       mode: candidateMode,
@@ -468,6 +492,14 @@ function selectedEvents(preview, { mode, checkpoint, taskIds, taskMetadata = nul
 function selectionRequirement(preview, { mode, checkpoint, parser = {}, taskIds }) {
   const profileKey = selectedProfileForMode(checkpoint, mode) || parser?.profileKey || null
   const chosen = chooseCandidate(preview, { mode, checkpoint, parser, taskIds })
+  // Asking to change character is answered even when the logs hold only one,
+  // because "here is the single character found" is the answer to that question
+  // and silently carrying on is not. Auto-selection stays suppressed by
+  // `requireProfileChoice` in `chooseCandidate`; without this the request had
+  // nowhere to surface and the control did nothing at all.
+  if (parser?.requireProfileChoice && profileCandidates(preview).length > 0) {
+    return 'profile'
+  }
   if (profileCandidates(preview).length > 1 && !profileKey && !chosen.selected) {
     return 'profile'
   }

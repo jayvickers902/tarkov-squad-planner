@@ -129,10 +129,30 @@ and account IDs never leave the device. Only bounded normalized quest events rea
 Mode evidence is tallied per session; only certain or safely dominant regular/PvE sessions are
 importable. Conflicting, absent, and any seasonal-signal session is excluded. Profile keys hash
 identity IDs alone, with legacy mode-suffixed keys retained only for local checkpoint lookup.
-Wipe boundaries are detected per profile, never across the mixed corpus: a task completed on one
-character and started on another is two histories interleaved, not a wipe, and a boundary drawn
-across both silently drops the earlier character's history. With more than one profile discovered
-and none chosen there is no attributable boundary, so none is disclosed until the reader picks one.
+
+**One `Logs` directory is one account, and its characters are separated by mode facet, not by ID.**
+Identity per session cannot carry that: the client writes the local `profileid` only on the
+matchmaking records (`userConfirmed` / `userMatchOver`), so a session spent handing quests in at a
+trader has no identity at all — on a real corpus, 135 of 169 sessions. Those inherit the account
+rather than being dropped. Nothing in the logs ever pairs two identity IDs in one record either, so
+co-occurrence merges nothing on its own and each character-scoped ID stayed a separate "character"
+holding a fragment of one history. `describesAnotherPlayer` is what makes the merge safe: `aid` is
+an identity key and the `groupMatch*` events carry a *squadmate's* `aid` beside their nickname, so
+every person you queued with used to become a discovered character — and a session that saw two of
+them resolved to several identities, which is answered with none, dropping every quest event in it.
+For a squad tool that was the grouped raid, which is to say most of them.
+
+Wipe boundaries are scoped to one character — profile **and** mode facet — never across the mixed
+corpus: a task completed on one character and started on another is two histories interleaved, not
+a wipe, and a boundary drawn across both silently drops the earlier character's history. Since an
+account's characters are its mode facets, pooling them dates a wipe to the day the reader last
+switched characters. Only the boundary for the mode being imported is disclosed.
+
+A candidate is a planner-mode match when it *has* that facet; requiring the facet to be its only
+one meant an account that had played both permanent and seasonal matched neither. The companion's
+card names a multi-facet character by the facet being imported rather than by whichever sorts
+first, and a candidate with no facet at all says so plainly instead of falling through to the
+planner's own mode — that printed the reader's question back as though it were a verdict.
 Seasonal logs, objective counters, inventory, and hideout progress are not supported. The Windows
 companion is the separate path for continuing folder checks after the website closes.
 Browser screenshot sync and the remembered-folder quest watch both check while the tab is hidden. A

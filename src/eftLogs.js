@@ -596,8 +596,35 @@ function taskIdSet(taskIds) {
     .map(value => value.trim().toLowerCase()))
 }
 
+/**
+ * Whether a record describes somebody other than the local account.
+ *
+ * The group matchmaking events carry a squadmate's `aid` beside their nickname
+ * and loadout, and `aid` is one of the keys identity collection accepts. Taken
+ * at face value every person you queue with became a discovered "character",
+ * and — far worse — a session that saw two of them resolved to more than one
+ * identity component, which `identityIdsForEvent` answers with `null`. That
+ * silently dropped every quest event from the session. On a corpus from one
+ * squad player it cost 91% of the sessions, so for the tool's own audience the
+ * grouped raid, not the solo one, was the broken case.
+ *
+ * Only the local player's own records are trusted for identity. Everything a
+ * `groupMatch*` event carries is somebody else, and a nickname beside an id is
+ * a display identity — the shape a roster entry has and the local account's
+ * own gateway records never do.
+ */
+function describesAnotherPlayer(value) {
+  if (!isPlainObject(value)) return false
+  if (typeof value.type === 'string' && /^groupmatch/i.test(value.type.replace(/[\s_-]/g, ''))) return true
+  if (typeof value.Nickname === 'string' && value.Nickname) return true
+  if (isPlainObject(value.Info) && typeof value.Info.Nickname === 'string') return true
+  if (isPlainObject(value.extendedProfile)) return true
+  return false
+}
+
 function collectProfileIds(value, result = new Set(), seen = new Set()) {
   if (!isPlainObject(value) || seen.has(value)) return result
+  if (describesAnotherPlayer(value)) return result
   seen.add(value)
   for (const [key, child] of Object.entries(value)) {
     const normalizedKey = key.toLowerCase().replace(/[\s_-]/g, '')
@@ -672,6 +699,21 @@ function identityComponentsForSessions(sessions) {
     }
   }
 
+  // A `Logs` directory is one installation signed into one account, and every
+  // id that survives `describesAnotherPlayer` is that account's own. Pairing
+  // evidence cannot be relied on to discover that: the client writes its
+  // `profileid` alone on the matchmaking records and never beside a second id,
+  // so co-occurrence merges nothing and each character-scoped id stayed its own
+  // "character" — one player's permanent quest history arriving as two accounts
+  // that each held a fraction of it.
+  //
+  // The characters inside the account are separated by mode facet instead,
+  // which is derived independently per event and is the separation the rest of
+  // this module already assumes; see the descriptor's `gameModes`. Merging here
+  // is what lets a mode facet describe a whole history rather than a fragment.
+  const allIds = [...parent.keys()]
+  for (let index = 1; index < allIds.length; index += 1) union(allIds[0], allIds[index])
+
   const components = new Map()
   for (const value of parent.keys()) {
     const root = find(value)
@@ -703,6 +745,7 @@ function uniqueComponentsForIds(ids, components) {
 // profile look like aliases for the same character.
 function collectProfileGroups(value, result = [], seen = new Set()) {
   if (!isPlainObject(value) || seen.has(value)) return result
+  if (describesAnotherPlayer(value)) return result
   seen.add(value)
   const local = new Set()
   for (const [key, child] of Object.entries(value)) {
@@ -725,23 +768,43 @@ function collectProfileGroups(value, result = [], seen = new Set()) {
   return result
 }
 
-function identityIdsForEvent(ids, session, components) {
+/**
+ * The account every discovered id belongs to, or null when the corpus carries
+ * no identity at all.
+ */
+function accountIdentityFor(components) {
+  const unique = new Set(components.values())
+  return unique.size === 1 ? [...unique][0] : null
+}
+
+/**
+ * The client writes the local `profileid` only when matchmaking resolves, so a
+ * session spent handing quests in at a trader carries no identity whatsoever —
+ * on a real corpus that was 135 of 169 sessions. Answering those with `null`
+ * discarded their events entirely, which is most of a player's quest history.
+ *
+ * An identity-less session inherits the account instead. That is a statement
+ * about the folder, not a guess about the session: the events are already
+ * separated into characters by their own mode facet.
+ */
+function identityIdsForEvent(ids, session, components, account = null) {
+  const fallback = account ? [...account] : null
   const eventIds = new Set(ids)
   if (!eventIds.size) {
     const sessionComponents = uniqueComponentsForIds(session.profileIds, components)
     return sessionComponents.length === 1
       ? [...sessionComponents[0]]
-      : null
+      : fallback
   }
 
   const matchingComponents = uniqueComponentsForIds(eventIds, components)
   if (matchingComponents.length === 1) return [...matchingComponents[0]]
-  if (matchingComponents.length > 1) return null
-  return session.profileGroups.length ? null : [...eventIds]
+  if (matchingComponents.length > 1) return fallback
+  return session.profileGroups.length ? fallback : [...eventIds]
 }
 
-function profileKeyForEvent(ids, session, components) {
-  const identityIds = identityIdsForEvent(ids, session, components)
+function profileKeyForEvent(ids, session, components, account) {
+  const identityIds = identityIdsForEvent(ids, session, components, account)
   return identityIds ? makeProfileKey(identityIds) : null
 }
 
@@ -751,8 +814,8 @@ function legacyProfileKeysForIds(ids) {
   return ['pve', 'pvp-season'].map(mode => `profile-${hashString(`${values.join('|')}|mode:${mode}`)}`)
 }
 
-function legacyProfileKeysForEvent(ids, session, components) {
-  const identityIds = identityIdsForEvent(ids, session, components)
+function legacyProfileKeysForEvent(ids, session, components, account) {
+  const identityIds = identityIdsForEvent(ids, session, components, account)
   return identityIds ? legacyProfileKeysForIds(identityIds) : []
 }
 
@@ -1101,6 +1164,7 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
     ? options.notifierSeasonalBefore
     : null
   const identityComponents = identityComponentsForSessions(sessions)
+  const accountIdentity = accountIdentityFor(identityComponents)
   const sessionModes = new Map([...sessions.values()].map(session => [session.sessionKey, resolveMode(session.modeSignals)]))
   const sessionByKey = new Map([...sessions.values()].map(session => [session.sessionKey, session]))
   for (const session of sessions.values()) {
@@ -1111,15 +1175,15 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
   // Version selection is preview metadata, not a parsing filter. Keeping the
   // complete event corpus here lets the UI/hook change its selected version set
   // without rescanning the user's folder or losing older-wipe evidence.
-  const candidates = rawEvents
+  const mappedEvents = rawEvents
     .map(event => {
       const session = sessionByKey.get(event.sessionKey)
       const sessionVerdict = sessionModes.get(event.sessionKey) || { mode: null, confidence: 'absent' }
       const verdict = attributeEventMode(session?.modeTransitions, event.clockAt, sessionVerdict)
       const gameMode = verdict.mode
       const notifierSeasonal = notifierSeasonalAt(session?.notifierTransitions, event.clockAt, priorNotifierSeasonal)
-      const profileKey = session ? profileKeyForEvent(event.profileIds, session, identityComponents) : null
-      const legacyProfileKeys = session ? legacyProfileKeysForEvent(event.profileIds, session, identityComponents) : []
+      const profileKey = session ? profileKeyForEvent(event.profileIds, session, identityComponents, accountIdentity) : null
+      const legacyProfileKeys = session ? legacyProfileKeysForEvent(event.profileIds, session, identityComponents, accountIdentity) : []
       return {
         eventKey: event.eventKey,
         taskId: event.taskId,
@@ -1148,7 +1212,22 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
         version: event.version,
       }
     })
-    .filter(event => !selectedProfile || event.profileKey === selectedProfile || event.legacyProfileKeys.includes(selectedProfile))
+
+  // A choice saved by an earlier scanner names an identity this scan cannot
+  // produce, and honouring it would filter every event away — which reads as an
+  // empty log folder rather than as a stale selection. An unmatched selection is
+  // therefore dropped, leaving the caller to choose again against real
+  // candidates, exactly as the candidate evidence below is kept whole so that a
+  // bad saved choice stays recoverable.
+  const availableProfileKeys = new Set()
+  for (const event of mappedEvents) {
+    if (event.profileKey) availableProfileKeys.add(event.profileKey)
+    event.legacyProfileKeys.forEach(key => availableProfileKeys.add(key))
+  }
+  const activeProfile = selectedProfile && availableProfileKeys.has(selectedProfile) ? selectedProfile : null
+
+  const candidates = mappedEvents
+    .filter(event => !activeProfile || event.profileKey === activeProfile || event.legacyProfileKeys.includes(activeProfile))
 
   // Sort before deduplication so duplicate event IDs produce the same result
   // regardless of the order in which the browser returned files.
@@ -1184,9 +1263,20 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
   // Candidate evidence is computed from the complete corpus rather than the
   // currently selected profile. This makes a bad saved choice recoverable and
   // keeps context-only IDs out of the chooser.
+  //
+  // Mode is attributed per event here, exactly as it is for the events that get
+  // imported. Reading the session's aggregate verdict instead described the same
+  // event with weaker evidence than the importer used: a session the gateway
+  // timeline places cleanly, but whose signals do not agree in aggregate, gave
+  // every event a null mode. The descriptor then showed a character with no mode
+  // facet at all, which the companion's label renders by falling back to the
+  // planner's own mode — a card that appears to name a character's mode while
+  // only echoing the question back. It also left the mode facet unable to scope
+  // wipe detection, which is what separates characters now.
   const allEvents = rawEvents.map(event => {
     const session = sessionByKey.get(event.sessionKey)
-    const verdict = sessionModes.get(event.sessionKey) || { mode: null, confidence: 'absent' }
+    const sessionVerdict = sessionModes.get(event.sessionKey) || { mode: null, confidence: 'absent' }
+    const verdict = attributeEventMode(session?.modeTransitions, event.clockAt, sessionVerdict)
     const gameMode = verdict.mode
     return {
       eventKey: event.eventKey,
@@ -1195,8 +1285,8 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
       occurredAt: event.occurredAt,
       gameMode,
       modeConfidence: verdict.confidence,
-      profileKey: session ? profileKeyForEvent(event.profileIds, session, identityComponents) : null,
-      legacyProfileKeys: session ? legacyProfileKeysForEvent(event.profileIds, session, identityComponents) : [],
+      profileKey: session ? profileKeyForEvent(event.profileIds, session, identityComponents, accountIdentity) : null,
+      legacyProfileKeys: session ? legacyProfileKeysForEvent(event.profileIds, session, identityComponents, accountIdentity) : [],
       sessionKey: event.sessionKey,
       version: event.version,
     }
@@ -1261,9 +1351,14 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
   const latestCandidateTimestamp = [...profileDescriptors.values()]
     .map(descriptor => Date.parse(descriptor.lastSeen || '') || 0)
     .reduce((latest, timestamp) => Math.max(latest, timestamp), 0)
+  // A character is a match for the planner's mode when it *has* that facet.
+  // Requiring it to be the descriptor's only facet meant the account that had
+  // played both permanent and seasonal matched neither, so the reader importing
+  // permanent quests was told their permanent character was not a match.
+  const descriptorHasMode = (descriptor, mode) => Boolean(mode)
+    && (descriptorMode(descriptor) === mode || descriptor.gameModes.has(mode))
   const recommendationScore = descriptor => {
-    const mode = descriptorMode(descriptor)
-    const modeMatch = requestedMode && mode === requestedMode ? 1 : 0
+    const modeMatch = descriptorHasMode(descriptor, requestedMode) ? 1 : 0
     const currentVersion = newestVersion(descriptor.versions)
     const currentVersionMatch = currentVersion && currentVersion === newestAvailableVersion ? 1 : 0
     const timestamp = descriptor.lastSeen ? Math.max(0, Date.parse(descriptor.lastSeen) || 0) : 0
@@ -1287,7 +1382,7 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
       const currentVersion = newestVersion(descriptor.versions)
       const score = recommendationScore(descriptor)
       const reasons = []
-      if (requestedMode && mode === requestedMode) reasons.push('matches planner mode')
+      if (descriptorHasMode(descriptor, requestedMode)) reasons.push('matches planner mode')
       if (currentVersion && currentVersion === newestAvailableVersion) reasons.push('current EFT version')
       if (descriptor.lastSeen) reasons.push('recent log activity')
       if (descriptor.matchedEventCount > 0) reasons.push(`${descriptor.matchedEventCount} quest events`)
@@ -1334,7 +1429,7 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
         recommendationReasons: reasons,
         recommendationInputs: {
           requestedMode,
-          modeMatch: requestedMode ? mode === requestedMode : null,
+          modeMatch: requestedMode ? descriptorHasMode(descriptor, requestedMode) : null,
           currentVersionMatch: currentVersion ? currentVersion === newestAvailableVersion : false,
           currentVersion,
           newestAvailableVersion,
@@ -1354,8 +1449,8 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
     }))
   const recommendedProfileKey = discoveredProfiles[0]?.profileKey || null
   const recommendedProfile = discoveredProfiles.find(profile => profile.profileKey === recommendedProfileKey) || null
-  const selectedProfileDescriptor = selectedProfile
-    ? discoveredProfiles.find(profile => profile.profileKey === selectedProfile) || null
+  const selectedProfileDescriptor = activeProfile
+    ? discoveredProfiles.find(profile => profile.profileKey === activeProfile) || null
     : null
   discoveredProfiles.forEach(profile => { profile.recommended = profile.profileKey === recommendedProfileKey })
 
@@ -1365,15 +1460,26 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
   // exactly the multi-profile readers this parser exists to serve. Boundaries
   // are computed per profile over the complete corpus so choosing a profile
   // later resolves to the right one without a rescan.
+  //
+  // The scope is the character, and since one account's characters are told
+  // apart by their mode facet the bucket is profile *and* mode. Identity alone
+  // no longer expresses it: a task handed in on the permanent character and
+  // picked up again on the seasonal one is the same interleaving this guards
+  // against, and pooling them dated a wipe to the day the reader last switched
+  // characters. Only the boundary for the mode being imported is disclosed,
+  // because that is the only character whose history is at stake.
   const wipeEventsByProfile = new Map()
   for (const event of allDeduped) {
-    if (!event.profileKey) continue
-    const events = wipeEventsByProfile.get(event.profileKey) || []
+    if (!event.profileKey || !event.gameMode) continue
+    const bucket = `${event.profileKey} ${event.gameMode}`
+    const events = wipeEventsByProfile.get(bucket) || []
     events.push(event)
-    wipeEventsByProfile.set(event.profileKey, events)
+    wipeEventsByProfile.set(bucket, events)
   }
   const wipeBoundaryByProfile = {}
-  for (const [profileKey, profileEvents] of wipeEventsByProfile) {
+  for (const [bucket, profileEvents] of wipeEventsByProfile) {
+    const [profileKey, bucketMode] = bucket.split(' ')
+    if (requestedMode && bucketMode !== requestedMode) continue
     const boundary = detectQuestWipeBoundary(profileEvents, knownTaskIds)
     if (boundary) wipeBoundaryByProfile[profileKey] = boundary
   }
@@ -1387,7 +1493,7 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
     }
   }
   discoveredProfiles.forEach(profile => { profile.wipeBoundaryAt = wipeBoundaryByProfile[profile.profileKey] || null })
-  const wipeBoundaryAt = resolveWipeBoundary(wipeBoundaryByProfile, discoveredProfiles, selectedProfile)
+  const wipeBoundaryAt = resolveWipeBoundary(wipeBoundaryByProfile, discoveredProfiles, activeProfile)
 
   const sessionEvents = new Map()
   for (const event of deduped) {
@@ -1435,7 +1541,7 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
     characterCandidates: discoveredProfiles,
     recommendedProfileKey,
     recommendedProfile,
-    selectedProfileKey: selectedProfile,
+    selectedProfileKey: activeProfile,
     selectedProfile: selectedProfileDescriptor,
     events: deduped,
     matchedEvents,
@@ -1492,5 +1598,7 @@ export const __eftLogInternals = {
   normalizeDate,
   identityComponentsForSessions,
   collectProfileGroups,
+  describesAnotherPlayer,
+  accountIdentityFor,
   makeProfileKey,
 }

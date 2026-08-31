@@ -264,22 +264,45 @@ describe('parseEftLogFiles', () => {
     ]
     const preview = parse(files)
 
-    expect(preview.discoveredProfiles).toHaveLength(2)
-    expect(preview.discoveredProfiles.map(profile => profile.label)).toEqual(['PROFILE 1', 'PROFILE 2'])
+    // One `Logs` directory is one account. A PvP id and a PvE id are that
+    // account's two characters, told apart by mode facet rather than by being
+    // two opaque strangers, so both sessions resolve to a single identity.
+    expect(preview.discoveredProfiles).toHaveLength(1)
+    expect(preview.discoveredProfiles[0].gameModes).toEqual(['pve', 'regular'])
+    expect(preview.discoveredProfiles.map(profile => profile.label)).toEqual(['PROFILE 1'])
     expect(JSON.stringify(preview)).not.toContain('profile-a-secret')
     expect(JSON.stringify(preview)).not.toContain('account-b-secret')
     expect(JSON.stringify(preview)).not.toContain('Logs/0.16.9')
 
     const selected = parse(files, [regularTask], { profileKey: preview.discoveredProfiles[0].profileKey })
-    expect(selected.events).toHaveLength(1)
+    expect(selected.events).toHaveLength(2)
     expect(selected.events[0].profileKey).toBe(preview.discoveredProfiles[0].profileKey)
   })
 
-  it('scopes wipe detection to one profile rather than the mixed corpus', () => {
+  it('drops a saved profile choice that names nothing this scan discovered', () => {
+    const files = [
+      { name: 'Logs/0.16.9/a/notifications.log', text: jsonNotification({ eventId: 'still-here' }) },
+      { name: 'Logs/0.16.9/a/backend.log', text: '{"sessionMode":"PVP","profileId":"profile-a-secret"}' },
+    ]
+    // A checkpoint written by an earlier scanner names a key no scan can
+    // produce again. Applying it filtered every event away, which reads as an
+    // empty log folder rather than as a stale choice.
+    const preview = parse(files, [regularTask], { profileKey: 'profile-deadbeefdeadbeef' })
+
+    expect(preview.selectedProfileKey).toBeNull()
+    expect(preview.events).toHaveLength(1)
+    expect(preview.discoveredProfiles).toHaveLength(1)
+  })
+
+  it('scopes wipe detection to one character rather than the mixed corpus', () => {
     // Three tasks finished on one character and started on another is two
     // histories interleaved, not a wipe. Detecting across the mixed corpus
     // drew a boundary here and silently dropped the earlier character's
     // history -- from the readers who own several characters, only.
+    //
+    // An account's characters are separated by mode facet, so the interleaving
+    // to guard against is the permanent hand-in followed by the seasonal pick
+    // up. Pooling those dated a wipe to the day the reader last switched.
     const done = [regularTask, secondTask, pveTask]
       .map((taskId, index) => jsonNotification({ type: 12, taskId, dt: 1700000000, eventId: `done-${index}` }))
       .join('\n')
@@ -290,10 +313,11 @@ describe('parseEftLogFiles', () => {
       { name: 'Logs/0.16.9/a/notifications.log', text: done },
       { name: 'Logs/0.16.9/a/backend.log', text: '{"sessionMode":"PVP","profileId":"wipe-profile-a"}' },
       { name: 'Logs/0.16.9/b/notifications.log', text: started },
-      { name: 'Logs/0.16.9/b/backend.log', text: '{"sessionMode":"PVP","profileId":"wipe-profile-b"}' },
-    ])
+      { name: 'Logs/0.16.9/b/backend.log', text: '{"sessionMode":"SEASONAL","profileId":"wipe-profile-b"}' },
+    ], [regularTask, secondTask, pveTask], { gameMode: 'regular' })
 
-    expect(preview.discoveredProfiles).toHaveLength(2)
+    expect(preview.discoveredProfiles).toHaveLength(1)
+    expect(preview.discoveredProfiles[0].gameModes).toEqual(['pvp-season', 'regular'])
     expect(preview.wipeBoundaryByProfile).toEqual({})
     expect(preview.wipeBoundaryAt).toBeNull()
   })
@@ -320,17 +344,48 @@ describe('parseEftLogFiles', () => {
     expect(preview.wipeBoundaryAt).toBe('2023-11-15T22:13:20.000Z')
   })
 
-  it('does not silently assign a profile-less event when one session contains mixed profiles', () => {
+  it('never treats a squadmate as one of the reader\'s characters', () => {
+    // The group matchmaking events carry a teammate's `aid` beside their
+    // nickname, and `aid` is an identity key. Every person the reader queued
+    // with became a discovered "character", and a session that saw two of them
+    // resolved to several identities -- which is answered with no identity at
+    // all, dropping every quest event in the session. For a squad tool that is
+    // the grouped raid, which is to say most of them.
     const preview = parse([
-      { name: 'Logs/0.16.9/mixed/notifications.log', text: jsonNotification({ eventId: 'mixed-profile-event' }) },
-      { name: 'Logs/0.16.9/mixed/backend.log', text: '{"profileId":"profile-one"}\n{"profileId":"profile-two"}' },
-    ])
+      { name: 'Logs/0.16.9/squad/notifications.log', text: jsonNotification({ eventId: 'grouped-raid' }) },
+      { name: 'Logs/0.16.9/squad/backend.log', text: [
+        '{"type":"userConfirmed","profileid":"the-reader","sessionMode":"PVP"}',
+        '{"type":"groupMatchInviteAccept","aid":2550617,"Info":{"Nickname":"Squadmate","Side":"Bear"}}',
+        '{"type":"groupMatchRaidReady","extendedProfile":{"_id":"other-player","aid":9900001}}',
+      ].join('\n') },
+    ], [regularTask], { gameMode: 'regular' })
 
-    // IDs seen only in context logs are not importable candidates. The event
-    // cannot be attributed to either identity, so neither false profile is
-    // offered in the chooser.
-    expect(preview.discoveredProfiles).toHaveLength(0)
-    expect(preview.events[0].profileKey).toBeNull()
+    expect(preview.discoveredProfiles).toHaveLength(1)
+    expect(preview.events).toHaveLength(1)
+    expect(preview.events[0].profileKey).toBe(preview.discoveredProfiles[0].profileKey)
+    expect(preview.discoveredProfiles[0].profileKey)
+      .toBe(__eftLogInternals.makeProfileKey(['the-reader']))
+    expect(JSON.stringify(preview)).not.toContain('2550617')
+    expect(JSON.stringify(preview)).not.toContain('9900001')
+    expect(JSON.stringify(preview)).not.toContain('Squadmate')
+  })
+
+  it('attributes a session that never reached matchmaking to the account', () => {
+    // The client writes the local `profileid` only once matchmaking resolves,
+    // so a session spent handing quests in at a trader carries no identity at
+    // all. Answering those with no profile discarded their events, which on a
+    // real corpus was most of a reader's quest history.
+    const preview = parse([
+      { name: 'Logs/0.16.9/raided/notifications.log', text: jsonNotification({ eventId: 'in-raid' }) },
+      { name: 'Logs/0.16.9/raided/backend.log', text: '{"type":"userConfirmed","profileid":"the-reader","sessionMode":"PVP"}' },
+      { name: 'Logs/0.16.9/menu-only/notifications.log', text: jsonNotification({ eventId: 'handed-in', taskId: secondTask }) },
+      { name: 'Logs/0.16.9/menu-only/backend.log', text: '{"sessionMode":"PVP"}' },
+    ], [regularTask, secondTask], { gameMode: 'regular' })
+
+    expect(preview.discoveredProfiles).toHaveLength(1)
+    expect(preview.events).toHaveLength(2)
+    expect(preview.events.every(event => event.profileKey === preview.discoveredProfiles[0].profileKey)).toBe(true)
+    expect(preview.discoveredProfiles[0].eventCount).toBe(2)
   })
 
   it('filters by detected version and defaults to the newest group', () => {
@@ -446,9 +501,25 @@ describe('parseEftLogFiles', () => {
       { name: 'Logs/0.16.9/seasonal/backend.log', text: '{"sessionMode":"SEASONAL","profileId":"seasonal-profile"}' },
     ]
     const preview = parse(files, [regularTask], { plannerMode: 'regular' })
-    expect(preview.recommendedProfileKey).toBe(preview.discoveredProfiles.find(profile => profile.mode === 'regular').profileKey)
+    // Both sessions belong to one account, so the match is against the mode
+    // facet the character carries rather than against a rival candidate.
+    expect(preview.discoveredProfiles).toHaveLength(1)
+    expect(preview.discoveredProfiles[0].gameModes).toContain('regular')
+    expect(preview.recommendedProfileKey).toBe(preview.discoveredProfiles[0].profileKey)
     expect(preview.discoveredProfiles[0].recommendationInputs).toMatchObject({ requestedMode: 'regular', modeMatch: true })
     expect(preview.discoveredProfiles[0].recommendationReasons).toContain('matches planner mode')
+  })
+
+  it('does not claim a planner-mode match the character never played', () => {
+    const files = [
+      { name: 'Logs/0.16.9/seasonal/notifications.log', text: jsonNotification({ eventId: 'seasonal-only' }) },
+      { name: 'Logs/0.16.9/seasonal/backend.log', text: '{"sessionMode":"SEASONAL","profileId":"seasonal-profile"}' },
+    ]
+    const preview = parse(files, [regularTask], { plannerMode: 'regular' })
+
+    expect(preview.discoveredProfiles[0].gameModes).toEqual(['pvp-season'])
+    expect(preview.discoveredProfiles[0].recommendationInputs).toMatchObject({ modeMatch: false })
+    expect(preview.discoveredProfiles[0].recommendationReasons).not.toContain('matches planner mode')
   })
 
   it('uses event volume as the primary-mode signal when no planner mode is supplied', () => {
@@ -460,7 +531,10 @@ describe('parseEftLogFiles', () => {
       { name: 'Logs/0.16.9/seasonal/backend.log', text: '{"sessionMode":"SEASONAL","profileId":"seasonal-profile"}' },
     ]
     const preview = parse(files, [regularTask])
-    expect(preview.recommendedProfile).toMatchObject({ mode: 'regular', eventCount: 9, activityShare: 0.9 })
+    // One account, so volume is now read as the balance between the mode facets
+    // of a single character rather than between rival candidates.
+    expect(preview.recommendedProfile).toMatchObject({ eventCount: 10, activityShare: 1 })
+    expect(preview.recommendedProfile.modeCounts).toEqual({ regular: 9, 'pvp-season': 1 })
   })
 
   it('parses the sanitized synthetic fixture folder end-to-end', () => {
