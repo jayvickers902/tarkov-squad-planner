@@ -289,6 +289,7 @@ export function createCompanionRuntime({
   let watchCleanup = null
   let authCleanup = null
   let connectivityCleanup = null
+  let visibilityCleanup = null
   let presenceTimer = null
   let selectionByMode = Object.create(null)
   let forceNextScan = false
@@ -366,11 +367,35 @@ export function createCompanionRuntime({
     if (stop) { try { await stop() } catch {} }
   }
 
-  function clearTimers() {
+  function clearWorkTimers() {
     if (debounceTimer !== null) { clearTimeoutFn(debounceTimer); debounceTimer = null }
     if (fallbackTimer !== null) { clearIntervalFn(fallbackTimer); fallbackTimer = null }
     if (retryTimer !== null) { clearTimeoutFn(retryTimer); retryTimer = null }
+  }
+
+  function clearTimers() {
+    clearWorkTimers()
     if (presenceTimer !== null) { clearIntervalFn(presenceTimer); presenceTimer = null }
+  }
+
+  function ensurePresenceTimer() {
+    if (!signedIn || disposed || presenceTimer !== null
+      || !method(network, 'reportSyncClientStatus', 'reportSyncStatus')) return
+    presenceTimer = setIntervalFn(reportPresence, 30000)
+  }
+
+  function ensureFallbackTimer() {
+    if (!ready() || fallbackIntervalMs <= 0 || fallbackTimer !== null) return
+    fallbackTimer = setIntervalFn(() => requestSync('fallback'), fallbackIntervalMs)
+  }
+
+  function resumeBackgroundWork(reason = 'resume') {
+    if (!started || disposed || !signedIn) return
+    ensurePresenceTimer()
+    reportPresence()
+    if (!enabled || !rootsConfigured(roots) || !isOnline()) return
+    ensureFallbackTimer()
+    void requestSync(reason)
   }
 
   function prerequisitesStatus() {
@@ -606,13 +631,14 @@ export function createCompanionRuntime({
 
   async function becomeReady() {
     await readRoots()
-    if (signedIn && presenceTimer === null && method(network, 'reportSyncClientStatus', 'reportSyncStatus')) {
-      presenceTimer = setIntervalFn(reportPresence, 30000)
-      reportPresence()
-    }
+    ensurePresenceTimer()
+    reportPresence()
     const prereq = prerequisitesStatus()
     if (!signedIn || !enabled || !rootsConfigured(roots)) {
-      await stopWatch(); clearTimers(); setStatus(prereq); return false
+      // A signed-in companion must keep reporting its setup/disabled state.
+      // Only sync work stops here; the presence timer belongs to the app
+      // lifecycle and is cleared on sign-out/stop/dispose.
+      await stopWatch(); clearWorkTimers(); setStatus(prereq); return false
     }
     // Load the native envelope at lifecycle start even when a host injects an
     // already-created engine. The engine remains the sole writer of offsets.
@@ -622,7 +648,7 @@ export function createCompanionRuntime({
       if (!checkpointStore) checkpointStore = createNativeCheckpointStore(native, checkpointDocument, () => context?.userId || authUserId)
     }
     await startWatch()
-    if (fallbackIntervalMs > 0 && fallbackTimer === null) fallbackTimer = setIntervalFn(() => requestSync('fallback'), fallbackIntervalMs)
+    ensureFallbackTimer()
     await requestSync('initial')
     return true
   }
@@ -657,7 +683,7 @@ export function createCompanionRuntime({
     enabled = Boolean(value)
     const setter = method(native, 'setEnabled', 'setCompanionEnabled')
     if (setter) await setter(enabled)
-    if (started) enabled ? await becomeReady() : (await stopWatch(), clearTimers(), setStatus({ state: 'offline', detail: 'Companion sync is disabled', pendingCount: 0 }))
+    if (started) enabled ? await becomeReady() : (await stopWatch(), clearWorkTimers(), setStatus({ state: 'offline', detail: 'Companion sync is disabled', pendingCount: 0 }))
   }
 
   async function configureRoots(value) {
@@ -700,11 +726,27 @@ export function createCompanionRuntime({
     const connectivity = firstFunction(network.onConnectivityChange, auth.onConnectivityChange)
     if (!connectivity && typeof globalThis.addEventListener === 'function') {
       const target = globalThis
-      const online = () => { onlineOverride = true; setStatus({ state: 'connecting', detail: 'Connection restored' }); requestSync('online') }
-      const offline = () => { onlineOverride = false; clearTimers(); setStatus({ state: 'offline', detail: 'Offline — waiting for connection', pendingCount: 1 }) }
+      const online = () => { onlineOverride = true; setStatus({ state: 'connecting', detail: 'Connection restored' }); resumeBackgroundWork('online') }
+      const offline = () => { onlineOverride = false; clearWorkTimers(); setStatus({ state: 'offline', detail: 'Offline — waiting for connection', pendingCount: 1 }) }
       target.addEventListener('online', online); target.addEventListener('offline', offline)
       connectivityCleanup = () => { target.removeEventListener('online', online); target.removeEventListener('offline', offline) }
-    } else if (connectivity) connectivityCleanup = await connectivity.call(network, value => { onlineOverride = Boolean(value); value ? requestSync('online') : setStatus({ state: 'offline', detail: 'Offline — waiting for connection' }) })
+    } else if (connectivity) connectivityCleanup = await connectivity.call(network, value => {
+      onlineOverride = Boolean(value)
+      if (value) {
+        setStatus({ state: 'connecting', detail: 'Connection restored' })
+        resumeBackgroundWork('online')
+      } else {
+        clearWorkTimers()
+        setStatus({ state: 'offline', detail: 'Offline — waiting for connection' })
+      }
+    })
+    if (typeof document !== 'undefined' && !visibilityCleanup) {
+      const visible = () => {
+        if (document.visibilityState === 'visible') resumeBackgroundWork('visible')
+      }
+      document.addEventListener('visibilitychange', visible)
+      visibilityCleanup = () => document.removeEventListener('visibilitychange', visible)
+    }
     return getStatus()
   }
 
@@ -724,6 +766,7 @@ export function createCompanionRuntime({
     disposed = true
     try { authCleanup?.() } catch {} authCleanup = null
     try { connectivityCleanup?.() } catch {} connectivityCleanup = null
+    try { visibilityCleanup?.() } catch {} visibilityCleanup = null
     listeners.clear()
   }
 

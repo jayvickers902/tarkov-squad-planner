@@ -1,6 +1,6 @@
 [package]
 name = "tarkov-squad-planner-companion"
-version = "0.2.0"
+version = "0.2.1"
 description = "Windows-first companion shell for Tarkov Squad Planner"
 authors = ["Tarkov Squad Planner"]
 edition = "2021"

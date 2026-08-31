@@ -5,7 +5,7 @@ import { FEATURED } from '../constants'
 import QuestImportHub from './QuestImportHub'
 import { GAME_MODES, gameModeLabel, resolvePartyMode } from '../gameMode'
 import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
-import { relativeTime, STATE_TEXT } from '../syncStatus'
+import { channelStatus, companionChannelStatus, healthiestChannelStatus, relativeTime, STATE_TEXT } from '../syncStatus'
 import { mapBannerLayers, mapHeaderBanner } from '../mapBanners'
 import Icon from './Icon'
 import { inferredTaskMapNorm } from '../tarkovObjectives'
@@ -582,19 +582,37 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
     ? 'SYNCS QUESTS AND PINGS WITH THIS TAB CLOSED.'
     : `LAST REPORT ${relativeTime(companion?.desktopLastSeen) || 'NOT YET'}`
 
-  const shotWatching = screenshotSync?.state === 'watching'
+  const now = Date.now()
+  const browserShotStatus = screenshotSync ? channelStatus(screenshotSync, { now }) : null
+  const desktopShotStatus = companion?.available
+    ? companionChannelStatus(companion.statuses?.pings, { now })
+    : null
+  const activeShotStatus = healthiestChannelStatus(browserShotStatus, desktopShotStatus)
+  const desktopPingsConfigured = Boolean(companion?.statuses?.pings?.configured)
   const shotSkipped = screenshotSync?.lastSkipped?.count || 0
-  const shotStatus = !screenshotSync
+  const shotStatus = !activeShotStatus
     ? 'UNAVAILABLE'
-    : !screenshotSync.persistentSupported
+    : activeShotStatus.source === 'desktop' && activeShotStatus.tone === 'ok'
+      ? 'OK'
+    : activeShotStatus.source === 'browser' && !screenshotSync?.persistentSupported
       ? 'CHROME / EDGE DESKTOP REQUIRED'
-      : shotSkipped > 0
+      : activeShotStatus.source === 'browser' && shotSkipped > 0
         ? `${shotSkipped} SCREENSHOT${shotSkipped === 1 ? '' : 'S'} TOO OLD TO PING`
-        : STATE_TEXT?.[screenshotSync.state] || 'READY'
-  const shotRowState = shotWatching ? 'connected' : screenshotSync?.state === 'error' ? 'offline' : screenshotSync?.state === 'permission-needed' ? 'attention' : 'not-setup'
-  const shotDetail = screenshotSync?.folderName
-    ? `${screenshotSync.folderName} · ONLY THE FILENAME AND FILE TIME ARE READ.`
-    : 'ONLY THE FILENAME AND FILE TIME ARE READ.'
+        : activeShotStatus.label || STATE_TEXT?.[screenshotSync?.state] || 'READY'
+  const shotRowState = activeShotStatus?.tone === 'ok'
+    ? 'connected'
+    : ['warn', 'connecting'].includes(activeShotStatus?.tone)
+      ? 'attention'
+      : activeShotStatus?.tone === 'error'
+        ? 'offline'
+        : 'not-setup'
+  const shotDetail = activeShotStatus?.source === 'desktop'
+    ? desktopPingsConfigured
+      ? `CONFIGURED IN DESKTOP APP · LAST REPORT ${relativeTime(activeShotStatus.lastReportedMs, now) || 'NOT YET'}`
+      : 'NO SCREENSHOTS FOLDER CONFIGURED IN THE DESKTOP APP.'
+    : screenshotSync?.folderName
+      ? `${screenshotSync.folderName} · ONLY THE FILENAME AND FILE TIME ARE READ.`
+      : 'ONLY THE FILENAME AND FILE TIME ARE READ.'
 
   const searchMapChips = searchMapsOpen ? FEATURED : FEATURED.slice(0, 2)
   const selectionSize = selectedIds.size
@@ -971,7 +989,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
               </div>
             </div>
             <div className="quest-rail-actions">
-              {screenshotSync?.persistentSupported && !screenshotSync.folderName && (
+              {screenshotSync?.persistentSupported && !screenshotSync.folderName && !desktopPingsConfigured && (
                 <button
                   className="btn-gold btn-sm"
                   disabled={screenshotSync.state === 'reading'}

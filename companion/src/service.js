@@ -34,6 +34,27 @@ function callbackNotice(error) {
   return 'callback-failed'
 }
 
+// WebView2 may suspend timers after a tray window has been hidden for several
+// minutes. Holding a Web Lock keeps the companion's heartbeat and file watcher
+// scheduler alive without preventing Windows itself from sleeping.
+export function holdBackgroundSyncLock(locks = globalThis.navigator?.locks) {
+  if (!locks || typeof locks.request !== 'function') return () => {}
+  let release
+  let stopped = false
+  const held = new Promise(resolve => { release = resolve })
+  try {
+    Promise.resolve(locks.request('tsp-companion-background-sync', { mode: 'shared' }, () => (
+      stopped ? undefined : held
+    ))).catch(() => {})
+  } catch {
+    return () => {}
+  }
+  return () => {
+    stopped = true
+    release?.()
+  }
+}
+
 export function createCompanionService({
   native = tauriAdapter,
   createAuth = createAuthClient,
@@ -56,6 +77,7 @@ export function createCompanionService({
   let runtimeCleanup = null
   let authCleanup = null
   let deepLinkCleanup = null
+  let backgroundLockCleanup = null
   let startPromise = null
   let session = null
   let roots = { logsRoot: null, screenshotsRoot: null }
@@ -94,6 +116,7 @@ export function createCompanionService({
 
   async function startInternal() {
     if (!configured) { emit(); return snapshot() }
+    backgroundLockCleanup ||= holdBackgroundSyncLock()
     auth = createAuth({
       supabaseUrl,
       anonKey,
@@ -172,7 +195,9 @@ export function createCompanionService({
     try { deepLinkCleanup?.() } catch {}
     try { authCleanup?.() } catch {}
     try { runtimeCleanup?.() } catch {}
+    try { backgroundLockCleanup?.() } catch {}
     deepLinkCleanup = authCleanup = runtimeCleanup = null
+    backgroundLockCleanup = null
     await runtime?.dispose?.()
   }
 
