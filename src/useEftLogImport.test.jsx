@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { CHECKPOINT_VERSION } from './eftLogHandleStore'
 import { useEftLogImport } from './useEftLogImport'
 
 const taskId = '507f1f77bcf86cd799439011'
@@ -737,6 +738,142 @@ describe('useEftLogImport', () => {
     expect(slices).toContain(originalSize)
     expect(workerFactory.mock.calls.length).toBeGreaterThanOrEqual(2)
     expect(onApply).toHaveBeenCalledTimes(2)
+  })
+
+  it('carries a notifier verdict through a silent full scan and excludes seasonal progress from the next append', async () => {
+    let text = '{}'
+    const sourceFile = {
+      get size() { return new TextEncoder().encode(text).byteLength },
+      lastModified: 1,
+      async text() { return text },
+      async arrayBuffer() { return new TextEncoder().encode(text).buffer },
+      slice(start) {
+        const bytes = new TextEncoder().encode(text).slice(start)
+        return { async arrayBuffer() { return bytes.buffer } }
+      },
+      append(next) { text += next; this.lastModified += 1 },
+    }
+    const environment = persistentEnvironment(directoryHandle(sourceFile))
+    const handleStore = memoryStore()
+    const messageTypes = []
+    const appendStates = []
+    let notify
+    let parseCount = 0
+    const seasonalEvent = {
+      eventKey: 'event:seasonal-incremental', taskId, state: 'active',
+      occurredAt: '2026-08-28T12:35:00.000Z', gameMode: null,
+      hasSeasonalSignal: true, profileKey: null, sessionKey: 'session-local', version: '0.16',
+    }
+    const workerFactory = () => {
+      const worker = {
+        terminate: vi.fn(),
+        postMessage(message) {
+          messageTypes.push(message.type)
+          if (message.type === 'append') appendStates.push(message.appendFiles[0].state)
+          if (message.type === 'parse') parseCount += 1
+          const data = message.type === 'append'
+            ? {
+                type: 'result', requestId: message.requestId,
+                results: [{ preview: { events: [seasonalEvent] }, parsedOffset: sourceFile.size, notifierSeasonal: true }],
+              }
+            : {
+                type: 'result', requestId: message.requestId,
+                preview: preview({ notifierSeasonalByFile: parseCount === 1 ? { 'notifications.log': true } : {} }),
+              }
+          Promise.resolve().then(() => worker.onmessage?.({ data }))
+        },
+      }
+      return worker
+    }
+    const onApply = vi.fn(async () => ({ inserted: 1, updated: 0 }))
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: [{ id: taskId }], environment, handleStore, workerFactory,
+      observerFactory: vi.fn(callback => { notify = callback; return { observe: vi.fn(), disconnect: vi.fn() } }),
+      observerDebounceMs: 1, onApply,
+    }))
+
+    await act(async () => { await result.current.connectRememberedFolder() })
+    await act(async () => { await result.current.confirmImport({ autoSync: true }) })
+    sourceFile.lastModified += 1
+    await act(async () => { await result.current.checkNow() })
+    expect(handleStore.saveCheckpoint.mock.calls.at(-1)[1].files[0].notifierSeasonal).toBe(true)
+
+    sourceFile.append('seasonal-append')
+    await act(async () => {
+      notify([{ type: 'modified', relativePathComponents: ['notifications.log'] }])
+      await new Promise(resolve => setTimeout(resolve, 10))
+    })
+
+    expect(messageTypes).toEqual(['parse', 'parse', 'append'])
+    expect(appendStates).toEqual([expect.objectContaining({ notifierSeasonal: true })])
+    expect(onApply).toHaveBeenCalledTimes(2)
+    expect(handleStore.saveCheckpoint.mock.calls.at(-1)[1].version).toBe(CHECKPOINT_VERSION)
+    expect(handleStore.saveCheckpoint.mock.calls.at(-1)[1].files[0].notifierSeasonal).toBe(true)
+  })
+
+  it('upgrades a v1 browser checkpoint with one full scan, then resumes appends', async () => {
+    let text = '{}changed'
+    const sourceFile = {
+      get size() { return new TextEncoder().encode(text).byteLength },
+      lastModified: 2,
+      async text() { return text },
+      async arrayBuffer() { return new TextEncoder().encode(text).buffer },
+      slice(start) {
+        const bytes = new TextEncoder().encode(text).slice(start)
+        return { async arrayBuffer() { return bytes.buffer } }
+      },
+      append(next) { text += next; this.lastModified += 1 },
+    }
+    const handle = directoryHandle(sourceFile)
+    const handleStore = memoryStore()
+    await handleStore.saveHandle('default', handle)
+    await handleStore.saveCheckpoint('default', {
+      version: 1,
+      files: [{ relativeFilename: 'notifications.log', size: 2, lastModified: 1, parsedOffset: 2 }],
+      includedVersions: ['0.16'],
+      profileKey: null,
+      unknownModeTargets: {},
+      gameMode: 'regular',
+      autoSync: true,
+    })
+    handleStore.saveCheckpoint.mockClear()
+    const messageTypes = []
+    const workerFactory = () => {
+      const worker = {
+        terminate: vi.fn(),
+        postMessage(message) {
+          messageTypes.push(message.type)
+          const data = message.type === 'append'
+            ? { type: 'result', requestId: message.requestId, results: [{ preview: { events: [] }, parsedOffset: sourceFile.size }] }
+            : { type: 'result', requestId: message.requestId, preview: preview({ events: [], matchedEvents: 0 }) }
+          Promise.resolve().then(() => worker.onmessage?.({ data }))
+        },
+      }
+      return worker
+    }
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: [{ id: taskId }],
+      environment: persistentEnvironment(handle),
+      handleStore,
+      workerFactory,
+      onApply: vi.fn(async () => ({ inserted: 0, updated: 0 })),
+    }))
+
+    await act(async () => {
+      await vi.waitFor(() => expect(messageTypes).toEqual(['parse']))
+    })
+    expect(handleStore.saveCheckpoint).toHaveBeenCalledTimes(1)
+    expect(handleStore.saveCheckpoint.mock.calls[0][1]).toMatchObject({
+      version: CHECKPOINT_VERSION,
+      autoSync: true,
+    })
+
+    sourceFile.append('appended')
+    await act(async () => { await result.current.checkNow() })
+
+    expect(messageTypes).toEqual(['parse', 'append'])
+    expect(handleStore.saveCheckpoint).toHaveBeenCalledTimes(2)
+    expect(handleStore.saveCheckpoint.mock.calls[1][1].version).toBe(CHECKPOINT_VERSION)
   })
 
   it('does not commit transient parser state when an incremental apply fails', async () => {

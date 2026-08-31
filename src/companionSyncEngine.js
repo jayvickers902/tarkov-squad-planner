@@ -8,6 +8,7 @@
  */
 import {
   isRelevantEftLogFile,
+  isSeasonalEvent,
   parseEftLogAppend,
   parseEftLogFiles,
 } from './eftLogs'
@@ -40,7 +41,7 @@ export const SCREENSHOT_FRESHNESS_MS = 2 * 60 * 1000
 export const MAX_SCREENSHOT_CATCHUP_MS = SCREENSHOT_FRESHNESS_MS
 export const SCREENSHOT_PINGS_PER_MINUTE = 20
 export const PING_RATE_LIMIT_PER_MINUTE = SCREENSHOT_PINGS_PER_MINUTE
-export const QUEST_LOG_SCANNER_VERSION = '0.2.1'
+export const QUEST_LOG_SCANNER_VERSION = '0.2.2'
 
 const VALID_MODES = new Set(['regular', 'pve', 'pvp-season'])
 const MAX_SAFE_ID = 128
@@ -222,6 +223,8 @@ function checkpointForLogs(input = {}) {
         ...metadata,
         ...(Number.isSafeInteger(file?.parsedOffset) && file.parsedOffset >= 0
           ? { parsedOffset: file.parsedOffset } : {}),
+        ...(typeof file?.notifierSeasonal === 'boolean'
+          ? { notifierSeasonal: file.notifierSeasonal } : {}),
       }
     })
     .filter(Boolean)
@@ -390,6 +393,8 @@ function filesFromCheckpoint(checkpoint) {
     ...file,
     ...(Number.isSafeInteger(checkpoint?.files?.find?.(item => item?.relativeFilename === file.relativeFilename)?.parsedOffset)
       ? { parsedOffset: checkpoint.files.find(item => item.relativeFilename === file.relativeFilename).parsedOffset } : {}),
+    ...(typeof checkpoint?.files?.find?.(item => item?.relativeFilename === file.relativeFilename)?.notifierSeasonal === 'boolean'
+      ? { notifierSeasonal: checkpoint.files.find(item => item.relativeFilename === file.relativeFilename).notifierSeasonal } : {}),
   }))
 }
 
@@ -435,6 +440,10 @@ function selectedEvents(preview, { mode, checkpoint, taskIds, taskMetadata = nul
   const source = Array.isArray(preview?.matchedEvents) ? preview.matchedEvents : (preview?.events || [])
   return source.filter(event => {
     if (known && !known.has(String(event?.taskId || ''))) return false
+    // Permanent and PvE sync must never adopt an event positively placed on a
+    // seasonal notifier. Seasonal sync is a supported destination here, so it
+    // intentionally keeps the same event.
+    if (mode !== 'pvp-season' && isSeasonalEvent(event, null)) return false
     if (mode && event?.gameMode && event.gameMode !== mode) return false
     if (mode && !event?.gameMode
       && checkpoint?.gameMode !== mode
@@ -572,6 +581,9 @@ export function createQuestLogSyncController({
       })
       const events = []
       const nextOffsets = new Map(previous.map(file => [file.relativeFilename, file.parsedOffset]))
+      const nextNotifierSeasonal = new Map(previous
+        .filter(file => typeof file.notifierSeasonal === 'boolean')
+        .map(file => [file.relativeFilename, file.notifierSeasonal]))
       const stagedPending = new Map(pendingText)
       let preview = null
 
@@ -587,6 +599,9 @@ export function createQuestLogSyncController({
           if (notificationLog(entry.relativeFilename)) nextOffsets.set(entry.relativeFilename, actualBytes)
         }
         preview = parseEftLogFiles(files, knownTaskIds, parser)
+        for (const [path, seasonal] of Object.entries(preview?.notifierSeasonalByFile || {})) {
+          if (typeof seasonal === 'boolean') nextNotifierSeasonal.set(path, seasonal)
+        }
         const choice = chooseCandidate(preview, { mode, checkpoint, parser, taskIds: knownTaskIds })
         preview = { ...preview, discoveredProfiles: choice.candidates }
         if (choice.selected && !checkpoint?.profileKey && !parser?.profileKey) {
@@ -637,7 +652,10 @@ export function createQuestLogSyncController({
             name: file.relativeFilename,
             text,
             pendingText: pendingText.get(file.relativeFilename) || '',
-            state: { parsedOffset: old?.parsedOffset },
+            state: {
+              parsedOffset: old?.parsedOffset,
+              notifierSeasonal: old?.notifierSeasonal,
+            },
             taskIds: knownTaskIds,
             options: parser,
           })
@@ -658,6 +676,7 @@ export function createQuestLogSyncController({
           if (result.pendingText && !result.pendingOverflow) stagedPending.set(file.relativeFilename, result.pendingText)
           else stagedPending.delete(file.relativeFilename)
           if (Number.isSafeInteger(result.parsedOffset)) nextOffsets.set(file.relativeFilename, result.parsedOffset)
+          if (typeof result.notifierSeasonal === 'boolean') nextNotifierSeasonal.set(file.relativeFilename, result.notifierSeasonal)
         }
       }
 
@@ -711,7 +730,12 @@ export function createQuestLogSyncController({
       // apply therefore rereads the same suffix and relies on event_key
       // idempotency instead of losing local events.
       const next = checkpointForLogs({
-        files: current.map(file => ({ ...file, ...(nextOffsets.has(file.relativeFilename) ? { parsedOffset: nextOffsets.get(file.relativeFilename) } : {}) })),
+        files: current.map(file => ({
+          ...file,
+          ...(nextOffsets.has(file.relativeFilename) ? { parsedOffset: nextOffsets.get(file.relativeFilename) } : {}),
+          ...(typeof nextNotifierSeasonal.get(file.relativeFilename) === 'boolean'
+            ? { notifierSeasonal: nextNotifierSeasonal.get(file.relativeFilename) } : {}),
+        })),
         includedVersions: preview?.includedVersions || checkpoint?.includedVersions || parser?.includedVersions || [],
         profileKey: selectedProfileForMode(checkpoint, mode) || parser?.profileKey,
         profileLabel: choiceLabel(preview, selectedProfileForMode(checkpoint, mode) || parser?.profileKey)

@@ -862,3 +862,158 @@ describe('per-event gateway attribution', () => {
     expect(recordClockAt(text, text.indexOf('{'), -1)).toBe(Date.UTC(2026, 7, 28, 12, 38, 31, 0))
   })
 })
+
+
+// The incremental (live folder check) path parses one appended chunk of one
+// notification log, so it has no backend context file and the gateway timeline
+// is empty. Before this, every append event came back unplaced and the caller
+// defaulted it to the character the site had selected: playing a seasonal
+// character with the site open wrote its quests onto the permanent one.
+describe('notifier seasonal attribution for appends', () => {
+  const { collectNotifierTransitions, notifierSeasonalAt, latestNotifierSeasonal } = __eftLogInternals
+
+  // The real line, from log_2026.08.28_12-29-37. The scheme is `ws:wss://`, not
+  // http, and the trailing path segment is an identity id.
+  const notifier = (time, host) =>
+    `2026-08-28 ${time}|1.1.0.1.46911|Info|push-notifications|NotificationManager: new params received url:  ws:wss://${host}.escapefromtarkov.com/push/notifier/getwebsocket/DEADBEEF`
+  const notifiedAt = (time, body) =>
+    `2026-08-28 ${time}|1.1.0.1.46911|Info|push-notifications|Got notification | ChatMessageReceived\n${body}`
+  const at = (hour, minute) => Date.UTC(2026, 7, 28, hour, minute, 0, 0)
+  const notificationPath = 'Logs/log_2026.08.28_12-29-37/2026.08.28_12-29-37_1.1.0.1.46911 push-notifications_000.log'
+
+  const appendOf = (lines, state = {}) => parseEftLogAppend({
+    name: notificationPath,
+    text: lines.join('\n'),
+    state,
+    taskIds: [regularTask, secondTask, pveTask],
+  })
+
+  it('classifies notifier hosts as seasonal or not, never as a mode', () => {
+    const transitions = collectNotifierTransitions([
+      notifier('12:30:29.485', 'wsn-pvp-season-01'),
+      notifier('12:34:43.093', 'wsn-02'),
+      notifier('12:40:00.000', 'wsn-pve-02'),
+      notifier('12:45:00.000', 'chat-01'),
+    ].join('\n'))
+    expect(transitions.map(entry => entry.seasonal)).toEqual([true, false, false])
+    expect(transitions.every(entry => !('mode' in entry))).toBe(true)
+  })
+
+  // `wsn-02` has no pvp or regular token in it. Reading it as `regular` would be
+  // inventing evidence; ruling seasonal out is the whole and only claim.
+  it('does not let a non-seasonal notifier claim a game mode', () => {
+    const result = parse([{
+      name: notificationPath,
+      text: [notifier('12:34:43.093', 'wsn-02'), notifiedAt('12:38:31.000', jsonNotification({}))].join('\n'),
+      size: 100,
+      lastModified: 0,
+    }])
+    expect(result.matchedEvents).toHaveLength(1)
+    expect(result.matchedEvents[0].gameMode).toBeNull()
+    expect(result.matchedEvents[0].hasSeasonalSignal).toBe(false)
+  })
+
+  it('excludes an append event that falls inside a seasonal notifier window', () => {
+    const result = appendOf([
+      notifier('12:30:29.485', 'wsn-pvp-season-01'),
+      notifiedAt('12:31:00.000', jsonNotification({ eventId: 'seasonal' })),
+    ])
+    expect(result.matchedEvents).toHaveLength(1)
+    expect(result.matchedEvents[0].hasSeasonalSignal).toBe(true)
+  })
+
+  it('keeps an append event that follows the switch back to a permanent notifier', () => {
+    const result = appendOf([
+      notifier('12:30:29.485', 'wsn-pvp-season-01'),
+      notifiedAt('12:31:00.000', jsonNotification({ eventId: 'seasonal' })),
+      notifier('12:34:43.093', 'wsn-02'),
+      notifiedAt('12:38:31.000', jsonNotification({ eventId: 'permanent', taskId: secondTask })),
+    ])
+    const byEvent = Object.fromEntries(result.matchedEvents.map(event => [
+      event.eventKey.includes('seasonal') ? 'seasonal' : 'permanent', event,
+    ]))
+    expect(byEvent.seasonal.hasSeasonalSignal).toBe(true)
+    expect(byEvent.permanent.hasSeasonalSignal).toBe(false)
+  })
+
+  // An append usually begins after the line that set the current host. That must
+  // stay permissive, or a live check silently stops importing anything at all.
+  it('stays permissive when no notifier line precedes the event', () => {
+    const result = appendOf([notifiedAt('12:38:31.000', jsonNotification({}))])
+    expect(result.matchedEvents).toHaveLength(1)
+    expect(result.matchedEvents[0].hasSeasonalSignal).toBe(false)
+  })
+
+  // Which is exactly why the verdict has to be carried between appends: the
+  // seasonal notifier line arrived in an earlier chunk and is never re-read.
+  it('carries the previous verdict into an append with no notifier line', () => {
+    const result = appendOf([notifiedAt('12:38:31.000', jsonNotification({}))], { notifierSeasonal: true })
+    expect(result.matchedEvents[0].hasSeasonalSignal).toBe(true)
+    expect(result.notifierSeasonal).toBe(true)
+  })
+
+  // The character switch itself is an append with no complete JSON record in it.
+  // Reading the carry from the consumed text alone would drop that line, and the
+  // byte offset would step past it, so it would never be seen again.
+  it('carries a notifier line forward from an append containing no record', () => {
+    const result = appendOf([notifier('12:30:29.485', 'wsn-pvp-season-01')], { notifierSeasonal: false })
+    expect(result.matchedEvents).toHaveLength(0)
+    expect(result.notifierSeasonal).toBe(true)
+  })
+
+  it('reports the last verdict in an append, not the first', () => {
+    const result = appendOf([
+      notifier('12:30:29.485', 'wsn-pvp-season-01'),
+      notifiedAt('12:31:00.000', jsonNotification({ eventId: 'seasonal' })),
+      notifier('12:34:43.093', 'wsn-02'),
+    ])
+    expect(result.notifierSeasonal).toBe(false)
+    expect(result.matchedEvents[0].hasSeasonalSignal).toBe(true)
+  })
+
+  // The backend gateway names the mode; the notifier only rules seasonal out.
+  // Where both exist the gateway wins, which is what keeps a full-folder parse
+  // returning exactly what it returned before.
+  it('lets the backend gateway outrank the notifier', () => {
+    const result = parse([
+      {
+        name: 'Logs/log_2026.08.28_12-29-37/2026.08.28_12-29-37_1.1.0.1.46911 backend_000.log',
+        text: '2026-08-28 12:34:29.000|1.1.0.1.46911|Info|backend|---> Request HTTPS, id [1]: URL: https://gw-pvp.escapefromtarkov.com/client/game/mode.',
+        size: 100,
+        lastModified: 0,
+      },
+      {
+        name: notificationPath,
+        // A stale seasonal notifier line the gateway has already moved past.
+        text: [notifier('12:30:29.485', 'wsn-pvp-season-01'), notifiedAt('12:38:31.000', jsonNotification({}))].join('\n'),
+        size: 100,
+        lastModified: 0,
+      },
+    ])
+    expect(result.matchedEvents[0].gameMode).toBe('regular')
+    expect(result.matchedEvents[0].modeAttributed).toBe(true)
+    expect(result.matchedEvents[0].hasSeasonalSignal).toBe(false)
+  })
+
+  it('reports the per-file verdict a full scan must seed the next append from', () => {
+    const result = parse([{ name: notificationPath, text: notifier('12:30:29.485', 'wsn-pvp-season-01'), size: 100, lastModified: 0 }])
+    expect(result.notifierSeasonalByFile[notificationPath]).toBe(true)
+  })
+
+  it('resolves a verdict from the transition at or before the event, else the carry', () => {
+    const transitions = [{ at: at(12, 30), seasonal: true }, { at: at(12, 34), seasonal: false }]
+    expect(notifierSeasonalAt(transitions, at(12, 31))).toBe(true)
+    expect(notifierSeasonalAt(transitions, at(12, 38))).toBe(false)
+    expect(notifierSeasonalAt(transitions, at(12, 20))).toBeNull()
+    expect(notifierSeasonalAt(transitions, at(12, 20), true)).toBe(true)
+    expect(notifierSeasonalAt([], at(12, 31), false)).toBe(false)
+    expect(notifierSeasonalAt(transitions, null, true)).toBe(true)
+  })
+
+  it('keeps the carry when a chunk holds no readable notifier line', () => {
+    expect(latestNotifierSeasonal('nothing here', true)).toBe(true)
+    expect(latestNotifierSeasonal('nothing here')).toBeNull()
+    // A line cut by the chunk boundary has no clock above it and is not read.
+    expect(latestNotifierSeasonal('ws:wss://wsn-pvp-season-01.escapefromtarkov.com/x', false)).toBe(false)
+  })
+})

@@ -279,9 +279,10 @@ function utf8ByteLength(value) {
 }
 
 /**
- * Parse only newly appended notification-log text. `state.pendingText` is
- * intentionally an in-memory value; persisted state should contain only the
- * numeric `parsedOffset` in the file metadata.
+ * Parse only newly appended notification-log text. `pendingText` is
+ * intentionally an in-memory value. Persisted state contains the numeric
+ * `parsedOffset` and, when known, only the notifier's normalized seasonal
+ * boolean — never raw log text, a host, or the identity id in its URL.
  *
  * The `preview` field has the same shape as parseEftLogFiles, which lets a
  * watcher feed the result through the existing reconciliation path.
@@ -307,15 +308,25 @@ export function parseEftLogAppend({
   const previousOffset = Number.isFinite(state?.parsedOffset) && state.parsedOffset >= 0 ? state.parsedOffset : 0
   const consumedBytes = utf8ByteLength(consumedForOffset)
   const nextParsedOffset = previousOffset + consumedBytes
+  const priorNotifierSeasonal = typeof state?.notifierSeasonal === 'boolean' ? state.notifierSeasonal : null
+  const appendOptions = { ...options, notifierSeasonalBefore: priorNotifierSeasonal }
   const preview = consumedText
-    ? parseEftLogFiles([{ name, text: consumedText }], taskIds, options)
-    : parseEftLogFiles([], taskIds, options)
+    ? parseEftLogFiles([{ name, text: consumedText }], taskIds, appendOptions)
+    : parseEftLogFiles([], taskIds, appendOptions)
   return {
     ...preview,
     preview,
     pendingText: parsed.pendingText,
     pendingOverflow: parsed.pendingOverflow,
     parsedOffset: nextParsedOffset,
+    // Read from `combined` rather than `consumedText`. A notifier line can
+    // arrive in an append that contains no complete JSON record at all — the
+    // character switch itself is exactly such an append — and `consumedText`
+    // stops at the last complete record, so the line would be consumed by the
+    // offset and never seen again. Events that precede the line in the same
+    // append are unaffected: they are placed against the timeline, which is
+    // ordered, while this is only the value handed to the *next* append.
+    notifierSeasonal: latestNotifierSeasonal(combined, priorNotifierSeasonal),
     consumedBytes,
     recordsParsed: parsed.objects.length,
   }
@@ -434,6 +445,91 @@ function collapseModeTransitions(transitions) {
     collapsed.push(transition)
   }
   return collapsed
+}
+
+/**
+ * Build the ordered record of which push-notification gateway the client was
+ * connected to, read from the notification log itself.
+ *
+ * This exists because an append has no context file to consult.
+ * `parseEftLogAppend` hands `parseEftLogFiles` a single chunk of one
+ * notification log, so the backend gateway timeline is empty, every event comes
+ * back unplaced, and the caller then defaults it to whatever character the site
+ * has selected. The notifier host sits inline in the same file as the events and
+ * changes when the player switches character, so it is the one source about the
+ * append that the append itself carries.
+ *
+ * It answers a deliberately narrower question than `collectModeTransitions`:
+ * seasonal or not, never which mode. `wsn-02` carries no mode token at all, and
+ * reading it as `regular` would invent evidence the log does not contain. Ruling
+ * seasonal out is enough, because that is the only direction in which this path
+ * can do harm.
+ */
+function collectNotifierTransitions(text) {
+  const transitions = []
+  // The notifier URL is written `ws:wss://host/...`, so the http-anchored
+  // pattern in `collectModeTransitions` never sees it. Anchored on the one
+  // domain this acts on for the same reason that one is: a general host pattern
+  // backtracks catastrophically on adversarial text, and a log may be 32 MiB.
+  const pattern = /wss?:\/\/([a-z0-9.-]{0,64}escapefromtarkov\.com)(?::\d+)?/ig
+  let match
+  while ((match = pattern.exec(text))) {
+    const host = match[1].toLowerCase()
+    // Only websocket-notifier gateways answer this question. Another EFT
+    // websocket URL is unknown evidence, not permission to clear a seasonal
+    // verdict carried from an earlier append.
+    if (!/^wsn(?:[.-]|$)/.test(host)) continue
+    const at = logLineClockAt(text, lineStartBefore(text, match.index))
+    if (at === null) continue
+    // Reuse `hostMode` for the seasonal test so the two timelines can never
+    // disagree about what a seasonal host looks like. Its other verdicts are
+    // discarded on purpose: a notifier host is evidence of season, or of nothing.
+    transitions.push({ at, seasonal: hostMode(host) === 'pvp-season' })
+  }
+  return transitions
+}
+
+/** Sort by clock and drop repeats, leaving one entry per change of notifier. */
+function collapseNotifierTransitions(transitions) {
+  const ordered = [...transitions].sort((left, right) => left.at - right.at)
+  const collapsed = []
+  for (const transition of ordered) {
+    if (collapsed.length && collapsed[collapsed.length - 1].seasonal === transition.seasonal) continue
+    collapsed.push(transition)
+  }
+  return collapsed
+}
+
+/**
+ * Whether the notifier in use at `at` belonged to a seasonal character.
+ *
+ * `prior` is the verdict carried in from the previous append, and it is what the
+ * answer falls back to when no notifier line precedes the event. An append
+ * usually begins after the line that set the current host, so without that carry
+ * this returns `null` for nearly every live check. `null` must stay permissive:
+ * a verdict of "unknown" that excluded events would silently stop the live check
+ * importing anything at all.
+ */
+function notifierSeasonalAt(transitions, at, prior = null) {
+  const fallback = typeof prior === 'boolean' ? prior : null
+  if (!Number.isFinite(at) || !transitions?.length) return fallback
+  let seasonal = fallback
+  for (const transition of transitions) {
+    if (transition.at > at) break
+    seasonal = transition.seasonal
+  }
+  return seasonal
+}
+
+/**
+ * The notifier verdict in force at the end of `text`, for the caller to carry
+ * into the next append. Only a boolean or `null` is ever produced: the host
+ * itself, and the identity id in the notifier URL's path, never leave here.
+ */
+function latestNotifierSeasonal(text, prior = null) {
+  const transitions = collapseNotifierTransitions(collectNotifierTransitions(text))
+  if (!transitions.length) return typeof prior === 'boolean' ? prior : null
+  return transitions[transitions.length - 1].seasonal
 }
 
 /**
@@ -871,6 +967,7 @@ function sessionInfoFor(files) {
         profileGroups: [],
         modeSignals: new Map(),
         modeTransitions: [],
+        notifierTransitions: [],
         lastSeen: [],
       })
     }
@@ -912,6 +1009,11 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
   const malformedRecords = []
   let eventsSeen = 0
   const rawEvents = []
+  // Per notification file, the notifier verdict in force at its end. A full
+  // scan consumes the log up to its current size, so without this the first
+  // append after one would start with no verdict and fall back to the
+  // permissive default — the exact window a character switch lands in.
+  const notifierSeasonalByFile = {}
 
   for (const session of sessions.values()) {
     for (const file of session.files) {
@@ -951,6 +1053,15 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
       }
 
       if (!file.notification) continue
+      // Collected from the notification log rather than the context log, so an
+      // append — which only ever carries notification text — still has a source.
+      // A full-folder parse gets it as well and simply has better evidence to
+      // prefer; see the precedence note where `hasSeasonalSignal` is set.
+      const fileNotifierTransitions = collapseNotifierTransitions(collectNotifierTransitions(text))
+      session.notifierTransitions.push(...fileNotifierTransitions)
+      if (fileNotifierTransitions.length) {
+        notifierSeasonalByFile[file.path] = fileNotifierTransitions[fileNotifierTransitions.length - 1].seasonal
+      }
       let previousEnd = -1
       for (const { value: record, start, end } of parsed.objects) {
         const messages = findNotificationMessages(record, [], new Set(), markerInPrefix(text, start, previousEnd))
@@ -984,11 +1095,17 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
   const availableVersions = uniqueSorted([...sessions.values()].map(session => session.version))
   const includedVersions = selectedVersions(availableVersions, options)
   const selectedProfile = profileSelection(options)
+  // Carried in by `parseEftLogAppend` from the previous append of this file.
+  // Absent for a full-folder parse, which has the whole log in hand.
+  const priorNotifierSeasonal = typeof options?.notifierSeasonalBefore === 'boolean'
+    ? options.notifierSeasonalBefore
+    : null
   const identityComponents = identityComponentsForSessions(sessions)
   const sessionModes = new Map([...sessions.values()].map(session => [session.sessionKey, resolveMode(session.modeSignals)]))
   const sessionByKey = new Map([...sessions.values()].map(session => [session.sessionKey, session]))
   for (const session of sessions.values()) {
     session.modeTransitions = collapseModeTransitions(session.modeTransitions)
+    session.notifierTransitions = collapseNotifierTransitions(session.notifierTransitions)
   }
 
   // Version selection is preview metadata, not a parsing filter. Keeping the
@@ -1000,6 +1117,7 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
       const sessionVerdict = sessionModes.get(event.sessionKey) || { mode: null, confidence: 'absent' }
       const verdict = attributeEventMode(session?.modeTransitions, event.clockAt, sessionVerdict)
       const gameMode = verdict.mode
+      const notifierSeasonal = notifierSeasonalAt(session?.notifierTransitions, event.clockAt, priorNotifierSeasonal)
       const profileKey = session ? profileKeyForEvent(event.profileIds, session, identityComponents) : null
       const legacyProfileKeys = session ? legacyProfileKeysForEvent(event.profileIds, session, identityComponents) : []
       return {
@@ -1013,9 +1131,16 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
         // a permanent-character quest started an hour after a seasonal peek is
         // not seasonal. An event we could not place inherits its session's
         // signal, so anything unplaceable stays excluded exactly as before.
+        //
+        // The backend gateway keeps precedence wherever both sources exist: it
+        // names the mode, while the notifier only rules seasonal out. The
+        // notifier is consulted only for an event the gateway could not place,
+        // and only in one direction — it can add a seasonal verdict, never clear
+        // one. That is what keeps a full-folder parse's numbers unchanged while
+        // giving a lone append its only evidence.
         hasSeasonalSignal: verdict.attributed
           ? gameMode === 'pvp-season'
-          : Boolean(session?.modeSignals?.has('pvp-season')),
+          : notifierSeasonal === true || Boolean(session?.modeSignals?.has('pvp-season')),
         modeAttributed: Boolean(verdict.attributed),
         profileKey,
         legacyProfileKeys,
@@ -1322,6 +1447,7 @@ export function parseEftLogFiles(files, taskIds, options = {}) {
     unmatchedTaskDetails,
     malformedRecords,
     ambiguousModeEvents: deduped.filter(event => event.modeConfidence === 'conflicted' || event.modeConfidence === 'absent').length,
+    notifierSeasonalByFile,
   }
 }
 
@@ -1357,6 +1483,9 @@ export const __eftLogInternals = {
   collectHostModeSignals,
   hostMode,
   collectModeTransitions,
+  collectNotifierTransitions,
+  notifierSeasonalAt,
+  latestNotifierSeasonal,
   collapseModeTransitions,
   attributeEventMode,
   recordClockAt,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createEftLogHandleStore, isIndexedDbSupported, sanitiseCheckpoint } from './eftLogHandleStore'
+import { CHECKPOINT_VERSION, createEftLogHandleStore, isIndexedDbSupported, sanitiseCheckpoint } from './eftLogHandleStore'
 
 function fakeIndexedDb() {
   const records = new Map()
@@ -62,7 +62,7 @@ describe('eft log handle store', () => {
       rawPath: 'C:\\private\\EFT',
     })
     const checkpoint = await store.loadCheckpoint('account-a')
-    expect(checkpoint).toMatchObject({ gameMode: 'pve', autoSync: true })
+    expect(checkpoint).toMatchObject({ version: CHECKPOINT_VERSION, gameMode: 'pve', autoSync: true })
     expect(checkpoint.files[0]).toEqual({ relativeFilename: 'session/notifications.log', size: 4, lastModified: 3 })
     expect(checkpoint.rawPath).toBeUndefined()
     await store.forget('account-a')
@@ -86,4 +86,21 @@ describe('eft log handle store', () => {
     expect(checkpoint.updatedAt).toBeLessThan(Number.MAX_VALUE)
     expect(checkpoint.rawFragment).toBeUndefined()
   })
+
+  // The verdict is what lets the next append know which character it is reading
+  // when it carries no notifier line of its own. It is persisted beside the byte
+  // offset, so an allowlist that dropped it would leave the fix working in
+  // memory and failing after a reload.
+  it('persists the notifier verdict as a boolean and nothing more', () => {
+    const checkpoint = sanitiseCheckpoint({
+      files: [
+        { relativeFilename: 'notifications.log', parsedOffset: 10, notifierSeasonal: true, notifierHost: 'wsn-pvp-season-01.escapefromtarkov.com' },
+        { relativeFilename: 'other.log', parsedOffset: 10, notifierSeasonal: 'pvp-season' },
+      ],
+    })
+    expect(checkpoint.files[0].notifierSeasonal).toBe(true)
+    expect(checkpoint.files[0].notifierHost).toBeUndefined()
+    expect(checkpoint.files[1].notifierSeasonal).toBeUndefined()
+  })
+
 })

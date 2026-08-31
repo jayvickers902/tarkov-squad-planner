@@ -12,7 +12,7 @@ import {
   readEnumeratedEftLogFiles,
   readRelevantEftLogFiles,
 } from './eftLogDirectory'
-import { createEftLogHandleStore, isIndexedDbSupported } from './eftLogHandleStore'
+import { CHECKPOINT_VERSION, createEftLogHandleStore, isIndexedDbSupported } from './eftLogHandleStore'
 import { createQuestLogImportJob, loadPendingJob, QUEST_LOG_IMPORT_CHUNK_SIZE } from './questLogImportJob'
 import { taskMetadataFor } from './questLogState'
 
@@ -170,6 +170,9 @@ function normalisePreview(preview, sourceMetadata = [], knownTaskIds = []) {
     unmatchedTaskDetails: normaliseUnmatchedTaskDetails(value.unmatchedTaskDetails, unmatchedTaskIds),
     malformedRecords: normaliseMalformedRecords(value.malformedRecords),
     ambiguousModeEvents: Number.isFinite(value.ambiguousModeEvents) ? value.ambiguousModeEvents : 0,
+    notifierSeasonalByFile: value.notifierSeasonalByFile && typeof value.notifierSeasonalByFile === 'object'
+      ? value.notifierSeasonalByFile
+      : {},
     selectedProfileKey: value.selectedProfileKey || null,
     unknownModeTargets: value.unknownModeTargets && typeof value.unknownModeTargets === 'object' ? { ...value.unknownModeTargets } : {},
     includePreWipeHistory: value.includePreWipeHistory === true,
@@ -244,14 +247,39 @@ function isContextLogPath(path) {
   return /^(?:backend|application)(?:[_-]\d+)?\.log$/i.test(eftLogTypeName(path))
 }
 
-function checkpointFrom(sourceMetadata, preview, selection, autoSync, gameMode, parsedOffsets = null) {
+/**
+ * The per-file notifier verdicts a full parse produced, keyed the way the
+ * checkpoint's file list is. A full scan consumes each notification log up to
+ * its current size, so the notifier line that named the active character is
+ * usually already behind the next append's read offset; without seeding from
+ * here, the first append after every full scan starts blind.
+ */
+function notifierSeasonalMap(preview) {
+  const source = preview?.notifierSeasonalByFile
+  if (!source || typeof source !== 'object') return null
+  return new Map(Object.entries(source).filter(([, seasonal]) => typeof seasonal === 'boolean'))
+}
+
+function checkpointFrom(sourceMetadata, preview, selection, autoSync, gameMode, parsedOffsets = null, notifierSeasonal = null) {
   return {
+    version: CHECKPOINT_VERSION,
     files: sourceMetadata.map(file => ({
       relativeFilename: file.relativeFilename,
       size: file.size || 0,
       lastModified: file.lastModified || 0,
       ...(isNotificationLogPath(file.relativeFilename)
-        ? { parsedOffset: parsedOffsets?.get(file.relativeFilename) ?? (file.size || 0) }
+        ? {
+          parsedOffset: parsedOffsets?.get(file.relativeFilename) ?? (file.size || 0),
+          // Whether the notifier this log was last connected to belonged to a
+          // seasonal character. A boolean, never the host and never the identity
+          // id in its URL, so nothing stored here is more revealing than the byte
+          // offset beside it. The next append seeds from it: an append carrying
+          // no notifier line of its own would otherwise fall back to the target
+          // mode and write a seasonal quest onto the permanent character.
+          ...(typeof notifierSeasonal?.get(file.relativeFilename) === 'boolean'
+            ? { notifierSeasonal: notifierSeasonal.get(file.relativeFilename) }
+            : {}),
+        }
         : {}),
     })),
     includedVersions: preview.includedVersions,
@@ -569,7 +597,10 @@ export function useEftLogImport({
       // Appends to a known notification file are safe to tail. Any new,
       // rotated, removed, same-size-rewritten, or context/session file needs
       // the old bounded full scan so profile and mode discovery stays sound.
-      const requiresFullScan = recovery || hasRemoval || classified.some(change => {
+      // A checkpoint from before notifier-state persistence must be refreshed
+      // once. Otherwise an already-running seasonal session could continue
+      // tailing permissively until its next explicit character switch.
+      const requiresFullScan = checkpointRef.current?.version !== CHECKPOINT_VERSION || recovery || hasRemoval || classified.some(change => {
         if (change.change === 'unchanged') return false
         if (isNotificationLogPath(change.relativeFilename)) {
           const previousFile = previousByName.get(change.relativeFilename)
@@ -599,7 +630,10 @@ export function useEftLogImport({
             name: append.name,
             text: append.text,
             pendingText: pendingTextRef.current.get(change.relativeFilename) || '',
-            state: { parsedOffset: previousFile.parsedOffset },
+            state: {
+              parsedOffset: previousFile.parsedOffset,
+              notifierSeasonal: previousFile.notifierSeasonal,
+            },
           })
         }
         const appendResults = await parseAppendsInWorker(appendFiles, {})
@@ -607,6 +641,9 @@ export function useEftLogImport({
         const selectedVersions = new Set(selection.includedVersions)
         const events = []
         const nextOffsets = new Map(previous.map(file => [file.relativeFilename, file.parsedOffset]))
+        const nextNotifierSeasonal = new Map(previous
+          .filter(file => typeof file.notifierSeasonal === 'boolean')
+          .map(file => [file.relativeFilename, file.notifierSeasonal]))
         const stagedPendingText = new Map(pendingTextRef.current)
         const knownTaskIds = new Set(taskIdsFor(allTasksRef.current))
         appendResults.forEach((result, index) => {
@@ -616,6 +653,7 @@ export function useEftLogImport({
           if (pending && !result?.pendingOverflow) stagedPendingText.set(path, pending)
           else stagedPendingText.delete(path)
           if (Number.isSafeInteger(result?.parsedOffset)) nextOffsets.set(path, result.parsedOffset)
+          if (typeof result?.notifierSeasonal === 'boolean') nextNotifierSeasonal.set(path, result.notifierSeasonal)
           const resultEvents = Array.isArray(resultPreview.matchedEvents)
             ? resultPreview.matchedEvents
             : (resultPreview.events || []).filter(event => knownTaskIds.has(event?.taskId))
@@ -657,7 +695,7 @@ export function useEftLogImport({
           }
         }
         if (generationRef.current !== scanGeneration) throw staleError()
-        const nextCheckpoint = checkpointFrom(metadata, { includedVersions: selection.includedVersions }, selection, true, mode, nextOffsets)
+        const nextCheckpoint = checkpointFrom(metadata, { includedVersions: selection.includedVersions }, selection, true, mode, nextOffsets, nextNotifierSeasonal)
         await store.saveCheckpoint(key, nextCheckpoint)
         checkpointRef.current = nextCheckpoint
         // Transient parser state and its durable byte boundary advance as one
@@ -670,7 +708,10 @@ export function useEftLogImport({
 
       if (autoApply && !requiresFullScan) {
         const nextOffsets = new Map(previous.map(file => [file.relativeFilename, file.parsedOffset]))
-        const nextCheckpoint = checkpointFrom(metadata, { includedVersions: selection.includedVersions }, selection, true, mode, nextOffsets)
+        const carriedNotifierSeasonal = new Map(previous
+          .filter(file => typeof file.notifierSeasonal === 'boolean')
+          .map(file => [file.relativeFilename, file.notifierSeasonal]))
+        const nextCheckpoint = checkpointFrom(metadata, { includedVersions: selection.includedVersions }, selection, true, mode, nextOffsets, carriedNotifierSeasonal)
         await store.saveCheckpoint(key, nextCheckpoint)
         checkpointRef.current = nextCheckpoint
         if (mountedRef.current) setLastSuccessfulCheck(new Date().toISOString())
@@ -707,8 +748,14 @@ export function useEftLogImport({
       }
       if (generationRef.current !== scanGeneration) throw staleError()
       const nextOffsets = new Map(metadata.filter(file => isNotificationLogPath(file.relativeFilename)).map(file => [file.relativeFilename, file.size || 0]))
+      const nextNotifierSeasonal = new Map(previous
+        .filter(file => typeof file.notifierSeasonal === 'boolean')
+        .map(file => [file.relativeFilename, file.notifierSeasonal]))
+      for (const [path, seasonal] of notifierSeasonalMap(nextPreview) || []) {
+        nextNotifierSeasonal.set(path, seasonal)
+      }
       pendingTextRef.current.clear()
-      const nextCheckpoint = checkpointFrom(metadata, nextPreview, nextSelection, true, mode, nextOffsets)
+      const nextCheckpoint = checkpointFrom(metadata, nextPreview, nextSelection, true, mode, nextOffsets, nextNotifierSeasonal)
       await store.saveCheckpoint(key, nextCheckpoint)
       checkpointRef.current = nextCheckpoint
       if (mountedRef.current) setLastSuccessfulCheck(new Date().toISOString())
@@ -1090,7 +1137,7 @@ export function useEftLogImport({
       const protectRemembered = oneTimeImport && Boolean(checkpointRef.current) && Boolean(directoryHandleRef.current)
       const shouldWatch = Boolean(autoSync && directoryHandleRef.current && persistentSupported && !oneTimeImport)
       if (!protectRemembered) {
-        const checkpoint = checkpointFrom(preview.sourceMetadata || [], preview, selectionRef.current, shouldWatch, mode)
+        const checkpoint = checkpointFrom(preview.sourceMetadata || [], preview, selectionRef.current, shouldWatch, mode, null, notifierSeasonalMap(preview))
         if (directoryHandleRef.current && persistentSupported) await store.saveCheckpoint(key, checkpoint)
         checkpointRef.current = checkpoint
       }

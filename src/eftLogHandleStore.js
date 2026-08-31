@@ -12,6 +12,7 @@ const MAX_CHECKPOINT_FILENAME_LENGTH = 512
 const MAX_CHECKPOINT_OFFSET = 32 * 1024 * 1024
 const MAX_CHECKPOINT_FILE_BYTES = 32 * 1024 * 1024
 const MAX_CHECKPOINT_TIMESTAMP = 8640000000000000
+const CHECKPOINT_VERSION = 2
 
 const VALID_MODES = new Set(['regular', 'pve'])
 
@@ -62,6 +63,11 @@ function sanitiseCheckpoint(checkpoint) {
       ...(Number.isSafeInteger(file?.parsedOffset) && file.parsedOffset >= 0
         ? { parsedOffset: Math.min(file.parsedOffset, MAX_CHECKPOINT_OFFSET) }
         : {}),
+      // Whether this log's notifier last belonged to a seasonal character. A
+      // boolean carried between appends so one that contains no notifier line
+      // of its own still knows which character it is reading; the host and the
+      // identity id in its URL are never persisted, and never leave the parser.
+      ...(typeof file?.notifierSeasonal === 'boolean' ? { notifierSeasonal: file.notifierSeasonal } : {}),
     })).filter(file => file.relativeFilename)
     : []
 
@@ -80,7 +86,7 @@ function sanitiseCheckpoint(checkpoint) {
   const gameMode = VALID_MODES.has(input.gameMode) ? input.gameMode : null
 
   return {
-    version: 1,
+    version: CHECKPOINT_VERSION,
     files,
     includedVersions,
     profileKey,
@@ -223,6 +229,7 @@ export function deleteEftLogCheckpoint(key) {
 
 export {
   CHECKPOINT_STORE,
+  CHECKPOINT_VERSION,
   DB_NAME,
   HANDLE_STORE,
   MAX_CHECKPOINT_FILES,

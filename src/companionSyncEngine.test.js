@@ -43,6 +43,14 @@ function encodedBytes(text) {
   return new TextEncoder().encode(text).byteLength
 }
 
+function notifierLine(time, host) {
+  return `2026-08-28 ${time}|1.1.0.1.46911|Info|push-notifications|NotificationManager: new params received url:  ws:wss://${host}.escapefromtarkov.com/push/notifier/getwebsocket/REDACTED`
+}
+
+function timestampedNotification(time, eventId) {
+  return `2026-08-28 ${time}|1.1.0.1.46911|Info|push-notifications|Got notification | ChatMessageReceived\n${notification(eventId)}`
+}
+
 describe('native-agnostic companion sync engine', () => {
   it('reconciles incremental log events in bounded 200-event chunks', async () => {
     const text = Array.from({ length: QUEST_LOG_SYNC_CHUNK_SIZE + 1 }, (_, i) => notification(`event-${i}`)).join('\n')
@@ -310,6 +318,54 @@ describe('native-agnostic companion sync engine', () => {
     current = file('notifications.log', notification('rotated'))
     const rotated = await controller.sync()
     expect(rotated.fullScan).toBe(true)
+  })
+
+  it('carries notifier state across companion appends and excludes seasonal events from permanent sync', async () => {
+    const path = 'Logs/0.16.9/push-notifications_000.log'
+    const initial = [
+      notifierLine('12:30:00.000', 'wsn-02'),
+      timestampedNotification('12:31:00.000', 'permanent'),
+    ].join('\n')
+    let current = file(path, initial)
+    const checkpoints = store()
+    const apply = vi.fn(async (_mode, events) => ({ inserted: events.length }))
+    const controller = createQuestLogSyncController({
+      filesystem: { async list() { return [current] } }, checkpointStore: checkpoints,
+      network: { apply }, taskIds: [taskId], gameMode: 'regular',
+      parserOptions: { unknownModeTarget: 'regular' },
+    })
+
+    await controller.sync()
+    expect(checkpoints.value.files[0].notifierSeasonal).toBe(false)
+
+    const switched = `${initial}\n${notifierLine('12:34:00.000', 'wsn-pvp-season-01')}`
+    current = file(path, switched, { lastModified: 2 })
+    const switchResult = await controller.sync()
+    expect(switchResult.fullScan).toBe(false)
+    expect(checkpoints.value.files[0].notifierSeasonal).toBe(true)
+
+    current = file(path, `${switched}\n${timestampedNotification('12:35:00.000', 'seasonal')}`, { lastModified: 3 })
+    const seasonal = await controller.sync()
+    expect(seasonal.fullScan).toBe(false)
+    expect(seasonal.events).toEqual([])
+    expect(apply).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a seasonal notifier event when the companion targets the seasonal character', async () => {
+    const text = [
+      notifierLine('12:30:00.000', 'wsn-pvp-season-01'),
+      timestampedNotification('12:31:00.000', 'seasonal'),
+    ].join('\n')
+    const apply = vi.fn(async (_mode, events) => ({ inserted: events.length }))
+    const controller = createQuestLogSyncController({
+      filesystem: { async list() { return [file('push-notifications_000.log', text)] } },
+      checkpointStore: store(), network: { apply }, taskIds: [taskId], gameMode: 'pvp-season',
+      parserOptions: { unknownModeTarget: 'pvp-season' },
+    })
+
+    const result = await controller.sync()
+    expect(result.events).toHaveLength(1)
+    expect(apply).toHaveBeenCalledOnce()
   })
 
   it('uses UTF-8 byte offsets when tailing a string adapter after a multibyte prefix', async () => {
