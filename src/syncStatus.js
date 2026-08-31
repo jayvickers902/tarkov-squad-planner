@@ -4,6 +4,16 @@ const STATES = new Set(['watching', 'syncing', 'idle', 'needs_access', 'offline'
 const ACTIVE_STATES = new Set(['watching', 'syncing'])
 const FIVE_MINUTES = 5 * 60 * 1000
 
+// The screenshot folder controller's states, in the words the UI shows. It sits
+// here rather than beside a panel because several surfaces label the same state.
+export const STATE_TEXT = {
+  idle: 'NOT SET UP',
+  reading: 'CHECKING…',
+  watching: 'WATCHING',
+  'permission-needed': 'PERMISSION NEEDED',
+  error: 'CHECK FAILED',
+}
+
 function timestampMs(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (value instanceof Date) return value.getTime()

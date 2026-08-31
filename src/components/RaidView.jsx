@@ -19,7 +19,7 @@ import { buildObjectiveRows, groupRowsByQuest, nearestRange } from '../raidObjec
 import { squadFrame } from '../squadFocus'
 import { CAMERA_MODES, readCameraMode, writeCameraMode } from '../cameraMode'
 import { useEftScreenshotSyncContext } from '../EftLogSyncContext'
-import { STATE_TEXT } from './EftScreenshotPings'
+import { STATE_TEXT } from '../syncStatus'
 
 const SQUAD_ROW_LIMIT = 3
 

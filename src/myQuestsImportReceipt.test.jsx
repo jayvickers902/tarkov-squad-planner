@@ -4,10 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 let latestHubProps = null
 
 vi.mock('./useTarkov', () => ({ useTasks: () => ({ tasks: [], loading: false }) }))
-vi.mock('./EftLogSyncContext', () => ({ useEftLogSync: () => ({ allTasks: [] }) }))
+vi.mock('./EftLogSyncContext', () => ({
+  useEftLogSync: () => ({ allTasks: [] }),
+  useEftScreenshotSyncContext: () => null,
+}))
 vi.mock('./useCompanionSyncStatus', () => ({ useCompanionSyncStatus: () => null }))
-vi.mock('./components/EftScreenshotPings', () => ({ default: () => null }))
-vi.mock('./components/DesktopAppCard', () => ({ default: () => null }))
 vi.mock('./components/QuestImportHub', () => ({
   default: props => {
     latestHubProps = props
@@ -65,20 +66,20 @@ describe('MyQuests import receipt', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'GET YOUR QUESTS IN' }))
+    // The banner CTA and the empty state both open the hub.
+    fireEvent.click(screen.getAllByRole('button', { name: 'GET YOUR QUESTS IN' })[0])
     expect(latestHubProps.open).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'SIMULATE IMPORT' }))
 
     expect(await screen.findByText('IMPORT COMPLETE')).toBeInTheDocument()
     expect(screen.getByText(/1 quest state updated · 1 started/)).toBeInTheDocument()
-    expect(screen.getByText('ADD QUEST TO YOUR LIST')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'UNDO IMPORT' }))
 
     // 'all' scope: the undo point is the complete history, so rows absent
     // from it were created by the import and must be pruned.
     await waitFor(() => expect(onRestore).toHaveBeenCalledWith(history, { scope: 'all' }))
     await waitFor(() => expect(screen.queryByText('IMPORT COMPLETE')).not.toBeInTheDocument())
-    expect(screen.getByRole('button', { name: 'GET YOUR QUESTS IN' })).toBeInTheDocument()
-    expect(screen.queryByText('ADD QUEST TO YOUR LIST')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'GET YOUR QUESTS IN' }).length).toBeGreaterThan(0)
+    expect(screen.queryByText('IMPORT RESTORE AVAILABLE')).not.toBeInTheDocument()
   })
 })

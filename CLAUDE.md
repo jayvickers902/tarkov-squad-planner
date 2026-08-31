@@ -81,7 +81,6 @@ src/
     BossPanel.jsx      # boss info for current map
     TodoList.jsx       # in-raid objective checklist
     EftLogImport.jsx    # guided EFT quest-log importer
-    EftScreenshotPings.jsx # screenshot position ping sync
     SyncStatusBar.jsx   # local and companion sync status
     CatchUp.jsx         # trader catch-up quest importer
     WelcomeModal.jsx    # onboarding and release notes
@@ -148,10 +147,13 @@ The REST dataset supports `regular`, `pve`, and `pvp-season`. The active game mo
 
 ## Quest onboarding
 
-Quest Manager starts with character mode, a short setup checklist, and a `GET YOUR QUESTS IN` hub
-that recommends a route from device and browser capabilities. Selecting a route replaces the route
-list with that importer; EFT log imports reveal only the next required profile/scope choice and
-offer per-session mode opt-ins for unresolved non-seasonal sessions, then a review step.
+Quest Manager is a map-art banner, a sticky filter toolbar and a two-column grid: map-grouped quest
+rows on the left, sync/snapshot/manual-add rail on the right. The banner carries the character mode
+picker and the `GET YOUR QUESTS IN` call to action, which opens `QuestImportHub` as a modal — it
+recommends a route from device and browser capabilities and carries the setup checklist. Selecting a
+route replaces the route list with that importer; EFT log imports reveal only the next required
+profile/scope choice and offer per-session mode opt-ins for unresolved non-seasonal sessions, then a
+review step.
 Successful imports leave a receipt with affected-state counts, a saved-list
 destination, and a device-local undo action backed by the complete pre-import quest history. The
 restore point uses localStorage key `tsp.quest_import_restore.v1`, carries the character mode, and
@@ -159,6 +161,13 @@ expires after 24 hours; it is refused after a mode switch. Sync status keeps
 website and desktop sources distinct and reports last heartbeat separately from the last successful
 folder check. The desktop companion pairs by signing in with the same Google account used on the
 site and keeps quests and screenshot pings in sync while the site is closed.
+
+Quest rows are grouped by map, biggest group first and `ANY MAP` last, with per-map collapse
+persisted in `localStorage` under `tsp.quest_collapsed_maps.v1`. Ordering is still one flat list —
+the order the party reads as priority — so a drag across two groups is the same splice as a drag
+inside one, and only ever shows as a move within the dragged row's own group because a drag never
+changes a quest's map. `Alt` plus an arrow key on a row's handle is the keyboard equivalent, since
+the redesign drops the per-row ▲▼ pair.
 
 ## Game Mode
 
