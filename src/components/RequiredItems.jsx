@@ -1,15 +1,17 @@
 import { useMemo, useState } from 'react'
-import { useKeys } from '../useTarkov'
+import { useItemSourcing, useKeys } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
 import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
 import { memberColor } from '../memberColors'
 import { objectiveIsOnMap } from '../tarkovObjectives'
+import { ItemSourcingControls, SourceBadge } from './ItemSourcing'
 
-export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progress, gameMode }) {
+export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progress, gameMode, settings = {}, onSetSetting }) {
   const memberRows = normalizeMembers(memberQuests)
   const members = memberRows.map(member => member.callsign)
   const [activeMember, setActiveMember] = useState('all')
   const { allKeys } = useKeys(mapNorm, gameMode)
+  const { sourcing, loading: sourcingLoading } = useItemSourcing(gameMode)
 
   const keyIdSet = useMemo(() => new Set(allKeys.map(k => k.id)), [allKeys])
   // Lookup map for key iconLink by id — tasks query may return null iconLink, fall back to keys query
@@ -112,6 +114,9 @@ export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progr
         </div>
       )}
 
+      <ItemSourcingControls sourcing={sourcing} settings={settings} gameMode={gameMode} onSetSetting={onSetSetting} />
+      {sourcingLoading && <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', marginTop: -10 }}>LOADING SOURCE DATA…</div>}
+
       {/* Required items */}
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
@@ -198,14 +203,15 @@ export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progr
                                   <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: '#e85a5a', background: 'rgba(232,90,90,0.10)', border: '1px solid rgba(232,90,90,0.3)', borderRadius: 3, padding: '1px 5px', letterSpacing: '.06em', flexShrink: 0 }}>FIR</span>
                                 )}
                               </div>
-                              <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
-                                {item.quests.map(q => (
+                                <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+                                  {item.quests.map(q => (
                                   <span key={q} className="mono" style={{
                                     fontSize: 'var(--fs-xs)', color: 'var(--txd)',
                                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200,
                                   }}>{q}</span>
-                                ))}
-                              </div>
+                                  ))}
+                                  {!item.foundInRaid && sourcing[item.itemId] && <SourceBadge entry={sourcing[item.itemId]} settings={settings} gameMode={gameMode} compact />}
+                                </div>
                             </div>
                           </div>
                         ))}

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildQuestGraph, impliedComplete, tasksByTrader, unlockedFrom } from '../questGraph'
 import { inferredTaskMapNorm } from '../tarkovObjectives'
+import { resolveSetting, settingSource, withGameModeSetting } from '../settings'
+import { normalizePmcLevel } from '../itemSourcing'
 
 function storageKey(userId) {
   return userId ? `tsp.catchup.picks.${userId}` : null
@@ -25,10 +27,12 @@ function taskMapName(task) {
     : 'ANY MAP'
 }
 
-export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defaultOpen = false }) {
+export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defaultOpen = false, settings = {}, gameMode = 'regular', onSetSetting }) {
   const [open, setOpen] = useState(defaultOpen)
   const [picks, setPicks] = useState(() => readPicks(userId))
-  const [maxLevel, setMaxLevel] = useState('')
+  const [maxLevel, setMaxLevel] = useState(() => settingSource('pmc_level', { user: settings }) === 'user'
+    ? String(resolveSetting('pmc_level', { user: settings, gameMode }) || '')
+    : '')
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState('')
@@ -55,9 +59,12 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
 
   useEffect(() => {
     setPicks(readPicks(userId))
+    setMaxLevel(settingSource('pmc_level', { user: settings }) === 'user'
+      ? String(resolveSetting('pmc_level', { user: settings, gameMode }) || '')
+      : '')
     previousAvailableIds.current = new Set()
     setSelectedIds(new Set())
-  }, [userId])
+  }, [userId, gameMode]) // eslint-disable-line
 
   useEffect(() => {
     const key = storageKey(userId)
@@ -176,7 +183,13 @@ export default function CatchUp({ allTasks, userQuests, onBulkAdd, userId, defau
           min="1"
           max="79"
           value={maxLevel}
-          onChange={event => setMaxLevel(event.target.value)}
+          onChange={event => {
+            const value = event.target.value
+            setMaxLevel(value)
+            if (onSetSetting && value !== '') {
+              onSetSetting('pmc_level', withGameModeSetting(settings, 'pmc_level', gameMode, normalizePmcLevel(value)).pmc_level)
+            }
+          }}
           placeholder=""
           style={{ maxWidth: 120 }}
         />

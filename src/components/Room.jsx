@@ -926,7 +926,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                 <div className="card fade-in" style={{ padding: 16 }}>
                   {loadingTasks && !tasks.length
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>LOADING...</span></div>
-                    : <RequiredItems tasks={tasks} memberQuests={members} mapNorm={party.map_norm} progress={party.progress} gameMode={gameMode} />
+                    : <RequiredItems tasks={tasks} memberQuests={members} mapNorm={party.map_norm} progress={party.progress} gameMode={gameMode} settings={userSettings} onSetSetting={onSetUserSetting} />
                   }
                 </div>
               )}
@@ -935,14 +935,14 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                 <div className="card fade-in" style={{ padding: 16 }}>
                   {loadingTasks && !tasks.length
                     ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 8 }}><Spin /><span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txm)' }}>LOADING...</span></div>
-                    : <FindItems tasks={tasks} memberQuests={members} mapNorm={party.map_norm} progress={party.progress} myName={myName} myUserId={myUserId} userObjProgress={userObjProgress} />
+                    : <FindItems tasks={tasks} memberQuests={members} mapNorm={party.map_norm} progress={party.progress} myName={myName} myUserId={myUserId} userObjProgress={userObjProgress} settings={userSettings} gameMode={gameMode} onSetSetting={onSetUserSetting} />
                   }
                 </div>
               )}
 
               {tab === 'bosses' && (
                 <div className="card fade-in" style={{ padding: 16 }}>
-                  <BossPanel mapNorm={party.map_norm} gameMode={gameMode} />
+                  <BossPanel mapNorm={party.map_norm} gameMode={gameMode} settings={userSettings} />
                 </div>
               )}
 

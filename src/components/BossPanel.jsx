@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
-import { useBossSpawns, useKeys } from '../useTarkov'
+import { useBossSpawns, useItemSourcing, useKeys } from '../useTarkov'
 import { useMapKeys } from '../useMapKeys'
 import BossCard from './BossCard'
+import { resolveSetting } from '../settings'
 
 const FMT = new Intl.NumberFormat('en-US')
 
@@ -20,9 +21,10 @@ function MapBossSection({ label, bosses }) {
   )
 }
 
-export default function BossPanel({ mapNorm, gameMode }) {
+export default function BossPanel({ mapNorm, gameMode, settings = {} }) {
   const { getBossesForMap, loading: bossLoading } = useBossSpawns(gameMode)
   const { keys, allKeys, loading: keysLoading } = useKeys(mapNorm, gameMode)
+  const { sourcing } = useItemSourcing(gameMode)
   const { mapKeys } = useMapKeys(mapNorm)
 
   const isFactory   = mapNorm === 'factory'
@@ -70,8 +72,11 @@ export default function BossPanel({ mapNorm, gameMode }) {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxWidth: 420 }}>
-            {priorityKeys.map(k => {
+                  {priorityKeys.map(k => {
               const price = k.avg24hPrice || k.lastLowPrice || 0
+              const source = sourcing[k.id]
+              const playerLevel = Number(resolveSetting('pmc_level', { user: settings, gameMode })) || 1
+              const fleaLocked = source?.fleaPrice != null && playerLevel < Number(source.minLevelForFlea || 1)
               return (
                 <div key={k.id} style={{
                   display: 'flex', alignItems: 'center', gap: 10,
@@ -101,6 +106,12 @@ export default function BossPanel({ mapNorm, gameMode }) {
                   }}>
                     {price ? `₽${FMT.format(price)}` : '—'}
                   </div>
+                  {(fleaLocked || source?.barters?.length > 0) && (
+                    <div className="mono" style={{ display: 'flex', gap: 5, flexShrink: 0, fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
+                      {fleaLocked && <span title={`Flea unlocks at PMC level ${source.minLevelForFlea}`}>FLEA LV.{source.minLevelForFlea}</span>}
+                      {source?.barters?.length > 0 && <span title="Barter available">BARTER</span>}
+                    </div>
+                  )}
                 </div>
               )
             })}

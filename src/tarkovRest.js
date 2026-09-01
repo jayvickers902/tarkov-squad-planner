@@ -1,6 +1,6 @@
+import { readCached, writeCached } from './idbCache'
+
 const REST_BASE = 'https://json.tarkov.dev'
-const CACHE_TTL = 7 * 24 * 60 * 60 * 1000
-const CACHE_PREFIX = 'tsp.cache.rest.'
 const GAME_MODES = new Set(['regular', 'pve', 'pvp-season'])
 
 const inFlight = new Map()
@@ -20,27 +20,6 @@ function isAbort(error) {
   return error?.name === 'AbortError'
 }
 
-function readPersisted(cacheKey) {
-  try {
-    const raw = localStorage.getItem(`${CACHE_PREFIX}${cacheKey}`)
-    if (!raw) return null
-    const entry = JSON.parse(raw)
-    if (entry?.v !== 1 || !Number.isFinite(entry.savedAt) || entry.data == null) return null
-    if (Date.now() - entry.savedAt > CACHE_TTL) return null
-    return { data: entry.data, savedAt: entry.savedAt }
-  } catch {
-    return null
-  }
-}
-
-function writePersisted(cacheKey, data) {
-  try {
-    localStorage.setItem(`${CACHE_PREFIX}${cacheKey}`, JSON.stringify({ v: 1, savedAt: Date.now(), data }))
-  } catch {
-    // REST payloads are pruned before this point. Storage is still optional.
-  }
-}
-
 // Share a request between consumers, while allowing each effect to stop
 // listening on unmount. The underlying fetch is aborted only when its last
 // subscriber has gone away.
@@ -54,6 +33,9 @@ function sharedLoad(key, producer, signal) {
       .finally(() => {
         if (inFlight.get(key) === entry) inFlight.delete(key)
       })
+    // A caller may already be aborted before the producer's microtask starts.
+    // Keep that detached producer rejection from becoming an unhandled error.
+    entry.promise.catch(() => {})
     inFlight.set(key, entry)
   }
 
@@ -106,15 +88,18 @@ function loadJson(endpoint, signal, gameMode = 'regular') {
 function loadDataset(cacheKey, producer, signal, gameMode = 'regular') {
   const mode = resolveGameMode(gameMode)
   const scopedKey = `${mode}.${cacheKey}`
-  const persisted = readPersisted(scopedKey)
+  // Start the cache read before the request so an IDB open is never added to
+  // the network-failure path's critical latency.
+  const persisted = readCached(scopedKey)
   return sharedLoad(`dataset:${scopedKey}`, producer, signal)
     .then(data => {
-      writePersisted(scopedKey, data)
+      void writeCached(scopedKey, data)
       return { data, cachedAt: Date.now(), fromCache: false }
     })
-    .catch(error => {
-      if (!isAbort(error) && persisted) {
-        return { data: persisted.data, cachedAt: persisted.savedAt, fromCache: true }
+    .catch(async error => {
+      if (!isAbort(error)) {
+        const cached = await persisted
+        if (cached) return { data: cached.data, cachedAt: cached.savedAt, fromCache: true }
       }
       throw error
     })
@@ -558,6 +543,84 @@ export function adaptKeys(rawItems, itemTranslations) {
     }))
 }
 
+function traderReference(traderId, rawTraders, traderTranslations) {
+  const trader = traderId ? rawTraders[traderId] : null
+  const rawName = trader?.name || `${traderId} Nickname`
+  const traderName = traderTranslations?.[rawName]
+    ?? traderTranslations?.[`${rawName} Nickname`]
+    ?? rawName
+    ?? traderId
+  return {
+    traderId,
+    traderName,
+    traderKey: trader?.normalizedName || traderName,
+  }
+}
+
+// Keep this index deliberately narrow. The full items payload is already
+// fetched for keys, but caching it again here would defeat the dataset cache.
+export function adaptItemSourcing(rawItems, rawBarters, rawTraders, traderTranslations) {
+  const index = {}
+  const bartersByItem = new Map()
+  const directTraders = byId(rawTraders)
+  const tradersById = Object.values(directTraders).some(trader => trader?.id)
+    ? directTraders
+    : Object.fromEntries(values(rawTraders, 'traders').filter(trader => trader?.id).map(trader => [trader.id, trader]))
+
+  for (const barter of values(rawBarters, 'barters')) {
+    const offered = barter?.offeredItem
+    const itemId = referenceId(offered?.item ?? offered)
+    if (!itemId) continue
+    const trader = traderReference(referenceId(barter.trader), tradersById, traderTranslations)
+    const requiredItems = values(barter.requiredItems)
+      .map(required => ({ item: referenceId(required?.item ?? required), count: Number(required?.count) || 1 }))
+      .filter(required => required.item)
+    if (!requiredItems.length) continue
+    const current = bartersByItem.get(itemId) || []
+    current.push({
+      traderId: trader.traderId,
+      traderName: trader.traderName,
+      traderKey: trader.traderKey,
+      minTraderLevel: Number.isFinite(Number(barter.minTraderLevel)) ? Number(barter.minTraderLevel) : 1,
+      requiredItems,
+    })
+    bartersByItem.set(itemId, current)
+  }
+
+  for (const item of values(rawItems, 'items')) {
+    if (!item?.id) continue
+    const traderOffers = values(item.buyFromTrader)
+      .map(offer => {
+        const trader = traderReference(referenceId(offer?.trader), tradersById, traderTranslations)
+        const priceRUB = Number(offer?.priceRUB)
+        if (!trader.traderId || !Number.isFinite(priceRUB) || priceRUB <= 0) return null
+        return {
+          traderId: trader.traderId,
+          traderName: trader.traderName,
+          traderKey: trader.traderKey,
+          minTraderLevel: Number.isFinite(Number(offer.minTraderLevel)) ? Number(offer.minTraderLevel) : 1,
+          priceRUB,
+          taskUnlock: offer.taskUnlock || null,
+        }
+      })
+      .filter(Boolean)
+    const fleaPrice = item.noFlea
+      ? null
+      : [item.avg24hPrice, item.lastLowPrice]
+        .map(Number)
+        .find(price => Number.isFinite(price) && price > 0) ?? null
+    const barters = bartersByItem.get(item.id) || []
+    if (!traderOffers.length && fleaPrice == null && !barters.length) continue
+    index[item.id] = {
+      traderOffers,
+      fleaPrice,
+      minLevelForFlea: Number.isFinite(Number(item.minLevelForFlea)) ? Number(item.minLevelForFlea) : 1,
+      barters,
+    }
+  }
+  return index
+}
+
 export function adaptTasks({ rawTasks, taskTranslations, rawTraders, traderTranslations, bundle, itemTranslations }) {
   const mapsById = Object.fromEntries(bundle.maps.map(map => [map.id, map]))
   const tradersById = byId(rawTraders)
@@ -827,6 +890,19 @@ export function getRestKeys(signal, gameMode = 'regular') {
       loadJson('items_en', internalSignal, mode),
     ])
     return adaptKeys(raw, translations)
+  }, signal, mode)
+}
+
+export function getRestItemSourcing(signal, gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
+  return loadDataset('item-sourcing', async internalSignal => {
+    const [rawItems, rawBarters, rawTraders, traderTranslations] = await Promise.all([
+      loadJson('items', internalSignal, mode),
+      loadJson('barters', internalSignal, mode),
+      loadJson('traders', internalSignal, mode),
+      loadJson('traders_en', internalSignal, mode),
+    ])
+    return adaptItemSourcing(rawItems, rawBarters, rawTraders, traderTranslations)
   }, signal, mode)
 }
 

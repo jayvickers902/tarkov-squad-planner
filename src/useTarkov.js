@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { TARKOV_API, FEATURED, GRAPHQL_ENABLED } from './constants'
-import { getRestMaps, getRestTasks, getRestKeys, getRestBosses, getRestExtracts, resolveGameMode } from './tarkovRest'
+import { getRestMaps, getRestTasks, getRestKeys, getRestBosses, getRestExtracts, getRestItemSourcing, resolveGameMode } from './tarkovRest'
 import { loadPrebaked } from './data/prebaked'
 import { taskIsOnMap } from './tarkovObjectives'
 
@@ -57,50 +57,14 @@ const mapBossCacheAt = new Map()
 const bossPortraitsCacheAt = new Map()
 const extractCache = new Map()
 const extractCacheAt = new Map()
+const itemSourcingCache = new Map()
+const itemSourcingCacheAt = new Map()
 
-const CACHE_TTL = 7 * 24 * 60 * 60 * 1000
-const STORAGE_KEYS = {
-  keys: 'tsp.cache.keys',
-  tasks: 'tsp.cache.tasks',
-  maps: 'tsp.cache.maps',
-  bosses: 'tsp.cache.bosses',
-  bossPortraits: 'tsp.cache.bossPortraits',
-  extracts: 'tsp.cache.extracts',
-}
-
-function scopedStorageKey(key, gameMode) {
-  return `${key}.${resolveGameMode(gameMode)}`
-}
-
-function readPersisted(key) {
-  try {
-    const raw = localStorage.getItem(key)
-    if (!raw) return null
-    const entry = JSON.parse(raw)
-    if (entry?.v !== 1 || !Number.isFinite(entry.savedAt) || entry.data == null) return null
-    if (Date.now() - entry.savedAt > CACHE_TTL) return null
-    return { data: entry.data, savedAt: entry.savedAt }
-  } catch {
-    return null
-  }
-}
-
-function writePersisted(key, data) {
-  try {
-    localStorage.setItem(key, JSON.stringify({ v: 1, savedAt: Date.now(), data }))
-  } catch {
-    // Storage is optional. A large tasks payload may exceed quota.
-  }
-}
-
-function cacheSeed(storageKey, memoryCache, memoryAtCache, gameMode, fallback, isValid = () => true) {
+function cacheSeed(memoryCache, memoryAtCache, gameMode, fallback) {
   const memoryValue = memoryCache.get(gameMode)
   const memorySavedAt = memoryAtCache.get(gameMode)
   if (memoryValue !== undefined && memoryValue !== null) return { data: memoryValue, savedAt: memorySavedAt, fromMemory: true }
-  const persisted = readPersisted(scopedStorageKey(storageKey, gameMode))
-  return persisted && isValid(persisted.data)
-    ? { data: persisted.data, savedAt: persisted.savedAt, fromMemory: false }
-    : { data: fallback, savedAt: null, fromMemory: false }
+  return { data: fallback, savedAt: null, fromMemory: false }
 }
 
 function abortError(signal) {
@@ -214,7 +178,7 @@ const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink tra
 
 export function useMaps(gameMode = 'regular') {
   const mode = resolveGameMode(gameMode)
-  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.maps, new Map(), new Map(), mode, [], Array.isArray))
+  const [seed] = useState(() => cacheSeed(new Map(), new Map(), mode, []))
   const [maps, setMaps] = useState(seed.data)
   const [cachedAt, setCachedAt] = useState(seed.savedAt)
   const [loading, setLoading] = useState(seed.data.length === 0)
@@ -225,7 +189,7 @@ export function useMaps(gameMode = 'regular') {
     const controller = new AbortController()
     let active = true
     setError(null)
-    const currentSeed = cacheSeed(STORAGE_KEYS.maps, new Map(), new Map(), mode, [], Array.isArray)
+    const currentSeed = cacheSeed(new Map(), new Map(), mode, [])
     setMaps(currentSeed.data)
     setCachedAt(currentSeed.savedAt)
     setLoading(currentSeed.data.length === 0)
@@ -250,7 +214,6 @@ export function useMaps(gameMode = 'regular') {
         if (!active) return
         setMaps(result.data)
         setCachedAt(result.cachedAt)
-        if (result.source === 'graphql') writePersisted(scopedStorageKey(STORAGE_KEYS.maps, mode), result.data)
         if (result.fallback) setError(restFallbackError(result.cause, result.fromCache))
       })
       .catch(err => {
@@ -270,7 +233,7 @@ export function useMaps(gameMode = 'regular') {
 // used by screenshot pings, so echo distance is calculated in one coordinate space.
 export function useExtracts(mapNorm = null, gameMode = 'regular') {
   const mode = resolveGameMode(gameMode)
-  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.extracts, extractCache, extractCacheAt, mode, [], Array.isArray))
+  const [seed] = useState(() => cacheSeed(extractCache, extractCacheAt, mode, []))
   const [extracts, setExtracts] = useState(seed.data)
   const [cachedAt, setCachedAt] = useState(seed.savedAt)
   const [loading, setLoading] = useState(seed.data.length === 0)
@@ -281,7 +244,7 @@ export function useExtracts(mapNorm = null, gameMode = 'regular') {
     const controller = new AbortController()
     let active = true
     setError(null)
-    const currentSeed = cacheSeed(STORAGE_KEYS.extracts, extractCache, extractCacheAt, mode, [], Array.isArray)
+    const currentSeed = cacheSeed(extractCache, extractCacheAt, mode, [])
     setExtracts(currentSeed.data)
     setCachedAt(currentSeed.savedAt)
     setLoading(currentSeed.data.length === 0)
@@ -320,7 +283,7 @@ export function useExtracts(mapNorm = null, gameMode = 'regular') {
 // Pass a mapNorm string to get map-filtered tasks (used in party quest search)
 export function useTasks(mapNorm, gameMode = 'regular') {
   const mode = resolveGameMode(gameMode)
-  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.tasks, tasksCache, tasksCacheAt, mode, [], Array.isArray))
+  const [seed] = useState(() => cacheSeed(tasksCache, tasksCacheAt, mode, []))
   const [tasks, setTasks] = useState(seed.data)
   const [cachedAt, setCachedAt] = useState(seed.savedAt)
   const [loading, setLoading] = useState(seed.data.length === 0)
@@ -328,7 +291,7 @@ export function useTasks(mapNorm, gameMode = 'regular') {
   const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
-    const currentSeed = cacheSeed(STORAGE_KEYS.tasks, tasksCache, tasksCacheAt, mode, [], Array.isArray)
+    const currentSeed = cacheSeed(tasksCache, tasksCacheAt, mode, [])
     setTasks(currentSeed.data)
     setCachedAt(currentSeed.savedAt)
     if (currentSeed.fromMemory && retryToken === 0) return
@@ -380,14 +343,11 @@ export function useTasks(mapNorm, gameMode = 'regular') {
         markLive()
         if (!active) return
         // Module cache is populated from either source — it only ever holds a
-        // success, so the Phase 1 poisoning rule still holds. localStorage stays
-        // GraphQL-only: tarkovRest persists its own adapted copy under
-        // tsp.cache.rest.* and the two must not collide.
+        // success, so a failed request never poisons the in-memory floor.
         tasksCache.set(mode, result.data)
         tasksCacheAt.set(mode, result.cachedAt)
         setTasks(result.data)
         setCachedAt(result.cachedAt)
-        if (result.source === 'graphql') writePersisted(scopedStorageKey(STORAGE_KEYS.tasks, mode), result.data)
         if (result.fallback) setError(restFallbackError(result.cause, result.fromCache))
       })
       .catch(err => {
@@ -468,8 +428,8 @@ function mergeBossEnrichment(fallbackData, liveData) {
 
 export function useBossSpawns(gameMode = 'regular') {
   const mode = resolveGameMode(gameMode)
-  const [mapSeed] = useState(() => cacheSeed(STORAGE_KEYS.bosses, mapBossCache, mapBossCacheAt, mode, [], Array.isArray))
-  const [portraitSeed] = useState(() => cacheSeed(STORAGE_KEYS.bossPortraits, bossPortraitsCache, bossPortraitsCacheAt, mode, {}, value => value && !Array.isArray(value) && typeof value === 'object'))
+  const [mapSeed] = useState(() => cacheSeed(mapBossCache, mapBossCacheAt, mode, []))
+  const [portraitSeed] = useState(() => cacheSeed(bossPortraitsCache, bossPortraitsCacheAt, mode, {}))
   const [mapBosses, setMapBosses] = useState(mapSeed.data)
   const [bossPortraits, setBossPortraits] = useState(portraitSeed.data)
   const [cachedAt, setCachedAt] = useState(mapSeed.savedAt || portraitSeed.savedAt)
@@ -478,8 +438,8 @@ export function useBossSpawns(gameMode = 'regular') {
   const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
-    const currentMapSeed = cacheSeed(STORAGE_KEYS.bosses, mapBossCache, mapBossCacheAt, mode, [], Array.isArray)
-    const currentPortraitSeed = cacheSeed(STORAGE_KEYS.bossPortraits, bossPortraitsCache, bossPortraitsCacheAt, mode, {}, value => value && !Array.isArray(value) && typeof value === 'object')
+    const currentMapSeed = cacheSeed(mapBossCache, mapBossCacheAt, mode, [])
+    const currentPortraitSeed = cacheSeed(bossPortraitsCache, bossPortraitsCacheAt, mode, {})
     setMapBosses(currentMapSeed.data)
     setBossPortraits(currentPortraitSeed.data)
     setCachedAt(currentMapSeed.savedAt || currentPortraitSeed.savedAt)
@@ -531,10 +491,6 @@ export function useBossSpawns(gameMode = 'regular') {
         setMapBosses(maps)
         setBossPortraits(portraits)
         setCachedAt(result.cachedAt)
-        if (result.source === 'graphql') {
-          writePersisted(scopedStorageKey(STORAGE_KEYS.bosses, mode), maps)
-          writePersisted(scopedStorageKey(STORAGE_KEYS.bossPortraits, mode), portraits)
-        }
         if (result.fallback) setError(restFallbackError(result.cause, result.fromCache))
       })
       .catch(err => {
@@ -564,7 +520,7 @@ export function useBossSpawns(gameMode = 'regular') {
 
 export function useKeys(mapNorm, gameMode = 'regular') {
   const mode = resolveGameMode(gameMode)
-  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.keys, keysCache, keysCacheAt, mode, [], Array.isArray))
+  const [seed] = useState(() => cacheSeed(keysCache, keysCacheAt, mode, []))
   const [allKeys, setAllKeys] = useState(seed.data)
   const [cachedAt, setCachedAt] = useState(seed.savedAt)
   const [loading, setLoading] = useState(seed.data.length === 0)
@@ -572,7 +528,7 @@ export function useKeys(mapNorm, gameMode = 'regular') {
   const [retryToken, setRetryToken] = useState(0)
 
   useEffect(() => {
-    const currentSeed = cacheSeed(STORAGE_KEYS.keys, keysCache, keysCacheAt, mode, [], Array.isArray)
+    const currentSeed = cacheSeed(keysCache, keysCacheAt, mode, [])
     setAllKeys(currentSeed.data)
     setCachedAt(currentSeed.savedAt)
     setLoading(currentSeed.data.length === 0)
@@ -600,7 +556,6 @@ export function useKeys(mapNorm, gameMode = 'regular') {
         keysCacheAt.set(mode, result.cachedAt)
         setAllKeys(result.data)
         setCachedAt(result.cachedAt)
-        if (result.source === 'graphql') writePersisted(scopedStorageKey(STORAGE_KEYS.keys, mode), result.data)
         if (result.fallback) setError(restFallbackError(result.cause, result.fromCache))
       })
       .catch(err => {
@@ -624,4 +579,44 @@ export function useKeys(mapNorm, gameMode = 'regular') {
   }, [allKeys, mapNorm])
 
   return { keys, allKeys, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
+}
+
+export function useItemSourcing(gameMode = 'regular') {
+  const mode = resolveGameMode(gameMode)
+  const [sourcing, setSourcing] = useState(() => itemSourcingCache.get(mode) || {})
+  const [cachedAt, setCachedAt] = useState(() => itemSourcingCacheAt.get(mode) || null)
+  const [loading, setLoading] = useState(() => !itemSourcingCache.has(mode))
+  const [error, setError] = useState(null)
+  const [retryToken, setRetryToken] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    let active = true
+    setError(null)
+    const existing = itemSourcingCache.get(mode)
+    if (existing && retryToken === 0) {
+      setSourcing(existing)
+      setCachedAt(itemSourcingCacheAt.get(mode) || null)
+      setLoading(false)
+      return () => { active = false; controller.abort() }
+    }
+    setLoading(!existing)
+    getRestItemSourcing(controller.signal, mode)
+      .then(result => {
+        if (!active) return
+        itemSourcingCache.set(mode, result.data)
+        itemSourcingCacheAt.set(mode, result.cachedAt)
+        setSourcing(result.data)
+        setCachedAt(result.cachedAt)
+      })
+      .catch(err => {
+        if (!active || isAbort(err)) return
+        console.warn('tarkov.dev item sourcing fetch failed', err)
+        setError(err)
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false; controller.abort() }
+  }, [mode, retryToken])
+
+  return { sourcing, loading, error, retry: () => setRetryToken(value => value + 1), cachedAt }
 }

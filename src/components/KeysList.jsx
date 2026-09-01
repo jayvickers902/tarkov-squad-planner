@@ -1,5 +1,6 @@
-import { useKeys } from '../useTarkov'
+import { useItemSourcing, useKeys } from '../useTarkov'
 import { useMapKeys } from '../useMapKeys'
+import { resolveSetting } from '../settings'
 
 const FMT = new Intl.NumberFormat('en-US')
 
@@ -7,8 +8,9 @@ function Spin() {
   return <div style={{ width: 20, height: 20, border: '2px solid var(--brd)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', flexShrink: 0 }} />
 }
 
-export default function KeysList({ mapNorm, gameMode }) {
+export default function KeysList({ mapNorm, gameMode, settings = {} }) {
   const { keys, loading } = useKeys(mapNorm, gameMode)
+  const { sourcing } = useItemSourcing(gameMode)
   const { mapKeys } = useMapKeys(mapNorm)
 
   // Only show keys explicitly starred in the admin panel
@@ -73,6 +75,17 @@ export default function KeysList({ mapNorm, gameMode }) {
               }}>
                 {price ? `₽${FMT.format(price)}` : '—'}
               </div>
+              {(() => {
+                const source = sourcing[k.id]
+                const playerLevel = Number(resolveSetting('pmc_level', { user: settings, gameMode })) || 1
+                const fleaLocked = source?.fleaPrice != null && playerLevel < Number(source.minLevelForFlea || 1)
+                return (fleaLocked || source?.barters?.length) ? (
+                  <div className="mono" style={{ display: 'flex', gap: 5, flexShrink: 0, fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
+                    {fleaLocked && <span title={`Flea unlocks at PMC level ${source.minLevelForFlea}`}>FLEA LV.{source.minLevelForFlea}</span>}
+                    {source?.barters?.length > 0 && <span title="Barter available">BARTER</span>}
+                  </div>
+                ) : null
+              })()}
             </div>
           )
         })}

@@ -2,11 +2,14 @@ import { useMemo, useState } from 'react'
 import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
 import { memberColor } from '../memberColors'
 import { objectiveIsOnMap } from '../tarkovObjectives'
+import { useItemSourcing } from '../useTarkov'
+import { ItemSourcingControls, SourceBadge } from './ItemSourcing'
 
-export default function FindItems({ tasks, memberQuests = [], mapNorm, progress, myName, myUserId, userObjProgress }) {
+export default function FindItems({ tasks, memberQuests = [], mapNorm, progress, myName, myUserId, userObjProgress, settings = {}, gameMode = 'regular', onSetSetting }) {
   const memberRows = normalizeMembers(memberQuests)
   const members = memberRows.map(member => member.callsign)
   const [activeMember, setActiveMember] = useState('all')
+  const { sourcing } = useItemSourcing(gameMode)
 
   // Build per-member find-item lists from their active quests' objectives
   const memberItems = useMemo(() => {
@@ -85,6 +88,8 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
+      <ItemSourcingControls sourcing={sourcing} settings={settings} gameMode={gameMode} onSetSetting={onSetSetting} />
+
       {/* Shared items callout */}
       {members.length > 1 && sharedItems.filter(i => i.members.length > 1).length > 0 && (
         <div>
@@ -115,6 +120,7 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
                         border: '1px solid var(--golddim)', borderRadius: 2, padding: '1px 5px', letterSpacing: '.06em',
                       }}>FIR</span>
                     )}
+                    {!item.foundInRaid && sourcing[item.itemId] && <SourceBadge entry={sourcing[item.itemId]} settings={settings} gameMode={gameMode} compact />}
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
                     {item.members.map(({ name, count, quests }) => {
@@ -230,6 +236,7 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
                                       border: '1px solid var(--golddim)', borderRadius: 2, padding: '1px 5px', letterSpacing: '.06em',
                                     }}>FIR</span>
                                   )}
+                                  {!item.foundInRaid && sourcing[item.itemId] && <SourceBadge entry={sourcing[item.itemId]} settings={settings} gameMode={gameMode} compact />}
                                   {item.quests.map(q => (
                                     <span key={q} className="mono" style={{
                                       fontSize: 'var(--fs-xs)', color: 'var(--txd)',
