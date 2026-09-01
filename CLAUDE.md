@@ -416,6 +416,18 @@ and the map-recommendation bar, so a member keeps the same hue everywhere.
 `StartRaidModal` is a squad briefing, not the leader's private checklist. Pressing
 START RAID opens it for **every** member, and its prep ticks are shared.
 
+Pressing it **announces** the brief, and that is what reaches the squad. The
+raid itself does not start until the leader confirms, so briefing off the raid
+stamp alone meant the squad first saw the prep check once the raid was already
+underway and the leader had dropped into LIVE — a prep check nobody had time to
+act on. The announcement is a progress key, `__brief__:<raidId + 1>::<leaderUid>`,
+so it needs no migration: `merge_progress` takes any boolean key ending in the
+caller's uid, which is also what makes it unforgeable for anyone but its owner —
+`announcedBriefRaid` reads the leader's keys and no one else's. The id is the
+raid the brief is *for*, always one past `party.raid_id`, so `start_party_raid`
+bumping `raid_id` past it is what expires an announcement; backing out writes
+the same key `false`, which takes an unread brief back down without acking it.
+
 The pop is keyed on `party.raid_id`, never on `__raid_start__`. `start_party_raid`
 stamps the timestamp from the server clock while the optimistic write in
 `useParty` uses the client's, so the two never agree — keying on the stamp meant

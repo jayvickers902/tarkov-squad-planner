@@ -58,6 +58,37 @@ export function prepPackedKey(itemKey, userId) {
   return `__prep__:${itemKey}::${userId}`
 }
 
+// The leader announcing that the brief is up, so the squad reads it together
+// instead of finding out once the raid has already started. It rides in party
+// progress for the same reason the prep ticks do: merge_progress accepts any
+// boolean key ending in the caller's uid, so this needs no migration and cannot
+// be forged for somebody else. The id is the raid the brief is *for* -- always
+// one past the party's current raid_id -- which is what makes a stale
+// announcement self-evident once start_party_raid bumps raid_id past it.
+export function raidBriefKey(raidId, userId) {
+  return `__brief__:${raidId}::${userId}`
+}
+
+export function isRaidBriefKey(key) {
+  return typeof key === 'string' && key.startsWith('__brief__:')
+}
+
+// Only the leader can call a brief, so only the leader's keys are read. A
+// retraction is the same key written false, so a cancelled brief closes for
+// everyone rather than lingering for whoever loads the page next.
+export function announcedBriefRaid(progress, leaderId) {
+  if (!progress || !leaderId) return null
+  let announced = null
+  for (const [key, value] of Object.entries(progress)) {
+    if (!value || !isRaidBriefKey(key) || progressOwnerId(key) !== leaderId) continue
+    const raw = key.slice(10, key.lastIndexOf('::'))
+    if (!/^\d+$/.test(raw)) continue
+    const raidId = Number(raw)
+    if (announced === null || raidId > announced) announced = raidId
+  }
+  return announced
+}
+
 export function progressOwnerId(key) {
   if (typeof key !== 'string') return null
   const separator = key.lastIndexOf('::')

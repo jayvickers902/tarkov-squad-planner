@@ -17,9 +17,10 @@ vi.mock('../EftLogSyncContext', () => ({
 }))
 vi.mock('../useCompanionSyncStatus', () => ({ useCompanionSyncStatus: () => null }))
 vi.mock('./StartRaidModal', () => ({
-  default: ({ onClose }) => (
+  default: ({ onClose, onCancel }) => (
     <div role="dialog" aria-label="Start raid brief">
       <button type="button" onClick={onClose}>OK — LET'S GO</button>
+      <button type="button" onClick={onCancel}>BACK</button>
     </div>
   ),
 }))
@@ -173,6 +174,85 @@ describe('Room banner header', () => {
     // The server stamps __raid_start__ off its own clock, so it never matches
     // the value the optimistic write guessed — raid_id is what both agree on.
     rerender(<Room {...props} party={makeParty({ raid_id: 1, progress: { __raid_start__: Date.now() } })} />)
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+  })
+
+  it('announces the brief to the squad the moment the leader presses START RAID', () => {
+    const { props } = renderRoom({ party: { raid_id: 3 } })
+
+    fireEvent.click(screen.getByRole('button', { name: /START RAID/ }))
+
+    // The squad has to be able to read it while there is still time to pack, so
+    // the announcement goes out on the press, not on the leader's confirm.
+    expect(props.onSubmitProgress).toHaveBeenCalledWith({ '__brief__:4::user-1': true })
+    expect(props.onStartRaid).not.toHaveBeenCalled()
+  })
+
+  it('briefs the squad while the leader is still reading it', () => {
+    const { props, rerender } = renderRoom({ props: { myUserId: 'user-2', myName: 'BOOTS' }, party: { raid_id: 3 } })
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+
+    const called = { raid_id: 3, progress: { '__brief__:4::user-1': true } }
+    rerender(<Room {...props} party={makeParty(called)} />)
+    expect(screen.getByRole('dialog', { name: 'Start raid brief' })).toBeInTheDocument()
+
+    // Read once. The raid it announced must not brief them all over again.
+    fireEvent.click(screen.getByRole('button', { name: "OK — LET'S GO" }))
+    rerender(<Room {...props} party={makeParty({ raid_id: 4, progress: { '__brief__:4::user-1': true, __raid_start__: Date.now() } })} />)
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+  })
+
+  it('ignores a brief announced by anyone but the leader', () => {
+    renderRoom({
+      props: { myUserId: 'user-1', myName: 'SHRIKE' },
+      party: { raid_id: 3, progress: { '__brief__:4::user-2': true } },
+    })
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+  })
+
+  it('takes the announced brief back down when the leader backs out', () => {
+    const { props, rerender } = renderRoom({ props: { myUserId: 'user-2', myName: 'BOOTS' }, party: { raid_id: 3 } })
+
+    rerender(<Room {...props} party={makeParty({ raid_id: 3, progress: { '__brief__:4::user-1': true } })} />)
+    expect(screen.getByRole('dialog', { name: 'Start raid brief' })).toBeInTheDocument()
+
+    rerender(<Room {...props} party={makeParty({ raid_id: 3, progress: { '__brief__:4::user-1': false } })} />)
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+
+    // Nothing was read, so calling it again still briefs them.
+    rerender(<Room {...props} party={makeParty({ raid_id: 3, progress: { '__brief__:4::user-1': true } })} />)
+    expect(screen.getByRole('dialog', { name: 'Start raid brief' })).toBeInTheDocument()
+  })
+
+  it('retracts the announcement when the leader backs out of the brief', () => {
+    const { props } = renderRoom({ party: { raid_id: 3 } })
+
+    fireEvent.click(screen.getByRole('button', { name: /START RAID/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'BACK' }))
+
+    expect(props.onSubmitProgress).toHaveBeenLastCalledWith({ '__brief__:4::user-1': false })
+    expect(props.onStartRaid).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+  })
+
+  it("keeps the leader's own announcement up while they are reading it", () => {
+    // The announcement echoes back through party progress. The cleanup that
+    // retracts an unheld brief must not read that echo as an abandoned one.
+    const { props, rerender } = renderRoom({ party: { raid_id: 3 } })
+    fireEvent.click(screen.getByRole('button', { name: /START RAID/ }))
+
+    rerender(<Room {...props} party={makeParty({ raid_id: 3, progress: { '__brief__:4::user-1': true } })} />)
+
+    expect(props.onSubmitProgress).not.toHaveBeenCalledWith({ '__brief__:4::user-1': false })
+    expect(screen.getByRole('dialog', { name: 'Start raid brief' })).toBeInTheDocument()
+  })
+
+  it('retracts a brief the leader is no longer holding open', () => {
+    // The leader reloaded, or walked away: their local copy is gone, so the
+    // announcement has to go with it rather than briefing the next person in.
+    const { props } = renderRoom({ party: { raid_id: 3, progress: { '__brief__:4::user-1': true } } })
+
+    expect(props.onSubmitProgress).toHaveBeenCalledWith({ '__brief__:4::user-1': false })
     expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
   })
 

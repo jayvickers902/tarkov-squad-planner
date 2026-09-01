@@ -15,7 +15,7 @@ import Icon from './Icon'
 import useEphemeralSweep from '../useEphemeralSweep'
 import { resolveSetting } from '../settings'
 import { gameModeLabel, resolvePartyMode } from '../gameMode'
-import { normalizeMembers, findMember, memberNames, progressOwnerId, progressQuestId } from '../partyMembers'
+import { normalizeMembers, findMember, memberNames, progressOwnerId, progressQuestId, raidBriefKey, announcedBriefRaid, isRaidBriefKey } from '../partyMembers'
 import { memberColor } from '../memberColors'
 import { mapBannerLayers, mapReferenceArt } from '../mapBanners'
 import { taskIsOnMap } from '../tarkovObjectives'
@@ -92,7 +92,7 @@ function RoomOverflow({
 }
 
 function hasRaidWork(progress) {
-  return Object.keys(progress || {}).some(key => key !== '__raid_start__')
+  return Object.keys(progress || {}).some(key => key !== '__raid_start__' && !isRaidBriefKey(key))
 }
 
 // The brief is keyed on raid_id, not on __raid_start__. start_party_raid stamps
@@ -210,6 +210,26 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
 
   useEffect(() => { setAckedRaid(readBriefAck(briefKey)) }, [briefKey])
 
+  // The brief the leader currently has open, announced for the raid it is for:
+  // one past the party's raid_id. Once start_party_raid bumps raid_id, that
+  // same id is no longer ahead of it, which is how an announcement expires
+  // without anybody having to clean it up.
+  const announcedRaid = useMemo(
+    () => announcedBriefRaid(party.progress, party.leader_id),
+    [party.progress, party.leader_id],
+  )
+  const briefCalled = announcedRaid !== null && announcedRaid === raidId + 1 && party.leader_id !== myUserId
+
+  // Two ways in. The leader pressing START RAID briefs the squad *now*, while
+  // there is still time to pack — that is what the prep check is for. The raid
+  // stamp remains the second path, so a member who was away when the brief went
+  // up is still caught up by the raid they are already in.
+  useEffect(() => {
+    if (!party.map_id || !briefCalled) return
+    if (ackedRaid !== null && announcedRaid <= ackedRaid) return
+    setOpenBriefRaid(announcedRaid)
+  }, [party.map_id, briefCalled, announcedRaid, ackedRaid])
+
   // Every member opens the brief on the raid the leader just started. The
   // freshness window keeps a party's long-dead last raid from briefing whoever
   // walks in months later, and the ack keeps a reload from re-briefing.
@@ -219,6 +239,27 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
     if (Date.now() - raidStart > RAID_BRIEF_WINDOW_MS) return
     setOpenBriefRaid(raidId)
   }, [party.map_id, raidId, raidStart, ackedRaid])
+
+  // The leader backing out takes the brief down with them. Only an announced
+  // brief is retracted — it is the one whose id is ahead of raid_id — so a
+  // brief opened by an actual raid start is never closed out from under a
+  // member. No ack: nothing was read, and the next announcement should land.
+  useEffect(() => {
+    if (openBriefRaid === null || openBriefRaid <= raidId) return
+    if (announcedRaid === openBriefRaid) return
+    setOpenBriefRaid(null)
+  }, [announcedRaid, openBriefRaid, raidId])
+
+  // A brief the leader is no longer holding open is nobody's brief. Reloading
+  // or navigating away drops their local copy, and without this the key would
+  // sit there true until the next raid started, briefing whoever loads the page
+  // next on a briefing that has no leader in it. Confirming does not trip this:
+  // start_party_raid moves raid_id past the announcement in the same batch.
+  useEffect(() => {
+    if (startRaidPending || party.leader_id !== myUserId || !myUserId) return
+    if (announcedRaid === null || announcedRaid !== raidId + 1) return
+    onSubmitProgress?.({ [raidBriefKey(announcedRaid, myUserId)]: false })
+  }, [startRaidPending, party.leader_id, myUserId, announcedRaid, raidId, onSubmitProgress])
 
   const showRaidModal = startRaidPending || openBriefRaid !== null
 
@@ -237,6 +278,20 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
     try { localStorage.setItem(briefKey, String(id)) } catch { /* Storage may be unavailable. */ }
   }
 
+  // Announcing is the whole point of the brief being a squad briefing: pressing
+  // START RAID has to reach the squad now, not when the leader is done reading.
+  // The leader's own copy stays local state, so a failed write costs them
+  // nothing but the announcement.
+  function setBriefAnnounced(announced) {
+    if (party.leader_id !== myUserId || !myUserId) return
+    onSubmitProgress?.({ [raidBriefKey(raidId + 1, myUserId)]: announced })
+  }
+
+  function openRaidBrief() {
+    setStartRaidPending(true)
+    setBriefAnnounced(true)
+  }
+
   function handleRaidModalClose() {
     if (startRaidPending) {
       setStartRaidPending(false)
@@ -250,8 +305,12 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   }
 
   function handleRaidModalCancel() {
-    if (startRaidPending) setStartRaidPending(false)
-    else ackBrief(openBriefRaid ?? raidId)
+    if (startRaidPending) {
+      setStartRaidPending(false)
+      setBriefAnnounced(false)
+    } else {
+      ackBrief(openBriefRaid ?? raidId)
+    }
   }
 
   async function handleSendRequest() {
@@ -404,7 +463,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
             userObjProgress={userObjProgress}
             userSettings={userSettings}
             onSetSetting={onSetUserSetting}
-            onStartRaid={() => setStartRaidPending(true)}
+            onStartRaid={openRaidBrief}
             raidSession={raidSession}
             onRaidError={onRaidError}
             onClose={onCloseRaid}
@@ -528,7 +587,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
             </div>
 
             {isLeader && party.map_id && (
-              <button type="button" className="room-start-raid" onClick={() => setStartRaidPending(true)}>
+              <button type="button" className="room-start-raid" onClick={openRaidBrief}>
                 <Icon name="play" size="lg" />
                 <span className="room-start-raid-copy">
                   <span className="room-start-raid-title">START RAID</span>
