@@ -84,6 +84,23 @@ describe('integrated companion service', () => {
     })
   })
 
+  it('uses the native picker-owned configuration boundary when available', async () => {
+    const { service, native, runtime } = harness()
+    native.configureRoot = vi.fn(async kind => ({
+      logsRoot: kind === 'logs' ? 'C:\\EFT\\Logs' : null,
+      screenshotsRoot: kind === 'screenshots' ? 'C:\\EFT\\Screenshots' : null,
+    }))
+    await service.start()
+    await service.configureLogsRoot()
+
+    expect(native.configureRoot).toHaveBeenCalledWith('logs')
+    expect(native.selectDirectory).not.toHaveBeenCalled()
+    expect(runtime.configureRoots).toHaveBeenCalledWith(
+      { logsRoot: 'C:\\EFT\\Logs', screenshotsRoot: null },
+      { persist: false },
+    )
+  })
+
   it('never reflects callback URL contents into its notice', async () => {
     const { service, runtime } = harness()
     await service.start()

@@ -686,8 +686,8 @@ export function createCompanionRuntime({
     if (started) enabled ? await becomeReady() : (await stopWatch(), clearWorkTimers(), setStatus({ state: 'offline', detail: 'Companion sync is disabled', pendingCount: 0 }))
   }
 
-  async function configureRoots(value) {
-    const configure = method(native, 'configureRoots', 'configureEftRoots')
+  async function configureRoots(value, { persist = true } = {}) {
+    const configure = persist ? method(native, 'configureRoots', 'configureEftRoots') : null
     roots = normalizeRoots(configure ? await configure(value) : value)
     reportPresence()
     if (started) await becomeReady()

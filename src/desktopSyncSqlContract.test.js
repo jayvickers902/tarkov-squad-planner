@@ -36,13 +36,11 @@ describe('desktop sync context SQL contract', () => {
     expect(migration).not.toMatch(/where profile\.id = v_uid/i)
   })
 
-  it('keeps the schema-editor definition in sync with the ordered migration', () => {
-    const migrationDefinition = migration.match(/create or replace function public\.get_desktop_sync_context\(\)[\s\S]*?grant execute on function public\.get_desktop_sync_context\(\) to authenticated;/i)?.[0]
-    expect(migrationDefinition).toBeTruthy()
-    expect(schema).toContain('create or replace function public.get_desktop_sync_context()')
-    expect(schema).toMatch(/returns table\(\s*user_id\s+uuid,\s*callsign\s+text,\s*game_mode\s+text,\s*party_id\s+bigint,\s*party_code\s+text,\s*raid_id\s+bigint,\s*map_norm\s+text\s*\)/i)
-    expect(schema).toContain('caller.user_id')
-    expect(schema).toMatch(/revoke all on function public\.get_desktop_sync_context\(\) from public, anon, service_role/i)
-    expect(schema).toMatch(/grant execute on function public\.get_desktop_sync_context\(\) to authenticated/i)
+  it('keeps the bootstrap separate from ordered migration definitions', () => {
+    // The bootstrap is intentionally foundational only. Keeping a second
+    // copy of this function in it caused schema drift and made a clean setup
+    // execute later migration objects before their prerequisites existed.
+    expect(schema).not.toContain('create or replace function public.get_desktop_sync_context()')
+    expect(schema).toContain('run every supabase/10_*.sql file in')
   })
 })

@@ -33,11 +33,23 @@ Supabase is the real-time database that lets your squad share party state across
 - Give it a name (e.g. `tarkov-planner`), pick a region close to you, set a database password (save it somewhere)
 - Wait ~2 minutes for it to provision
 
-**b) Create the database table**
+**b) Create the database schema**
 - In your Supabase dashboard, click "SQL Editor" in the left sidebar
 - Click "New query"
-- Open the file `supabase-schema.sql` from this folder, copy the entire contents, paste it in, and click "Run"
-- You should see "Success. No rows returned."
+- Open the file `supabase-schema.sql` from this folder, copy the entire contents, paste it in, and click "Run". This is the foundational bootstrap only; it intentionally uses deny-by-default row-level security and does not create party/profile access policies or party RPCs.
+- Create a new SQL Editor query for each file matching `supabase/10_*.sql` and run them one at a time in filename order, through the latest numbered migration. This ordered migration set installs the current schema, membership-scoped policies, and RPCs. Do not run files in `supabase/probes/`; those are diagnostics, not setup migrations. Skip `10_19_desktop_sync_status.sql`: it is an older conflicting variant superseded by `10_20_sync_client_status.sql`; keep `10_19_desktop_sync_context.sql`.
+- Before running `10_12_map_keys_policy_cleanup.sql`, create your first user under Supabase → Authentication → Users, copy that user's UUID, and seed the administrator profile in SQL Editor (replace the two placeholders):
+
+```sql
+insert into public.profiles (id, callsign, is_admin)
+values ('YOUR_AUTH_USER_UUID', 'YOUR_CALLSIGN', true)
+on conflict (id) do update
+set callsign = excluded.callsign, is_admin = true;
+```
+
+  This one-time seed is required because `10_12` refuses to remove obsolete write policies when no administrator exists. Keep the UUID private.
+- The `10_02`, `10_14`, and `10_17` migrations include intentional data-shape/beta cutovers. On an existing database, take a backup and review each migration before running it; do not rerun the foundational bootstrap against an existing project. A fresh project can run the complete ordered set after the one-time administrator seed above.
+- You should see "Success. No rows returned." after each query.
 
 **c) Get your API keys**
 - In Supabase, go to Settings (gear icon) → API

@@ -4,7 +4,7 @@
  *
  * @typedef {'offline'|'connecting'|'connected'|'error'} ConnectionState
  * @typedef {{state: ConnectionState, detail: string, lastSyncAt: string|null, pendingCount: number}} CompanionStatus
- * @typedef {{getStatus: () => Promise<CompanionStatus>, setEnabled: (enabled: boolean) => Promise<void>, getRoots: () => Promise<{logsRoot: string|null, screenshotsRoot: string|null}>, selectDirectory: () => Promise<string|null>, configureRoots: (roots: {logsRoot?: string|null, screenshotsRoot?: string|null}) => Promise<unknown>, enumerateLogs: () => Promise<unknown>, enumerateScreenshots: () => Promise<unknown>, readLog: (path: string, offset?: number) => Promise<unknown>, loadCheckpoints: () => Promise<unknown>, saveCheckpoints: (value: unknown) => Promise<void>, credentialGet: (account: string) => Promise<string|null>, credentialSet: (account: string, secret: string) => Promise<void>, credentialDelete: (account: string) => Promise<void>, startWatch: () => Promise<void>, stopWatch: () => Promise<void>, dispose?: () => void}} CompanionAdapter
+ * @typedef {{getStatus: () => Promise<CompanionStatus>, setEnabled: (enabled: boolean) => Promise<void>, getRoots: () => Promise<{logsRoot: string|null, screenshotsRoot: string|null}>, configureRoot: (kind: 'logs'|'screenshots') => Promise<unknown>, configureRoots: (roots: {logsRoot?: string|null, screenshotsRoot?: string|null}) => Promise<unknown>, enumerateLogs: () => Promise<unknown>, enumerateScreenshots: () => Promise<unknown>, readLog: (path: string, offset?: number) => Promise<unknown>, loadCheckpoints: () => Promise<unknown>, saveCheckpoints: (value: unknown) => Promise<void>, credentialGet: (account: string) => Promise<string|null>, credentialSet: (account: string, secret: string) => Promise<void>, credentialDelete: (account: string) => Promise<void>, startWatch: () => Promise<void>, stopWatch: () => Promise<void>, dispose?: () => void}} CompanionAdapter
  */
 
 export const DEFAULT_STATUS = Object.freeze({
@@ -20,7 +20,7 @@ const EMPTY_ADAPTER = {
   },
   async setEnabled() {},
   async getRoots() { return { logsRoot: null, screenshotsRoot: null } },
-  async selectDirectory() { return null },
+  async configureRoot() { return { logsRoot: null, screenshotsRoot: null } },
   async configureRoots() {},
   async enumerateLogs() { return { files: [], totalBytes: 0 } },
   async enumerateScreenshots() { return [] },
@@ -134,8 +134,11 @@ export function createTauriAdapter(invoke) {
       await invoke('set_companion_enabled', { enabled })
     },
     async getRoots() { return await invoke('get_eft_roots') },
-    async selectDirectory() { return await invoke('select_eft_directory') },
-    async configureRoots(roots) { return await invoke('configure_eft_roots', { input: roots }) },
+    async configureRoot(kind) { return await invoke('configure_eft_root', { kind }) },
+    // Kept as a compatibility alias for runtime fakes and older callers. The
+    // native command ignores renderer-supplied paths and always opens the
+    // trusted folder picker, so arbitrary paths cannot be configured.
+    async configureRoots() { return await invoke('get_eft_roots') },
     async enumerateLogs() { return await invoke('enumerate_eft_logs') },
     async enumerateScreenshots() { return await invoke('enumerate_eft_screenshots') },
     async readLog(path, offset = 0) { return await invoke('read_eft_log', { path, offset }) },
@@ -151,7 +154,8 @@ export function createTauriAdapter(invoke) {
       return listen('native-fs-event', (event) => onEvent(event.payload))
     },
     // Stable aliases used by the runtime boundary while the UI remains host-agnostic.
-    async configureEftRoots(roots) { return await invoke('configure_eft_roots', { input: roots }) },
+    async configureEftRoot(kind) { return await invoke('configure_eft_root', { kind }) },
+    async configureEftRoots() { return await invoke('get_eft_roots') },
     async loadSyncCheckpoints() { return await invoke('load_sync_checkpoints') },
     async saveSyncCheckpoints(value) { await invoke('save_sync_checkpoints', { checkpoints: value }) },
     async startNativeWatch() { await invoke('start_native_watch') },

@@ -5,6 +5,8 @@ import { FEATURED } from './constants'
 
 const root = process.cwd()
 const partyClient = readFileSync(join(root, 'src', 'useParty.js'), 'utf8')
+const bootstrapSchema = readFileSync(join(root, 'supabase-schema.sql'), 'utf8')
+const readme = readFileSync(join(root, 'README.md'), 'utf8')
 const migration = readFileSync(join(root, 'supabase', '10_10_security_hardening.sql'), 'utf8')
 const raidSessionMigration = readFileSync(join(root, 'supabase', '10_15_raid_sessions.sql'), 'utf8')
 const userDataMigration = readFileSync(join(root, 'supabase', '10_24_user_data_hardening.sql'), 'utf8')
@@ -12,6 +14,27 @@ const profileScopeMigration = readFileSync(join(root, 'supabase', '10_25_profile
 const css = readFileSync(join(root, 'src', 'index.css'), 'utf8')
 
 describe('security-sensitive contracts', () => {
+  it('keeps the documented bootstrap deny-by-default and migration-complete', () => {
+    for (const table of ['parties', 'profiles', 'map_keys', 'map_loot']) {
+      expect(bootstrapSchema).toContain(`alter table public.${table}`)
+      expect(bootstrapSchema).toMatch(new RegExp(`alter table public\\.${table}\\s+enable row level security`, 'i'))
+    }
+
+    // These policies exposed rows across accounts in the old standalone
+    // snapshot. Membership-scoped replacements are installed by 10_03+.
+    expect(bootstrapSchema).not.toMatch(/create\s+policy\s+"(?:Parties|Profiles|map_keys|map_loot) public/i)
+    expect(bootstrapSchema).not.toMatch(/create\s+policy[\s\S]{0,120}\bon public\.(?:parties|profiles|map_keys|map_loot)\b/i)
+    expect(bootstrapSchema).not.toMatch(/create\s+(?:or\s+replace\s+)?function\s+public\.leave_party\s*\(\s*(?:p_code\s+text\s*,\s*p_name\s+text|text\s*,\s*text)/i)
+
+    expect(readme).toContain('supabase/10_*.sql')
+    expect(readme).toContain('filename order')
+    expect(readme).toContain('supabase/probes/')
+    expect(readme).toContain('10_19_desktop_sync_status.sql')
+    expect(readme).toContain('10_20_sync_client_status.sql')
+    expect(readme).toContain('10_12_map_keys_policy_cleanup.sql')
+    expect(readme).toContain('is_admin')
+  })
+
   it('has no direct party update or legacy write fallback in the client', () => {
     expect(partyClient).not.toMatch(/from\(['"]parties['"]\)[\s\S]{0,120}\.update\(/)
     expect(partyClient).not.toContain("'append_ping'")

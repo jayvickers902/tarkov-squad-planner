@@ -6,11 +6,13 @@ const migration = fs.readFileSync(path.join(process.cwd(), 'supabase', '10_29_us
 const baseline = fs.readFileSync(path.join(process.cwd(), 'supabase-schema.sql'), 'utf8')
 
 describe('user quest realtime contract', () => {
-  it.each([
-    ['ordered migration', migration],
-    ['baseline schema', baseline],
-  ])('publishes user_quests idempotently in the %s', (_label, sql) => {
-    expect(sql).toMatch(/pg_publication_tables[\s\S]*?pubname\s*=\s*'supabase_realtime'[\s\S]*?tablename\s*=\s*'user_quests'/i)
-    expect(sql).toMatch(/alter publication supabase_realtime add table public\.user_quests/i)
+  it('publishes user_quests idempotently in the ordered migration', () => {
+    expect(migration).toMatch(/pg_publication_tables[\s\S]*?pubname\s*=\s*'supabase_realtime'[\s\S]*?tablename\s*=\s*'user_quests'/i)
+    expect(migration).toMatch(/alter publication supabase_realtime add table public\.user_quests/i)
+  })
+
+  it('keeps the foundational bootstrap separate from runtime migrations', () => {
+    expect(baseline).not.toMatch(/alter publication supabase_realtime add table public\.user_quests/i)
+    expect(baseline).toContain('run every supabase/10_*.sql file in')
   })
 })

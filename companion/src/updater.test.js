@@ -100,7 +100,7 @@ describe('updater boundary', () => {
   })
 
   it('reads the runtime version and falls back safely in browser development', async () => {
-    await expect(getInstalledVersion()).resolves.toBe('0.2.2')
+    await expect(getInstalledVersion()).resolves.toBe('0.3.0')
     window.__TAURI_INTERNALS__ = {}
     mocks.getVersion.mockResolvedValue('0.2.9')
     await expect(getInstalledVersion()).resolves.toBe('0.2.9')

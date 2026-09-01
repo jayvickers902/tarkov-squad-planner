@@ -79,6 +79,34 @@ pub fn canonical_root(input: impl AsRef<Path>) -> Result<PathBuf, NativeError> {
     Ok(canonical)
 }
 
+/// Canonicalize a folder selected for one of the two supported EFT roots.
+///
+/// The renderer never supplies a path to the native configuration command;
+/// this additional shape check also prevents an old or manually edited config
+/// from turning a drive or broad parent folder into a scan root.
+pub fn canonical_eft_root(input: impl AsRef<Path>, kind: &str) -> Result<PathBuf, NativeError> {
+    let canonical = canonical_root(input)?;
+    let expected = match kind {
+        "logs" => "logs",
+        "screenshots" => "screenshots",
+        _ => {
+            return Err(NativeError::InvalidInput(
+                "The EFT folder type is invalid.".into(),
+            ))
+        }
+    };
+    let folder_name = canonical
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    if !folder_name.eq_ignore_ascii_case(expected) {
+        return Err(NativeError::InvalidInput(format!(
+            "Choose the EFT {expected} folder, not its parent folder."
+        )));
+    }
+    Ok(canonical)
+}
+
 /// Resolve a child and enforce that its canonical path remains below `root`.
 pub fn confined_path(root: &Path, child: impl AsRef<Path>) -> Result<PathBuf, NativeError> {
     // The JS boundary receives only the relative identifiers returned by an
@@ -497,5 +525,19 @@ mod tests {
         assert!(!valid_screenshot_filename(
             "202💥-08-27[12-34]1.2,3.4,5.6_0.1,0.2,0.3,0.4.png"
         ));
+    }
+
+    #[test]
+    fn eft_root_validation_rejects_broad_folders_and_accepts_expected_shapes() {
+        let directory = tempfile::tempdir().unwrap();
+        let logs = directory.path().join("Logs");
+        let screenshots = directory.path().join("Screenshots");
+        std::fs::create_dir(&logs).unwrap();
+        std::fs::create_dir(&screenshots).unwrap();
+
+        assert!(canonical_eft_root(&logs, "logs").is_ok());
+        assert!(canonical_eft_root(&screenshots, "screenshots").is_ok());
+        assert!(canonical_eft_root(directory.path(), "logs").is_err());
+        assert!(canonical_eft_root(&logs, "screenshots").is_err());
     }
 }

@@ -23,9 +23,10 @@ describe('sync client status SQL contract', () => {
     expect(migration).toMatch(/jsonb_array_length\(p_statuses\) > 2/i)
   })
 
-  it('keeps the schema-editor definition in sync', () => {
+  it('keeps the foundational bootstrap separate from runtime migrations', () => {
     for (const fragment of ['public.sync_client_status', 'public.report_sync_client_status', 'public.get_sync_client_status']) {
-      expect(schema).toContain(fragment)
+      expect(schema).not.toContain(fragment)
     }
+    expect(schema).toContain('run every supabase/10_*.sql file in')
   })
 })

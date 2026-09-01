@@ -180,6 +180,15 @@ export function createCompanionService({
   async function configureRoot(kind) {
     await start()
     if (!runtime) return roots
+    // The native command owns the picker and the resulting path. Keeping this
+    // operation as one native call prevents a compromised renderer from
+    // supplying an arbitrary filesystem root over IPC.
+    if (typeof native.configureRoot === 'function') {
+      roots = await native.configureRoot(kind)
+      await runtime.configureRoots(roots, { persist: false })
+      emit()
+      return roots
+    }
     const selected = await native.selectDirectory()
     if (!selected) return roots
     const next = {

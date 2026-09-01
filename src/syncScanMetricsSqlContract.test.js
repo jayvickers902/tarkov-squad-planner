@@ -28,8 +28,9 @@ describe('privacy-safe companion scan contract', () => {
     expect(migration).toMatch(/grant execute on function public\.report_sync_client_status\(text, jsonb\) to authenticated/i)
     expect(migration).toMatch(/coalesce\(excluded\.scan_files, public\.sync_client_status\.scan_files\)/i)
     expect(migration).toMatch(/drop function if exists public\.get_sync_client_status\(\)/i)
-    expect(schema).toContain('scan_files integer')
-    expect(schema).toContain('scan_selection text')
+    expect(schema).not.toContain('scan_files integer')
+    expect(schema).not.toContain('scan_selection text')
+    expect(schema).toContain('run every supabase/10_*.sql file in')
   })
 
   it('accepts Seasonal as a distinct reconciliation mode', () => {
@@ -44,6 +45,6 @@ describe('privacy-safe companion scan contract', () => {
     expect(resetImports).toMatch(/state_source = 'log_import'/i)
     expect(resetImports).toMatch(/grant execute on function public\.reset_user_quest_log_imports\(text\) to authenticated/i)
     expect(resetImports).not.toMatch(/state_source\s*(?:<>|!=)/i)
-    expect(schema).toContain('reset_user_quest_log_imports')
+    expect(schema).not.toContain('reset_user_quest_log_imports')
   })
 })

@@ -47,7 +47,7 @@ import App from './App.jsx'
 describe('companion update controls', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.getInstalledVersion.mockResolvedValue('0.2.2')
+    mocks.getInstalledVersion.mockResolvedValue('0.3.0')
     mocks.checkForUpdate.mockResolvedValue(null)
     mocks.downloadAndInstall.mockResolvedValue(true)
     mocks.restartAfterUpdate.mockResolvedValue(true)
@@ -56,7 +56,7 @@ describe('companion update controls', () => {
   it('shows the runtime version and current release state', async () => {
     const user = userEvent.setup()
     render(<App />)
-    expect(await screen.findByText('Installed version 0.2.2. Signed updates are downloaded from the official release channel.')).toBeInTheDocument()
+    expect(await screen.findByText('Installed version 0.3.0. Signed updates are downloaded from the official release channel.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Check for updates' }))
     expect(await screen.findByText('You’re up to date.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled()

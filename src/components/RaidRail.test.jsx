@@ -82,6 +82,11 @@ describe('RaidRail', () => {
     expect(onClick).toHaveBeenCalledTimes(1)
   })
 
+  it('renders a boss summary slot in the right rail', () => {
+    renderRail({ bossSlot: <section aria-label="Boss spawns">RESHALA · 35% · DORMS 70%</section> })
+    expect(screen.getByRole('region', { name: 'Boss spawns' })).toHaveTextContent('RESHALA · 35% · DORMS 70%')
+  })
+
   it('disables the call to action when it is waiting on somebody else', () => {
     renderRail({ cta: { label: 'WAITING FOR THE LEADER TO START', disabled: true, onClick: vi.fn() } })
     expect(screen.getByRole('button', { name: 'WAITING FOR THE LEADER TO START' })).toBeDisabled()

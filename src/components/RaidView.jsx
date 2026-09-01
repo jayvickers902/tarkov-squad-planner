@@ -5,7 +5,7 @@ import MyTasksPanel from './MyTasksPanel'
 import { useIsMobile } from '../useIsMobile'
 import { useMapKeys } from '../useMapKeys'
 import { useIntel } from '../useIntel'
-import { useExtracts } from '../useTarkov'
+import { useBossSpawns, useExtracts } from '../useTarkov'
 import { useMapLoot } from '../useMapLoot'
 import { useIntelChecklist } from '../useIntelChecklist'
 import { curatedLootPoints, mergeIntelSources } from '../tarkovIntel'
@@ -31,6 +31,35 @@ function elapsedLabel(startedAt, now) {
 
 function metres(value) {
   return value >= 1000 ? `${(value / 1000).toFixed(1)} KM` : `${value} M`
+}
+
+function RaidBossSummary({ bosses, loading }) {
+  return (
+    <section className="mr-bosses" aria-labelledby="mr-bosses-title">
+      <div className="mr-bosses-head">
+        <span id="mr-bosses-title" className="mono mr-aside-head">BOSS SPAWNS</span>
+        <span className="mono mr-bosses-meta">{loading ? 'LOADING' : `${bosses.length} FOUND`}</span>
+      </div>
+      {loading ? <div className="mono mr-bosses-empty">CHECKING SPAWN TABLE…</div> : null}
+      {!loading && !bosses.length ? <div className="mono mr-bosses-empty">NO BOSSES ON THIS MAP</div> : null}
+      {!loading && bosses.map((boss, index) => (
+        <div className="mr-boss-row" key={`${boss.normalizedName || boss.name}-${index}`}>
+          <div className="mr-boss-name-row">
+            <strong>{boss.name}</strong>
+            <span className="mono mr-boss-chance">{Number.isFinite(Number(boss.spawnChance)) ? `${Math.round(Number(boss.spawnChance) * 100)}%` : '—'}</span>
+          </div>
+          <div className="mono mr-boss-locations">
+            <span className="mr-boss-location-label">POTENTIAL LOCATIONS</span>
+            {(Array.isArray(boss.spawnLocations) ? boss.spawnLocations : [])
+              .filter(location => location?.name && Number.isFinite(Number(location.chance)))
+              .sort((a, b) => Number(b.chance) - Number(a.chance))
+              .map(location => `${String(location.name).toUpperCase()} ${Math.round(Number(location.chance) * 100)}%`)
+              .join(' · ') || 'LOCATION DATA UNAVAILABLE'}
+          </div>
+        </div>
+      ))}
+    </section>
+  )
 }
 
 function ScreenshotSyncChip({ sync }) {
@@ -124,6 +153,7 @@ export default function RaidView({
   const { mapKeys } = useMapKeys(party.map_norm)
   const { intelPoints } = useIntel(party.map_norm)
   const { extracts } = useExtracts(party.map_norm, gameMode)
+  const { getBossesForMap, loading: bossesLoading } = useBossSpawns(gameMode)
   const pmcSpawns = usePmcSpawns()
   const { lootRows } = useMapLoot(party.map_norm)
   const { isChecked } = useIntelChecklist(party.map_norm, raidKey)
@@ -318,6 +348,13 @@ export default function RaidView({
       .map(extract => extract.name),
     [extracts],
   )
+
+  const raidBosses = useMemo(() => {
+    const dayBosses = party.map_norm ? getBossesForMap(party.map_norm) : []
+    return party.map_norm === 'factory'
+      ? [...dayBosses, ...getBossesForMap('night-factory')]
+      : dayBosses
+  }, [getBossesForMap, party.map_norm])
 
   const aside = live
     ? {
@@ -607,6 +644,7 @@ export default function RaidView({
               ? `${pingState.echoCards.length} ECHO${pingState.echoCards.length === 1 ? '' : 'ES'}`
               : `${readyCount} READY / ${squadCards.length}`}
             cards={squadCards}
+            bossSlot={<RaidBossSummary bosses={raidBosses} loading={bossesLoading} />}
             aside={aside}
             cta={cta}
             emptyLabel={live ? 'NO SQUAD ECHO YET' : 'NO SQUAD MEMBERS'}

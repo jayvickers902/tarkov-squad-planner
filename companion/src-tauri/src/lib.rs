@@ -4,7 +4,7 @@ mod security;
 mod storage;
 mod watcher;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -47,8 +47,16 @@ impl NativeState {
             .roots
             .write()
             .map_err(|_| "Native state lock poisoned".to_string())? = ConfiguredRoots {
-            logs_root: config.logs_root,
-            screenshots_root: config.screenshots_root,
+            logs_root: config.logs_root.and_then(|path| {
+                filesystem::canonical_eft_root(path, "logs")
+                    .ok()
+                    .map(|path| path.to_string_lossy().into_owned())
+            }),
+            screenshots_root: config.screenshots_root.and_then(|path| {
+                filesystem::canonical_eft_root(path, "screenshots")
+                    .ok()
+                    .map(|path| path.to_string_lossy().into_owned())
+            }),
         };
         *self
             .storage
@@ -114,41 +122,43 @@ fn quit_companion(app: AppHandle, state: State<'_, CompanionState>) {
     app.exit(0);
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RootConfigInput {
-    logs_root: Option<String>,
-    screenshots_root: Option<String>,
-}
-
-#[tauri::command]
-fn select_eft_directory() -> Option<String> {
-    rfd::FileDialog::new()
-        .set_title("Choose an EFT folder")
-        .pick_folder()
-        .map(|path| path.to_string_lossy().into_owned())
-}
-
 #[tauri::command]
 fn get_eft_roots(state: State<'_, NativeState>) -> Result<ConfiguredRoots, String> {
     state.roots()
 }
 
 #[tauri::command]
-fn configure_eft_roots(
-    input: RootConfigInput,
+fn configure_eft_root(
+    kind: String,
     state: State<'_, NativeState>,
 ) -> Result<ConfiguredRoots, String> {
-    let logs = input
-        .logs_root
-        .map(filesystem::canonical_root)
-        .transpose()
-        .map_err(String::from)?;
-    let screenshots = input
-        .screenshots_root
-        .map(filesystem::canonical_root)
-        .transpose()
-        .map_err(String::from)?;
+    if !matches!(kind.as_str(), "logs" | "screenshots") {
+        return Err(
+            error::NativeError::InvalidInput("The EFT folder type is invalid.".into()).into(),
+        );
+    }
+    let Some(selected) = rfd::FileDialog::new()
+        .set_title(if kind == "logs" {
+            "Choose the EFT Logs folder"
+        } else {
+            "Choose the EFT Screenshots folder"
+        })
+        .pick_folder()
+    else {
+        return state.roots();
+    };
+    let selected = filesystem::canonical_eft_root(selected, &kind).map_err(String::from)?;
+    let current = state.roots()?;
+    let logs = if kind == "logs" {
+        Some(selected.clone())
+    } else {
+        current.logs_root.map(PathBuf::from)
+    };
+    let screenshots = if kind == "screenshots" {
+        Some(selected)
+    } else {
+        current.screenshots_root.map(PathBuf::from)
+    };
     let config = storage::CompanionConfig {
         version: storage::STATE_VERSION,
         logs_root: logs
@@ -385,9 +395,8 @@ pub fn run() {
             get_companion_status,
             set_companion_enabled,
             quit_companion,
-            select_eft_directory,
             get_eft_roots,
-            configure_eft_roots,
+            configure_eft_root,
             enumerate_eft_logs,
             enumerate_eft_screenshots,
             read_eft_log,

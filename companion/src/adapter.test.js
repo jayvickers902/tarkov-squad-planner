@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { DEFAULT_STATUS, normalizeStatus } from './adapter.js'
+import { describe, expect, it, vi } from 'vitest'
+import { createTauriAdapter, DEFAULT_STATUS, normalizeStatus } from './adapter.js'
 
 describe('companion adapter status boundary', () => {
   it('returns a safe offline status for malformed engine payloads', () => {
@@ -34,5 +34,21 @@ describe('companion adapter status boundary', () => {
     })
     expect(JSON.stringify(status)).not.toContain('private')
     expect(JSON.stringify(status)).not.toContain('profileId')
+  })
+
+  it('never sends renderer-supplied filesystem paths to native configuration', async () => {
+    const invoke = vi.fn(async command => (
+      command === 'get_eft_roots'
+        ? { logsRoot: null, screenshotsRoot: null }
+        : { logsRoot: 'C:\\EFT\\Logs', screenshotsRoot: null }
+    ))
+    const adapter = createTauriAdapter(invoke)
+
+    await adapter.configureRoot('logs')
+    await adapter.configureRoots({ logsRoot: 'C:\\Users\\Public' })
+
+    expect(invoke).toHaveBeenNthCalledWith(1, 'configure_eft_root', { kind: 'logs' })
+    expect(invoke).toHaveBeenNthCalledWith(2, 'get_eft_roots')
+    expect(invoke.mock.calls.flat()).not.toContain('C:\\Users\\Public')
   })
 })
