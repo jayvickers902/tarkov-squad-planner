@@ -194,15 +194,9 @@ end $$;
 -- coalesce(last_active_at, created_at) rather than created_at. See the block at
 -- the foot of supabase/10_05_lifecycle.sql for the live job and the reasoning.
 
--- Remove a member from a party (used when clicking Leave)
-create or replace function public.leave_party(p_code text, p_name text)
-returns void language plpgsql security definer as $$
-begin
-  update public.parties
-  set members = members - p_name
-  where code = p_code;
-end;
-$$;
+-- leave_party is defined in supabase/10_04_rpcs.sql as a one-argument,
+-- membership-checked function. The obsolete two-argument form was removed
+-- deliberately from this rebuild schema.
 
 -- Authenticated desktop companion bootstrap. This mirrors
 -- supabase/10_19_desktop_sync_context.sql for schema-editor rebuilds.

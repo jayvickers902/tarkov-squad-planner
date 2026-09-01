@@ -23,6 +23,8 @@
 // tarkov.help's `none` is its unset default, not a reviewed "solo" judgement, so
 // only positive verdicts are ever mirrored. Absence of data is not data.
 
+// Keep this threshold in sync with the HAVING clause in
+// supabase/10_30_audit_hardening.sql.
 // How much agreement turns a pile of reports into a verdict. Deliberately named
 // and deliberately low: this is a tool a handful of squadmates fill in over a few
 // wipes, not a survey panel. Two unanimous reports qualify; a 2-1 split at three

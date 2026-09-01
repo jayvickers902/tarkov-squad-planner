@@ -43,6 +43,37 @@ function comparableParty(data) {
   }
 }
 
+export function partySignature(data) {
+  if (!data) return ''
+  return [
+    data.raid_id ?? 0,
+    data.map_norm ?? '',
+    data.spawn ?? '',
+    (data.drawings || []).length,
+    (data.markers || []).length,
+    (data.pings || []).length,
+    (data.ping_log || []).length,
+    Object.keys(data.progress || {}).length,
+    Object.keys(data.starred || {}).length,
+    (data.members || []).length,
+  ].join('|')
+}
+
+function sameMemberExceptLastSeen(cached, incoming) {
+  if (!cached || !incoming) return false
+  return cached.callsign === incoming.callsign
+    && cached.role === incoming.role
+    // joined_at is deliberately not compared. It is set once at insert and never
+    // updated -- join_party_secure's on-conflict branch writes only callsign,
+    // quests, quests_all and last_seen -- so it cannot change on an UPDATE. It is
+    // also the one field whose text form differs between the two paths that feed
+    // this comparison: the cached row comes from PostgREST, payload.new from the
+    // realtime WAL decoder. Comparing it risks always-false, which would silently
+    // turn this whole guard back into an unconditional refetch.
+    && JSON.stringify(cached.quests) === JSON.stringify(incoming.quests)
+    && JSON.stringify(cached.quests_all) === JSON.stringify(incoming.quests_all)
+}
+
 // Recovery paths want the old contract: a failed read degrades to null rather
 // than throwing. Only the poll loop needs to tell "query failed" apart from "no
 // such party", because only it feeds the backoff breaker. Everything else is
@@ -270,6 +301,10 @@ export function useParty(userId, userSettings = {}, {
             merged[key] = partyRef.current[key]
           }
         }
+        if (partySignature(merged) !== partySignature(partyRef.current)) {
+          applyParty(merged)
+          return
+        }
         if (JSON.stringify(comparableParty(merged)) === JSON.stringify(comparableParty(partyRef.current))) return
         applyParty(merged)
       } catch (refreshError) {
@@ -321,7 +356,19 @@ export function useParty(userId, userSettings = {}, {
       })
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'party_members', filter: `party_id=eq.${partyId}`,
-      }, () => { refreshFromDatabase() })
+      }, payload => {
+        if (payload?.eventType === 'UPDATE') {
+          const incoming = payload.new
+          const cachedMember = incoming?.user_id
+            ? partyRef.current?.members?.find(member => member.user_id === incoming.user_id)
+            : null
+          if (cachedMember && sameMemberExceptLastSeen(cachedMember, incoming)) {
+            cachedMember.last_seen = incoming.last_seen ?? null
+            return
+          }
+        }
+        refreshFromDatabase()
+      })
       .subscribe(async status => {
         if (status !== 'SUBSCRIBED') return
         try {

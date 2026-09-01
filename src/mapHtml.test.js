@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { escapeHtml, parseSanitizedSvg, safeImageUrl } from './mapHtml'
+import { escapeHtml, parseSanitizedSvg, safeColor, safeImageUrl } from './mapHtml'
 
 describe('Leaflet HTML safety', () => {
   it('escapes values from users and upstream APIs', () => {
@@ -42,11 +42,26 @@ describe('Leaflet HTML safety', () => {
 })
 
 describe('safeImageUrl', () => {
-  it('passes http(s) art through and rejects every other scheme', () => {
+  it('passes allowed http(s) art through and rejects every other host or scheme', () => {
     expect(safeImageUrl('https://assets.tarkov.dev/x-icon.webp')).toBe('https://assets.tarkov.dev/x-icon.webp')
+    expect(safeImageUrl('https://raw.githubusercontent.com/x/y/icon.webp')).toBe('https://raw.githubusercontent.com/x/y/icon.webp')
     expect(safeImageUrl('javascript:alert(1)')).toBe(null)
     expect(safeImageUrl('data:image/svg+xml,<svg onload=alert(1)>')).toBe(null)
+    expect(safeImageUrl('//evil.example/x.png')).toBe(null)
+    expect(safeImageUrl('https://evil.example/x.png')).toBe(null)
     expect(safeImageUrl(null)).toBe(null)
     expect(safeImageUrl('')).toBe(null)
+  })
+})
+
+describe('safeColor', () => {
+  it('accepts three- and six-digit hex colors', () => {
+    expect(safeColor('#abc')).toBe('#abc')
+    expect(safeColor('#A1b2C3')).toBe('#A1b2C3')
+  })
+
+  it('rejects CSS injection and non-string values', () => {
+    expect(safeColor('red; background:url(https://evil.example/x)')).toBe('#9aaa98')
+    expect(safeColor(123)).toBe('#9aaa98')
   })
 })

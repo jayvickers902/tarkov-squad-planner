@@ -26,7 +26,7 @@ import { bearingRange, useMapPings } from '../useMapPings'
 import { classifyPmcSpawns } from '../tarkovSpawns'
 import { framePositionSignature } from '../squadFocus'
 import { readCameraMode, writeCameraMode } from '../cameraMode'
-import { escapeHtml, parseSanitizedSvg, safeImageUrl } from '../mapHtml'
+import { escapeHtml, parseSanitizedSvg, safeColor, safeImageUrl } from '../mapHtml'
 
 const PALETTE = ['#e85d5d', '#f5a623', '#e8e85d', '#5de87a', '#5de8d4', '#5db8e8', '#c45de8', '#e85da8', '#ffffff', '#b0b0b0']
 
@@ -124,7 +124,7 @@ function makeZoneLabelIcon(text, color, badge = '') {
     className: '',
     iconSize: [1, 1],
     iconAnchor: [0, 0],
-    html: `<div class="map-zone-label" style="--zone-color:${color}">${badge ? `<span class="map-zone-label-badge">${escapeHtml(badge)}</span>` : ''}${escapeHtml(text)}</div>`,
+    html: `<div class="map-zone-label" style="--zone-color:${safeColor(color)}">${badge ? `<span class="map-zone-label-badge">${escapeHtml(badge)}</span>` : ''}${escapeHtml(text)}</div>`,
   })
 }
 
@@ -164,7 +164,7 @@ function elevationLine(position, mapNorm) {
 
 function makeZoneTooltip(title, color, lines) {
   return `<div style="min-width:155px;max-width:270px">
-    <div style="color:${color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;line-height:1.2;letter-spacing:.05em">${escapeHtml(title)}</div>
+    <div style="color:${safeColor(color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;line-height:1.2;letter-spacing:.05em">${escapeHtml(title)}</div>
     <div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;display:flex;flex-direction:column;gap:3px">
       ${lines.filter(Boolean).map(line => `<div style="color:#9aaa98;font-size:10px;line-height:1.35">· ${escapeHtml(line)}</div>`).join('')}
     </div>
@@ -208,7 +208,7 @@ function makeQuestMarkerTooltip({ color, memberName, questName, traderName, trad
       </div>
       <div style="display:flex;align-items:center;gap:5px;margin-top:6px">
         <span style="width:7px;height:7px;border-radius:50%;background:${color};flex:0 0 auto"></span>
-        <span style="color:${color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:10px;letter-spacing:.1em">${escapeHtml(String(memberName).toUpperCase())}</span>
+        <span style="color:${safeColor(color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:10px;letter-spacing:.1em">${escapeHtml(String(memberName).toUpperCase())}</span>
       </div>
       ${objectives.length ? `<div style="border-top:1px solid #262b25;margin-top:6px;padding-top:7px;display:flex;flex-direction:column;gap:6px">
         ${objectives.map(objective => {
@@ -246,7 +246,7 @@ function makeObjectivePinTooltip(pin) {
       </div>
       <div style="display:flex;align-items:center;gap:5px;margin-top:6px">
         <span style="width:7px;height:7px;border-radius:50%;background:${pin.color};flex:0 0 auto"></span>
-        <span style="color:${pin.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:10px;letter-spacing:.1em">${escapeHtml(pin.memberName.toUpperCase())}</span>
+        <span style="color:${safeColor(pin.color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:10px;letter-spacing:.1em">${escapeHtml(pin.memberName.toUpperCase())}</span>
       </div>
       <div style="border-top:1px solid #262b25;margin-top:6px;padding-top:7px;display:flex;gap:8px;align-items:flex-start">
         ${thumb(pin.itemIcon, pin.itemName || 'Objective item', 38, 3)}
@@ -1503,8 +1503,8 @@ export default function MapLeaflet({
       const tooltipHtml = `
         <div style="min-width:170px;max-width:280px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-            <span style="color:${card.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${escapeHtml(pingUser.toUpperCase())}</span>
-            <span style="color:${card.cadence.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.08em">${escapeHtml(card.cadence.label)}</span>
+            <span style="color:${safeColor(card.color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${escapeHtml(pingUser.toUpperCase())}</span>
+            <span style="color:${safeColor(card.cadence.color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.08em">${escapeHtml(card.cadence.label)}</span>
             <span style="color:#5c6b61;font-size:10px;margin-left:auto">${escapeHtml(ageLabel(card.age))} AGO</span>
           </div>
           <div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">
@@ -1643,7 +1643,7 @@ export default function MapLeaflet({
       const tooltipHtml = `
         <div style="min-width:150px;max-width:250px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-            <span style="color:${checked ? '#5de87a' : kind.color};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${escapeHtml(kind.short)}</span>
+            <span style="color:${safeColor(checked ? '#5de87a' : kind.color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${escapeHtml(kind.short)}</span>
             ${checked ? `<span style="color:#5de87a;font-size:10px">✓ CHECKED</span>` : ''}
           </div>
           <div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">

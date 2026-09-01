@@ -1,8 +1,123 @@
-import { describe, expect, it, vi } from 'vitest'
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('./supabase', () => ({ supabase: {} }))
+const db = vi.hoisted(() => ({
+  from: vi.fn(),
+  rpc: vi.fn(),
+  channel: vi.fn(),
+  removeChannel: vi.fn(),
+  channels: [],
+}))
 
-import { settleOptimisticPing, derivePartyQuestRow, autoRejoinQuestPayload } from './useParty'
+vi.mock('./supabase', () => ({ supabase: {
+  from: db.from,
+  rpc: db.rpc,
+  channel: db.channel,
+  removeChannel: db.removeChannel,
+} }))
+
+import { settleOptimisticPing, derivePartyQuestRow, autoRejoinQuestPayload, useParty } from './useParty'
+
+function makeQuery(result) {
+  const query = {
+    select: vi.fn(() => query),
+    update: vi.fn(() => query),
+    eq: vi.fn(() => query),
+    order: vi.fn(() => query),
+    limit: vi.fn(() => query),
+    maybeSingle: vi.fn(() => Promise.resolve(result)),
+    single: vi.fn(() => Promise.resolve(result)),
+    then: (resolve, reject) => Promise.resolve(result).then(resolve, reject),
+  }
+  return query
+}
+
+function makeChannel() {
+  const channel = {
+    handlers: [],
+    on: vi.fn((topic, config, callback) => {
+      if (topic === 'postgres_changes') channel.handlers.push({ config, callback })
+      return channel
+    }),
+    presenceState: vi.fn(() => ({})),
+    track: vi.fn(() => Promise.resolve()),
+    subscribe: vi.fn(callback => {
+      if (callback) callback('SUBSCRIBED')
+      return channel
+    }),
+  }
+  db.channels.push(channel)
+  return channel
+}
+
+function makeParty() {
+  return {
+    id: 41,
+    code: 'ABC123',
+    leader_id: 'u1',
+    map_norm: 'customs',
+    map_name: 'Customs',
+    progress: { 'obj-1::u1': false },
+    starred: {},
+    drawings: [],
+    markers: [],
+    pings: [],
+    ping_log: [],
+    last_active_at: '2026-09-01T12:00:00.000Z',
+    members: [{
+      user_id: 'u1', callsign: 'Raven', role: 'leader',
+      quests: [{ id: 'q1', name: 'Quest' }], quests_all: [{ id: 'q1', name: 'Quest' }],
+      joined_at: '2026-09-01T11:00:00.000Z', last_seen: '2026-09-01T12:00:00.000Z',
+    }],
+  }
+}
+
+async function renderPartyHook() {
+  const party = makeParty()
+  const partyRow = { ...party }
+  delete partyRow.members
+  let freshPartyRow = partyRow
+  let freshMembers = party.members
+  db.rpc.mockImplementation(name => name === 'create_party'
+    ? Promise.resolve({ data: party, error: null })
+    : Promise.resolve({ data: null, error: null }))
+  db.from.mockImplementation(table => makeQuery(
+    table === 'parties'
+      ? { data: freshPartyRow, error: null }
+      : table === 'party_members'
+        ? { data: freshMembers, error: null }
+        : { data: [], error: null },
+  ))
+  db.channel.mockImplementation(makeChannel)
+
+  let renderCount = 0
+  const hook = renderHook(() => {
+    renderCount += 1
+    return useParty('u1', { auto_rejoin: false }, {
+      callsign: 'Raven', questsLoading: true,
+    })
+  })
+  await act(async () => {
+    await hook.result.current.createParty('Raven', 'regular', [])
+  })
+  await waitFor(() => expect(db.channels.length).toBeGreaterThan(0))
+  const memberHandler = db.channels[0].handlers.find(({ config }) => config.table === 'party_members')
+  const partyHandler = db.channels[0].handlers.find(({ config }) => config.table === 'parties')
+  return {
+    ...hook,
+    party,
+    setFreshPartyRow: value => { freshPartyRow = value },
+    setFreshMembers: value => { freshMembers = value },
+    getRenderCount: () => renderCount,
+    memberHandler: memberHandler.callback,
+    partyHandler: partyHandler.callback,
+  }
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  db.channels.length = 0
+})
 
 describe('settleOptimisticPing', () => {
   it('keeps one optimistic ping for a matching stored id', () => {
@@ -90,5 +205,58 @@ describe('autoRejoinQuestPayload', () => {
 
   it('seeds the row when the party declares no mode', () => {
     expect(autoRejoinQuestPayload(null, 'pve', quests)).toEqual(quests)
+  })
+})
+
+describe('party realtime refresh guards', () => {
+  it('does not refetch for a heartbeat-only member update, but does for quest changes', async () => {
+    const hook = await renderPartyHook()
+    const before = db.from.mock.calls.length
+    const member = hook.party.members[0]
+
+    await act(async () => {
+      hook.memberHandler({
+        eventType: 'UPDATE',
+        // Postgres wire format, as the realtime WAL decoder delivers it, rather
+        // than the ISO-8601 PostgREST form the cached row holds. The guard must
+        // survive that difference or it degrades to an unconditional refetch.
+        new: { ...member, joined_at: '2026-09-01 11:00:00+00', last_seen: '2026-09-01T12:00:30.000Z' },
+      })
+    })
+    expect(db.from).toHaveBeenCalledTimes(before)
+    expect(hook.result.current.party.members[0].last_seen).toBe('2026-09-01T12:00:30.000Z')
+
+    hook.setFreshMembers([{ ...member, quests: [{ id: 'q2', name: 'Changed' }] }])
+    await act(async () => {
+      hook.memberHandler({
+        eventType: 'UPDATE',
+        new: { ...member, quests: [{ id: 'q2', name: 'Changed' }] },
+      })
+    })
+    await waitFor(() => expect(db.from).toHaveBeenCalledTimes(before + 3))
+    hook.unmount()
+  })
+
+  it('keeps last-active-only refreshes quiet and catches same-length progress edits', async () => {
+    const hook = await renderPartyHook()
+    const before = db.from.mock.calls.length
+    const rendersBeforeRefresh = hook.getRenderCount()
+
+    hook.setFreshPartyRow({ ...hook.party, members: undefined, last_active_at: '2026-09-01T12:01:00.000Z' })
+    await act(async () => {
+      hook.memberHandler({ eventType: 'INSERT', new: { user_id: 'u2' } })
+    })
+    await waitFor(() => expect(db.from).toHaveBeenCalledTimes(before + 3))
+    expect(hook.getRenderCount()).toBe(rendersBeforeRefresh)
+
+    hook.setFreshPartyRow({
+      ...hook.party, members: undefined, progress: { 'obj-1::u1': true },
+    })
+    await act(async () => {
+      hook.memberHandler({ eventType: 'INSERT', new: { user_id: 'u2' } })
+    })
+    await waitFor(() => expect(db.from).toHaveBeenCalledTimes(before + 6))
+    expect(hook.result.current.party.progress['obj-1::u1']).toBe(true)
+    hook.unmount()
   })
 })

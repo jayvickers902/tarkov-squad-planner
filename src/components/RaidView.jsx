@@ -19,7 +19,8 @@ import { buildObjectiveRows, groupRowsByQuest, nearestRange } from '../raidObjec
 import { squadFrame } from '../squadFocus'
 import { CAMERA_MODES, readCameraMode, writeCameraMode } from '../cameraMode'
 import { useEftScreenshotSyncContext } from '../EftLogSyncContext'
-import { STATE_TEXT } from '../syncStatus'
+import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
+import { screenshotChannelStatus, STATE_TEXT } from '../syncStatus'
 import { endRaid } from '../raidEnd'
 import { isRaidLive } from '../raidLive'
 
@@ -31,40 +32,72 @@ function elapsedLabel(startedAt, now) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')} ELAPSED`
 }
 
+export function RaidElapsed({ startedAt }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  return <span className="mono mr-state-meta">{elapsedLabel(startedAt, now)}</span>
+}
+
 function metres(value) {
   return value >= 1000 ? `${(value / 1000).toFixed(1)} KM` : `${value} M`
 }
 
-function ScreenshotSyncChip({ sync }) {
+export function ScreenshotSyncChip({ sync }) {
+  const companion = useCompanionSyncStatus({ optional: true })
+  const { activeStatus, desktopPingsConfigured } = screenshotChannelStatus(sync, companion)
   const skipped = sync?.lastSkipped?.count || 0
-  const tone = !sync?.persistentSupported
+  const tone = !activeStatus
     ? 'idle'
-    : sync.state === 'error'
-      ? 'error'
-      : sync.state === 'permission-needed' || skipped > 0
-        ? 'warning'
-        : sync.state === 'watching'
-          ? 'live'
-          : 'idle'
-  const label = !sync?.persistentSupported
-    ? 'NOT SUPPORTED'
-    : sync.state === 'error' || sync.state === 'reading'
-      ? STATE_TEXT[sync.state]
-      : !sync.folderName
-        ? STATE_TEXT.idle
-        : skipped > 0
-          ? `${skipped} TOO OLD`
-          : sync.state === 'watching' && !sync.readyForPings
-            ? 'WAITING FOR PARTY MAP'
-            : STATE_TEXT[sync.state] || 'READY'
+    : activeStatus.source === 'browser' && skipped > 0
+      ? 'warning'
+      : activeStatus.tone === 'error'
+        ? 'error'
+        : activeStatus.tone === 'warn'
+          ? 'warning'
+          : activeStatus.tone === 'ok'
+            ? 'live'
+            : 'idle'
+  const browserUnsupported = activeStatus?.source === 'browser'
+    && !sync?.persistentSupported
+    && !desktopPingsConfigured
+  const label = !activeStatus
+    ? STATE_TEXT.idle
+    : activeStatus.source === 'desktop'
+      ? `DESKTOP APP · ${activeStatus.label}`
+      : browserUnsupported
+        ? 'NOT SUPPORTED'
+        : sync.state === 'error' || sync.state === 'reading'
+          ? STATE_TEXT[sync.state]
+          : !sync.folderName
+            ? STATE_TEXT.idle
+            : skipped > 0
+              ? `${skipped} TOO OLD`
+              : sync.state === 'watching' && !sync.readyForPings
+                ? 'WAITING FOR PARTY MAP'
+                : activeStatus.label || 'READY'
   const urgent = tone === 'error' || tone === 'warning'
+  const title = activeStatus?.source === 'desktop'
+    ? `Screenshot pings are handled by the desktop app. ${activeStatus.detail}`
+    : activeStatus?.source === 'browser'
+      ? `Screenshot pings are handled by this browser tab. ${activeStatus.detail}`
+      : 'Screenshot pings are not set up.'
+  const canConnect = activeStatus?.tone === 'idle'
+    && sync?.persistentSupported
+    && !sync.folderName
+    && !desktopPingsConfigured
 
   return (
-    <span className="mr-shot-sync mono" data-tone={tone} role={urgent ? 'alert' : 'status'}>
+    <span className="mr-shot-sync mono" data-tone={tone} role={urgent ? 'alert' : 'status'} title={title}>
       <span className="mr-shot-sync-dot" aria-hidden="true" />
       <span>SCREENSHOTS · {label}</span>
       {sync?.folderName && sync.state === 'permission-needed' && (
         <button type="button" className="mono" onClick={() => sync.reconnect()}>RECONNECT</button>
+      )}
+      {canConnect && (
+        <button type="button" className="mono" onClick={() => sync.connect().catch(() => {})}>CONNECT</button>
       )}
     </span>
   )
@@ -120,7 +153,6 @@ export default function RaidView({
   const [, setFullscreen] = useState(false)
   const [cameraMode, setCameraMode] = useState(readCameraMode)
   const [cameraMenuOpen, setCameraMenuOpen] = useState(false)
-  const [clock, setClock] = useState(() => Date.now())
   const cameraMenuRef = useRef(null)
 
   const { mapKeys } = useMapKeys(party.map_norm)
@@ -185,12 +217,6 @@ export default function RaidView({
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [cameraMenuOpen])
-
-  useEffect(() => {
-    if (!live) return undefined
-    const timer = setInterval(() => setClock(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [live])
 
   // --- Objective rows -----------------------------------------------------
   const allRows = useMemo(() => buildObjectiveRows({
@@ -487,7 +513,7 @@ export default function RaidView({
         <div className="mr-state" role="status">
           <span className="mr-state-dot" aria-hidden="true" />
           <span className="mono mr-state-label">{live ? 'LIVE' : 'PLAN'}</span>
-          <span className="mono mr-state-meta">{live ? elapsedLabel(liveStartedAt, clock) : 'NO RAID ACTIVE'}</span>
+          {live ? <RaidElapsed startedAt={liveStartedAt} /> : <span className="mono mr-state-meta">NO RAID ACTIVE</span>}
         </div>
 
         {live && (

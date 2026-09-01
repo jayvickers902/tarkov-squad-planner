@@ -89,8 +89,17 @@ export function safeImageUrl(value) {
   if (typeof value !== 'string' || !value) return null
   try {
     const url = new URL(value, 'https://assets.tarkov.dev')
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null
+    const allowedHosts = new Set(['assets.tarkov.dev', 'raw.githubusercontent.com'])
+    return (url.protocol === 'https:' || url.protocol === 'http:') && allowedHosts.has(url.hostname)
+      ? url.href
+      : null
   } catch {
     return null
   }
+}
+
+export function safeColor(value, fallback = '#9aaa98') {
+  return typeof value === 'string' && /^#[0-9a-fA-F]{3}$|^#[0-9a-fA-F]{6}$/.test(value)
+    ? value
+    : fallback
 }
