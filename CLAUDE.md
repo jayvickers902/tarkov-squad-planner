@@ -81,7 +81,6 @@ src/
     BossPanel.jsx      # boss info for current map
     TodoList.jsx       # in-raid objective checklist
     EftLogImport.jsx    # guided EFT quest-log importer
-    EftScreenshotPings.jsx # screenshot position ping sync
     SyncStatusBar.jsx   # local and companion sync status
     CatchUp.jsx         # trader catch-up quest importer
     WelcomeModal.jsx    # onboarding and release notes
@@ -130,10 +129,30 @@ and account IDs never leave the device. Only bounded normalized quest events rea
 Mode evidence is tallied per session; only certain or safely dominant regular/PvE sessions are
 importable. Conflicting, absent, and any seasonal-signal session is excluded. Profile keys hash
 identity IDs alone, with legacy mode-suffixed keys retained only for local checkpoint lookup.
-Wipe boundaries are detected per profile, never across the mixed corpus: a task completed on one
-character and started on another is two histories interleaved, not a wipe, and a boundary drawn
-across both silently drops the earlier character's history. With more than one profile discovered
-and none chosen there is no attributable boundary, so none is disclosed until the reader picks one.
+
+**One `Logs` directory is one account, and its characters are separated by mode facet, not by ID.**
+Identity per session cannot carry that: the client writes the local `profileid` only on the
+matchmaking records (`userConfirmed` / `userMatchOver`), so a session spent handing quests in at a
+trader has no identity at all — on a real corpus, 135 of 169 sessions. Those inherit the account
+rather than being dropped. Nothing in the logs ever pairs two identity IDs in one record either, so
+co-occurrence merges nothing on its own and each character-scoped ID stayed a separate "character"
+holding a fragment of one history. `describesAnotherPlayer` is what makes the merge safe: `aid` is
+an identity key and the `groupMatch*` events carry a *squadmate's* `aid` beside their nickname, so
+every person you queued with used to become a discovered character — and a session that saw two of
+them resolved to several identities, which is answered with none, dropping every quest event in it.
+For a squad tool that was the grouped raid, which is to say most of them.
+
+Wipe boundaries are scoped to one character — profile **and** mode facet — never across the mixed
+corpus: a task completed on one character and started on another is two histories interleaved, not
+a wipe, and a boundary drawn across both silently drops the earlier character's history. Since an
+account's characters are its mode facets, pooling them dates a wipe to the day the reader last
+switched characters. Only the boundary for the mode being imported is disclosed.
+
+A candidate is a planner-mode match when it *has* that facet; requiring the facet to be its only
+one meant an account that had played both permanent and seasonal matched neither. The companion's
+card names a multi-facet character by the facet being imported rather than by whichever sorts
+first, and a candidate with no facet at all says so plainly instead of falling through to the
+planner's own mode — that printed the reader's question back as though it were a verdict.
 Seasonal logs, objective counters, inventory, and hideout progress are not supported. The Windows
 companion is the separate path for continuing folder checks after the website closes.
 Browser screenshot sync and the remembered-folder quest watch both check while the tab is hidden. A
@@ -148,10 +167,13 @@ The REST dataset supports `regular`, `pve`, and `pvp-season`. The active game mo
 
 ## Quest onboarding
 
-Quest Manager starts with character mode, a short setup checklist, and a `GET YOUR QUESTS IN` hub
-that recommends a route from device and browser capabilities. Selecting a route replaces the route
-list with that importer; EFT log imports reveal only the next required profile/scope choice and
-offer per-session mode opt-ins for unresolved non-seasonal sessions, then a review step.
+Quest Manager is a map-art banner, a sticky filter toolbar and a two-column grid: map-grouped quest
+rows on the left, sync/snapshot/manual-add rail on the right. The banner carries the character mode
+picker and the `GET YOUR QUESTS IN` call to action, which opens `QuestImportHub` as a modal — it
+recommends a route from device and browser capabilities and carries the setup checklist. Selecting a
+route replaces the route list with that importer; EFT log imports reveal only the next required
+profile/scope choice and offer per-session mode opt-ins for unresolved non-seasonal sessions, then a
+review step.
 Successful imports leave a receipt with affected-state counts, a saved-list
 destination, and a device-local undo action backed by the complete pre-import quest history. The
 restore point uses localStorage key `tsp.quest_import_restore.v1`, carries the character mode, and
@@ -159,6 +181,13 @@ expires after 24 hours; it is refused after a mode switch. Sync status keeps
 website and desktop sources distinct and reports last heartbeat separately from the last successful
 folder check. The desktop companion pairs by signing in with the same Google account used on the
 site and keeps quests and screenshot pings in sync while the site is closed.
+
+Quest rows are grouped by map, biggest group first and `ANY MAP` last, with per-map collapse
+persisted in `localStorage` under `tsp.quest_collapsed_maps.v1`. Ordering is still one flat list —
+the order the party reads as priority — so a drag across two groups is the same splice as a drag
+inside one, and only ever shows as a move within the dragged row's own group because a drag never
+changes a quest's map. `Alt` plus an arrow key on a row's handle is the keyboard equivalent, since
+the redesign drops the per-row ▲▼ pair.
 
 ## Game Mode
 

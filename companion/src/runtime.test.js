@@ -84,6 +84,39 @@ describe('companion runtime', () => {
     await runtime.dispose()
   })
 
+  it('restores heartbeat and fallback work after connectivity returns', async () => {
+    vi.useFakeTimers()
+    let onConnectivityChange
+    const reportSyncClientStatus = vi.fn(async () => {})
+    const { runtime, sync } = harness({
+      network: {
+        reportSyncClientStatus,
+        onConnectivityChange: vi.fn(async callback => {
+          onConnectivityChange = callback
+          return () => {}
+        }),
+      },
+    })
+    await runtime.start()
+    expect(sync).toHaveBeenCalledOnce()
+
+    onConnectivityChange(false)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(runtime.getStatus().state).toBe('offline')
+    expect(sync).toHaveBeenCalledOnce()
+
+    onConnectivityChange(true)
+    await vi.waitFor(() => expect(runtime.getStatus().state).toBe('connected'))
+    const syncsAfterResume = sync.mock.calls.length
+    expect(syncsAfterResume).toBeGreaterThanOrEqual(2)
+    const reportsAfterResume = reportSyncClientStatus.mock.calls.length
+
+    await vi.advanceTimersByTimeAsync(100)
+    expect(sync.mock.calls.length).toBeGreaterThan(syncsAfterResume)
+    expect(reportSyncClientStatus.mock.calls.length).toBeGreaterThan(reportsAfterResume)
+    await runtime.dispose()
+  })
+
   it('syncs Seasonal quests while keeping screenshot pings active', async () => {
     const { runtime, sync, screenshot } = harness({
       network: { getDesktopSyncContext: vi.fn(async () => ({ userId: 'user-1', gameMode: 'pvp-season', partyId: 1, partyCode: 'ABCD', raidId: 2, mapNorm: 'customs' })) },

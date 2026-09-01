@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.13'
+export const RELEASE_VERSION = '2026.14'
 
 export const SETUP_STEPS = [
   {
@@ -16,6 +16,29 @@ export const SETUP_STEPS = [
 ]
 
 export const RELEASES = [
+  {
+    version: '2026.14',
+    date: '2026-08-31',
+    title: 'QUEST MANAGER, REBUILT',
+    items: [
+      {
+        title: 'YOUR QUESTS, GROUPED BY MAP',
+        body: 'Quest Manager opens on map art and sorts your list into a card per map, biggest first. Each card carries its own quest count, kappa tally and collapse, so a twenty-quest list reads as five destinations instead of one long column.',
+      },
+      {
+        title: 'SEARCH AND FILTER WITHOUT SCROLLING',
+        body: 'A bar pinned to the top searches your quests by name, trader or map, filters to one map, and narrows to Kappa-only. Import and sync moved into a side rail and a pop-up, so the list itself is what you land on.',
+      },
+      {
+        title: 'TICK SEVERAL, ACT ONCE',
+        body: 'Select any number of quests and mark them done, skip, star or remove them in one go. Rows are roomier, show the trader’s portrait and your level gate, and drag by the handle to set the priority your party sees.',
+      },
+      {
+        title: 'COMPLETED AND FAILED QUESTS',
+        body: 'A history section lists what you have handed in and what you failed on this character, with the date and the trader. Anything in there can be put back on your active list in one click.',
+      },
+    ],
+  },
   {
     version: '2026.13',
     date: '2026-08-29',

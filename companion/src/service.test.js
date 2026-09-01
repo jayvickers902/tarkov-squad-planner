@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createCompanionService } from './service.js'
+import { createCompanionService, holdBackgroundSyncLock } from './service.js'
 
 function harness() {
   const native = {
@@ -36,6 +36,29 @@ function harness() {
 }
 
 describe('integrated companion service', () => {
+  it('holds a Web Lock until the companion service releases it', async () => {
+    let held
+    const request = vi.fn((_name, _options, callback) => {
+      held = callback()
+      return held
+    })
+    const release = holdBackgroundSyncLock({ request })
+
+    expect(request).toHaveBeenCalledWith(
+      'tsp-companion-background-sync',
+      { mode: 'shared' },
+      expect.any(Function),
+    )
+    let settled = false
+    held.then(() => { settled = true })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    release()
+    await held
+    expect(settled).toBe(true)
+  })
+
   it('starts only once and exposes authenticated runtime state', async () => {
     const { service, runtime } = harness()
     await Promise.all([service.start(), service.start()])

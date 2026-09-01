@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { version as appVersion } from '../package.json'
 import { DEFAULT_STATUS, normalizeStatus } from './adapter.js'
 import { getCompanionService } from './service.js'
 import { quitCompanion, readAutostart, setAutostart } from './tauri.js'
 import { buildSuccessfulScanRows, loadTaskNames } from './scanReport.js'
+import {
+  checkForUpdate,
+  downloadAndInstall,
+  getInstalledVersion,
+  getReleaseNotes,
+  getUpdaterErrorMessage,
+  restartAfterUpdate,
+} from './updater.js'
 
 const STATUS_LABELS = {
   offline: 'Offline',
@@ -136,11 +143,52 @@ function EventRows({ rows }) {
   )
 }
 
+function UpdateCard({ installedVersion, state, onAction }) {
+  const isChecking = state.phase === 'checking'
+  const isDownloading = state.phase === 'downloading'
+  const isInstalling = state.phase === 'installing'
+  const isRestarting = state.phase === 'restarting'
+  const isWorking = isChecking || isDownloading || isInstalling || isRestarting
+  const hasUpdate = Boolean(state.update)
+  const actionLabel = isChecking
+    ? 'Checking…'
+    : isDownloading || isInstalling
+      ? 'Installing…'
+      : isRestarting
+        ? 'Restarting…'
+        : hasUpdate && state.phase !== 'complete'
+          ? state.phase === 'error' ? 'Try update again' : 'Install update'
+          : state.phase === 'current' || state.phase === 'error' ? 'Check again' : 'Check for updates'
+  const updateVersion = state.update?.version
+  const notes = getReleaseNotes(state.update)
+
+  return (
+    <section className="settings-card update-card" aria-labelledby="update-title">
+      <div className="update-copy">
+        <p className="eyebrow">APPLICATION UPDATE</p>
+        <h2 id="update-title">Keep the companion current</h2>
+        <p>Installed version {installedVersion}. Signed updates are downloaded from the official release channel.</p>
+        {updateVersion && <p className="update-available">Version {updateVersion} is ready to install.</p>}
+        {notes && <p className="update-notes" title={notes}>{notes}</p>}
+        {(isDownloading || isInstalling) && (
+          <progress className="update-progress" value={state.progress} max="100" aria-label="Update progress" />
+        )}
+        <p className="update-status" role="status" aria-live="polite">{state.message}</p>
+      </div>
+      <button className="secondary-button" onClick={onAction} disabled={isWorking}>
+        {actionLabel}
+      </button>
+    </section>
+  )
+}
+
 export default function App() {
   const [service] = useState(() => getCompanionService())
   const [view, setView] = useState(() => service.getSnapshot())
   const [autostart, setAutostartState] = useState(false)
   const [busy, setBusy] = useState(true)
+  const [installedVersion, setInstalledVersion] = useState('…')
+  const [updateState, setUpdateState] = useState({ phase: 'idle', update: null, progress: 0, message: '' })
   const [actionNotice, setActionNotice] = useState('')
   const [profilesOpen, setProfilesOpen] = useState(false)
   const [eventsOpen, setEventsOpen] = useState(false)
@@ -168,6 +216,12 @@ export default function App() {
     return () => { active = false; unsubscribe() }
   }, [service])
 
+  useEffect(() => {
+    let active = true
+    void getInstalledVersion().then(version => { if (active) setInstalledVersion(version) })
+    return () => { active = false }
+  }, [])
+
   const run = useCallback(async (operation, fallback) => {
     setBusy(true)
     setActionNotice('')
@@ -190,6 +244,50 @@ export default function App() {
       setActionNotice('Could not update Windows autostart.')
     }
   }, [autostart])
+
+  const checkForUpdates = useCallback(async () => {
+    setUpdateState({ phase: 'checking', update: null, progress: 0, message: 'Checking for signed updates…' })
+    try {
+      const update = await checkForUpdate()
+      if (!update) {
+        setUpdateState({ phase: 'current', update: null, progress: 0, message: 'You’re up to date.' })
+        return
+      }
+      setUpdateState({ phase: 'available', update, progress: 0, message: 'A signed update is ready.' })
+    } catch (error) {
+      setUpdateState({ phase: 'error', update: null, progress: 0, message: getUpdaterErrorMessage(error) })
+    }
+  }, [])
+
+  const installUpdate = useCallback(async () => {
+    const update = updateState.update
+    if (!update) return checkForUpdates()
+
+    setUpdateState(previous => ({ ...previous, phase: 'downloading', progress: 0, message: 'Downloading signed update…' }))
+    try {
+      await downloadAndInstall(update, progress => {
+        setUpdateState(previous => ({
+          ...previous,
+          phase: progress.phase === 'installing' ? 'installing' : 'downloading',
+          progress: Number.isFinite(progress.percent) ? progress.percent : previous.progress,
+          message: progress.phase === 'installing' ? 'Installing update…' : 'Downloading signed update…',
+        }))
+      })
+      setUpdateState(previous => ({ ...previous, phase: 'restarting', progress: 100, message: 'Restarting the companion…' }))
+      const restarted = await restartAfterUpdate()
+      setUpdateState(previous => ({
+        ...previous,
+        phase: 'complete',
+        message: restarted ? 'Update installed. Restarting the companion…' : 'Update installed. Restart the companion to finish.',
+      }))
+    } catch (error) {
+      setUpdateState(previous => ({ ...previous, phase: 'error', message: getUpdaterErrorMessage(error) }))
+    }
+  }, [checkForUpdates, updateState.update])
+
+  const updateAction = updateState.update && (updateState.phase === 'available' || updateState.phase === 'error')
+    ? installUpdate
+    : checkForUpdates
 
   const notice = actionNotice || view.notice
   const roots = view.roots || {}
@@ -397,6 +495,8 @@ export default function App() {
         </details>
       )}
 
+      <UpdateCard installedVersion={installedVersion} state={updateState} onAction={updateAction} />
+
       <section className="settings-card">
         <div>
           <p className="eyebrow">SETTINGS</p>
@@ -418,7 +518,7 @@ export default function App() {
         <button className="secondary-button" onClick={() => run(() => quitCompanion(), 'The companion could not be closed.')} disabled={busy}>Quit</button>
       </section>
 
-      <footer>Version {appVersion}{status.scanMetrics?.scannerVersion && <> <span>•</span> Scanner {status.scanMetrics.scannerVersion}</>} <span>•</span> Runs quietly in your system tray</footer>
+      <footer>Version {installedVersion}{status.scanMetrics?.scannerVersion && <> <span>•</span> Scanner {status.scanMetrics.scannerVersion}</>} <span>•</span> Runs quietly in your system tray</footer>
     </main>
   )
 }

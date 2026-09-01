@@ -1215,20 +1215,11 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .eft-log-import-session select { min-width: 110px; padding: 4px 6px; border: 1px solid var(--brd2); border-radius: 3px; background: var(--sur3); color: var(--tx); font-family: 'Share Tech Mono', monospace; font-size: var(--fs-xs); }
 .eft-log-import-regression { border-color: var(--red); }
 
-.quest-mode-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 16px; padding: 8px 10px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur); }
-.quest-mode-label { color: var(--txm); font-size: var(--fs-xs); }
-.quest-mode-options { display: flex; gap: 4px; }
-.quest-mode-options button { font-size: var(--fs-xs); }
-.quest-mode-hint { margin-left: auto; color: var(--txd); font-size: var(--fs-xs); }
 .party-mode-picker { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur); }
 .party-mode-picker-label { color: var(--txm); font-size: var(--fs-xs); }
 .party-mode-options { display: flex; gap: 4px; }
 .party-mode-options button { font-size: var(--fs-xs); }
 .party-list-mode { color: var(--goldtx); font-size: var(--fs-xs); letter-spacing: .05em; white-space: nowrap; }
-
-@media (max-width: 560px) {
-  .quest-mode-hint { flex-basis: 100%; margin-left: 0; }
-}
 
 .ping-strip {
   margin-top: 10px;
@@ -2547,10 +2538,223 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 
 .sync-popover-note { font-size: var(--fs-xs); color: var(--txm); line-height: 1.5; }
 
+
+/* ── Quest manager ───────────────────────────────────────────────────────── */
+/* The page reuses the party header pattern: a full-bleed map banner, a sticky
+   filter bar, then a two-column grid. Layout only — every colour, type and
+   spacing value comes from the token block at the top of this file. */
+.quest-page { min-height: calc(100dvh - var(--app-nav-h)); width: 100%; overflow-x: clip; }
+
+/* The banner is .room-banner with a taller floor, so the readout row and the
+   mode panel both fit without squeezing the title. */
+.quest-banner,
+.quest-banner .room-banner-row { min-height: 132px; }
+.quest-banner .room-banner-row { padding: 12px 16px; }
+.quest-banner .room-banner-identity-copy { gap: 6px; }
+.quest-banner-readouts { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: var(--fs-xs); letter-spacing: .08em; }
+.quest-banner-readouts span { color: var(--txm); }
+.quest-banner-readouts .quest-banner-active { color: var(--goldtx); }
+.quest-banner-readouts .quest-banner-synced { color: var(--grn); }
+.quest-banner-mode { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--brdg); border-radius: 4px; background: var(--glass); backdrop-filter: blur(6px); }
+.quest-banner-mode > .mono { color: var(--txd); font-size: var(--fs-xs); letter-spacing: .12em; }
+.quest-banner-mode-options { display: flex; gap: 4px; }
+.quest-banner-mode-options button { padding: 5px 10px; font-size: var(--fs-xs); }
+.quest-banner-cta { height: 40px; padding: 0 18px; font-size: 14px; }
+
+/* -- Sticky filter bar ---------------------------------------------------- */
+/* In a party the route mounts inside .app-route-overlay, whose scroll box
+   already starts below the nav — offsetting again would float the bar. */
+.quest-toolbar {
+  position: sticky;
+  top: var(--quest-toolbar-top, var(--app-nav-h));
+  z-index: 400;
+  background: rgba(9,11,10,.94);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--brd);
+}
+.app-route-overlay { --quest-toolbar-top: 0px; }
+.quest-toolbar-row { max-width: 1240px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.quest-search { position: relative; flex: 1 1 260px; min-width: 200px; }
+.quest-search input { height: 36px; min-height: 36px; padding: 6px 12px 6px 30px; border-color: var(--brds); font-size: var(--fs-sm); }
+.quest-search-glyph { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--txd); font-size: var(--fs-sm); }
+.quest-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.quest-chip { padding: 5px 9px; border: 1px solid var(--brds); border-radius: 4px; background: transparent; color: var(--txm); font-size: var(--fs-xs); }
+.quest-chip:hover { border-color: var(--brd2); color: var(--tx); }
+.quest-chip.is-active { border-color: var(--gold); background: rgba(201,168,76,.14); color: var(--goldtx); }
+.quest-kappa-only { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.quest-kappa-only > .mono { color: var(--txd); font-size: var(--fs-xs); letter-spacing: .08em; }
+.quest-switch { position: relative; width: 34px; min-width: 34px; height: 20px; min-height: 20px; padding: 0; border: 1px solid var(--brds); border-radius: 10px; background: var(--sur); }
+.quest-switch-knob { position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--brd2); transition: transform .15s, background .15s; }
+.quest-switch[aria-pressed="true"] { border-color: var(--gold); }
+.quest-switch[aria-pressed="true"] .quest-switch-knob { background: var(--gold); transform: translateX(14px); }
+
+/* -- Bulk selection bar --------------------------------------------------- */
+.quest-bulkbar { max-width: 1240px; margin: 0 auto; padding: 0 16px 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.quest-bulk-count { padding: 3px 7px; border: 1px solid var(--golddim); border-radius: 3px; background: rgba(201,168,76,.1); color: var(--goldtx); font-size: var(--fs-xs); letter-spacing: .08em; }
+.quest-bulk-btn { padding: 4px 9px; border: 1px solid var(--brds); border-radius: 4px; background: transparent; color: var(--txm); font-family: 'Share Tech Mono', monospace; font-size: var(--fs-xs); }
+.quest-bulk-btn:hover { border-color: var(--brd2); color: var(--tx); }
+.quest-bulk-btn.is-done { color: var(--grn); }
+.quest-bulk-btn.is-done:hover { border-color: var(--grn); }
+.quest-bulk-btn.is-star { color: var(--gold); }
+.quest-bulk-btn.is-star:hover { border-color: var(--gold); }
+.quest-bulk-btn.is-remove { color: var(--red); }
+.quest-bulk-btn.is-remove:hover { border-color: var(--red); color: var(--red); }
+.quest-bulk-clear { padding: 4px 6px; border: none; background: transparent; color: var(--txd); font-family: 'Share Tech Mono', monospace; font-size: var(--fs-xs); }
+.quest-bulk-clear:hover { color: var(--tx); }
+.quest-bulk-hint { margin-left: auto; color: var(--txd); font-size: var(--fs-xs); letter-spacing: .08em; }
+
+.quest-party-notice { max-width: 1240px; margin: 12px auto 0; padding: 8px 12px; border: 1px solid var(--golddim); border-left: 3px solid var(--gold); border-radius: 4px; background: var(--sur2); color: var(--gold); font-size: var(--fs-sm); letter-spacing: .04em; }
+
+/* -- Two-column body ------------------------------------------------------ */
+.quest-layout { max-width: 1240px; margin: 0 auto; padding: 14px 16px 32px; display: grid; grid-template-columns: minmax(0,1fr) 312px; gap: 14px; align-items: start; }
+.quest-main { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.quest-aside { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+
+/* -- Map group ------------------------------------------------------------ */
+.quest-group { background: var(--sur); border: 1px solid var(--brd); border-radius: 6px; overflow: hidden; }
+.quest-group-head { position: relative; height: 62px; border-bottom: 1px solid var(--brd); }
+.quest-group-head.is-artless { background: var(--well); }
+.quest-group-art { position: absolute; inset: 0; background-size: cover; background-position: 60% 45%; background-repeat: no-repeat; opacity: .55; }
+.quest-group-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(12,14,13,.94) 0%, rgba(12,14,13,.72) 45%, rgba(12,14,13,.4) 100%); }
+.quest-group-rail { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--gold); }
+.quest-group-head.is-artless .quest-group-rail { background: var(--brds); }
+.quest-group-row { position: relative; height: 100%; display: flex; align-items: center; gap: 12px; padding: 0 14px 0 16px; }
+.quest-group-title { min-width: 0; overflow: hidden; color: var(--txt); font-size: 20px; font-weight: 700; letter-spacing: .1em; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 10px rgba(0,0,0,.9); }
+.quest-group-head.is-artless .quest-group-title { color: var(--txm); text-shadow: none; }
+.quest-group-count { flex-shrink: 0; color: var(--goldtx); font-size: var(--fs-xs); letter-spacing: .1em; }
+.quest-group-meta { min-width: 0; overflow: hidden; color: var(--txm); font-size: var(--fs-xs); letter-spacing: .08em; text-overflow: ellipsis; white-space: nowrap; }
+.quest-group-collapse { flex-shrink: 0; margin-left: auto; padding: 4px 9px; border: 1px solid var(--brds); border-radius: 4px; background: var(--glass); backdrop-filter: blur(6px); color: var(--tx); font-family: 'Share Tech Mono', monospace; font-size: var(--fs-xs); }
+.quest-group-collapse:hover { border-color: var(--gold); color: var(--goldtx); }
+.quest-group-rows { display: flex; flex-direction: column; gap: 6px; padding: 12px; }
+
+/* -- Quest row ------------------------------------------------------------ */
+.quest-row { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--sur2); border: 1px solid var(--brd); border-left: 3px solid var(--brd); border-radius: 4px; transition: opacity .2s; }
+.quest-row.is-starred { border-color: var(--golddim); border-left-color: var(--gold); }
+.quest-row.is-skipped { opacity: .5; border-color: var(--brd); border-left-color: var(--brd); }
+.quest-row.is-drop-target { border-color: var(--gold); border-left-color: var(--gold); }
+.quest-row-handle { flex-shrink: 0; padding: 2px 0; min-width: 16px; min-height: 24px; border: none; background: none; color: var(--brd2); font-family: 'Share Tech Mono', monospace; font-size: 15px; line-height: 1; cursor: grab; }
+.quest-row-handle:hover { color: var(--tx); }
+.quest-row-handle:active { cursor: grabbing; }
+/* The handle runs the drag gesture itself; let it, rather than scrolling. */
+.quest-row-handle { touch-action: none; }
+.quest-row-check { flex-shrink: 0; width: auto; min-height: 0; accent-color: var(--gold); }
+.quest-row-star { flex-shrink: 0; padding: 4px 2px; min-width: 24px; min-height: 24px; border: none; background: none; color: var(--txd); font-size: 16px; line-height: 1; }
+.quest-row-star:hover { color: var(--gold); }
+.quest-row-star[aria-pressed="true"] { color: var(--gold); }
+.quest-row-trader { width: 36px; height: 36px; flex: 0 0 36px; overflow: hidden; border: 1px solid var(--brdm); border-radius: 3px; background: #22261f; }
+.quest-row-trader img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.quest-row-copy { flex: 1; min-width: 0; }
+.quest-row-title-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.quest-row-name { min-width: 0; overflow: hidden; color: var(--txb); font-family: 'Rajdhani', sans-serif; font-size: var(--fs-md); font-weight: 600; letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
+.quest-row-skipped-tag { flex-shrink: 0; color: var(--txd); font-size: var(--fs-xs); letter-spacing: .06em; }
+.quest-row-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 4px; color: var(--txm); font-family: 'Share Tech Mono', monospace; font-size: var(--fs-xs); letter-spacing: .06em; }
+.quest-row-pill { padding: 1px 6px; border: 1px solid var(--brd); border-radius: 3px; background: var(--pill); }
+.quest-row-objectives { color: var(--txd); }
+.quest-row-actions { display: flex; flex-shrink: 0; gap: 6px; }
+.quest-row-btn { padding: 6px 10px; border: 1px solid var(--brd2); border-radius: 3px; background: none; color: var(--txd); font-family: 'Share Tech Mono', monospace; font-size: var(--fs-xs); letter-spacing: .04em; }
+.quest-row-btn.is-done { color: var(--grn); }
+.quest-row-btn.is-done:hover { border-color: var(--grn); background: rgba(102,183,120,.12); }
+.quest-row-btn.is-skip:hover { border-color: var(--gold); color: var(--goldtx); }
+.quest-row-btn.is-unskip { color: var(--gold); }
+.quest-row-btn.is-unskip:hover { border-color: var(--gold); color: var(--goldtx); }
+.quest-row-btn.is-remove { padding: 6px 8px; border-color: transparent; font-family: 'Noto Sans', sans-serif; font-size: 16px; line-height: 1; }
+.quest-row-btn.is-remove:hover { border-color: var(--red); color: var(--red); }
+.quest-kappa { flex-shrink: 0; padding: 1px 5px; border: 1px solid var(--golddim); border-radius: 3px; background: rgba(201,168,76,.15); color: var(--gold); font-size: var(--fs-xs); letter-spacing: .06em; }
+.quest-group-empty { padding: 26px 12px; color: var(--txd); font-size: var(--fs-sm); text-align: center; }
+
+/* -- History -------------------------------------------------------------- */
+.quest-history { background: var(--sur); border: 1px solid var(--brd); border-radius: 6px; padding: 14px 16px; }
+.quest-history-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.quest-history-head > .lbl { margin-bottom: 0; }
+.quest-history-head > .btn-ghost { margin-left: auto; }
+.quest-history-count { color: var(--grn); font-size: var(--fs-xs); letter-spacing: .08em; }
+.quest-history-count.is-failed { color: var(--red); }
+.quest-history-rows { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+.quest-history-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--rowb); border: 1px solid var(--brdo); border-left: 3px solid var(--grn); border-radius: 4px; }
+.quest-history-row.is-failed { border-left-color: var(--red); }
+.quest-history-state { flex: 0 0 62px; color: var(--grn); font-size: var(--fs-xs); }
+.quest-history-row.is-failed .quest-history-state { color: var(--red); }
+.quest-history-name { flex: 1; min-width: 0; overflow: hidden; color: var(--txm); font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
+.quest-history-meta { flex-shrink: 0; color: var(--txd); font-size: var(--fs-xs); }
+.quest-history-reactivate { flex-shrink: 0; padding: 4px 8px; border: 1px solid var(--brds); border-radius: 3px; background: none; color: var(--txm); font-family: 'Share Tech Mono', monospace; font-size: var(--fs-xs); }
+.quest-history-reactivate:hover { border-color: var(--gold); color: var(--goldtx); }
+.quest-history-more { align-self: flex-start; margin-top: 4px; }
+.quest-history-empty { margin-top: 12px; color: var(--txd); font-size: var(--fs-sm); line-height: 1.5; }
+
+/* -- Right rail ----------------------------------------------------------- */
+.quest-rail-card { background: var(--sur); border: 1px solid var(--brd); border-radius: 6px; padding: 12px; }
+.quest-rail-copy { color: var(--txm); font-size: var(--fs-sm); line-height: 1.5; }
+.quest-rail-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.quest-rail-note { margin-top: 8px; color: var(--txd); font-size: var(--fs-xs); }
+.quest-rail-error { margin-top: 8px; color: var(--red); font-size: var(--fs-xs); line-height: 1.5; }
+.quest-rail-confirm { margin-top: 8px; color: var(--red); font-size: var(--fs-xs); line-height: 1.5; }
+.quest-rail-footnote { padding: 0 2px; color: var(--txd); font-size: var(--fs-xs); line-height: 1.6; }
+.quest-sync-row { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid var(--brd); border-left: 3px solid var(--brds); border-radius: 4px; background: var(--sur2); }
+.quest-sync-row + .quest-sync-row { margin-top: 6px; }
+.quest-sync-row[data-state="connected"] { border-left-color: var(--grn); }
+.quest-sync-row[data-state="attention"] { border-left-color: var(--org); }
+.quest-sync-row[data-state="offline"] { border-left-color: var(--red); }
+.quest-sync-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--txd); }
+.quest-sync-row[data-state="connected"] .quest-sync-dot { background: var(--grn); }
+.quest-sync-row[data-state="attention"] .quest-sync-dot { background: var(--org); }
+.quest-sync-row[data-state="offline"] .quest-sync-dot { background: var(--red); }
+.quest-sync-copy { min-width: 0; flex: 1; }
+.quest-sync-label { color: var(--txm); font-size: var(--fs-xs); letter-spacing: .06em; }
+.quest-sync-row[data-state="connected"] .quest-sync-label { color: var(--grn); }
+.quest-sync-row[data-state="attention"] .quest-sync-label { color: var(--org); }
+.quest-sync-row[data-state="offline"] .quest-sync-label { color: var(--red); }
+.quest-sync-detail { margin-top: 2px; color: var(--txd); font-size: var(--fs-xs); line-height: 1.5; }
+.quest-manual { position: relative; }
+.quest-manual input { height: 36px; min-height: 36px; border-color: var(--brds); font-size: var(--fs-sm); }
+.quest-manual-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.quest-manual-chips .quest-chip { padding: 4px 8px; }
+.quest-manual-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 200; max-height: 300px; overflow-y: auto; background: var(--sur3); border: 1px solid var(--brd2); border-radius: 5px; }
+.quest-manual-result { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 9px 12px; border: 0; border-bottom: 1px solid var(--brd); border-radius: 0; background: transparent; color: inherit; text-align: left; }
+.quest-manual-result:hover { background: var(--sur); }
+.quest-manual-result-copy { min-width: 0; flex: 1; }
+.quest-manual-result-name { display: flex; align-items: center; gap: 6px; font-family: 'Noto Sans', sans-serif; font-size: var(--fs-sm); font-weight: 400; letter-spacing: normal; }
+.quest-manual-result-meta { margin-top: 2px; color: var(--txm); font-family: 'Share Tech Mono', monospace; font-size: var(--fs-xs); }
+.quest-manual-result-add { flex-shrink: 0; color: var(--gold); font-size: var(--fs-lg); }
+.quest-manual-empty { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 200; padding: 12px; background: var(--sur3); border: 1px solid var(--brd2); border-radius: 5px; color: var(--txm); font-size: var(--fs-xs); }
+.quest-import-receipt-rail { display: block; margin: 0; padding: 12px; border-radius: 6px; }
+.quest-import-receipt-rail .quest-import-receipt-actions { margin-top: 10px; }
+
+@media (max-width: 980px) {
+  .quest-layout { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 768px) {
+  /* Reordering by touch means landing on this one control precisely. */
+  .quest-row-handle { min-width: 44px; min-height: 44px; margin: -10px 0 -10px -12px; }
+}
+@media (max-width: 560px) {
+  .quest-banner-cta { width: 100%; }
+  /* Narrow enough that the actions cannot share the line, so they drop below
+     the copy rather than crushing the quest name to two words. */
+  .quest-row { flex-wrap: wrap; }
+  .quest-row-copy { flex: 1 1 140px; }
+  .quest-row-actions { flex-basis: 100%; justify-content: flex-end; }
+  .quest-bulk-hint { flex-basis: 100%; margin-left: 0; }
+  /* The map name has to survive; its tallies are already in the rows below. */
+  .quest-group-meta { display: none; }
+}
+
 /* ── Guided quest onboarding ─────────────────────────────────────────────── */
-.quest-import-hub { margin: 0 0 16px; padding: 16px; }
-.quest-import-hub-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.quest-import-hub-intro { margin-top: 5px; color: var(--txm); font-size: var(--fs-sm); line-height: 1.5; }
+/* The hub is a modal now: the page behind it owns the quest list, so the routes
+   must not push it down the page to reach them. */
+.quest-import-modal { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0,0,0,.78); animation: questImportIn .15s ease; }
+@keyframes questImportIn { from { opacity: 0; } to { opacity: 1; } }
+.quest-import-dialog { width: 100%; max-width: 720px; max-height: 90dvh; overflow: auto; display: flex; flex-direction: column; background: var(--sur); border: 1px solid var(--brdm); border-radius: 6px; box-shadow: 0 30px 90px rgba(0,0,0,.85); scrollbar-color: var(--brd2) var(--sur); }
+.quest-import-banner { position: relative; min-height: 116px; flex: 0 0 116px; overflow: hidden; background-color: var(--bg); background-position: 50% 45%; background-repeat: no-repeat; background-size: cover; }
+.quest-import-banner::after { content: ''; position: absolute; right: 0; bottom: 0; left: 0; height: 1px; background: linear-gradient(90deg,var(--gold) 0%,rgba(201,168,76,.3) 55%,rgba(201,168,76,0) 100%); }
+.quest-import-banner-content { position: relative; height: 100%; min-height: 116px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 18px; }
+.quest-import-banner-identity { display: flex; align-items: stretch; gap: 12px; min-width: 0; }
+.quest-import-banner-identity > div { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 5px; }
+.quest-import-banner h2 { color: var(--txt); font-size: 30px; font-weight: 700; line-height: .95; letter-spacing: .04em; text-shadow: 0 2px 20px rgba(0,0,0,.95); }
+.quest-import-banner-sub { color: var(--txm); font-size: var(--fs-xs); letter-spacing: .08em; }
+.quest-import-close { align-self: flex-start; flex-shrink: 0; padding: 5px 10px; border: 1px solid var(--brds); border-radius: 4px; background: var(--glass); backdrop-filter: blur(6px); color: var(--tx); font-size: var(--fs-xs); }
+.quest-import-close:hover { border-color: var(--gold); color: var(--goldtx); }
+.quest-import-body { padding: 16px; display: flex; flex-direction: column; gap: 7px; }
+.quest-import-hub-intro { color: var(--txm); font-size: var(--fs-sm); line-height: 1.5; }
 .quest-import-routes { display: flex; flex-direction: column; gap: 7px; }
 .quest-import-route {
   display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 11px 12px;
@@ -2565,15 +2769,18 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .quest-import-route-title { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: var(--goldtx); font-size: 14px; font-weight: 600; }
 .quest-import-route-blurb { color: var(--txm); font-size: var(--fs-sm); line-height: 1.45; }
 .quest-import-route-best { color: var(--txd); font-size: var(--fs-xs); }
+.quest-import-route.is-recommended { border-left-color: var(--gold); }
 .quest-import-route-reason { color: var(--red); font-size: var(--fs-sm); line-height: 1.4; }
+/* The recommendation explains a good default; only a blocker is red. */
+.quest-import-route-reason.is-note { color: var(--txd); }
 .quest-import-recommended { padding: 2px 5px; border: 1px solid var(--golddim); border-radius: 3px; color: var(--gold); background: rgba(201,168,76,.12); font-size: var(--fs-xs); letter-spacing: .06em; }
 .quest-import-active-route { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; }
 .quest-import-active-route-copy { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: 1px solid var(--brd); border-left: 3px solid var(--gold); border-radius: 4px; background: var(--sur3); }
 .quest-import-active-route-copy > span:last-child { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .quest-import-active-route-copy strong { color: var(--goldtx); font-size: 14px; }
 .quest-import-active-route-copy .mono { color: var(--txm); font-size: var(--fs-xs); letter-spacing: .05em; }
-.quest-import-hub .eft-log-import-panel,
-.quest-import-hub > .card { margin-top: 12px; margin-bottom: 0; }
+.quest-import-body .eft-log-import-panel,
+.quest-import-body > .card { margin-top: 5px; margin-bottom: 0; }
 .eft-log-import-rail { margin: 14px 0; padding: 10px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur2); }
 .eft-log-import-rail-count { margin-bottom: 8px; color: var(--goldtx); font-size: var(--fs-xs); letter-spacing: .06em; }
 .eft-log-import-rail-steps { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -2584,12 +2791,11 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .eft-log-import-step-current { border-color: var(--gold); color: var(--goldtx); background: var(--sur3); }
 .eft-log-import-step-current .eft-log-import-step-number { color: var(--gold); }
 .eft-log-import-blocked { margin: 0; flex-basis: 100%; color: var(--goldtx); font-size: var(--fs-sm); line-height: 1.5; }
-.quest-pings-label { margin: 0 0 6px; }
-.quest-empty-card { margin-bottom: 16px; padding: 28px 18px; }
+.quest-empty-card-page { margin-bottom: 16px; padding: 28px 18px; }
 .quest-empty-state h3 { color: var(--goldtx); font-size: 18px; }
 .quest-empty-state p { margin-top: 6px; color: var(--txm); font-size: var(--fs-sm); line-height: 1.5; }
 .quest-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
-.quest-setup-checklist { margin: -6px 0 16px; padding: 10px 12px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur); }
+.quest-setup-checklist { margin-top: 6px; padding: 10px 12px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur); }
 .quest-setup-checklist-title { margin-bottom: 8px; color: var(--txm); font-size: var(--fs-xs); letter-spacing: .06em; }
 .quest-setup-checklist-items { display: flex; flex-wrap: wrap; gap: 6px; }
 .quest-setup-checklist-items > span { display: inline-flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid var(--brd); border-radius: 3px; color: var(--goldtx); font-size: var(--fs-xs); }
@@ -2606,8 +2812,7 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .quest-import-receipt-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 6px; }
 
 @media (max-width: 560px) {
-  .quest-import-hub-head { align-items: stretch; }
-  .quest-import-hub-head > .btn-ghost { align-self: flex-start; }
+  .quest-import-banner h2 { font-size: 24px; }
   .quest-import-route { padding: 10px; }
   .quest-import-receipt { align-items: flex-start; flex-direction: column; }
   .quest-import-receipt-actions { width: 100%; }
@@ -2636,7 +2841,8 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .eft-log-import-progress-note,
 .eft-log-import-detail-secondary,
 .eft-log-import-muted,
-.quest-mode-hint,
+.quest-rail-copy,
+.quest-history-empty,
 .replay-note,
 .mr-empty,
 .sync-popover p,

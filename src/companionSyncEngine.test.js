@@ -185,14 +185,14 @@ describe('native-agnostic companion sync engine', () => {
       filesystem: { async list() { return files } }, checkpointStore: checkpoints,
       network: { applyQuestLogEvents: apply }, taskIds: [taskId], gameMode: 'regular',
     })
-    const needsProfile = await controller.sync()
-    expect(needsProfile.requiresSelection).toBe('profile')
-    expect(needsProfile.preview.discoveredProfiles).toHaveLength(2)
-    expect(checkpoints.saves).toHaveLength(0)
-    expect(apply).not.toHaveBeenCalled()
-
-    const selected = await controller.sync({ force: true, parser: { profileKey: needsProfile.preview.discoveredProfiles[0].profileKey } })
-    expect(selected.requiresSelection).toBeUndefined()
+    // Two profile ids from one installation are one account's characters, so
+    // there is nothing to choose between and both sessions import together.
+    // Splitting them asked the reader to pick which half of their own history
+    // to keep, and then imported only that half.
+    const imported = await controller.sync()
+    expect(imported.requiresSelection).toBeUndefined()
+    expect(imported.preview.discoveredProfiles).toHaveLength(1)
+    expect(imported.events).toHaveLength(2)
     expect(apply).toHaveBeenCalledOnce()
     expect(checkpoints.saves).toHaveLength(1)
   })
@@ -264,7 +264,9 @@ describe('native-agnostic companion sync engine', () => {
 
     const result = await controller.sync({ parser: { requireProfileChoice: true } })
     expect(result.selectionRequired).toBe('profile')
-    expect(result.candidates).toHaveLength(2)
+    // One account, so the chooser answers with the single character it found
+    // rather than carrying on as though the request had not been made.
+    expect(result.candidates).toHaveLength(1)
   })
 
   it('rejects unknown quest modes before touching adapters', async () => {
