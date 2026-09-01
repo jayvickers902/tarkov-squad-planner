@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import RaidRail from './RaidRail'
+import { RaidBossSummary } from './RaidView'
 
 afterEach(cleanup)
 
@@ -33,6 +34,17 @@ function renderRail(props = {}) {
 }
 
 describe('RaidRail', () => {
+  it('renders boss summaries, loading and no-boss states without changing the rail width', () => {
+    const { rerender } = render(<RaidBossSummary loading bosses={[]} />)
+    expect(screen.getByText('LOADING BOSS INTEL...')).toBeInTheDocument()
+    rerender(<RaidBossSummary bosses={[]} />)
+    expect(screen.getByText('NO BOSSES ON THIS MAP')).toBeInTheDocument()
+    rerender(<RaidBossSummary bosses={[{ name: 'Shturman', spawnChance: 0.6, spawnLocations: [{ name: 'Sawmill', chance: 1 }] }]} />)
+    expect(screen.getByText('Shturman')).toBeInTheDocument()
+    expect(screen.getByText('SAWMILL 100%')).toBeInTheDocument()
+    rerender(<RaidBossSummary bosses={[{ name: 'Partisan', spawnChance: 0.15, spawnLocations: [{ name: 'Unknown', chance: 'bad' }] }]} />)
+    expect(screen.getByText('LOCATION DATA UNAVAILABLE')).toBeInTheDocument()
+  })
   it('renders one card per member with its state, age and detail', () => {
     renderRail()
     expect(screen.getByText('SQUAD · LIVE')).toBeInTheDocument()

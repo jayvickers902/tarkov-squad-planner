@@ -420,16 +420,16 @@ screen. `RaidView.jsx` renders it at `route.screen === 'raid'`; Room's tab strip
 has no map tab, and the banner's `MAP` button and the nav's `MAP` / `MAP · LIVE`
 entry both lead here.
 
-- **PLAN** — no raid stamp. Spawns, routes, prep checks, squad readiness, START RAID.
-- **LIVE** — raid stamp set. Live pings, follow camera, distance-sorted objectives.
+- **PLAN** — no active raid session. Spawns, routes, prep checks, squad readiness, START RAID.
+- **LIVE** — an active raid session (with the legacy stamp as fallback). Live pings, follow camera, distance-sorted objectives.
 
-The flip is derived from `party.progress.__raid_start__`, not chosen. There is one
-wrinkle: `merge_progress` explicitly rejects `__raid_start__`, so no client can
-clear it for the whole party. `END RAID · SYNC PROGRESS` therefore records the
-stamp it ended in the reader's own `user_settings.raid_ended_stamp`, and LIVE is
-`raidKey !== null && raid_ended_stamp !== raidKey`. That is per-reader on purpose —
-you extract, your squad may not have. A party-wide end needs an RPC that does not
-exist yet.
+The flip is derived by `isRaidLive` in `src/raidLive.js`, not chosen. A session's
+`active` status wins, while `debrief` and `closed` return the map to PLAN. If no
+session exists, the legacy `party.progress.__raid_start__` stamp remains the
+fallback; `merge_progress` explicitly rejects that key, so a legacy END RAID
+records `user_settings.raid_ended_stamp` for the reader only. With a session,
+`END RAID · FOR EVERYONE` calls `end_raid_session`, which transitions the shared
+session and lets every member leave LIVE together.
 
 Layout is `322px | 1fr | 336px`: MY TASKS left, `MapLeaflet` centre at `fill` with
 `chrome="overlay"`, SQUAD right (`RaidRail.jsx`). `Q` toggles the tasks column

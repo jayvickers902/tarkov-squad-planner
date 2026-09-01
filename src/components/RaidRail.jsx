@@ -61,6 +61,7 @@ export default function RaidRail({
   onFocusPing = () => {},
   onHoverPing = () => {},
   tasksSlot = null,
+  bossSlot = null,
 }) {
   const dragRef = useRef(null)
 
@@ -144,6 +145,7 @@ export default function RaidRail({
             <span className="mono mr-aside-body">{aside.body}</span>
           </div>
         )}
+        {bossSlot}
       </div>
 
       {cta && (

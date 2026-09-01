@@ -13,6 +13,7 @@ import WelcomeModal from './components/WelcomeModal'
 import AppNav from './components/AppNav'
 import { findMember, objectiveProgressKey, progressParts } from './partyMembers'
 import { normalizeGameMode, resolvePartyMode } from './gameMode'
+import { isRaidLive } from './raidLive'
 import useDialogFocus from './useDialogFocus'
 import { RELEASE_VERSION } from './whatsNew'
 import { resolveWelcomeVariant, welcomeStamp, WELCOME_SETTINGS_KEY } from './welcome'
@@ -88,7 +89,11 @@ export default function App() {
   })
 
   const raidSession = useRaidSession(party, user?.id, { onError: setPartyError })
-  const raidLive = Boolean(party?.progress?.['__raid_start__']) || raidSession?.session?.status === 'active'
+  const raidLive = isRaidLive({
+    raidKey: party?.progress?.['__raid_start__'] ?? null,
+    endedStamp: userSettings.raid_ended_stamp ?? null,
+    session: raidSession?.session,
+  })
 
   const isAdmin = profile?.is_admin === true
   const gameMode = resolvePartyMode(party || questModeParty, userSettings)
@@ -410,6 +415,7 @@ export default function App() {
         onRefresh={refreshParty}
         onStartRaid={startRaid}
         raidSession={raidSession}
+        onRaidError={setPartyError}
         onOpenRaid={() => navigate({ screen: 'raid', code: party.code })}
         onCloseRaid={() => navigate({ screen: 'room', code: party.code }, { replace: true })}
         />

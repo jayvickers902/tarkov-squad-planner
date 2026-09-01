@@ -5,7 +5,7 @@ import MyTasksPanel from './MyTasksPanel'
 import { useIsMobile } from '../useIsMobile'
 import { useMapKeys } from '../useMapKeys'
 import { useIntel } from '../useIntel'
-import { useExtracts } from '../useTarkov'
+import { useBossSpawns, useExtracts } from '../useTarkov'
 import { useMapLoot } from '../useMapLoot'
 import { useIntelChecklist } from '../useIntelChecklist'
 import { curatedLootPoints, mergeIntelSources } from '../tarkovIntel'
@@ -20,6 +20,7 @@ import { squadFrame } from '../squadFocus'
 import { CAMERA_MODES, readCameraMode, writeCameraMode } from '../cameraMode'
 import { useEftScreenshotSyncContext } from '../EftLogSyncContext'
 import { STATE_TEXT } from './EftScreenshotPings'
+import { endRaid, isRaidLive } from '../raidLive'
 
 const SQUAD_ROW_LIMIT = 3
 
@@ -81,7 +82,9 @@ export default function RaidView({
   onSubmitProgress,
   userObjProgress = {},
   userSettings = {},
+  raidSession = null,
   onSetSetting,
+  onRaidError,
   onStartRaid,
   onClose,
 }) {
@@ -99,12 +102,10 @@ export default function RaidView({
   const mapTasks = tasks?.length ? tasks : (allTasks || [])
   const progress = party.progress || {}
 
-  // PLAN <-> LIVE follows the party's raid stamp. merge_progress refuses to
-  // write __raid_start__, so there is no client path to clear it for the whole
-  // party; ending the raid is therefore recorded per reader, which also matches
-  // how a raid actually ends - you extract, your squad may not have.
   const endedStamp = userSettings.raid_ended_stamp ?? null
-  const live = raidKey !== null && endedStamp !== raidKey
+  const live = isRaidLive({ raidKey, endedStamp, session: raidSession?.session })
+  const sessionStartedAt = Date.parse(raidSession?.session?.started_at || '')
+  const liveStartedAt = raidKey ?? (Number.isFinite(sessionStartedAt) ? sessionStartedAt : Date.now())
 
   const [railOpen, setRailOpen] = useState(() => userSettings.raidview_rail_open !== false)
   const [tasksOpen, setTasksOpen] = useState(() => userSettings.raid_tasks_open !== false)
@@ -125,6 +126,11 @@ export default function RaidView({
   const { intelPoints } = useIntel(party.map_norm)
   const { extracts } = useExtracts(party.map_norm, gameMode)
   const pmcSpawns = usePmcSpawns()
+  const { getBossesForMap, loading: bossLoading } = useBossSpawns(gameMode)
+  const dayBosses = getBossesForMap(party.map_norm)
+  const bosses = party.map_norm === 'factory'
+    ? [...dayBosses, ...getBossesForMap('night-factory')]
+    : dayBosses
   const { lootRows } = useMapLoot(party.map_norm)
   const { isChecked } = useIntelChecklist(party.map_norm, raidKey)
   const allIntel = useMemo(
@@ -450,9 +456,15 @@ export default function RaidView({
 
   const cta = live
     ? {
-        label: 'END RAID · SYNC PROGRESS',
+        label: raidSession?.session ? 'END RAID · FOR EVERYONE' : 'END RAID · FOR ME',
         tone: 'quiet',
-        onClick: () => onSetSetting?.('raid_ended_stamp', raidKey),
+        onClick: () => void endRaid({
+          session: raidSession?.session,
+          raidKey,
+          endSession: raidSession?.endRaidSession,
+          setSetting: onSetSetting,
+          onError: onRaidError,
+        }),
       }
     : isLeader && party.map_id
       ? { label: `START RAID · ${memberRows.length} IN SQUAD`, tone: 'gold', onClick: onStartRaid }
@@ -474,7 +486,7 @@ export default function RaidView({
         <div className="mr-state" role="status">
           <span className="mr-state-dot" aria-hidden="true" />
           <span className="mono mr-state-label">{live ? 'LIVE' : 'PLAN'}</span>
-          <span className="mono mr-state-meta">{live ? elapsedLabel(raidKey, clock) : 'NO RAID ACTIVE'}</span>
+          <span className="mono mr-state-meta">{live ? elapsedLabel(liveStartedAt, clock) : 'NO RAID ACTIVE'}</span>
         </div>
 
         {live && (
@@ -608,6 +620,7 @@ export default function RaidView({
               : `${readyCount} READY / ${squadCards.length}`}
             cards={squadCards}
             aside={aside}
+            bossSlot={<RaidBossSummary bosses={bosses} loading={bossLoading} />}
             cta={cta}
             emptyLabel={live ? 'NO SQUAD ECHO YET' : 'NO SQUAD MEMBERS'}
             focusPingId={mapFocusPingId}
@@ -618,5 +631,36 @@ export default function RaidView({
         )}
       </div>
     </div>
+  )
+}
+
+export function RaidBossSummary({ bosses = [], loading = false }) {
+  if (loading) return <div className="mono mr-boss-summary" role="status">LOADING BOSS INTEL...</div>
+  if (!bosses.length) return <div className="mono mr-boss-summary">NO BOSSES ON THIS MAP</div>
+  return (
+    <section className="mr-boss-summary" aria-label="Boss spawn summary">
+      <div className="mr-boss-summary-head">
+        <span className="mono">BOSS SPAWNS</span>
+        <span className="mono">{bosses.length}</span>
+      </div>
+      {bosses.map((boss, index) => {
+        const chance = Number(boss.spawnChance)
+        const pct = Number.isFinite(chance) ? Math.round(chance * 100) : null
+        const locations = (Array.isArray(boss.spawnLocations) ? boss.spawnLocations : [])
+          .filter(location => location?.name && Number.isFinite(Number(location.chance)))
+          .slice(0, 3)
+        return (
+          <article className="mr-boss-row" key={`${boss.name || 'boss'}-${index}`}>
+            <div className="mr-boss-title">
+              <span>{boss.name || 'UNKNOWN BOSS'}</span>
+              <span className="mono">{pct == null ? '—' : `${pct}%`}</span>
+            </div>
+            {locations.length
+              ? <span className="mono mr-boss-locations">{locations.map(location => `${String(location.name).toUpperCase()} ${Math.round(Number(location.chance) * 100)}%`).join(' · ')}</span>
+              : <span className="mono mr-boss-locations">LOCATION DATA UNAVAILABLE</span>}
+          </article>
+        )
+      })}
+    </section>
   )
 }
