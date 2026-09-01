@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { browserSyncRows, channelStatus, companionChannelStatus, mergeSyncRows, monitorHealth, relativeSyncLabel, syncChip } from './syncStatus'
+import { browserSyncRows, channelStatus, companionChannelStatus, mergeSyncRows, monitorHealth, relativeSyncLabel, screenshotChannelStatus, syncChip } from './syncStatus'
 
 describe('unified sync status', () => {
   it('prefers live browser state while retaining desktop state for the tooltip', () => {
@@ -66,5 +66,71 @@ describe('sync tone as a connection light', () => {
     expect(monitorHealth({ visible: true, statuses: { logs: connecting, pings: { tone: 'idle', source: 'browser' } } }))
       .toMatchObject({ tone: 'connecting', label: 'CONNECTING' })
     expect(monitorHealth({ visible: true, statuses: { logs: connecting, pings: watching } }).tone).toBe('ok')
+  })
+})
+
+describe('screenshot channel roll-up', () => {
+  const now = Date.parse('2026-08-27T12:00:00Z')
+  const fresh = '2026-08-27T11:59:00Z'
+
+  it('selects a configured browser channel', () => {
+    expect(screenshotChannelStatus({ state: 'watching', folderName: 'Screenshots', lastSuccessfulCheck: fresh }, null, { now }))
+      .toMatchObject({ activeStatus: { source: 'browser', tone: 'ok', configured: true }, desktopPingsConfigured: false })
+  })
+
+  it('selects a configured desktop channel when the browser is not set up', () => {
+    expect(screenshotChannelStatus({ state: 'idle' }, {
+      available: true,
+      statuses: { pings: { configured: true, state: 'watching', isLive: true, lastSeenAt: fresh } },
+    }, { now })).toMatchObject({ activeStatus: { source: 'desktop', tone: 'ok' }, desktopPingsConfigured: true })
+  })
+
+  it('prefers the desktop channel when both sources are equally healthy', () => {
+    expect(screenshotChannelStatus({ state: 'watching', folderName: 'Screenshots', lastSuccessfulCheck: fresh }, {
+      available: true,
+      statuses: { pings: { configured: true, state: 'watching', isLive: true, lastSeenAt: fresh } },
+    }, { now }).activeStatus.source).toBe('desktop')
+  })
+
+  it('keeps an unconfigured browser as the active source when neither channel is configured', () => {
+    expect(screenshotChannelStatus({ state: 'idle' }, null, { now }))
+      .toMatchObject({ activeStatus: { source: 'browser', tone: 'idle', configured: false }, desktopPingsConfigured: false })
+  })
+
+  it('does not report unsupported when the desktop companion is configured', () => {
+    expect(screenshotChannelStatus({ supported: false }, {
+      available: true,
+      statuses: { pings: { configured: true, state: 'watching', isLive: true, lastSeenAt: fresh } },
+    }, { now }).activeStatus).toMatchObject({ source: 'desktop', tone: 'ok' })
+  })
+
+  it('keeps a configured but stale desktop channel visible as stale', () => {
+    expect(screenshotChannelStatus({ state: 'idle' }, {
+      available: true,
+      statuses: { pings: { configured: true, state: 'watching', lastSeenAt: '2026-08-27T11:00:00Z' } },
+    }, { now }).activeStatus).toMatchObject({ source: 'desktop', tone: 'warn', label: 'STALE', stale: true })
+  })
+})
+
+describe('screenshot roll-up keeps both sources reachable', () => {
+  const now = Date.parse('2026-08-27T12:00:00Z')
+
+  it('returns the per-source statuses beside the active one', () => {
+    const result = screenshotChannelStatus({ state: 'idle' }, {
+      available: true,
+      statuses: { pings: { configured: false, state: 'idle' } },
+    }, { now })
+    expect(result.browserStatus).toMatchObject({ source: 'browser', tone: 'idle', configured: false })
+    expect(result.desktopStatus).toMatchObject({ source: 'desktop', tone: 'idle', configured: false })
+  })
+
+  it('hands an unconfigured tie to the desktop, so callers must not label from activeStatus alone', () => {
+    const result = screenshotChannelStatus({ state: 'idle' }, {
+      available: true,
+      statuses: { pings: { configured: false, state: 'idle' } },
+    }, { now })
+    expect(result.activeStatus.source).toBe('desktop')
+    expect(result.activeStatus.label).toBe('NOT SET UP')
+    expect(result.desktopPingsConfigured).toBe(false)
   })
 })

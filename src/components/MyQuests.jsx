@@ -5,7 +5,7 @@ import { FEATURED } from '../constants'
 import QuestImportHub from './QuestImportHub'
 import { GAME_MODES, gameModeLabel, resolvePartyMode } from '../gameMode'
 import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
-import { channelStatus, companionChannelStatus, healthiestChannelStatus, relativeTime, STATE_TEXT } from '../syncStatus'
+import { relativeTime, screenshotChannelStatus, STATE_TEXT } from '../syncStatus'
 import { mapBannerLayers, mapHeaderBanner } from '../mapBanners'
 import Icon from './Icon'
 import { inferredTaskMapNorm } from '../tarkovObjectives'
@@ -583,12 +583,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
     : `LAST REPORT ${relativeTime(companion?.desktopLastSeen) || 'NOT YET'}`
 
   const now = Date.now()
-  const browserShotStatus = screenshotSync ? channelStatus(screenshotSync, { now }) : null
-  const desktopShotStatus = companion?.available
-    ? companionChannelStatus(companion.statuses?.pings, { now })
-    : null
-  const activeShotStatus = healthiestChannelStatus(browserShotStatus, desktopShotStatus)
-  const desktopPingsConfigured = Boolean(companion?.statuses?.pings?.configured)
+  const { activeStatus: activeShotStatus, desktopPingsConfigured } = screenshotChannelStatus(screenshotSync, companion, { now })
   const shotSkipped = screenshotSync?.lastSkipped?.count || 0
   const shotStatus = !activeShotStatus
     ? 'UNAVAILABLE'

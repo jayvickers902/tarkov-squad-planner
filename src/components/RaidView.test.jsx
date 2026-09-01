@@ -71,6 +71,10 @@ describe('ScreenshotSyncChip', () => {
     vi.mocked(useCompanionSyncStatus).mockReturnValue(null)
   })
 
+  // This suite has no global auto-cleanup, so a render left standing is found
+  // by the next test's queries.
+  afterEach(cleanup)
+
   it('labels a screenshot chip backed only by the desktop companion', () => {
     vi.mocked(useCompanionSyncStatus).mockReturnValue(companionStatus())
 
@@ -88,6 +92,34 @@ describe('ScreenshotSyncChip', () => {
     cleanup()
     vi.mocked(useCompanionSyncStatus).mockReturnValue(companionStatus())
     render(<ScreenshotSyncChip sync={screenshotController()} />)
+    expect(screen.queryByRole('button', { name: 'CONNECT' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ScreenshotSyncChip source attribution', () => {
+  beforeEach(() => {
+    vi.mocked(useCompanionSyncStatus).mockReturnValue(null)
+  })
+
+  afterEach(cleanup)
+
+  it('does not blame the desktop app when the companion has no screenshots folder', () => {
+    vi.mocked(useCompanionSyncStatus).mockReturnValue(companionStatus({ configured: false, state: 'idle' }))
+
+    const sync = screenshotController()
+    render(<ScreenshotSyncChip sync={sync} />)
+
+    expect(screen.getByText('SCREENSHOTS · NOT SET UP')).toBeInTheDocument()
+    expect(screen.queryByText(/DESKTOP APP/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'CONNECT' })).toBeInTheDocument()
+  })
+
+  it('still reports an unsupported browser when the companion is present but unconfigured', () => {
+    vi.mocked(useCompanionSyncStatus).mockReturnValue(companionStatus({ configured: false, state: 'idle' }))
+
+    render(<ScreenshotSyncChip sync={screenshotController({ supported: false, persistentSupported: false })} />)
+
+    expect(screen.getByText('SCREENSHOTS · NOT SUPPORTED')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'CONNECT' })).not.toBeInTheDocument()
   })
 })

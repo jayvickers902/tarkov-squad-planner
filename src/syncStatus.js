@@ -99,6 +99,24 @@ export function healthiestChannelStatus(browserStatus, desktopStatus) {
   return statusPriority(desktopStatus) >= statusPriority(browserStatus) ? desktopStatus : browserStatus
 }
 
+// The two screenshot ping sources rolled up for a caller that renders one
+// readout. Both per-source statuses come back alongside the active one: an
+// unconfigured desktop row ties with an unconfigured browser at priority 10 and
+// wins the tie, so a caller that wants to describe the browser cannot reach it
+// through `activeStatus` alone.
+export function screenshotChannelStatus(shots, companion, { now = Date.now(), staleAfterMs = FIVE_MINUTES } = {}) {
+  const browserStatus = shots ? channelStatus(shots, { now, staleAfterMs }) : null
+  const desktopStatus = companion?.available
+    ? companionChannelStatus(companion.statuses?.pings, { now, staleAfterMs })
+    : null
+  return {
+    activeStatus: healthiestChannelStatus(browserStatus, desktopStatus),
+    browserStatus,
+    desktopStatus,
+    desktopPingsConfigured: Boolean(companion?.statuses?.pings?.configured),
+  }
+}
+
 export function monitorHealth({ logs, shots, now = Date.now(), visible, statuses } = {}) {
   const logStatus = statuses?.logs || channelStatus(logs, { now })
   const screenshotStatus = statuses?.screenshots || (statuses?.pings?.tone ? statuses.pings : companionChannelStatus(statuses?.pings, { now })) || channelStatus(shots, { now })

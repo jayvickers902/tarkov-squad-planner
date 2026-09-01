@@ -47,11 +47,26 @@ function metres(value) {
 
 export function ScreenshotSyncChip({ sync }) {
   const companion = useCompanionSyncStatus({ optional: true })
-  const { activeStatus, desktopPingsConfigured } = screenshotChannelStatus(sync, companion)
+  // Staleness is measured against Date.now() at render, and RaidView no longer
+  // re-renders every second now that RaidElapsed owns the raid clock. Without a
+  // tick of its own the chip can sit on WATCHING well past the five-minute stale
+  // boundary in a quiet raid, which is the one moment it needs to be honest.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTick(value => value + 1), 30000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const { activeStatus, browserStatus, desktopPingsConfigured } = screenshotChannelStatus(sync, companion)
   const skipped = sync?.lastSkipped?.count || 0
+  // The companion only owns this chip when it is actually configured for
+  // screenshots. An unconfigured desktop row wins the priority tie against an
+  // unconfigured browser, and labelling that "DESKTOP APP · NOT SET UP" blames
+  // the companion for a state the CONNECT button beside it fixes in the browser.
+  const desktopActive = activeStatus?.source === 'desktop' && desktopPingsConfigured
   const tone = !activeStatus
     ? 'idle'
-    : activeStatus.source === 'browser' && skipped > 0
+    : !desktopActive && skipped > 0
       ? 'warning'
       : activeStatus.tone === 'error'
         ? 'error'
@@ -60,34 +75,29 @@ export function ScreenshotSyncChip({ sync }) {
           : activeStatus.tone === 'ok'
             ? 'live'
             : 'idle'
-  const browserUnsupported = activeStatus?.source === 'browser'
-    && !sync?.persistentSupported
-    && !desktopPingsConfigured
-  const label = !activeStatus
-    ? STATE_TEXT.idle
-    : activeStatus.source === 'desktop'
-      ? `DESKTOP APP · ${activeStatus.label}`
-      : browserUnsupported
-        ? 'NOT SUPPORTED'
-        : sync.state === 'error' || sync.state === 'reading'
-          ? STATE_TEXT[sync.state]
-          : !sync.folderName
-            ? STATE_TEXT.idle
-            : skipped > 0
-              ? `${skipped} TOO OLD`
-              : sync.state === 'watching' && !sync.readyForPings
-                ? 'WAITING FOR PARTY MAP'
-                : activeStatus.label || 'READY'
+  const browserUnsupported = !desktopActive && !sync?.persistentSupported
+  const label = desktopActive
+    ? `DESKTOP APP · ${activeStatus.label}`
+    : browserUnsupported
+      ? 'NOT SUPPORTED'
+      : sync?.state === 'error' || sync?.state === 'reading'
+        ? STATE_TEXT[sync.state]
+        : !sync?.folderName
+          ? STATE_TEXT.idle
+          : skipped > 0
+            ? `${skipped} TOO OLD`
+            : sync.state === 'watching' && !sync.readyForPings
+              ? 'WAITING FOR PARTY MAP'
+              : browserStatus?.label || 'READY'
   const urgent = tone === 'error' || tone === 'warning'
-  const title = activeStatus?.source === 'desktop'
+  const title = desktopActive
     ? `Screenshot pings are handled by the desktop app. ${activeStatus.detail}`
-    : activeStatus?.source === 'browser'
-      ? `Screenshot pings are handled by this browser tab. ${activeStatus.detail}`
+    : browserStatus
+      ? `Screenshot pings are handled by this browser tab. ${browserStatus.detail}`
       : 'Screenshot pings are not set up.'
-  const canConnect = activeStatus?.tone === 'idle'
-    && sync?.persistentSupported
-    && !sync.folderName
-    && !desktopPingsConfigured
+  // Matches the Quest Manager gate exactly: a browser that can pick a folder,
+  // has not, and is not shadowing a companion that already handles pings.
+  const canConnect = Boolean(sync?.persistentSupported) && !sync.folderName && !desktopPingsConfigured
 
   return (
     <span className="mr-shot-sync mono" data-tone={tone} role={urgent ? 'alert' : 'status'} title={title}>
