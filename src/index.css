@@ -1912,7 +1912,7 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .obj-row-distance { margin-left: auto; flex: 0 0 auto; color: var(--goldtx); font-size: var(--fs-xs); white-space: nowrap; }
 .obj-row-no-location .obj-row-distance { color: var(--txd); }
 
-.obj-pin { display: block; width: 20px; height: 20px; transition: opacity .18s, filter .18s; }
+.obj-pin { display: block; height: 20px; transition: opacity .18s, filter .18s; }
 .obj-pin-dim { opacity: .3; }
 .obj-pin-focus { animation: objPinPulse 1.15s ease-in-out infinite; filter: drop-shadow(0 0 4px var(--gold)); }
 @keyframes objPinPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.35); } }

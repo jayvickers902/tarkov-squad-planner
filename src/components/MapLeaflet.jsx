@@ -22,6 +22,7 @@ import {
   lootPointsFor, outlineToLatLngs, centroid,
 } from '../tarkovZones'
 import { objectivePins, getUserColor, objectiveTypeLabel, objectiveSubjectItem } from '../tarkovObjectives'
+import { layoutObjectivePins } from '../objectivePinLayout'
 import { bearingRange, useMapPings } from '../useMapPings'
 import { classifyPmcSpawns } from '../tarkovSpawns'
 import { framePositionSignature } from '../squadFocus'
@@ -235,6 +236,7 @@ function makeObjectivePinTooltip(pin) {
   const firLabel = pin.foundInRaid
     ? '<div style="color:#c9a84c;font-size:9px;letter-spacing:.1em;margin-top:2px">FOUND IN RAID</div>'
     : ''
+  const owners = pin.owners?.length ? pin.owners : [pin]
   return `
     <div style="min-width:210px;max-width:290px">
       <div style="display:flex;gap:8px;align-items:flex-start">
@@ -244,9 +246,11 @@ function makeObjectivePinTooltip(pin) {
           ${pin.traderName ? `<div style="color:#5c6b61;font-size:9px;letter-spacing:.12em;text-transform:uppercase;margin-top:2px">${escapeHtml(pin.traderName)}</div>` : ''}
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:5px;margin-top:6px">
-        <span style="width:7px;height:7px;border-radius:50%;background:${pin.color};flex:0 0 auto"></span>
-        <span style="color:${safeColor(pin.color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:10px;letter-spacing:.1em">${escapeHtml(pin.memberName.toUpperCase())}</span>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;margin-top:6px">
+        ${owners.map(owner => `<span style="display:inline-flex;align-items:center;gap:5px">
+          <span style="width:7px;height:7px;border-radius:50%;background:${owner.color};flex:0 0 auto"></span>
+          <span style="color:${safeColor(owner.color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:10px;letter-spacing:.1em">${escapeHtml(owner.memberName.toUpperCase())}</span>
+        </span>`).join('')}
       </div>
       <div style="border-top:1px solid #262b25;margin-top:6px;padding-top:7px;display:flex;gap:8px;align-items:flex-start">
         ${thumb(pin.itemIcon, pin.itemName || 'Objective item', 38, 3)}
@@ -408,22 +412,29 @@ function makeSpawnIcon(focus = false) {
 }
 
 // Auto-pin for API-sourced objective locations — diamond shape to distinguish from manual pins
-function makeObjIcon(color, initial, focusState = 'normal') {
+function makeObjIcon(pin, focusState = 'normal') {
   const pinClass = focusState === 'focus'
     ? 'obj-pin obj-pin-focus'
     : focusState === 'dim'
     ? 'obj-pin obj-pin-dim'
     : 'obj-pin'
+  const owners = pin.owners?.length ? pin.owners : [pin]
+  const step = 15
+  const width = 20 + Math.max(0, owners.length - 1) * step
+  const diamonds = owners.map((owner, index) => `<svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" style="position:absolute;left:${index * step}px;top:0">
+      <polygon points="10,1 19,10 10,19 1,10"
+        fill="${owner.color}" stroke="rgba(0,0,0,0.8)" stroke-width="1.5"/>
+      <text x="10" y="13.5" text-anchor="middle" fill="rgba(0,0,0,0.85)"
+        font-size="7" font-weight="bold" font-family="Share Tech Mono">${escapeHtml(owner.initial)}</text>
+    </svg>`).join('')
   return L.divIcon({
     className: '',
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
-    html: `<div class="${pinClass}"><svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-      <polygon points="10,1 19,10 10,19 1,10"
-        fill="${color}" stroke="rgba(0,0,0,0.8)" stroke-width="1.5"/>
-      <text x="10" y="13.5" text-anchor="middle" fill="rgba(0,0,0,0.85)"
-        font-size="7" font-weight="bold" font-family="Share Tech Mono">${initial}</text>
-    </svg></div>`,
+    iconSize: [width, 20],
+    // A shifted anchor fans coincident squad pins around their shared, exact
+    // map coordinate. The marker stays geographically correct; only its 20 px
+    // artwork moves so one member cannot cover another.
+    iconAnchor: [width / 2 - pin.offsetX, 10 - pin.offsetY],
+    html: `<div class="${pinClass}" style="position:relative;width:${width}px">${diamonds}</div>`,
   })
 }
 
@@ -710,6 +721,7 @@ export default function MapLeaflet({
     () => objectivePins(tasks, memberQuests, memberNames, progress, mapNorm),
     [memberQuests, tasks, mapNorm, memberNames, progress],
   )
+  const laidOutObjPins = useMemo(() => layoutObjectivePins(autoObjPins), [autoObjPins])
 
   // ─── Position pings ─────────────────────────────────────────────────────────
   // Decay is time-based, so the component re-renders on a slow tick while any
@@ -1291,20 +1303,20 @@ export default function MapLeaflet({
   // ─── Sync auto objective pins ────────────────────────────────────────────────
   useMapLayer(mapRef, () => {
     if (!showQuestPins) return []
-    return autoObjPins.map(pin => {
+    return laidOutObjPins.map(pin => {
       const latlng = L.latLng(pin.lat, pin.lng)
       const focusState = pingFocusActive
         ? 'dim'
         : focusKey
         ? (pin.key === focusKey ? 'focus' : 'dim')
         : 'normal'
-      const icon = makeObjIcon(pin.color, escapeHtml(pin.initial), focusState)
+      const icon = makeObjIcon(pin, focusState)
       const tooltipHtml = makeObjectivePinTooltip(pin)
       const lm = L.marker(latlng, { icon, interactive: true, zIndexOffset: 200 })
       bindTacticalTooltip(lm, tooltipHtml, { offset: [0, -12] })
       return lm
     })
-  }, [autoObjPins, focusKey, mapNorm, pingFocusActive, showQuestPins])
+  }, [laidOutObjPins, focusKey, mapNorm, pingFocusActive, showQuestPins])
 
   // Rail focus is a map action, not just a visual state — but it only ever pans.
   // Zooming on a click took the reader's chosen scale away from them, and a
