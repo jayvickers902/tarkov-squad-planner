@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inferredTaskMapNorm, objectiveIsOnMap, objectivePins, objectiveSubjectItem, requiredKeyItems, taskIsOnMap } from './tarkovObjectives'
+import { inferredTaskMapNorm, objectiveIsOnMap, objectiveIsUnplacedMapAction, objectivePins, objectiveSubjectItem, requiredKeyItems, taskIsOnMap } from './tarkovObjectives'
 
 describe('inferredTaskMapNorm', () => {
   it('assigns Supervisor-style objectives to Interchange', () => {
@@ -118,6 +118,122 @@ describe('map-planning exclusions', () => {
 
     expect(taskIsOnMap(task, 'woods')).toBe(true)
     expect(taskIsOnMap(task, 'customs')).toBe(false)
+  })
+})
+
+describe('unplaced map actions', () => {
+  // The real shape of The Punisher - Part 1: one Customs kill count that
+  // upstream cannot pin, because the whole map is where you do it.
+  const punisher = {
+    id: '59c512ad86f7741f0d09de9b',
+    name: 'The Punisher - Part 1',
+    map: { normalizedName: 'customs' },
+    objectives: [{
+      id: 'kill-scavs',
+      type: 'shoot',
+      optional: false,
+      description: 'Eliminate Scavs with AKS-74U on Customs',
+      maps: [{ normalizedName: 'customs' }],
+      zones: [],
+    }],
+  }
+
+  it('keeps a map-named kill count on the map it names, and only there', () => {
+    expect(objectiveIsUnplacedMapAction(punisher.objectives[0], punisher, 'customs')).toBe(true)
+    expect(objectiveIsUnplacedMapAction(punisher.objectives[0], punisher, 'woods')).toBe(false)
+    expect(objectiveIsUnplacedMapAction(punisher.objectives[0], punisher, null)).toBe(false)
+  })
+
+  it('reads a maps array that covers most of the game as any-location, not as ten map scopes', () => {
+    // Upstream publishes "anywhere" by enumerating every map rather than none,
+    // so the array only counts as a scope while it leaves somewhere out.
+    const anywhere = {
+      id: 'wounded-beast',
+      name: 'The Survivalist Path - Wounded Beast',
+      map: null,
+      objectives: [{
+        id: 'kill-in-pain',
+        type: 'shoot',
+        optional: false,
+        description: 'Eliminate Scavs while suffering from the Pain status effect',
+        maps: ['icebreaker', 'lighthouse', 'interchange', 'customs', 'shoreline', 'night-factory',
+          'woods', 'streets-of-tarkov', 'factory', 'reserve', 'ground-zero-tutorial']
+          .map(normalizedName => ({ normalizedName })),
+        zones: [],
+      }],
+    }
+    expect(objectiveIsUnplacedMapAction(anywhere.objectives[0], anywhere, 'customs')).toBe(false)
+
+    // Two maps out of ten is a real routing constraint and stays scoped.
+    const pair = {
+      id: 'the-guide',
+      name: 'The Guide',
+      map: null,
+      objectives: [{
+        id: 'extract-factory-customs',
+        type: 'extract',
+        optional: false,
+        description: 'Survive and extract from Factory or Customs with the "Survived" exit status',
+        maps: [{ normalizedName: 'factory' }, { normalizedName: 'night-factory' }, { normalizedName: 'customs' }],
+        zones: [],
+      }],
+    }
+    expect(objectiveIsUnplacedMapAction(pair.objectives[0], pair, 'customs')).toBe(true)
+    expect(objectiveIsUnplacedMapAction(pair.objectives[0], pair, 'woods')).toBe(false)
+  })
+
+  it('admits only in-raid actions, so trader and hideout work stays off the map', () => {
+    const task = {
+      id: 'bench-task',
+      name: 'Bench Task',
+      map: { normalizedName: 'customs' },
+      objectives: [
+        { id: 'hand-in', type: 'giveItem', optional: false, maps: [], zones: [] },
+        { id: 'build', type: 'buildWeapon', optional: false, maps: [], zones: [] },
+        { id: 'find', type: 'findItem', optional: false, maps: [], zones: [] },
+        { id: 'loyalty', type: 'traderLevel', optional: false, maps: [], zones: [] },
+      ],
+    }
+    for (const objective of task.objectives) {
+      expect(objectiveIsUnplacedMapAction(objective, task, 'customs')).toBe(false)
+    }
+  })
+
+  it('does not re-admit an objective that already has a zone to pin', () => {
+    const task = {
+      id: 'angry-watchman',
+      name: 'The Huntsman Path - Angry Watchman',
+      map: { normalizedName: 'customs' },
+      objectives: [{
+        id: 'kill-dorms',
+        type: 'shoot',
+        optional: false,
+        description: 'Eliminate PMC operatives in the Dorms area on Customs',
+        maps: [{ normalizedName: 'customs' }],
+        zones: [{ id: 'dorms', map: { normalizedName: 'customs' }, position: { x: 1, y: 2, z: 3 } }],
+      }],
+    }
+    expect(objectiveIsUnplacedMapAction(task.objectives[0], task, 'customs')).toBe(false)
+  })
+
+  it('leaves a genuinely any-location objective with no map scope at all off every map', () => {
+    const task = {
+      id: 'grenadier',
+      name: 'Grenadier',
+      map: null,
+      objectives: [{
+        id: 'nade-kills',
+        type: 'shoot',
+        optional: false,
+        description: 'Eliminate any target with hand grenades or grenade launchers',
+        maps: [],
+        zones: [],
+      }],
+    }
+    for (const mapNorm of ['customs', 'woods', 'the-lab']) {
+      expect(objectiveIsOnMap(task.objectives[0], task, mapNorm)).toBe(true)
+      expect(objectiveIsUnplacedMapAction(task.objectives[0], task, mapNorm)).toBe(false)
+    }
   })
 })
 

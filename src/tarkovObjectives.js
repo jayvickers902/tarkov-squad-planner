@@ -1,4 +1,5 @@
 import { normalizeMembers, memberIds, memberNames, questDoneKey } from './partyMembers'
+import { FEATURED } from './constants'
 
 export const USER_COLORS = [
   '#e85d5d', '#5db8e8', '#5de87a', '#f5a623',
@@ -217,6 +218,42 @@ export function objectiveHasMapLocation(objective, task, mapNorm) {
     if (objectiveMaps.length) return objectiveMaps.some(mapName => mapNameMatches(mapName, mapNorm))
     return mapNameMatches(taskMap, mapNorm)
   })
+}
+
+// Upstream marks an any-location objective by listing every map rather than by
+// listing none, so an objective's `maps` array is only a scope while it leaves
+// somewhere out. "Eliminate Scavs while suffering from the Pain status effect"
+// names nine of the ten featured maps and means anywhere; "Survive and extract
+// from Factory or Customs" names two and means those two.
+//
+// The data has a wide gap here rather than a fuzzy edge: across the task corpus
+// the genuinely scoped unpinned objectives top out at five featured maps and the
+// any-location ones start at eight, with nothing in between.
+function namesMostOfTheGame(objective) {
+  const named = explicitObjectiveMaps(objective)
+  if (!named.length) return false
+  const covered = FEATURED.filter(featured => named.some(name => mapNameMatches(name, featured)))
+  return covered.length > FEATURED.length / 2
+}
+
+// An in-raid action on a map that names no position: "Eliminate Scavs with an
+// AKS-74U on Customs", "use the transit from Customs to Factory". Upstream ships
+// no zone for these because there is no one place to stand — the map itself is
+// the location — but they are still work the squad does in this raid, so a map
+// list that drops them reads as though the quest has nothing to do here.
+//
+// The map has to be *named* rather than merely not contradicted: an
+// any-location objective satisfies `objectiveIsOnMap` on every map, so admitting
+// those would put trader hand-ins, weapon builds and Arena matches on the list.
+export function objectiveIsUnplacedMapAction(objective, task, mapNorm) {
+  if (!mapNorm) return false
+  if (!RAID_LOCAL_OBJECTIVE_TYPES.has(objective?.type)) return false
+  if (objectiveHasMapLocation(objective, task, mapNorm)) return false
+  if (namesMostOfTheGame(objective)) return false
+  const scoped = explicitObjectiveMaps(objective).length > 0
+    || Boolean(inferredTaskMapNorm(task))
+    || Boolean(TASK_MAP_SCOPE_OVERRIDES[task?.id])
+  return scoped && objectiveIsOnMap(objective, task, mapNorm)
 }
 
 // The thing an objective is actually about, as one item reference. `mark` names

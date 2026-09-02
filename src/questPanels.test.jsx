@@ -222,6 +222,94 @@ describe('map-scoped quest placeholders', () => {
   })
 })
 
+// The MAP OBJECTIVES view used to require a positioned zone, which dropped every
+// map-named kill count — "Eliminate Scavs with AKS-74U on Customs" is Customs
+// work that upstream simply cannot pin, and the squad list read as though the
+// quest had nothing to do on the map at all.
+describe('unpinned map objectives in the squad list', () => {
+  const punisher = {
+    id: 'punisher-1',
+    name: 'The Punisher - Part 1',
+    trader: { name: 'Prapor', imageLink: null },
+    map: { normalizedName: 'customs' },
+    objectives: [{
+      id: 'kill-scavs',
+      type: 'shoot',
+      description: 'Eliminate Scavs with AKS-74U on Customs',
+      optional: false,
+      maps: [{ normalizedName: 'customs' }],
+      zones: [],
+    }],
+  }
+  const grenadier = {
+    id: 'grenadier',
+    name: 'Grenadier',
+    trader: { name: 'Prapor', imageLink: null },
+    map: null,
+    objectives: [{
+      id: 'nade-kills',
+      type: 'shoot',
+      description: 'Eliminate any target with hand grenades or grenade launchers',
+      optional: false,
+      maps: [],
+      zones: [],
+    }],
+  }
+  const quests = [
+    { id: punisher.id, name: punisher.name },
+    { id: grenadier.id, name: grenadier.name },
+  ]
+
+  async function renderTodo() {
+    const { default: TodoList } = await import('./components/TodoList')
+    render(
+      <TodoList
+        tasks={[punisher, grenadier]}
+        memberQuests={[{
+          user_id: 'user-1',
+          callsign: 'DUDGY',
+          quests,
+          quests_all: quests,
+        }]}
+        progress={{}}
+        onToggleStar={() => {}}
+        starredQuests={{}}
+        myUserId="user-1"
+        mapNorm="customs"
+      />,
+    )
+    await screen.findByText('SQUAD OBJECTIVES')
+  }
+
+  it('lists a map-named kill count that upstream gives no position for', async () => {
+    await renderTodo()
+
+    expect(screen.getByText('Eliminate Scavs with AKS-74U on Customs')).toBeTruthy()
+    expect(screen.getByText('1 OBJ')).toBeTruthy()
+  })
+
+  it('still keeps an any-location kill count off the map list', async () => {
+    await renderTodo()
+
+    expect(screen.queryByText('Eliminate any target with hand grenades or grenade launchers')).toBeNull()
+  })
+
+  it('files the quest under the map rather than under CAN BE DONE ON ANY MAP', async () => {
+    await renderTodo()
+
+    fireEvent.click(screen.getByRole('button', { name: 'QUESTS' }))
+
+    // The heading sits in a header row inside the any-map section, so two hops
+    // up is the section that holds its quest cards.
+    const anyMapHeading = screen.getByText(/NON-MAP SPECIFIC/)
+    const anyMapSection = anyMapHeading.parentElement.parentElement
+    expect(anyMapHeading.textContent).toContain('(1)')
+    expect(within(anyMapSection).getByText('Grenadier')).toBeTruthy()
+    expect(within(anyMapSection).queryByText('The Punisher - Part 1')).toBeNull()
+    expect(screen.getByText('The Punisher - Part 1')).toBeTruthy()
+  })
+})
+
 // Completion is owned by the EFT log sync. This panel used to write a per-user
 // done flag into party progress, which retired the quest in user_quests; the
 // only per-quest control it offers now is hiding, which changes nothing but

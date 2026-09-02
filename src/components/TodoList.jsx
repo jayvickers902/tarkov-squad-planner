@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, memo } from 'react'
 import { normalizeMembers, objectiveProgressKey, questDoneKey } from '../partyMembers'
-import { objectiveHasMapLocation, objectiveIsOnMap, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
+import { objectiveHasMapLocation, objectiveIsOnMap, objectiveIsUnplacedMapAction, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
 import { objectiveShare, taskShare } from '../questShare'
 import { useQuestShareOverrides } from '../useQuestShareOverrides'
 import { useQuestShareReports } from '../useQuestShareReports'
@@ -37,6 +37,14 @@ function objsForMap(task, mapNorm) {
     if (!mapNorm) return true
     return objectiveIsOnMap(o, task, mapNorm)
   })
+}
+
+// What the MAP OBJECTIVES view is a list of: an objective with a zone to walk
+// to, plus one that names this map but no position — "Eliminate Scavs with an
+// AKS-74U on Customs" is Customs work whether or not upstream can pin it.
+function isMapObjective(objective, task, mapNorm) {
+  return objectiveHasMapLocation(objective, task, mapNorm)
+    || objectiveIsUnplacedMapAction(objective, task, mapNorm)
 }
 
 // UI-only drag ordering keys; these are deliberately separate from party
@@ -259,10 +267,12 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
         const allDone   = objs.length > 0 && doneCount === objs.length
         const completed = owners.length > 0 && owners.every(m => progress?.[questDoneKey(task.id, memberIdsByName.get(m))])
         const canAct    = owners.some(m => memberIdsByName.get(m) === myUserId)
-        // True only when the quest has an objective with an actual map position.
-        // Map metadata alone is not enough for the MAP OBJECTIVES view.
+        // True when the quest has an objective this map is actually named for,
+        // pinned or not. A quest whose only Customs objective is an unpinnable
+        // kill count is still a Customs quest, and filing it under CAN BE DONE
+        // ON ANY MAP tells the reader the opposite of what is true.
         const isMapSpecific  = mapNorm
-          ? (task.objectives || []).some(o => !o.optional && objectiveHasMapLocation(o, task, mapNorm))
+          ? (task.objectives || []).some(o => !o.optional && isMapObjective(o, task, mapNorm))
           : false
         return { task, owners, objs, doneCount, starred, allDone, completed, canAct, isMapSpecific }
       })
@@ -338,7 +348,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
   // Flat list of map-specific objectives for the objectives view
   const objectiveRows = filteredActive
     .flatMap(r => r.objs
-      .filter(obj => objectiveHasMapLocation(obj, r.task, mapNorm))
+      .filter(obj => isMapObjective(obj, r.task, mapNorm))
       .map(obj => ({
       obj, task: r.task, owners: r.owners,
       doneByMembers: r.owners.filter(m => progress?.[objectiveProgressKey(r.task.id, obj.id, memberIdsByName.get(m))]),
@@ -481,8 +491,8 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
           </div>
         ) : objectiveRows.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 24px' }}>
-            <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', letterSpacing: '.1em' }}>NO MAP-LOCATED OBJECTIVES</div>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', marginTop: 8 }}>NO FILTERED QUESTS HAVE OBJECTIVES WITH MAP LOCATIONS</div>
+            <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', letterSpacing: '.1em' }}>NO OBJECTIVES ON THIS MAP</div>
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--txd)', marginTop: 8 }}>NO FILTERED QUESTS HAVE IN-RAID OBJECTIVES HERE</div>
           </div>
         ) : (
           <div className="obj-rows">
