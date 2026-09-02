@@ -1,15 +1,16 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { useEftScreenshotSyncContext, useCompanionSyncStatus } = vi.hoisted(() => ({
+const { useEftScreenshotSyncContext, useEftLogSync, useCompanionSyncStatus } = vi.hoisted(() => ({
   useEftScreenshotSyncContext: vi.fn(),
+  useEftLogSync: vi.fn(),
   useCompanionSyncStatus: vi.fn(),
 }))
 
-vi.mock('../EftLogSyncContext', () => ({ useEftScreenshotSyncContext }))
+vi.mock('../EftLogSyncContext', () => ({ useEftScreenshotSyncContext, useEftLogSync }))
 vi.mock('../useCompanionSyncStatus', () => ({ useCompanionSyncStatus }))
 
-import { RaidElapsed, ScreenshotSyncChip } from './RaidView'
+import { QuestLogDebriefChip, RaidElapsed, ScreenshotSyncChip } from './RaidView'
 
 describe('RaidElapsed', () => {
   beforeEach(() => vi.useFakeTimers())
@@ -121,5 +122,33 @@ describe('ScreenshotSyncChip source attribution', () => {
 
     expect(screen.getByText('SCREENSHOTS · NOT SUPPORTED')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'CONNECT' })).not.toBeInTheDocument()
+  })
+})
+
+describe('QuestLogDebriefChip', () => {
+  afterEach(() => cleanup())
+
+  it('renders nothing before a debrief check has run', () => {
+    const { container } = render(<QuestLogDebriefChip outcome={null} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('reports the completions a post-raid check applied', () => {
+    render(<QuestLogDebriefChip outcome={{ state: 'applied', tone: 'live', label: '2 COMPLETED' }} />)
+    expect(screen.getByText(/QUEST LOGS/)).toHaveTextContent('2 COMPLETED')
+  })
+
+  // CHECK AGAIN during a scan would only queue a duplicate promise against
+  // runFolderCheck's single flight, so the chip does not offer it.
+  it('offers no retry while the check is still running', () => {
+    render(<QuestLogDebriefChip outcome={{ state: 'checking', tone: 'idle', label: 'CHECKING' }} onRecheck={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'CHECK AGAIN' })).toBeNull()
+  })
+
+  it('retries a failed check on request', () => {
+    const onRecheck = vi.fn()
+    render(<QuestLogDebriefChip outcome={{ state: 'failed', tone: 'warning', label: 'CHECK DID NOT FINISH' }} onRecheck={onRecheck} />)
+    fireEvent.click(screen.getByRole('button', { name: 'CHECK AGAIN' }))
+    expect(onRecheck).toHaveBeenCalledTimes(1)
   })
 })

@@ -18,11 +18,13 @@ import { normalizeMembers, findMember, memberIds as getMemberIds, memberNames as
 import { buildObjectiveRows, groupRowsByQuest, nearestRange } from '../raidObjectives'
 import { squadFrame } from '../squadFocus'
 import { CAMERA_MODES, readCameraMode, writeCameraMode } from '../cameraMode'
-import { useEftScreenshotSyncContext } from '../EftLogSyncContext'
+import { useEftScreenshotSyncContext, useEftLogSync } from '../EftLogSyncContext'
 import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
 import { screenshotChannelStatus, STATE_TEXT } from '../syncStatus'
 import { endRaid } from '../raidEnd'
 import { isRaidLive } from '../raidLive'
+import { debriefTitle } from '../raidDebrief'
+import { useRaidDebrief } from '../useRaidDebrief'
 
 const SQUAD_ROW_LIMIT = 3
 
@@ -113,6 +115,20 @@ export function ScreenshotSyncChip({ sync }) {
   )
 }
 
+export function QuestLogDebriefChip({ outcome, error = null, onRecheck = null }) {
+  if (!outcome) return null
+  const busy = outcome.state === 'checking'
+  return (
+    <span className="mr-shot-sync mono" data-tone={outcome.tone} role="status" title={debriefTitle(outcome, error)}>
+      <span className="mr-shot-sync-dot" aria-hidden="true" />
+      <span>QUEST LOGS &middot; {outcome.label}</span>
+      {onRecheck && !busy && (
+        <button type="button" className="mono" onClick={onRecheck}>CHECK AGAIN</button>
+      )}
+    </span>
+  )
+}
+
 export default function RaidView({
   party, myUserId, myName, members,
   tasks, allTasks, loadingTasks,
@@ -134,6 +150,7 @@ export default function RaidView({
 }) {
   const isMobile = useIsMobile()
   const shots = useEftScreenshotSyncContext({ optional: true })
+  const logs = useEftLogSync({ optional: true })
   const rootRef = useRef(null)
   const memberRows = normalizeMembers(members || party.members)
   const memberNames = getMemberNames(memberRows)
@@ -209,6 +226,9 @@ export default function RaidView({
     || null
   const mapFocusKey = hoverFocusKey || focusKey
   const mapFocusPingId = hoverPingId || focusPingId
+
+  // --- Raid debrief -------------------------------------------------------
+  const { debrief, recheck: recheckLogs } = useRaidDebrief(live, logs)
 
   // --- Camera -------------------------------------------------------------
   useEffect(() => { writeCameraMode(cameraMode) }, [cameraMode])
@@ -641,6 +661,7 @@ export default function RaidView({
               {live ? 'LIVE PINGS · SCREENSHOT SYNC' : 'PLANNING · SPAWNS & ROUTES'}
             </span>
             {live && <ScreenshotSyncChip sync={shots} />}
+            {!live && <QuestLogDebriefChip outcome={debrief} error={logs?.error || null} onRecheck={recheckLogs} />}
           </div>
         </main>
 

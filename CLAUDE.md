@@ -460,6 +460,24 @@ records `user_settings.raid_ended_stamp` for the reader only. With a session,
 `END RAID · FOR EVERYONE` calls `end_raid_session`, which transitions the shared
 session and lets every member leave LIVE together.
 
+Leaving LIVE forces an EFT log check. `useRaidDebrief.js` keys on the live -> plan
+transition rather than on the END RAID button, so the member whose leader ended
+the raid for everyone gets the same catch-up as the one who pressed it. This is
+the moment the quest list is most likely stale: the hand-in happens with EFT
+fullscreen, which is exactly when the tab is hidden, its poll timer throttled to
+roughly one call a minute, and possibly frozen outright. Without it a quest
+finished mid-raid sat on the plan list until the next poll landed.
+
+`raidDebrief.js` holds the pure half and reads `runFolderCheck`'s own shapes:
+`null` is a check that never finished, `changed: false` an untouched folder, and
+an `events` array only where the scan was allowed to apply. Auto-sync off means a
+preview and no events, which the chip reports as a review waiting in Quest
+Manager rather than as a finished sync — `checkNow` deliberately writes nothing
+without that opt-in. The count shown is completions, not every applied event.
+A player synced only by the desktop companion has no remembered browser folder,
+so no check runs and no chip renders; their completions arrive over the
+`user_quests` realtime channel instead.
+
 Layout is `322px | 1fr | 336px`: MY TASKS left, `MapLeaflet` centre at `fill` with
 `chrome="overlay"`, SQUAD right (`RaidRail.jsx`). `Q` toggles the tasks column
 (`raid_tasks_open`), `M` the squad column (`raidview_rail_open`), `D` draw, `F`
