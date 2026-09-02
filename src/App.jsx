@@ -61,6 +61,7 @@ export default function App() {
     repairQuestRows,
     reconcileLogEvents,
     getQuestHistory,
+    refresh: refreshUserQuests,
   } = useUserQuests(user?.id, questGameMode)
 
   const { friends, pendingIn, pendingOut, error: friendsError, sendRequest, acceptRequest, removeRequest, removeFriend, refresh: refreshFriends } = useFriends(user?.id, profile?.callsign)
@@ -111,6 +112,24 @@ export default function App() {
   useEffect(() => {
     if (party && !questsLoading && questGameMode === gameMode) syncSavedQuests(userQuests)
   }, [party, userQuests, questsLoading, questGameMode, gameMode]) // eslint-disable-line
+
+  // Joining or rejoining is a hard freshness boundary. A desktop companion or
+  // another browser may have completed quests while this client was dormant,
+  // so reload the authoritative rows before publishing our list to the party.
+  const refreshedPartyQuestsRef = useRef(null)
+  useEffect(() => {
+    if (!party) {
+      refreshedPartyQuestsRef.current = null
+      return
+    }
+    if (questsLoading || questGameMode !== gameMode) return
+    const key = `${party.id || party.code}:${gameMode}`
+    if (refreshedPartyQuestsRef.current === key) return
+    refreshedPartyQuestsRef.current = key
+    refreshUserQuests().catch(error => {
+      console.warn('Party entry quest refresh failed', error)
+    })
+  }, [party?.id, party?.code, gameMode, questGameMode, questsLoading, refreshUserQuests])
 
   // Persisted objective progress in party-key format — used as fallback in MyQuestPanel across parties
   const userObjProgress = useMemo(() => {
@@ -412,6 +431,7 @@ export default function App() {
         onRemoveFriend={removeFriend}
         onRefreshFriends={refreshFriends}
         onRefresh={refreshParty}
+        onRefreshQuests={refreshUserQuests}
         onStartRaid={startRaid}
         raidSession={raidSession}
         onRaidError={setPartyError}
@@ -575,6 +595,7 @@ export default function App() {
       onAddPing={party ? addPing : null}
       mapNorm={party?.map_norm || null}
       partyId={party ? `${party.id || party.code}:${Number(party.raid_id) || 0}` : null}
+      questPartyId={party ? (party.id || party.code) : null}
     >
       <AppNav
         route={route}

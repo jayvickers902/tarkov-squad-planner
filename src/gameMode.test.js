@@ -139,6 +139,17 @@ describe('game mode contract', () => {
     await waitFor(() => expect(result.current.quests).toEqual([]))
   })
 
+  it('manually reloads authoritative quest state after a missed realtime update', async () => {
+    const { result } = renderHook(() => useUserQuests('user-1', 'regular'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.quests.map(quest => quest.quest_id)).toEqual(['regular-1'])
+
+    db.rows[0] = { ...db.rows[0], state: 'completed', state_source: 'log_import' }
+    await act(async () => { await result.current.refresh() })
+
+    expect(result.current.quests).toEqual([])
+  })
+
   it('clears active quests only in the active mode and preserves terminal history', async () => {
     db.rows.push(
       { user_id: 'user-1', game_mode: 'pve', quest_id: 'pve-1', quest_name: 'PVE quest', state: 'active' },

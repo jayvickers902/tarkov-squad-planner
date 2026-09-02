@@ -20,6 +20,7 @@ export function EftLogSyncProvider({
   onAddPing,
   mapNorm,
   partyId,
+  questPartyId,
   children,
 }) {
   // This is intentionally scoped to the authenticated provider: signed-out
@@ -27,6 +28,7 @@ export function EftLogSyncProvider({
   const { tasks: allTasks } = useTasks(null, gameMode)
   const controller = useEftLogImport({ allTasks, gameMode, userId, onApply })
   const repairedScopesRef = useRef(new Set())
+  const checkedPartyRef = useRef(null)
 
   useEffect(() => {
     if (!userId || questsLoading || !Array.isArray(allTasks) || allTasks.length === 0 || typeof onRepairRows !== 'function') return
@@ -37,6 +39,23 @@ export function EftLogSyncProvider({
       console.warn('Quest row repair failed', error)
     })
   }, [allTasks, gameMode, onRepairRows, questsLoading, userId])
+
+  // Automatic folder sync is opt-in: `watching` means the remembered folder
+  // has permission and auto-sync enabled. Force one catch-up scan on party
+  // entry so completions from earlier raids land before planning begins.
+  useEffect(() => {
+    if (!questPartyId) {
+      checkedPartyRef.current = null
+      return
+    }
+    if (controller.state !== 'watching' || !controller.rememberedFolderName || typeof controller.checkNow !== 'function') return
+    const key = `${userId}:${gameMode}:${questPartyId}`
+    if (checkedPartyRef.current === key) return
+    checkedPartyRef.current = key
+    Promise.resolve(controller.checkNow()).catch(error => {
+      console.warn('Party entry EFT log check failed', error)
+    })
+  }, [controller.state, controller.rememberedFolderName, controller.checkNow, gameMode, questPartyId, userId])
   const screenshotController = useEftScreenshotController({
     userId,
     myName,

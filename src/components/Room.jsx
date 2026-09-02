@@ -12,6 +12,7 @@ import StartRaidModal from './StartRaidModal'
 import RaidSettings from './RaidSettings'
 import SyncStatusBar from './SyncStatusBar'
 import Icon from './Icon'
+import { useEftLogSync } from '../EftLogSyncContext'
 import useEphemeralSweep from '../useEphemeralSweep'
 import { resolveSetting } from '../settings'
 import { gameModeLabel, resolvePartyMode } from '../gameMode'
@@ -123,8 +124,9 @@ function compactMapName(map) {
   return map.normalizedName === 'streets-of-tarkov' ? 'Streets' : map.name
 }
 
-export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, activeQuestCount = 0, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, userObjProgress, userSettings = {}, onSetUserSetting, onRaidError, gameMode = 'regular', onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onStartRaid, raidSession, onOpenRaid, onCloseRaid }) {
+export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, activeQuestCount = 0, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, userObjProgress, userSettings = {}, onSetUserSetting, onRaidError, gameMode = 'regular', onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onRefreshQuests, onStartRaid, raidSession, onOpenRaid, onCloseRaid }) {
   const isMobile = useIsMobile()
+  const questLogs = useEftLogSync({ optional: true })
   const [tab, setTab]           = useState('todo')
   const [copied, setCopied]     = useState(false)
   const [copyError, setCopyError] = useState('')
@@ -140,6 +142,8 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [overflowOpen, setOverflowOpen] = useState(false)
   const [pendingMap, setPendingMap] = useState(null)
+  const [questSyncState, setQuestSyncState] = useState('idle')
+  const [questSyncMessage, setQuestSyncMessage] = useState('')
   const overflowRef = useRef(null)
   const overflowTriggerRef = useRef(null)
   const settingsRef = useRef(null)
@@ -352,6 +356,40 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
     commitSelectMap(map)
   }
 
+  async function handleQuestSync() {
+    if (questSyncState === 'review') {
+      onMyQuests()
+      return
+    }
+    if (questSyncState === 'syncing') return
+    setQuestSyncState('syncing')
+    setQuestSyncMessage('Refreshing your quest list.')
+    try {
+      const hasWebsiteFolder = Boolean(questLogs?.rememberedFolderName)
+      const folderResult = hasWebsiteFolder && typeof questLogs?.checkNow === 'function'
+        ? await questLogs.checkNow()
+        : null
+      await onRefreshQuests?.()
+
+      if (hasWebsiteFolder && !folderResult) throw new Error(questLogs?.error || 'The EFT log folder could not be checked.')
+      if (folderResult && folderResult.changed !== false && !Array.isArray(folderResult.events)) {
+        setQuestSyncState('review')
+        setQuestSyncMessage('New log changes are ready to review in Quest Manager because automatic sync is off.')
+        return
+      }
+      const completed = Array.isArray(folderResult?.events)
+        ? folderResult.events.filter(event => event?.state === 'completed').length
+        : 0
+      setQuestSyncState('success')
+      setQuestSyncMessage(completed > 0
+        ? `${completed} completed quest${completed === 1 ? '' : 's'} cleared from your list.`
+        : 'Quest list is up to date.')
+    } catch (error) {
+      setQuestSyncState('failed')
+      setQuestSyncMessage(error?.message || 'Quest sync did not finish. Try again.')
+    }
+  }
+
   async function copy() {
     setCopyError('')
     try {
@@ -475,6 +513,16 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
             )}
 
             <div className="room-banner-buttons">
+              <button
+                type="button"
+                className="room-banner-btn room-banner-sync-btn"
+                data-state={questSyncState}
+                onClick={handleQuestSync}
+                disabled={questSyncState === 'syncing' || questLogs?.state === 'reading' || questLogs?.state === 'applying'}
+                aria-describedby="party-quest-sync-status"
+              >
+                {questSyncState === 'syncing' ? 'SYNCING…' : questSyncState === 'success' ? 'QUESTS SYNCED' : questSyncState === 'review' ? 'REVIEW QUESTS' : questSyncState === 'failed' ? 'RETRY SYNC' : 'SYNC QUESTS'}
+              </button>
               <button type="button" className="room-banner-btn room-banner-btn-gold" onClick={onMyQuests}>
                 <Icon name="star" size="sm" /> QUESTS
               </button>
@@ -539,7 +587,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
           </div>
         </div>
 
-        <div className="sr-status" aria-live="polite">{copied ? 'Invite link copied.' : ''}</div>
+        <div id="party-quest-sync-status" className="sr-status" role="status" aria-live="polite">{copied ? 'Invite link copied.' : questSyncMessage}</div>
       </div>
 
       <div className="room-body">

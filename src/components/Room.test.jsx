@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // The party view is a layout, not a data layer: everything that talks to the
@@ -11,8 +11,9 @@ vi.mock('../useTarkov', () => ({
 }))
 vi.mock('../useEphemeralSweep', () => ({ default: () => {} }))
 vi.mock('../useQuestShareOverrides', () => ({ useQuestShareOverrides: () => ({ overrides: {} }) }))
+const logSyncState = vi.hoisted(() => ({ current: null }))
 vi.mock('../EftLogSyncContext', () => ({
-  useEftLogSync: () => null,
+  useEftLogSync: () => logSyncState.current,
   useEftScreenshotSyncContext: () => null,
 }))
 vi.mock('../useCompanionSyncStatus', () => ({ useCompanionSyncStatus: () => null }))
@@ -121,6 +122,7 @@ function renderRoom(overrides = {}) {
     onRemoveFriend: vi.fn(),
     onRefreshFriends: vi.fn(),
     onRefresh: vi.fn(),
+    onRefreshQuests: vi.fn().mockResolvedValue([]),
     onStartRaid: vi.fn(),
     onOpenRaid: vi.fn(),
     onCloseRaid: vi.fn(),
@@ -129,7 +131,7 @@ function renderRoom(overrides = {}) {
   return { props, ...render(<Room {...props} />) }
 }
 
-beforeEach(() => { localStorage.clear(); vi.useFakeTimers({ shouldAdvanceTime: true }) })
+beforeEach(() => { logSyncState.current = null; localStorage.clear(); vi.useFakeTimers({ shouldAdvanceTime: true }) })
 afterEach(() => { vi.useRealTimers(); cleanup() })
 
 describe('Room banner header', () => {
@@ -222,6 +224,28 @@ describe('Room banner header', () => {
     const pingHelp = screen.getByRole('button', { name: 'About PING TTL' })
     const descriptionId = pingHelp.getAttribute('aria-describedby')
     expect(document.getElementById(descriptionId)).toHaveTextContent('How long a squad ping stays on the map')
+  })
+
+  it('offers a one-click quest sync and reports completed quests', async () => {
+    const checkNow = vi.fn().mockResolvedValue({ changed: true, events: [{ state: 'completed' }] })
+    logSyncState.current = { state: 'watching', rememberedFolderName: 'Logs', checkNow }
+    const { props } = renderRoom()
+
+    fireEvent.click(screen.getByRole('button', { name: 'SYNC QUESTS' }))
+    expect(screen.getByRole('button', { name: 'SYNCING…' })).toBeDisabled()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'QUESTS SYNCED' })).toBeInTheDocument())
+
+    expect(checkNow).toHaveBeenCalledOnce()
+    expect(props.onRefreshQuests).toHaveBeenCalledOnce()
+    expect(screen.getByRole('status')).toHaveTextContent('1 completed quest cleared from your list.')
+  })
+
+  it('refreshes database-backed quests even without a browser folder', async () => {
+    const { props } = renderRoom()
+    fireEvent.click(screen.getByRole('button', { name: 'SYNC QUESTS' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'QUESTS SYNCED' })).toBeInTheDocument())
+    expect(props.onRefreshQuests).toHaveBeenCalledOnce()
+    expect(screen.getByRole('status')).toHaveTextContent('Quest list is up to date.')
   })
 })
 

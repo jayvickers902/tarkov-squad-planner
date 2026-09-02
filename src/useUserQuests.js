@@ -54,6 +54,29 @@ export function useUserQuests(userId, gameMode = 'regular') {
     return activeRows(result.data)
   }, [])
 
+  // Public refresh used at party boundaries and by the manual sync control.
+  // Re-reading the whole mode is intentional: another client may have moved
+  // several quests into terminal states while this tab was asleep.
+  const refresh = useCallback(async () => {
+    if (!userId) return []
+    const requestedUserId = userId
+    const requestedMode = mode
+    const requestId = ++loadRequestRef.current
+    try {
+      const data = await loadMode(requestedUserId, requestedMode)
+      if (requestId !== loadRequestRef.current) return data
+      if (activeUserIdRef.current !== requestedUserId || activeModeRef.current !== requestedMode) return data
+      setQuests(data)
+      setLoadedUserId(requestedUserId)
+      setLoadedGameMode(requestedMode)
+      setError(null)
+      return data
+    } catch (refreshError) {
+      if (requestId === loadRequestRef.current) setError(refreshError)
+      throw refreshError
+    }
+  }, [userId, mode, loadMode])
+
   useEffect(() => {
     let cancelled = false
     if (!userId) {
@@ -535,5 +558,6 @@ export function useUserQuests(userId, gameMode = 'regular') {
     repairQuestRows,
     reconcileLogEvents,
     getQuestHistory,
+    refresh,
   }
 }

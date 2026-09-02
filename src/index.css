@@ -236,6 +236,9 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .room-banner-btn:hover { border-color: var(--gold); color: var(--goldtx); }
 .room-banner-btn-gold { border-color: var(--brdg); color: var(--goldtx); }
 .room-banner-btn-gold:hover { background: rgba(201,168,76,.14); border-color: var(--gold); }
+.room-banner-sync-btn[data-state="success"] { border-color: rgba(94,177,112,.55); color: var(--grn); }
+.room-banner-sync-btn[data-state="failed"],
+.room-banner-sync-btn[data-state="review"] { border-color: rgba(201,168,76,.55); color: var(--goldtx); }
 .room-banner-icon-btn,
 .room-banner-buttons .room-overflow-trigger {
   display: inline-flex;

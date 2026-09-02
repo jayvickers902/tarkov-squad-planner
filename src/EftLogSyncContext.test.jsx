@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EftLogSyncProvider, useEftLogSync } from './EftLogSyncContext'
 
 const taskState = vi.hoisted(() => ({ current: { tasks: [{ id: 'task-1' }], loading: false } }))
+const logState = vi.hoisted(() => ({ current: { state: 'idle', supported: true } }))
 
 vi.mock('./useTarkov', () => ({ useTasks: vi.fn(() => taskState.current) }))
-vi.mock('./useEftLogImport', () => ({ useEftLogImport: vi.fn(() => ({ state: 'idle', supported: true })) }))
+vi.mock('./useEftLogImport', () => ({ useEftLogImport: vi.fn(() => logState.current) }))
 vi.mock('./useEftScreenshotSync', () => ({ useEftScreenshotSync: vi.fn(() => ({ state: 'watching', supported: true })) }))
 
 import { useTasks } from './useTarkov'
@@ -18,6 +19,7 @@ const mockUseEftScreenshotSync = vi.mocked(useEftScreenshotSync)
 
 beforeEach(() => {
   taskState.current = { tasks: [{ id: 'task-1' }], loading: false }
+  logState.current = { state: 'idle', supported: true }
   mockUseTasks.mockClear()
   mockUseEftLogImport.mockClear()
   mockUseEftScreenshotSync.mockClear()
@@ -106,5 +108,51 @@ describe('EftLogSyncProvider', () => {
     expect(screen.getByText('1:idle')).toBeInTheDocument()
     expect(warnSpy).toHaveBeenCalledWith('Quest row repair failed', expect.any(Error))
     warnSpy.mockRestore()
+  })
+
+  it('checks an opted-in remembered folder once when entering each party', async () => {
+    const checkNow = vi.fn().mockResolvedValue({ changed: false })
+    logState.current = {
+      state: 'watching',
+      supported: true,
+      rememberedFolderName: 'Logs',
+      checkNow,
+    }
+    const { rerender } = render(
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questPartyId="party-1" onApply={() => {}}>
+        <Consumer />
+      </EftLogSyncProvider>,
+    )
+
+    await waitFor(() => expect(checkNow).toHaveBeenCalledTimes(1))
+    rerender(
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questPartyId="party-1" onApply={() => {}}>
+        <Consumer />
+      </EftLogSyncProvider>,
+    )
+    expect(checkNow).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questPartyId="party-2" onApply={() => {}}>
+        <Consumer />
+      </EftLogSyncProvider>,
+    )
+    await waitFor(() => expect(checkNow).toHaveBeenCalledTimes(2))
+  })
+
+  it('does not auto-check a remembered folder when automatic sync is off', () => {
+    const checkNow = vi.fn()
+    logState.current = {
+      state: 'idle',
+      supported: true,
+      rememberedFolderName: 'Logs',
+      checkNow,
+    }
+    render(
+      <EftLogSyncProvider userId="user-1" gameMode="regular" questPartyId="party-1" onApply={() => {}}>
+        <Consumer />
+      </EftLogSyncProvider>,
+    )
+    expect(checkNow).not.toHaveBeenCalled()
   })
 })

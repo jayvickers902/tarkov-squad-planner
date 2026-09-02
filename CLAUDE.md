@@ -468,6 +468,13 @@ fullscreen, which is exactly when the tab is hidden, its poll timer throttled to
 roughly one call a minute, and possibly frozen outright. Without it a quest
 finished mid-raid sat on the plan list until the next poll landed.
 
+Entering or rejoining a party is also a quest freshness boundary. `App` reloads
+the active mode from `user_quests` so missed desktop/realtime updates cannot be
+republished from stale client state, and `EftLogSyncProvider` runs one catch-up
+folder check when remembered browser-folder auto-sync is active. The party banner's
+`SYNC QUESTS` action repeats both checks on demand and reports checking, success,
+review-required, and retry states without making automatic folder sync an implicit opt-in.
+
 `raidDebrief.js` holds the pure half and reads `runFolderCheck`'s own shapes:
 `null` is a check that never finished, `changed: false` an untouched folder, and
 an `events` array only where the scan was allowed to apply. Auto-sync off means a
