@@ -26,7 +26,7 @@ import { layoutObjectivePins } from '../objectivePinLayout'
 import { bearingRange, useMapPings } from '../useMapPings'
 import { classifyPmcSpawns } from '../tarkovSpawns'
 import { framePositionSignature } from '../squadFocus'
-import { readCameraMode, writeCameraMode } from '../cameraMode'
+import { effectiveCameraMode, readCameraMode, writeCameraMode } from '../cameraMode'
 import { escapeHtml, parseSanitizedSvg, safeColor, safeImageUrl } from '../mapHtml'
 
 const PALETTE = ['#e85d5d', '#f5a623', '#e8e85d', '#5de87a', '#5de8d4', '#5db8e8', '#c45de8', '#e85da8', '#ffffff', '#b0b0b0']
@@ -543,8 +543,10 @@ export default function MapLeaflet({
   hoverPingId,
   onFocusPing,
   overviewNonce = 0,
+  centreMeNonce = 0,      // bumped by the parent's CENTRE ON ME control
   autofocusMode,          // controlled camera policy; undefined keeps the local one
   onAutofocusMode,
+  onCameraDemote,         // OVERVIEW's session-scoped demotion, owned by the parent
   hideAutofocusControl = false,
   followFrame = null,     // squadFrame() result — world coords, converted here
 }) {
@@ -569,11 +571,23 @@ export default function MapLeaflet({
   // The camera policy is controllable so the map page can put the segmented
   // control in its header; uncontrolled it keeps its own, same stored value.
   const [internalAutofocus, setInternalAutofocus] = useState(readCameraMode)
-  const pingAutofocus = autofocusMode !== undefined ? autofocusMode : internalAutofocus
+  // OVERVIEW's demotion of FOLLOW lasts this sitting only, so it is state and
+  // never storage; cameraMode.js carries the reasoning.
+  const [internalOverviewDemoted, setInternalOverviewDemoted] = useState(false)
+  const pingAutofocus = autofocusMode !== undefined
+    ? autofocusMode
+    : effectiveCameraMode(internalAutofocus, internalOverviewDemoted)
   const setPingAutofocus = useCallback(next => {
     if (autofocusMode !== undefined) onAutofocusMode?.(next)
-    else setInternalAutofocus(next)
+    else {
+      setInternalAutofocus(next)
+      setInternalOverviewDemoted(false)
+    }
   }, [autofocusMode, onAutofocusMode])
+  const demoteCamera = useCallback(() => {
+    if (autofocusMode !== undefined) onCameraDemote?.()
+    else setInternalOverviewDemoted(true)
+  }, [autofocusMode, onCameraDemote])
   const [offscreenChevrons, setOffscreenChevrons] = useState([])
   // Off by default: Reserve alone carries 64 points, and a map that opens under
   // a blanket of loot icons is worse than one you have to ask for them on.
@@ -611,6 +625,7 @@ export default function MapLeaflet({
   const lastAppliedFocusPingRef = useRef(null)
   const lastAutoFocusAnnouncementRef = useRef(null)
   const lastOverviewNonceRef = useRef(overviewNonce)
+  const lastCentreMeNonceRef = useRef(centreMeNonce)
   const followFlightRef = useRef(false)
   const followSigRef = useRef('')
   const announcementHoverRef = useRef(false)
@@ -930,9 +945,12 @@ export default function MapLeaflet({
     }
   }, [mapNorm])
 
+  // Only an uncontrolled mount stores its own preference; a controlled one would
+  // otherwise write the parent's demoted mode back over the parent's preference.
   useEffect(() => {
-    writeCameraMode(pingAutofocus)
-  }, [pingAutofocus])
+    if (autofocusMode !== undefined) return
+    writeCameraMode(internalAutofocus)
+  }, [autofocusMode, internalAutofocus])
 
   useEffect(() => {
     const map = mapRef.current
@@ -1400,16 +1418,34 @@ export default function MapLeaflet({
   const focusOverview = useCallback(() => {
     clearPingFocus()
     setInternalHoverPingId(null)
-    if (pingAutofocus === 'follow') setPingAutofocus('alerts')
+    demoteCamera()
     lastUserInteractionRef.current = Date.now()
     if (mapRef.current && boundsRef.current) mapRef.current.fitBounds(boundsRef.current)
-  }, [clearPingFocus, pingAutofocus, setPingAutofocus])
+  }, [clearPingFocus, demoteCamera])
 
   useEffect(() => {
     if (overviewNonce === lastOverviewNonceRef.current) return
     lastOverviewNonceRef.current = overviewNonce
     focusOverview()
   }, [focusOverview, overviewNonce])
+
+  // CENTRE ON ME. Deliberately not a camera policy: an explicit jump to your own
+  // last position that no policy interaction can defeat — it ignores the camera
+  // mode, PLAN vs LIVE and the tap count, all of which can stop the standing
+  // camera from ever framing a solo position ping. `fromUser` stamps the
+  // interaction guard, so FOLLOW yields the usual six seconds afterwards.
+  const centreOnMe = useCallback(() => {
+    const mine = pingCards.find(card => card.ping.user_id === myUserId)
+      || pingCards.find(card => card.ping.user === myName)
+    if (!mine) return false
+    return focusPing(mine.ping.id, { fromUser: true })
+  }, [focusPing, myName, myUserId, pingCards])
+
+  useEffect(() => {
+    if (centreMeNonce === lastCentreMeNonceRef.current) return
+    lastCentreMeNonceRef.current = centreMeNonce
+    centreOnMe()
+  }, [centreMeNonce, centreOnMe])
 
   // ─── FOLLOW camera ──────────────────────────────────────────────────────────
   // The framing arithmetic is in squadFocus.js; this converts its world box to

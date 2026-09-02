@@ -1470,6 +1470,24 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* CENTRE ON ME is one explicit jump rather than a camera policy, so it sits
+   outside the mode group and stays in the header through PLAN as well as LIVE. */
+.mr-centre-me {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  background: #1b1f1a;
+  border: 1px solid var(--brds);
+  border-radius: 4px;
+  color: var(--txm);
+  font-size: var(--fs-xs);
+  letter-spacing: .12em;
+  white-space: nowrap;
+}
+.mr-centre-me:hover:not(:disabled) { border-color: var(--gold); color: var(--goldtx); }
+.mr-centre-me:disabled { opacity: .42; cursor: default; }
 .mr-header-spacer { flex: 1 1 auto; min-width: 0; }
 .mr-icon-btn {
   flex-shrink: 0;
@@ -2328,6 +2346,10 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   .mr-map-meta, .mr-header-divider, .mr-camera-label { display: none; }
   .mr-camera { flex: 1 1 100%; order: 3; }
   .mr-camera-readout { flex: 1; }
+  /* The header already wraps to three rows on a phone and every row costs map.
+     The label collapses so the control rides with the other icon buttons. */
+  .mr-centre-me { width: 32px; height: 32px; padding: 0; justify-content: center; }
+  .mr-centre-me-label { display: none; }
   .mr-map-caption-row { left: 7px; top: 7px; max-width: calc(100% - 14px); flex-wrap: wrap; }
   .mr-shot-sync button { min-height: 32px; }
   .mr-grid { position: relative; display: block; }

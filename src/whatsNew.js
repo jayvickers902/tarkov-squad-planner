@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.14'
+export const RELEASE_VERSION = '2026.15'
 
 export const SETUP_STEPS = [
   {
@@ -16,6 +16,21 @@ export const SETUP_STEPS = [
 ]
 
 export const RELEASES = [
+  {
+    version: '2026.15',
+    date: '2026-09-02',
+    title: 'FINDING YOURSELF ON THE MAP',
+    items: [
+      {
+        title: 'CENTRE ON ME',
+        body: 'A button in the map header, and the C key, jump straight to your own last position. It works in PLAN as well as LIVE and whatever the camera is set to, so there is always one way to find yourself on the map.',
+      },
+      {
+        title: 'OVERVIEW NO LONGER RETIRES THE FOLLOW CAMERA',
+        body: 'Pressing OVERVIEW still steps the camera back so it stops re-framing while you look around, but it no longer remembers that choice forever. FOLLOW comes back next time you open the map, and picking a camera mode yourself is still what sticks.',
+      },
+    ],
+  },
   {
     version: '2026.14',
     date: '2026-08-31',

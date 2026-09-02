@@ -17,7 +17,7 @@ import { ageLabel } from '../tarkovPings'
 import { normalizeMembers, findMember, memberIds as getMemberIds, memberNames as getMemberNames, objectiveProgressKey } from '../partyMembers'
 import { buildObjectiveRows, groupRowsByQuest, nearestRange } from '../raidObjectives'
 import { squadFrame } from '../squadFocus'
-import { CAMERA_MODES, readCameraMode, writeCameraMode } from '../cameraMode'
+import { CAMERA_MODES, effectiveCameraMode, readCameraMode, writeCameraMode } from '../cameraMode'
 import { useEftScreenshotSyncContext, useEftLogSync } from '../EftLogSyncContext'
 import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
 import { screenshotChannelStatus, STATE_TEXT } from '../syncStatus'
@@ -177,8 +177,10 @@ export default function RaidView({
   const [focusPingId, setFocusPingId] = useState(null)
   const [hoverPingId, setHoverPingId] = useState(null)
   const [overviewNonce, setOverviewNonce] = useState(0)
+  const [centreMeNonce, setCentreMeNonce] = useState(0)
   const [, setFullscreen] = useState(false)
-  const [cameraMode, setCameraMode] = useState(readCameraMode)
+  const [cameraPreference, setCameraPreference] = useState(readCameraMode)
+  const [overviewDemoted, setOverviewDemoted] = useState(false)
   const [cameraMenuOpen, setCameraMenuOpen] = useState(false)
   const cameraMenuRef = useRef(null)
 
@@ -231,7 +233,19 @@ export default function RaidView({
   const { debrief, recheck: recheckLogs } = useRaidDebrief(live, logs)
 
   // --- Camera -------------------------------------------------------------
-  useEffect(() => { writeCameraMode(cameraMode) }, [cameraMode])
+  // Only the preference is stored. `overviewDemoted` is deliberately session
+  // state — see effectiveCameraMode in cameraMode.js for why persisting it
+  // silently retired FOLLOW after a single OVERVIEW click.
+  const cameraMode = effectiveCameraMode(cameraPreference, overviewDemoted)
+  useEffect(() => { writeCameraMode(cameraPreference) }, [cameraPreference])
+
+  // Picking a mode is a preference; it also ends any standing demotion, so
+  // choosing FOLLOW after OVERVIEW puts the camera straight back on the squad.
+  const chooseCameraMode = useCallback(mode => {
+    setCameraPreference(mode)
+    setOverviewDemoted(false)
+  }, [])
+  const demoteCamera = useCallback(() => setOverviewDemoted(true), [])
 
   const followFrame = useMemo(
     () => (live ? squadFrame(pingState.echoCards, { myUserId, myName }) : null),
@@ -426,12 +440,20 @@ export default function RaidView({
     }
   }, [])
 
-  // OVERVIEW has to end FOLLOW, or follow re-frames on the next ping and the
-  // button reads as broken. Falling back to ALERTS is the right landing state.
+  // OVERVIEW has to end FOLLOW for this sitting, or follow re-frames on the next
+  // ping and the button reads as broken. It is a demotion rather than a choice,
+  // so it never reaches storage — see cameraMode.js.
   const showOverview = useCallback(() => {
-    setCameraMode(mode => mode === 'follow' ? 'alerts' : mode)
+    demoteCamera()
     setOverviewNonce(nonce => nonce + 1)
-  }, [])
+  }, [demoteCamera])
+
+  // CENTRE ON ME is one explicit jump to your own last position, not a camera
+  // policy: it has to work in PLAN as well as LIVE, whatever the camera mode
+  // and whether the ping was a single tap or a double. The map resolves the
+  // ping and flies to it; a nonce rather than an id so a second click on the
+  // same ping re-centres after you have dragged away.
+  const centreOnMe = useCallback(() => setCentreMeNonce(nonce => nonce + 1), [])
 
   useEffect(() => {
     function onFullscreenChange() {
@@ -445,6 +467,10 @@ export default function RaidView({
     function onKeyDown(event) {
       const target = event.target
       if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT') return
+      // A modifier means the browser's shortcut, not one of ours. Every letter
+      // here collides with one — Ctrl+C on a page showing a party code most of
+      // all — and swallowing copy to centre the camera is never what was meant.
+      if (event.ctrlKey || event.metaKey || event.altKey) return
 
       if (event.key === 'Escape') {
         // The browser owns Escape while fullscreen is active. Once it has exited,
@@ -470,12 +496,15 @@ export default function RaidView({
       } else if (key === 'o') {
         event.preventDefault()
         showOverview()
+      } else if (key === 'c') {
+        event.preventDefault()
+        centreOnMe()
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose, showOverview, toggleDraw, toggleFullscreen, toggleRail, toggleTasks])
+  }, [centreOnMe, onClose, showOverview, toggleDraw, toggleFullscreen, toggleRail, toggleTasks])
 
   const droppedName = useMemo(() => {
     if (!followFrame?.dropped?.length) return null
@@ -556,7 +585,7 @@ export default function RaidView({
                   type="button"
                   className={cameraMode === mode ? 'mono is-active' : 'mono'}
                   aria-pressed={cameraMode === mode}
-                  onClick={() => setCameraMode(mode)}
+                  onClick={() => chooseCameraMode(mode)}
                 >{mode.toUpperCase()}</button>
               ))}
               <button
@@ -572,7 +601,7 @@ export default function RaidView({
                     type="button"
                     role="menuitem"
                     className="mono"
-                    onClick={() => { setCameraMode('off'); setCameraMenuOpen(false) }}
+                    onClick={() => { chooseCameraMode('off'); setCameraMenuOpen(false) }}
                   >OFF &middot; HOLD THE CAMERA</button>
                   <button
                     type="button"
@@ -585,6 +614,25 @@ export default function RaidView({
             </div>
             <span className="mono mr-camera-readout">{frameReadout}</span>
           </div>
+        )}
+
+        {/* Visible for the whole of a live raid even before the first ping
+            lands, so its absence is never what a reader hunting for their own
+            position finds. In PLAN it appears only once there is a ping left to
+            centre on. The label collapses to the glyph on a phone, so the
+            accessible name is spelled out rather than left to the visible text. */}
+        {(live || myPing) && (
+          <button
+            type="button"
+            className="mono mr-centre-me"
+            onClick={centreOnMe}
+            disabled={!myPing}
+            aria-label="Centre on me"
+            title={myPing ? 'Centre the map on your last position (C)' : 'No position ping yet'}
+          >
+            <span aria-hidden="true">&#8982;</span>
+            <span className="mr-centre-me-label">CENTRE ON ME</span>
+          </button>
         )}
 
         <div className="mr-header-spacer" />
@@ -645,6 +693,7 @@ export default function RaidView({
             hoverPingId={hoverPingId}
             onFocusPing={setFocusPingId}
             overviewNonce={overviewNonce}
+            centreMeNonce={centreMeNonce}
             defaultMode="pan"
             mode={drawMode}
             onModeChange={setDrawMode}
@@ -652,7 +701,8 @@ export default function RaidView({
             pingStripMode="rail"
             sharedPingState={pingState}
             autofocusMode={cameraMode}
-            onAutofocusMode={setCameraMode}
+            onAutofocusMode={chooseCameraMode}
+            onCameraDemote={demoteCamera}
             hideAutofocusControl
             followFrame={live ? followFrame : null}
           />

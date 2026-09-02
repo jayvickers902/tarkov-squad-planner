@@ -29,3 +29,20 @@ export function writeCameraMode(mode) {
     // A private window or a blocked storage policy should not affect the map.
   }
 }
+
+// OVERVIEW has to leave FOLLOW, or follow re-frames on the next ping and the
+// button reads as broken. ALERTS is the right landing state — the reader still
+// hears about contact.
+export function demoteForOverview(mode) {
+  return mode === 'follow' ? 'alerts' : mode
+}
+
+// The mode the camera actually runs in. The demotion above answers "let me look
+// at the whole map for a moment", which is not a preference: persisting it meant
+// one OVERVIEW click retired FOLLOW for every future raid on the device, and
+// ALERTS skips your own pings and single-tap pings, so the camera then never
+// moved for a position ping again. The demotion is therefore session state and
+// only `preference` is ever written to storage.
+export function effectiveCameraMode(preference, overviewDemoted = false) {
+  return overviewDemoted ? demoteForOverview(preference) : preference
+}
