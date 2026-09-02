@@ -1306,8 +1306,11 @@ export default function MapLeaflet({
     })
   }, [autoObjPins, focusKey, mapNorm, pingFocusActive, showQuestPins])
 
-  // Rail focus is a map action, not just a visual state. One zone gets a fly-to;
-  // several zones get a bounded view so find-item objectives stay honest.
+  // Rail focus is a map action, not just a visual state — but it only ever pans.
+  // Zooming on a click took the reader's chosen scale away from them, and a
+  // multi-zone objective re-fitted to a zoom that had nothing to do with the one
+  // they were reading at. Centre on the single zone, or on the middle of the
+  // spread, and leave the zoom exactly where they left it.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !focusKey || !cfg) return
@@ -1318,12 +1321,8 @@ export default function MapLeaflet({
     // this stamps the same guard a drag does: FOLLOW yields for six seconds and
     // then re-frames the squad on its own.
     lastUserInteractionRef.current = Date.now()
-    if (points.length === 1) {
-      const zoom = Math.min(cfg.maxZoom, Math.max(map.getZoom(), cfg.minZoom + 1))
-      map.flyTo(points[0], zoom, { duration: 0.55 })
-    } else {
-      map.fitBounds(L.latLngBounds(points), { padding: [80, 80], maxZoom: cfg.maxZoom, animate: true })
-    }
+    const centre = points.length === 1 ? points[0] : L.latLngBounds(points).getCenter()
+    map.panTo(centre, { animate: true, duration: 0.55 })
   }, [autoObjPins, cfg, focusKey, mapNorm])
 
   const clearPingFocus = useCallback(() => {
