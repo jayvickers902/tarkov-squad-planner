@@ -934,7 +934,7 @@ export function createScreenshotPingSyncController({
     timer = null
     const nowValue = value.at
     while (emittedAt.length && nowValue - emittedAt[0] >= 60000) emittedAt.shift()
-    if (emittedAt.length >= maxPingsPerMinute) return { discarded: 'rate-limit' }
+    if (emittedAt.length >= maxPingsPerMinute) return { discarded: 1, reason: 'rate-limit' }
     const send = pingMethod(network)
     if (typeof send !== 'function') throw new Error('Position ping network adapter is unavailable.')
     const result = await send.call(network, value, clone(pingContext))
@@ -993,15 +993,16 @@ export function createScreenshotPingSyncController({
       await saveCheckpoint(checkpointStore, checkpointKey, next)
       checkpoint = next
       context = nextContext
-      return { baseline: true, discarded: effectiveOnline ? 'boundary' : 'offline', emitted: 0, files }
+      return { baseline: true, reason: effectiveOnline ? 'boundary' : 'offline', discarded: 0, emitted: 0, files }
     }
     const names = new Set(previous.map(file => file.filename))
     const fresh = files.filter(file => !names.has(file.filename))
     let queued = 0
     let discarded = 0
+    let stale = 0
     for (const file of fresh) {
       const age = now() - file.lastModified
-      if (file.lastModified <= 0 || age < -5000 || age > freshnessMs) { discarded += 1; continue }
+      if (file.lastModified <= 0 || age < -5000 || age > freshnessMs) { discarded += 1; stale += 1; continue }
       const position = toEftScreenshotPosition(file.filename, nextContext.mapNorm, nextContext.mapNorm)
       if (!position.ok) { discarded += 1; continue }
       const ping = safePing(position, {
@@ -1023,7 +1024,7 @@ export function createScreenshotPingSyncController({
     await saveCheckpoint(checkpointStore, checkpointKey, next)
     checkpoint = next
     context = nextContext
-    return { baseline: false, queued, discarded, emitted: 0, files, pending: pending ? clone(pending) : null }
+    return { baseline: false, reason: null, queued, discarded, stale, emitted: 0, files, pending: pending ? clone(pending) : null }
   }
 
   return {

@@ -79,7 +79,7 @@ describe('companion runtime', () => {
     await runtime.start()
     expect(reportSyncClientStatus).toHaveBeenLastCalledWith([
       expect.objectContaining({ service: 'logs', configured: true, state: 'watching', last_sync_at: expect.any(String) }),
-      expect.objectContaining({ service: 'pings', configured: true, state: 'watching', last_sync_at: expect.any(String) }),
+      expect.objectContaining({ service: 'pings', configured: true, state: 'idle', detail: 'Position pings idle — join a party and pick a map', last_sync_at: expect.any(String) }),
     ])
     await runtime.dispose()
   })
@@ -137,6 +137,58 @@ describe('companion runtime', () => {
     expect(runtime.getStatus().selectionOptions).toEqual([{ value: 'profile-0123456789abcdef', label: 'PROFILE 1' }])
     await runtime.selectProfile('profile-0123456789abcdef')
     expect(sync).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps screenshot pings running while a quest profile is being selected', async () => {
+    const sync = vi.fn(async () => ({ requiresSelection: 'profile' }))
+    const screenshot = vi.fn(async () => ({ baseline: false, reason: null, queued: 1, discarded: 0, stale: 0 }))
+    const { runtime } = harness({ engine: { questLogs: { sync }, screenshots: { sync: screenshot, flush: vi.fn(async () => {}) } }, network: {
+      getDesktopSyncContext: vi.fn(async () => ({ userId: 'user-1', gameMode: 'regular', partyId: 1, partyCode: 'ABCD', raidId: 2, mapNorm: 'customs' })),
+    } })
+    await runtime.start()
+    expect(screenshot).toHaveBeenCalledWith({ context: expect.objectContaining({ online: true }), online: true })
+    expect(runtime.getStatus().pingOutcome).toMatchObject({ queued: 1, discarded: 0, reason: null })
+  })
+
+  it('reports ping prerequisites and stale screenshots independently of quest status', async () => {
+    const reportSyncClientStatus = vi.fn(async () => {})
+    const screenshot = vi.fn(async () => ({ baseline: false, reason: null, queued: 0, discarded: 2, stale: 2 }))
+    const { runtime } = harness({
+      engine: { questLogs: { sync: vi.fn(async () => ({ requiresSelection: 'profile' })) }, screenshots: { sync: screenshot, flush: vi.fn(async () => {}) } },
+      network: { reportSyncClientStatus },
+    })
+    await runtime.start()
+    const pings = reportSyncClientStatus.mock.calls.at(-1)[0].find(row => row.service === 'pings')
+    expect(pings).toMatchObject({ state: 'idle', detail: 'Position pings idle — join a party and pick a map' })
+
+    const configured = harness({
+      engine: { questLogs: { sync: vi.fn(async () => ({})) }, screenshots: { sync: screenshot, flush: vi.fn(async () => {}) } },
+      network: {
+        reportSyncClientStatus,
+        getDesktopSyncContext: vi.fn(async () => ({ userId: 'user-1', gameMode: 'regular', partyId: 1, partyCode: 'ABCD', raidId: 2, mapNorm: 'customs' })),
+      },
+    })
+    await configured.runtime.start()
+    const freshPings = reportSyncClientStatus.mock.calls.at(-1)[0].find(row => row.service === 'pings')
+    // A screenshot that arrived too late to be a live position is reported, not
+    // treated as a fault -- the watcher itself is healthy.
+    expect(freshPings).toMatchObject({ state: 'watching', detail: 'Position ping screenshot was too old to ping' })
+  })
+
+  it('treats raid_id 0 as a usable ping context, matching the engine', async () => {
+    const reportSyncClientStatus = vi.fn(async () => {})
+    const screenshot = vi.fn(async () => ({ baseline: false, reason: null, queued: 1, discarded: 0, stale: 0 }))
+    const { runtime } = harness({
+      engine: { questLogs: { sync: vi.fn(async () => ({})) }, screenshots: { sync: screenshot, flush: vi.fn(async () => {}) } },
+      network: {
+        reportSyncClientStatus,
+        getDesktopSyncContext: vi.fn(async () => ({ userId: 'user-1', gameMode: 'regular', partyId: 1, partyCode: 'ABCD', raidId: 0, mapNorm: 'customs' })),
+      },
+    })
+    await runtime.start()
+    const pings = reportSyncClientStatus.mock.calls.at(-1)[0].find(row => row.service === 'pings')
+    expect(pings).toMatchObject({ state: 'watching', detail: 'Watching position pings' })
+    await runtime.dispose()
   })
 
   it('surfaces unknown mode selection without guessing a target', async () => {

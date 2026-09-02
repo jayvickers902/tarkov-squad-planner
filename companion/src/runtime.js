@@ -62,6 +62,15 @@ function safeStatus(status) {
     detail: safeText(status?.detail, ''),
     lastSyncAt: typeof status?.lastSyncAt === 'string' ? status.lastSyncAt : null,
     pendingCount: Number.isFinite(status?.pendingCount) ? Math.max(0, Math.floor(status.pendingCount)) : 0,
+    ...(status?.pingOutcome && typeof status.pingOutcome === 'object' ? {
+      pingOutcome: {
+        baseline: Boolean(status.pingOutcome.baseline),
+        reason: ['boundary', 'offline'].includes(status.pingOutcome.reason) ? status.pingOutcome.reason : null,
+        queued: Math.max(0, Math.floor(Number(status.pingOutcome.queued) || 0)),
+        discarded: Math.max(0, Math.floor(Number(status.pingOutcome.discarded) || 0)),
+        stale: Math.max(0, Math.floor(Number(status.pingOutcome.stale) || 0)),
+      },
+    } : {}),
     ...(status?.selectionRequired ? { selectionRequired: status.selectionRequired } : {}),
     ...(Array.isArray(status?.selectionOptions) ? {
       selectionOptions: status.selectionOptions.slice(0, 16).map(option => ({
@@ -307,7 +316,37 @@ export function createCompanionRuntime({
       : status.state === 'error' ? 'error'
       : /disabled/i.test(status.detail) ? 'disabled'
       : 'offline'
-    const row = (service, configured) => ({
+    const screenshotsConfigured = Boolean(roots.screenshotsRoot)
+    const pingOutcome = status.pingOutcome
+    // Mirror safeContext()'s notion of "present" exactly. It tokenises numbers,
+    // so raid_id 0 -- a party that has never started a raid -- is a usable
+    // context and still pings; a falsiness test here would call that "no party"
+    // while the engine was happily publishing.
+    const absent = value => value == null || value === ''
+    // Nothing is known about the party until the first context refresh lands.
+    // Reporting a prerequisite before then would trade one wrong answer for
+    // another, so fall back to the shared state for that first window.
+    const pingContextKnown = Boolean(context)
+    const pingMissingParty = pingContextKnown
+      && (absent(context.partyId) || absent(context.partyCode) || absent(context.raidId))
+    const pingMissingMap = pingContextKnown && absent(context.mapNorm)
+    // A screenshot older than the freshness window is history, not a fault: say
+    // so plainly and keep watching rather than painting the service red.
+    const pingStale = pingOutcome?.stale > 0 && pingOutcome.queued === 0
+    const pingDetail = !screenshotsConfigured
+      ? 'No Screenshots folder is configured'
+      : pingMissingParty || pingMissingMap
+        ? `Position pings idle — ${pingMissingParty && pingMissingMap ? 'join a party and pick a map' : pingMissingParty ? 'join a party' : 'pick a map'}`
+        : pingOutcome?.reason === 'offline'
+          ? 'Position pings offline — waiting for connection'
+          : pingStale
+            ? 'Position ping screenshot was too old to ping'
+            : 'Watching position pings'
+    const pingState = !screenshotsConfigured || pingMissingParty || pingMissingMap ? 'idle'
+      : pingOutcome?.reason === 'offline' ? 'offline'
+      : status.state === 'connecting' ? 'syncing'
+      : 'watching'
+    const row = (service, configured, overrides = {}) => ({
       service,
       configured,
       state: configured ? state : 'idle',
@@ -323,9 +362,10 @@ export function createCompanionRuntime({
         selection: status.scanMetrics.selection,
         scanner_version: status.scanMetrics.scannerVersion,
       } } : {}),
+      ...overrides,
     })
     const logs = row('logs', Boolean(roots.logsRoot))
-    return [logs, row('pings', Boolean(roots.screenshotsRoot))]
+    return [logs, row('pings', Boolean(roots.screenshotsRoot), { state: pingState, detail: pingDetail })]
   }
   function reportPresence() {
     const report = method(network, 'reportSyncClientStatus', 'reportSyncStatus')
@@ -469,8 +509,9 @@ export function createCompanionRuntime({
       const host = await ensureEngine()
       if (!active()) return false
       const screenshots = host?.screenshots || host?.screenshotPings
-      if (screenshots?.sync && roots.screenshotsRoot) await screenshots.sync({ context: { ...context, online: false }, online: false })
-      if (active()) setStatus({ state: 'offline', detail: 'Offline — waiting for connection', pendingCount: 0 })
+      let pingOutcome = null
+      if (screenshots?.sync && roots.screenshotsRoot) pingOutcome = await screenshots.sync({ context: { ...context, online: false }, online: false })
+      if (active()) setStatus({ state: 'offline', detail: 'Offline — waiting for connection', pingOutcome, pendingCount: 0 })
       return false
     }
     if (!active()) return false
@@ -485,9 +526,14 @@ export function createCompanionRuntime({
     const quest = host?.questLogs || host?.quest
     const screenshots = host?.screenshots || host?.screenshotPings
     let result = null
+    let pingOutcome = null
     const questModeSupported = MODES.has(mode)
     if (quest?.sync && roots.logsRoot && questModeSupported) {
       result = await quest.sync({ mode, taskIds: ids, parser, force: forceNextScan })
+    }
+    if (!active()) return false
+    if (screenshots?.sync && roots.screenshotsRoot) {
+      pingOutcome = await screenshots.sync({ context: { ...context, online: true }, online: true })
     }
     if (!active()) return false
     if (result?.requiresSelection || result?.selectionRequired) {
@@ -503,10 +549,9 @@ export function createCompanionRuntime({
           recommended: Boolean(profile?.recommended),
         }))
         : []
-      setStatus({ state: 'error', detail: required === 'profile' ? 'Choose the character that matches your current EFT mode' : 'Choose Regular, PvP Seasonal, or PvE for events without a clear mode', selectionRequired: required, selectionOptions: options, scanMetrics: result?.scanMetrics, pendingCount: 0 })
+      setStatus({ state: 'error', detail: required === 'profile' ? 'Choose the character that matches your current EFT mode' : 'Choose Regular, PvP Seasonal, or PvE for events without a clear mode', selectionRequired: required, selectionOptions: options, scanMetrics: result?.scanMetrics, pingOutcome, pendingCount: 0 })
       return false
     }
-    if (screenshots?.sync && roots.screenshotsRoot) await screenshots.sync({ context: { ...context, online: true }, online: true })
     if (!active()) return false
     retryAttempt = 0
     const stamp = new Date(now()).toISOString()
@@ -573,6 +618,7 @@ export function createCompanionRuntime({
       recentEvents,
       lastSuccessfulScan,
       scanMetrics: metrics,
+      pingOutcome,
     })
     return true
   }
