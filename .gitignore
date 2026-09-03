@@ -12,3 +12,6 @@ design/
 
 # scripts/sync-coop.mjs page cache
 .coop-cache
+
+# Claude Code machine-local overrides (may hold tokens)
+.claude/settings.local.json
