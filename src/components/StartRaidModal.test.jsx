@@ -130,6 +130,39 @@ describe('StartRaidModal', () => {
     expect(screen.getByText('0 / 1 PACKED BY SQUAD')).toBeInTheDocument()
   })
 
+  // Upstream's Vitamins rework updated the objective text and items but left the
+  // objective's maps, zones and requiredKeys pinned to Shoreline. The task-scope
+  // override relocates the objective to Factory, and the key must not ride along
+  // with it — Health Resort is not on Factory, and the quest needs no key at all.
+  it('keeps a key repudiated by a task-scope override off the Factory prep list', () => {
+    const staleKey = { id: 'health-resort-room-112', name: 'Health Resort west wing office room 112 key' }
+    const vitamins = {
+      id: '5b478eca86f7744642012254',
+      name: 'Vitamins',
+      map: null,
+      objectives: [{
+        id: '5b478f6886f774464201225a',
+        type: 'findQuestItem',
+        description: 'Locate and obtain the chemical container on Factory',
+        maps: [{ normalizedName: 'shoreline' }],
+        zones: [{ id: 'z', map: { normalizedName: 'shoreline' }, position: { x: 1, y: 0, z: 2 } }],
+        requiredKeys: [[staleKey]],
+      }],
+    }
+    renderModal({
+      tasks: [vitamins],
+      party: {
+        ...party,
+        map_norm: 'factory',
+        map_name: 'Factory',
+        members: [{ user_id: 'me', callsign: 'Jayshalla', quests: [{ id: vitamins.id }] }],
+      },
+    })
+
+    expect(screen.queryByText(staleKey.name)).not.toBeInTheDocument()
+    expect(screen.getByText('0 / 0 PACKED BY SQUAD')).toBeInTheDocument()
+  })
+
   it('counts only raid-eligible extracts and labels structured conditions', () => {
     renderModal()
 

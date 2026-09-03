@@ -1,7 +1,7 @@
 import { RED_REBEL_MAPS } from './constants'
 import { normalizeMembers, objectiveProgressKey, questDoneKey } from './partyMembers'
 import { classifyObjective, classifyTask } from './questShare'
-import { inferredTaskMapNorm, mapNameMatches } from './tarkovObjectives'
+import { inferredTaskMapNorm, mapNameMatches, objectiveRequiredKeyGroups } from './tarkovObjectives'
 
 // This module deliberately owns derivation only. The session layer can persist a
 // selected map and a plan revision later, but a score is always recomputable from
@@ -332,8 +332,8 @@ function normalizeClaims(keyClaims) {
   return { known: ids.size > 0, ids }
 }
 
-function requiredKeyGroups(objective) {
-  const raw = array(objective?.requiredKeys)
+function requiredKeyGroups(objective, task) {
+  const raw = objectiveRequiredKeyGroups(objective, task)
   if (!raw.length) return []
   const groups = raw.every(value => !Array.isArray(value)) ? raw.map(value => [value]) : raw
   return groups
@@ -380,7 +380,7 @@ function buildBlockers(facts, targetMap, keyClaims) {
   }
 
   for (const fact of facts) {
-    for (const group of requiredKeyGroups(fact.objective)) add('key', group, fact.objectiveKey)
+    for (const group of requiredKeyGroups(fact.objective, fact.task)) add('key', group, fact.objectiveKey)
     const bring = requiredBringItem(fact)
     if (bring) add('item', [bring], fact.objectiveKey)
     for (const needed of taskNeededKeys(fact.task, targetMap)) add('key', [needed], fact.objectiveKey)
@@ -689,7 +689,7 @@ export function buildPackingManifest({
       })
     }
 
-    for (const group of requiredKeyGroups(fact.objective)) {
+    for (const group of requiredKeyGroups(fact.objective, fact.task)) {
       addManifestRequest(buckets, 'required', {
         alternatives: group,
         item: group[0],
@@ -809,7 +809,7 @@ export function buildObjectiveAssignments({
       || lexical(a.objective.id, b.objective.id))
     .map((fact, index) => {
       const ids = []
-      for (const group of requiredKeyGroups(fact.objective)) ids.push(...group.map(item => item.id))
+      for (const group of requiredKeyGroups(fact.objective, fact.task)) ids.push(...group.map(item => item.id))
       const bring = requiredBringItem(fact)
       if (bring) ids.push(bring.id)
       ids.push(...taskNeededKeys(fact.task, normalizedMap).map(item => item.id))

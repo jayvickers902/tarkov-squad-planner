@@ -282,8 +282,24 @@ export function objectiveSubjectItem(objective) {
 // `requiredKeys` is an array of alternative key sets — any one set opens the
 // door. Flattened and de-duplicated for display; the alternatives distinction is
 // more nuance than a map pin can carry.
-export function requiredKeyItems(objective) {
+// Upstream's Vitamins rework updated the objective text and items but left its
+// maps, zones, and requiredKeys pinned to Shoreline. When a task-level override
+// repudiates that location metadata, discard keys tied to an explicitly
+// contradictory objective location too. Once upstream fixes the objective maps,
+// the intersection below succeeds and the key data is retained automatically.
+export function objectiveRequiredKeyGroups(objective, task) {
   const groups = Array.isArray(objective?.requiredKeys) ? objective.requiredKeys : []
+  const overrideMaps = TASK_MAP_SCOPE_OVERRIDES[task?.id]
+  if (!overrideMaps) return groups
+
+  const explicitMaps = explicitObjectiveMaps(objective)
+  const contradictsOverride = explicitMaps.length > 0
+    && !explicitMaps.some(objectiveMap => overrideMaps.some(overrideMap => mapNameMatches(objectiveMap, overrideMap)))
+  return contradictsOverride ? [] : groups
+}
+
+export function requiredKeyItems(objective, task) {
+  const groups = objectiveRequiredKeyGroups(objective, task)
   const seen = new Map()
   for (const group of groups) {
     for (const key of Array.isArray(group) ? group : [group]) {
@@ -340,7 +356,7 @@ export function objectivePins(tasks = [], members = [], names = [], progress = {
             itemIcon: subject?.iconLink || null,
             count: Number(objective.count) > 1 ? Number(objective.count) : 1,
             foundInRaid: Boolean(objective.foundInRaid),
-            requiredKeys: requiredKeyItems(objective),
+            requiredKeys: requiredKeyItems(objective, task),
             lat: zone.position.z,
             lng: zone.position.x,
           })

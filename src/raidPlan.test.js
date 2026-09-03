@@ -140,6 +140,37 @@ describe('raid planning engine', () => {
     expect(manifest.required.find(item => item.sourceKinds.includes('task-needed-key')).itemAlternatives).toHaveLength(1)
   })
 
+  it('does not carry the stale Vitamins key into the Factory blocker or prep manifest', () => {
+    const staleKey = { id: 'health-resort-room-112', name: 'Health Resort west wing office room 112 key' }
+    const vitamins = {
+      id: '5b478eca86f7744642012254',
+      name: 'Vitamins',
+      map: null,
+      neededKeys: [{ map: { normalizedName: 'shoreline' }, keys: [staleKey] }],
+      objectives: [{
+        id: '5b478f6886f774464201225a',
+        type: 'findQuestItem',
+        description: 'Locate and obtain the chemical container on Factory',
+        maps: [{ normalizedName: 'shoreline' }],
+        zones: [{ map: { normalizedName: 'shoreline' }, position: { x: 1, y: 0, z: 2 } }],
+        requiredKeys: [[staleKey]],
+      }],
+    }
+    const input = {
+      maps: [{ id: 'factory-id', name: 'Factory', normalizedName: 'factory' }],
+      tasks: [vitamins],
+      members: [{ user_id: 'u-vitamins', quests_all: [{ id: vitamins.id }] }],
+      keyClaims: { 'u-vitamins': ['unrelated-key'] },
+      mapExtras: {},
+    }
+
+    const score = scoreSquadMaps(input)[0]
+    expect(score.blockers.some(blocker => blocker.itemAlternatives.some(item => item.id === staleKey.id))).toBe(false)
+
+    const manifest = buildPackingManifest({ ...input, mapNorm: 'factory' })
+    expect(manifest.required.some(item => item.itemAlternatives.some(item => item.id === staleKey.id))).toBe(false)
+  })
+
   it('gives exact-position overlap more weight than map-only overlap', () => {
     const exact = scoreSquadMaps(baseInput({
       tasks: [tasks[0]],

@@ -3,7 +3,7 @@ import { useKeys } from '../useTarkov'
 import { RED_REBEL_MAPS } from '../constants'
 import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
 import { memberColor } from '../memberColors'
-import { objectiveIsOnMap } from '../tarkovObjectives'
+import { objectiveIsOnMap, objectiveRequiredKeyGroups } from '../tarkovObjectives'
 
 export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progress, gameMode }) {
   const memberRows = normalizeMembers(memberQuests)
@@ -58,8 +58,9 @@ export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progr
 
           // Keys required to access/complete this objective — processed for ALL objective types
           // requiredKeys is [[Item]] — each inner array is a set of alternatives for one lock
-          if (obj.requiredKeys?.length) {
-            obj.requiredKeys.forEach(alternatives => {
+          const requiredKeyGroups = objectiveRequiredKeyGroups(obj, task)
+          if (requiredKeyGroups.length) {
+            requiredKeyGroups.forEach(alternatives => {
               if (!alternatives?.length) return
               alternatives.forEach(keyItem => {
                 if (!keyItem?.id) return

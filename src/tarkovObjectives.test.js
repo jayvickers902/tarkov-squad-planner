@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inferredTaskMapNorm, objectiveIsOnMap, objectiveIsUnplacedMapAction, objectivePins, objectiveSubjectItem, requiredKeyItems, taskIsOnMap } from './tarkovObjectives'
+import { inferredTaskMapNorm, objectiveIsOnMap, objectiveIsUnplacedMapAction, objectivePins, objectiveRequiredKeyGroups, objectiveSubjectItem, requiredKeyItems, taskIsOnMap } from './tarkovObjectives'
 
 describe('inferredTaskMapNorm', () => {
   it('assigns Supervisor-style objectives to Interchange', () => {
@@ -118,6 +118,46 @@ describe('map-planning exclusions', () => {
 
     expect(taskIsOnMap(task, 'woods')).toBe(true)
     expect(taskIsOnMap(task, 'customs')).toBe(false)
+  })
+})
+
+describe('objective required key scope', () => {
+  const overriddenTask = { id: '5b478eca86f7744642012254' }
+  const key = { id: 'synthetic-key', name: 'Synthetic key' }
+
+  it('drops keys when an overridden objective is explicitly outside the override', () => {
+    const objective = {
+      requiredKeys: [[key]],
+      maps: [{ normalizedName: 'shoreline' }],
+      zones: [{ map: { normalizedName: 'shoreline' } }],
+    }
+    expect(objectiveRequiredKeyGroups(objective, overriddenTask)).toEqual([])
+  })
+
+  it('keeps keys when an overridden objective intersects the override', () => {
+    const objective = {
+      requiredKeys: [[key]],
+      maps: [{ normalizedName: 'factory' }],
+      zones: [],
+    }
+    expect(objectiveRequiredKeyGroups(objective, overriddenTask)).toEqual([[key]])
+  })
+
+  it('keeps keys when an overridden objective has no explicit maps', () => {
+    expect(objectiveRequiredKeyGroups({ requiredKeys: [[key]], maps: [], zones: [] }, overriddenTask))
+      .toEqual([[key]])
+  })
+
+  it('keeps keys for tasks without a map-scope override', () => {
+    expect(objectiveRequiredKeyGroups({ requiredKeys: [[key]], maps: [{ normalizedName: 'shoreline' }] }, { id: 'ordinary-task' }))
+      .toEqual([[key]])
+  })
+
+  it('does not strip key data for the other override entries', () => {
+    for (const id of ['5bc4836986f7740c0152911c', '67a0970744893b9f3f0d9b68']) {
+      expect(objectiveRequiredKeyGroups({ requiredKeys: [[key]], maps: [], zones: [] }, { id }))
+        .toEqual([[key]])
+    }
   })
 })
 

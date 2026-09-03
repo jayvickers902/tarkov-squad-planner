@@ -3,7 +3,7 @@ import { useBossSpawns, useExtracts, useKeys } from '../useTarkov'
 import { normalizeMembers, objectiveProgressKey, prepPackedKey } from '../partyMembers'
 import { memberColor } from '../memberColors'
 import useDialogFocus from '../useDialogFocus'
-import { objectiveIsOnMap, taskIsOnMap } from '../tarkovObjectives'
+import { objectiveIsOnMap, objectiveRequiredKeyGroups, taskIsOnMap } from '../tarkovObjectives'
 
 const EXTRACT_STYLES = {
   GEAR: { color: '#e8c96a', border: 'rgba(201,168,76,.42)', background: 'rgba(201,168,76,.1)', rail: '#c9a84c' },
@@ -275,7 +275,7 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
           }
         }
 
-        objective.requiredKeys?.forEach(alternatives => alternatives?.forEach(keyItem => {
+        objectiveRequiredKeyGroups(objective, task).forEach(alternatives => alternatives?.forEach(keyItem => {
           if (!keyItem?.id) return
           const key = `${keyItem.id}:KEY`
           const current = items.get(key)
