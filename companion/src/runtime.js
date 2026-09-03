@@ -8,6 +8,7 @@
 
 export const DEFAULT_RUNTIME_OPTIONS = Object.freeze({
   eventDebounceMs: 300,
+  contextCacheTtlMs: 10_000,
   fallbackIntervalMs: 15_000,
   retryBaseMs: 1_000,
   retryMaxMs: 60_000,
@@ -264,6 +265,7 @@ export function createCompanionRuntime({
   onFilesystemEvent: eventListenerRegistration,
   scheduler = globalThis,
   eventDebounceMs = DEFAULT_RUNTIME_OPTIONS.eventDebounceMs,
+  contextCacheTtlMs = DEFAULT_RUNTIME_OPTIONS.contextCacheTtlMs,
   fallbackIntervalMs = DEFAULT_RUNTIME_OPTIONS.fallbackIntervalMs,
   retryBaseMs = DEFAULT_RUNTIME_OPTIONS.retryBaseMs,
   retryMaxMs = DEFAULT_RUNTIME_OPTIONS.retryMaxMs,
@@ -284,6 +286,7 @@ export function createCompanionRuntime({
   let roots = normalizeRoots(initialRoots)
   let onlineOverride = onlineFrom(initialOnline)
   let context = null
+  let contextRefreshedAt = null
   let checkpointDocument = null
   let checkpointStore = null
   let createdEngine = engine || null
@@ -291,7 +294,12 @@ export function createCompanionRuntime({
   let disposed = false
   let runPromise = null
   let rerunRequested = false
+  let pingRunPromise = null
+  let pingRerunRequested = false
+  let pingRequestedWhileFull = false
+  let fullRequestedWhilePing = false
   let debounceTimer = null
+  let pendingFilesystemPayload = null
   let fallbackTimer = null
   let retryTimer = null
   let retryAttempt = 0
@@ -494,7 +502,13 @@ export function createCompanionRuntime({
     if (!provider) return context
     const value = await provider.call(provider === contextProvider ? undefined : network)
     context = normalizeContext(unwrap(value))
+    contextRefreshedAt = now()
     return context
+  }
+
+  function hasFreshContext() {
+    return Boolean(context) && contextRefreshedAt !== null
+      && now() - contextRefreshedAt <= Math.max(0, Number(contextCacheTtlMs) || DEFAULT_RUNTIME_OPTIONS.contextCacheTtlMs)
   }
 
   async function oneRun(generation = lifecycleGeneration) {
@@ -528,12 +542,12 @@ export function createCompanionRuntime({
     let result = null
     let pingOutcome = null
     const questModeSupported = MODES.has(mode)
-    if (quest?.sync && roots.logsRoot && questModeSupported) {
-      result = await quest.sync({ mode, taskIds: ids, parser, force: forceNextScan })
-    }
-    if (!active()) return false
     if (screenshots?.sync && roots.screenshotsRoot) {
       pingOutcome = await screenshots.sync({ context: { ...context, online: true }, online: true })
+    }
+    if (!active()) return false
+    if (quest?.sync && roots.logsRoot && questModeSupported) {
+      result = await quest.sync({ mode, taskIds: ids, parser, force: forceNextScan })
     }
     if (!active()) return false
     if (result?.requiresSelection || result?.selectionRequired) {
@@ -646,7 +660,45 @@ export function createCompanionRuntime({
         }
       } while (generation === lifecycleGeneration && rerunRequested && ready() && isOnline())
     } finally {
+      const runQueuedPing = pingRequestedWhileFull
+      pingRequestedWhileFull = false
       runPromise = null
+      if (runQueuedPing && ready() && isOnline()) void requestPingSync()
+    }
+    return getStatus()
+  }
+
+  async function executePingLoop(generation = lifecycleGeneration) {
+    const active = () => generation === lifecycleGeneration && started && !disposed
+    try {
+      do {
+        pingRerunRequested = false
+        try {
+          const host = await ensureEngine()
+          if (!active()) return getStatus()
+          const screenshots = host?.screenshots || host?.screenshotPings
+          if (screenshots?.sync && roots.screenshotsRoot) {
+            const pingOutcome = await screenshots.sync({ context: { ...context, online: true }, online: true })
+            if (active()) {
+              retryAttempt = 0
+              setStatus({ lastSyncAt: new Date(now()).toISOString(), pendingCount: Number(screenshots?.getPending?.() ? 1 : 0), pingOutcome })
+            }
+          }
+        } catch (error) {
+          if (generation !== lifecycleGeneration || disposed || !started) return getStatus()
+          if (!isOnline() || error?.offline === true || error?.code === 'OFFLINE') {
+            setStatus({ state: 'offline', detail: 'Offline — waiting for connection', pendingCount: 1 })
+          } else {
+            setStatus({ state: 'error', detail: errorDetail(error), pendingCount: 1 })
+            scheduleRetry()
+          }
+        }
+      } while (generation === lifecycleGeneration && pingRerunRequested && ready() && isOnline())
+    } finally {
+      const runQueuedFull = fullRequestedWhilePing
+      fullRequestedWhilePing = false
+      pingRunPromise = null
+      if (runQueuedFull && ready() && isOnline()) void requestSync('event')
     }
     return getStatus()
   }
@@ -655,14 +707,55 @@ export function createCompanionRuntime({
     if (options.force) forceNextScan = true
     if (!ready()) { const prereq = prerequisitesStatus(); if (prereq) setStatus(prereq); return Promise.resolve(getStatus()) }
     if (runPromise) { if (reason !== 'manual' || options.force) rerunRequested = true; return runPromise }
+    if (pingRunPromise) { fullRequestedWhilePing = true; return pingRunPromise }
     runPromise = executeLoop()
     return runPromise
   }
 
-  function onFilesystemEvent() {
+  function requestPingSync() {
+    if (!ready()) { const prereq = prerequisitesStatus(); if (prereq) setStatus(prereq); return Promise.resolve(getStatus()) }
+    if (!isOnline()) return requestSync('event')
+    if (!hasFreshContext()) return requestSync('event')
+    if (runPromise) { pingRequestedWhileFull = true; return runPromise }
+    if (pingRunPromise) { pingRerunRequested = true; return pingRunPromise }
+    pingRunPromise = executePingLoop()
+    return pingRunPromise
+  }
+
+  function eventScope(payload) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload) || payload.fallback === true
+      || !Array.isArray(payload.paths) || payload.paths.length === 0
+      || payload.paths.some(path => typeof path !== 'string')) return 'full'
+    return payload.paths.every(path => path.startsWith('screenshots/')) ? 'screenshots' : 'full'
+  }
+
+  function rememberFilesystemEvent(payload) {
+    if (pendingFilesystemPayload?.malformed) return
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !Array.isArray(payload.paths)
+      || payload.paths.some(path => typeof path !== 'string')) {
+      pendingFilesystemPayload = { malformed: true }
+      return
+    }
+    const previous = pendingFilesystemPayload || { paths: [], fallback: false }
+    pendingFilesystemPayload = {
+      paths: [...new Set([...previous.paths, ...payload.paths])],
+      fallback: Boolean(previous.fallback || payload.fallback),
+    }
+  }
+
+  function onFilesystemEvent(payload) {
     if (!ready()) return
+    rememberFilesystemEvent(payload)
     if (debounceTimer !== null) clearTimeoutFn(debounceTimer)
-    debounceTimer = setTimeoutFn(() => { debounceTimer = null; requestSync('event') }, Math.max(0, eventDebounceMs))
+    debounceTimer = setTimeoutFn(() => {
+      debounceTimer = null
+      const event = pendingFilesystemPayload
+      pendingFilesystemPayload = null
+      if (eventScope(event) === 'screenshots') requestPingSync()
+      else requestSync('event')
+    }, eventScope(pendingFilesystemPayload) === 'screenshots'
+      ? Math.min(100, Math.max(0, eventDebounceMs))
+      : Math.max(0, eventDebounceMs))
   }
 
   async function startWatch() {
@@ -718,6 +811,7 @@ export function createCompanionRuntime({
       createdEngine = null
       checkpointStore = null
       context = null
+      contextRefreshedAt = null
       selectionByMode = Object.create(null)
       forceNextScan = false
     }
@@ -801,6 +895,10 @@ export function createCompanionRuntime({
     lifecycleGeneration += 1
     clearTimers()
     rerunRequested = false
+    pingRerunRequested = false
+    pingRequestedWhileFull = false
+    fullRequestedWhilePing = false
+    pendingFilesystemPayload = null
     await stopWatch()
     try { await createdEngine?.dispose?.() } catch {}
     setStatus({ state: 'offline', detail: 'Companion sync is stopped', pendingCount: 0 })

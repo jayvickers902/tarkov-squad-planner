@@ -1,7 +1,7 @@
 use crate::error::NativeError;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fs::{self, OpenOptions},
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
@@ -211,7 +211,10 @@ fn walk_logs(
             let file_metadata = fs::metadata(&canonical)?;
             if file_metadata.len() > MAX_LOG_FILE_BYTES {
                 return Err(NativeError::InvalidInput(
-                    "An EFT log exceeds the 32 MiB safety limit.".into(),
+                    format!(
+                        "An EFT log exceeds the 32 MiB per-file safety limit in '{}'.",
+                        root.display()
+                    ),
                 ));
             }
             result.push(metadata(root, &canonical, &file_metadata));
@@ -224,14 +227,31 @@ pub fn enumerate_logs(root: impl AsRef<Path>) -> Result<ScanResult, NativeError>
     let root = canonical_root(root)?;
     let mut files = Vec::new();
     walk_logs(&root, &root, &mut files)?;
-    files.sort_by(|a, b| a.path.cmp(&b.path));
-    let total_bytes = files.iter().map(|file| file.size).sum();
-    if total_bytes > MAX_LOG_SCAN_BYTES {
-        return Err(NativeError::InvalidInput(
-            "The EFT log scan exceeds the 256 MiB safety limit.".into(),
-        ));
+    // EFT puts each session in a timestamped top-level folder. Keep complete
+    // newest sessions, dropping whole oldest sessions until the bounded scan
+    // fits. Folder names sort chronologically for EFT's log_YYYY.MM.DD... form.
+    let mut sessions: BTreeMap<String, Vec<FileMetadata>> = BTreeMap::new();
+    for file in files {
+        let session = file
+            .path
+            .split('/')
+            .next()
+            .unwrap_or(&file.path)
+            .to_owned();
+        sessions.entry(session).or_default().push(file);
     }
-    Ok(ScanResult { files, total_bytes })
+    let mut kept = Vec::new();
+    let mut total_bytes = 0;
+    for (_session, session_files) in sessions.into_iter().rev() {
+        let session_bytes: u64 = session_files.iter().map(|file| file.size).sum();
+        if session_bytes > MAX_LOG_SCAN_BYTES.saturating_sub(total_bytes) {
+            continue;
+        }
+        total_bytes += session_bytes;
+        kept.extend(session_files);
+    }
+    kept.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(ScanResult { files: kept, total_bytes })
 }
 
 fn is_number(value: &str) -> bool {
@@ -397,6 +417,7 @@ pub fn read_logs_at_offsets(
     root: impl AsRef<Path>,
     offsets: &HashMap<String, u64>,
 ) -> Result<Vec<LogRead>, NativeError> {
+    let root = canonical_root(root)?;
     let scan = enumerate_logs(&root)?;
     let mut total: u64 = 0;
     let mut reads = Vec::new();
@@ -405,11 +426,15 @@ pub fn read_logs_at_offsets(
         let remaining = file.size.saturating_sub(offset);
         total = total
             .checked_add(remaining)
-            .ok_or_else(|| NativeError::InvalidInput("The EFT log scan is too large.".into()))?;
+            .ok_or_else(|| NativeError::InvalidInput(format!(
+                "The EFT log scan size overflowed while reading '{}'.",
+                root.display()
+            )))?;
         if total > MAX_LOG_SCAN_BYTES {
-            return Err(NativeError::InvalidInput(
-                "The EFT log scan exceeds the 256 MiB safety limit.".into(),
-            ));
+            return Err(NativeError::InvalidInput(format!(
+                "The remaining EFT log data in '{}' exceeds the 256 MiB scan safety limit.",
+                root.display()
+            )));
         }
         reads.push(read_log_at_offset(&root, &file.path, offset)?);
     }
@@ -451,6 +476,50 @@ mod tests {
         assert!(scan.files.iter().all(|file| file
             .path
             .starts_with("log_2026.08.28_12-32-39_1.1.0.1.46911/")));
+    }
+
+    #[test]
+    fn enumeration_drops_oldest_sessions_to_fit_the_scan_cap() {
+        let directory = tempfile::tempdir().unwrap();
+        let sessions = [
+            "log_2026.08.28_12-32-39_1.1.0.1.46911",
+            "log_2026.08.29_12-32-39_1.1.0.1.46911",
+            "log_2026.08.30_12-32-39_1.1.0.1.46911",
+        ];
+        for session in sessions {
+            let path = directory.path().join(session);
+            std::fs::create_dir(&path).unwrap();
+            for name in [
+                "notifications.log",
+                "backend.log",
+                "application.log",
+                "push-notifications.log",
+            ] {
+                let file = std::fs::File::create(path.join(name)).unwrap();
+                file.set_len(25 * 1024 * 1024).unwrap();
+            }
+        }
+
+        let scan = enumerate_logs(directory.path()).unwrap();
+
+        assert_eq!(scan.total_bytes, 200 * 1024 * 1024);
+        assert!(scan.files.iter().all(|file| !file.path.starts_with(sessions[0])));
+        assert!(scan.files.iter().any(|file| file.path.starts_with(sessions[1])));
+        assert!(scan.files.iter().any(|file| file.path.starts_with(sessions[2])));
+    }
+
+    #[test]
+    fn oversized_log_error_names_the_folder_and_real_limit() {
+        let directory = tempfile::tempdir().unwrap();
+        let session = directory.path().join("log_2026.08.30_12-32-39_1.1.0.1.46911");
+        std::fs::create_dir(&session).unwrap();
+        let file = std::fs::File::create(session.join("notifications.log")).unwrap();
+        file.set_len(MAX_LOG_FILE_BYTES + 1).unwrap();
+
+        let error = enumerate_logs(directory.path()).unwrap_err().to_string();
+
+        assert!(error.contains("32 MiB per-file safety limit"));
+        assert!(error.contains(directory.path().to_string_lossy().as_ref()));
     }
 
     #[test]

@@ -73,6 +73,117 @@ describe('companion runtime', () => {
     expect(sync).toHaveBeenCalledWith(expect.objectContaining({ mode: 'regular' }))
   })
 
+  it('routes screenshots-only watcher events to pings and keeps log events on the full path', async () => {
+    vi.useFakeTimers()
+    const { runtime, sync, screenshot } = harness({ fallbackIntervalMs: 0 })
+    await runtime.start()
+    sync.mockClear()
+    screenshot.mockClear()
+
+    runtime.handleFilesystemEvent({ kind: 'Create', paths: ['screenshots/new.png'], fallback: false })
+    await vi.runOnlyPendingTimersAsync()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(screenshot).toHaveBeenCalledOnce()
+    expect(sync).not.toHaveBeenCalled()
+
+    screenshot.mockClear()
+    runtime.handleFilesystemEvent({ kind: 'Create', paths: ['logs/new.log'], fallback: false })
+    await vi.runOnlyPendingTimersAsync()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(sync).toHaveBeenCalledOnce()
+    expect(screenshot).toHaveBeenCalledOnce()
+  })
+
+  it('queues a full run behind an in-flight screenshot-only pass', async () => {
+    vi.useFakeTimers()
+    let releasePing
+    const screenshot = vi.fn()
+      .mockResolvedValueOnce({})
+      .mockImplementationOnce(() => new Promise(resolve => { releasePing = resolve }))
+      .mockResolvedValue({})
+    const sync = vi.fn(async () => ({}))
+    const { runtime } = harness({
+      fallbackIntervalMs: 0,
+      engine: { questLogs: { sync }, screenshots: { sync: screenshot } },
+    })
+    await runtime.start()
+    sync.mockClear()
+
+    runtime.handleFilesystemEvent({ paths: ['screenshots/slow.png'], fallback: false })
+    await vi.runOnlyPendingTimersAsync()
+    await Promise.resolve()
+    runtime.handleFilesystemEvent({ paths: ['logs/after.png'], fallback: false })
+    await vi.runOnlyPendingTimersAsync()
+    expect(sync).not.toHaveBeenCalled()
+
+    releasePing({})
+    await vi.waitFor(() => expect(sync).toHaveBeenCalledOnce())
+  })
+
+  it('runs screenshot sync before the quest scan on a full run', async () => {
+    const order = []
+    const { runtime } = harness({
+      engine: {
+        questLogs: { sync: vi.fn(async () => { order.push('quest') }) },
+        screenshots: { sync: vi.fn(async () => { order.push('screenshots') }) },
+      },
+    })
+    await runtime.start()
+    expect(order.slice(0, 2)).toEqual(['screenshots', 'quest'])
+  })
+
+  it('uses fresh cached context for fast pings and refreshes before a changed raid after the TTL', async () => {
+    vi.useFakeTimers()
+    let desktopContext = { userId: 'user-1', gameMode: 'regular', partyId: 1, partyCode: 'ABCD', raidId: 1, mapNorm: 'customs' }
+    const getDesktopSyncContext = vi.fn(async () => desktopContext)
+    const { runtime, sync, screenshot } = harness({
+      fallbackIntervalMs: 0,
+      contextCacheTtlMs: 10_000,
+      network: { getDesktopSyncContext },
+    })
+    await runtime.start()
+    sync.mockClear()
+    screenshot.mockClear()
+
+    runtime.handleFilesystemEvent({ paths: ['screenshots/first.png'], fallback: false })
+    await vi.runOnlyPendingTimersAsync()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(getDesktopSyncContext).toHaveBeenCalledOnce()
+    expect(sync).not.toHaveBeenCalled()
+    expect(screenshot).toHaveBeenCalledWith({ context: expect.objectContaining({ raidId: 1 }), online: true })
+
+    desktopContext = { ...desktopContext, raidId: 2 }
+    await vi.advanceTimersByTimeAsync(10_001)
+    screenshot.mockClear()
+    runtime.handleFilesystemEvent({ paths: ['screenshots/second.png'], fallback: false })
+    await vi.runOnlyPendingTimersAsync()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(getDesktopSyncContext).toHaveBeenCalledTimes(2)
+    expect(sync).toHaveBeenCalledOnce()
+    expect(screenshot).toHaveBeenCalledWith({ context: expect.objectContaining({ raidId: 2 }), online: true })
+  })
+
+  it('uses the short debounce for screenshots-only events', async () => {
+    vi.useFakeTimers()
+    const { runtime, screenshot } = harness({ eventDebounceMs: 300, fallbackIntervalMs: 0 })
+    await runtime.start()
+    screenshot.mockClear()
+
+    runtime.handleFilesystemEvent({ paths: ['screenshots/fast.png'], fallback: false })
+    await vi.advanceTimersByTimeAsync(99)
+    expect(screenshot).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(screenshot).toHaveBeenCalledOnce()
+  })
+
   it('reports configured desktop services and their last successful sync', async () => {
     const reportSyncClientStatus = vi.fn(async () => {})
     const { runtime } = harness({ network: { reportSyncClientStatus } })

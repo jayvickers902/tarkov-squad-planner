@@ -12,7 +12,7 @@ use std::{
 };
 use tauri::{AppHandle, Emitter};
 
-pub const DEBOUNCE: Duration = Duration::from_millis(250);
+pub const DEBOUNCE: Duration = Duration::from_millis(100);
 pub const FALLBACK_INTERVAL: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, Serialize)]
@@ -206,4 +206,14 @@ fn event_key(
         ));
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_coalescing_window_is_short() {
+        assert_eq!(DEBOUNCE, Duration::from_millis(100));
+    }
 }
