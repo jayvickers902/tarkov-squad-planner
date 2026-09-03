@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { FEATURED } from '../constants'
+import AppFooter from './AppFooter'
 
 function GoogleIcon() {
   return (
@@ -132,7 +133,7 @@ export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsi
           <div className="mono auth-fact"><span className="auth-fact-label">PARTY SYNC</span><span className="auth-fact-live"><span className="auth-fact-dot" />REAL-TIME</span></div>
         </div>
 
-        <p className="mono auth-footer">QUEST DATA VIA TARKOV.DEV - COMMUNITY MAINTAINED</p>
+        <AppFooter compact />
       </div>
     </div>
   )

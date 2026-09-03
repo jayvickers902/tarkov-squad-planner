@@ -8,6 +8,7 @@ import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
 import { relativeTime, screenshotChannelStatus, STATE_TEXT } from '../syncStatus'
 import { mapBannerLayers, mapHeaderBanner } from '../mapBanners'
 import Icon from './Icon'
+import AppFooter from './AppFooter'
 import { inferredTaskMapNorm } from '../tarkovObjectives'
 
 export const IMPORT_RESTORE_STORAGE_KEY = 'tsp.quest_import_restore.v1'
@@ -1155,6 +1156,8 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
         }
         .quest-new-flash { animation: goldFlash 2.4s ease forwards; }
       `}</style>
+
+      <AppFooter />
     </div>
   )
 }

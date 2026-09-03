@@ -12,6 +12,7 @@ import StartRaidModal from './StartRaidModal'
 import RaidSettings from './RaidSettings'
 import SyncStatusBar from './SyncStatusBar'
 import Icon from './Icon'
+import AppFooter from './AppFooter'
 import { useEftLogSync } from '../EftLogSyncContext'
 import useEphemeralSweep from '../useEphemeralSweep'
 import { resolveSetting } from '../settings'
@@ -1009,6 +1010,8 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
         </div>
       </div>
       </div>
+
+      <AppFooter />
 
       {pendingMap && (
         <div className="app-confirm-backdrop" role="presentation">

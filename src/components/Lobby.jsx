@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../supabase'
 import { GAME_MODES, gameModeLabel, normalizeGameMode } from '../gameMode'
 import Icon from './Icon'
+import AppFooter from './AppFooter'
 
 const EMPTY_LIST = []
 
@@ -124,6 +125,7 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
   const displayCallsign = callsign?.toUpperCase() || 'OPERATOR'
 
   return (
+    <>
     <main className="lobby-screen">
       <div className="lobby-art" aria-hidden="true" />
       <div className="lobby-scrim" aria-hidden="true" />
@@ -218,8 +220,6 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
               </div>
             </div>
           )}
-
-          <p className="lobby-footer mono">QUEST DATA VIA TARKOV.DEV — COMMUNITY MAINTAINED</p>
         </section>
 
         <aside className="lobby-right" aria-label="Squad status">
@@ -339,5 +339,7 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
         </aside>
       </div>
     </main>
+    <AppFooter />
+    </>
   )
 }
