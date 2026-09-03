@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, memo } from 'react'
 import { normalizeMembers, objectiveProgressKey, questDoneKey } from '../partyMembers'
-import { objectiveHasMapLocation, objectiveIsOnMap, objectiveIsUnplacedMapAction, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
+import { objectiveHasMapLocation, objectiveIsOnMap, objectiveIsUnplacedMapAction, objectiveTypeLabel, questWikiUrl, traderGateLabel } from '../tarkovObjectives'
 import { objectiveShare, taskShare } from '../questShare'
 import { useQuestShareOverrides } from '../useQuestShareOverrides'
 import { useQuestShareReports } from '../useQuestShareReports'
@@ -9,11 +9,6 @@ import ShareVote from './ShareVote'
 import { memberColor } from '../memberColors'
 import { questRailColor } from '../questColors'
 
-
-function toAntifandom(url) {
-  if (!url) return null
-  return url.replace('escapefromtarkov.fandom.com', 'escapefromtarkov.antifandom.com')
-}
 
 // A member reads as a colour bar butted against their callsign, so a row's
 // owners are scannable before the text is.
@@ -503,7 +498,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
               const allOwnersDone = row.doneByMembers.length === row.owners.length && row.owners.length > 0
               const rail = allOwnersDone ? 'var(--grn)' : questRailColor(row.task.id)
               const isTop = sortedObjRows[0] && objectiveOrderKey(sortedObjRows[0].task.id, sortedObjRows[0].obj.id) === key
-              const wiki = toAntifandom(row.task.wikiLink)
+              const wiki = questWikiUrl(row.task)
               return (
                 <div
                   key={key}

@@ -163,6 +163,18 @@ describe('groupRowsByQuest', () => {
     expect(groups[1].tally).toBe('1/2')
     expect(groups[0].tally).toBe('0/1')
   })
+
+  it('carries the quest wiki article onto the group, on the ad-free mirror', () => {
+    const tasks = [
+      { ...TASKS[0], wikiLink: 'https://escapefromtarkov.fandom.com/wiki/Woods_Keeper' },
+      TASKS[1],
+    ]
+    const rows = build({ tasks, forUserId: 'me' })
+    const groups = groupRowsByQuest(rows)
+    const keeper = groups.find(group => group.questId === 't1')
+    expect(keeper.wiki).toBe('https://escapefromtarkov.antifandom.com/wiki/Woods_Keeper')
+    expect(groups.find(group => group.questId === 't2').wiki).toBeNull()
+  })
 })
 
 describe('objectiveLabel', () => {

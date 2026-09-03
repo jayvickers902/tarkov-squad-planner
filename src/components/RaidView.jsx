@@ -170,6 +170,7 @@ export default function RaidView({
 
   const [railOpen, setRailOpen] = useState(() => userSettings.raidview_rail_open !== false)
   const [tasksOpen, setTasksOpen] = useState(() => userSettings.raid_tasks_open !== false)
+  const [tasksDense, setTasksDense] = useState(() => userSettings.raid_tasks_dense === true)
   const [mobileRailHeight, setMobileRailHeight] = useState(42)
   const [drawMode, setDrawMode] = useState('pan')
   const [focusKey, setFocusKey] = useState(null)
@@ -425,6 +426,13 @@ export default function RaidView({
     })
   }, [onSetSetting])
 
+  // Density is a reading preference rather than raid state, so it rides on the
+  // account and survives the next raid on the next map.
+  const setDense = useCallback(next => {
+    setTasksDense(next)
+    onSetSetting?.('raid_tasks_dense', next)
+  }, [onSetSetting])
+
   const toggleDraw = useCallback(() => {
     setDrawMode(mode => mode === 'draw' ? 'pan' : 'draw')
   }, [])
@@ -537,6 +545,8 @@ export default function RaidView({
       onHoverFocus={setHoverFocusKey}
       onToggleFocus={key => setFocusKey(current => current === key ? null : key)}
       embedded={isMobile}
+      dense={tasksDense}
+      onSetDense={setDense}
     />
   )
 

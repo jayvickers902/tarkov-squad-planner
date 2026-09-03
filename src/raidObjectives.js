@@ -2,7 +2,7 @@
 // MY TASKS column are the same derivation with different filters, so the maths
 // lives here and both surfaces render it.
 import { bearingRange } from './tarkovPings'
-import { getUserColor, objectiveHasMapLocation, mapNameMatches } from './tarkovObjectives'
+import { getUserColor, objectiveHasMapLocation, mapNameMatches, questWikiUrl } from './tarkovObjectives'
 import { questRailColor } from './questColors'
 import { normalizeMembers, objectiveProgressKey, questDoneKey } from './partyMembers'
 
@@ -115,6 +115,7 @@ export function buildObjectiveRows({
           memberColor: getUserColor(memberName, memberNames, member.user_id, memberIds),
           questName: task.name,
           questColor: questRailColor(task.id),
+          questWiki: questWikiUrl(task),
           description: objective.description || '',
           action: objectiveLabel(objective),
           carry: carryItem(objective),
@@ -167,7 +168,7 @@ export function groupRowsByQuest(rows, isDone = () => false) {
   for (const row of rows || []) {
     let group = byQuest.get(row.taskId)
     if (!group) {
-      group = { questId: row.taskId, questName: row.questName, color: row.questColor, rows: [], done: 0 }
+      group = { questId: row.taskId, questName: row.questName, color: row.questColor, wiki: row.questWiki || null, rows: [], done: 0 }
       byQuest.set(row.taskId, group)
       groups.push(group)
     }

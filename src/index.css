@@ -1522,12 +1522,12 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .mr-tasks-head {
   flex: 0 0 auto;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 7px;
   padding: 11px 13px 9px;
   border-bottom: 1px solid var(--brd);
 }
+.mr-tasks-headline { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mr-tasks-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mr-tasks-heading { color: var(--goldtx); font-size: var(--fs-xs); letter-spacing: .18em; }
 .mr-tasks-sub { color: var(--txf); font-size: var(--fs-xs); letter-spacing: .06em; }
@@ -1536,9 +1536,71 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .mr-tasks-total { color: var(--txf); font-size: 14px; }
 .mr-tasks-bar { display: block; width: 74px; height: 3px; background: #242820; border-radius: 2px; overflow: hidden; }
 .mr-tasks-bar span { display: block; height: 3px; background: var(--goldtx); }
-.mr-tasks-body { flex: 1 1 auto; overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 11px; padding: 9px 10px 14px; }
+
+/* Fold and density sit under the score rather than in the map header: they
+   change this column only, and a raid header already carries six controls. */
+.mr-tasks-tools { display: flex; gap: 6px; }
+.mr-tasks-tool {
+  padding: 2px 7px;
+  background: transparent;
+  border: 1px solid var(--brd);
+  border-radius: 3px;
+  color: var(--txd);
+  font-size: var(--fs-xs);
+  letter-spacing: .1em;
+  cursor: pointer;
+}
+.mr-tasks-tool:hover { border-color: var(--brdg); color: var(--goldtx); }
+.mr-tasks-tool:focus-visible { outline: 1px solid var(--gold); outline-offset: 1px; }
+.mr-tasks-tool.is-on { border-color: var(--brdg); background: rgba(201,168,76,.14); color: var(--goldtx); }
+/* No padding at the top: a scroll container's top padding is a strip the sticky
+   header cannot cover, and rows would scroll visibly through it. The first group
+   carries the spacing instead. */
+.mr-tasks-body { flex: 1 1 auto; overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 9px; padding: 0 10px 14px; }
 .mr-task-group { display: flex; flex-direction: column; gap: 3px; }
-.mr-task-group-head { display: flex; align-items: center; gap: 7px; padding: 0 2px 4px; }
+.mr-task-group:first-child { margin-top: 9px; }
+/* The header stays put while its own rows scroll, so a long quest never leaves
+   the reader guessing which quest the row under the cursor belongs to. */
+.mr-task-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 2px 4px;
+  background: var(--pill);
+}
+.mr-task-group.is-folded .mr-task-group-head { opacity: .82; }
+.mr-task-group-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+/* Drawn rather than typed: the mono face has no triangle glyph and renders a
+   dot in its place. */
+.mr-task-group-caret {
+  flex-shrink: 0;
+  width: 0;
+  height: 0;
+  margin: 0 1px;
+  border-left: 4px solid var(--txd);
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transform: rotate(90deg);
+  transition: transform .12s ease, border-left-color .12s ease;
+}
+.mr-task-group.is-folded .mr-task-group-caret { transform: rotate(0deg); }
+.mr-task-group-toggle:hover .mr-task-group-caret { border-left-color: var(--goldtx); }
+.mr-task-group-toggle:hover .mr-task-group-name { color: var(--goldtx); }
+.mr-task-group-toggle:focus-visible { outline: 1px solid var(--gold); outline-offset: 2px; border-radius: 3px; }
 .mr-task-group-rail { flex: 0 0 3px; width: 3px; height: 13px; border-radius: 2px; }
 .mr-task-group-name {
   flex: 1;
@@ -1552,6 +1614,23 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Revealed by hover or keyboard focus — see the note in MyTasksPanel. */
+.mr-task-group-wiki {
+  flex-shrink: 0;
+  opacity: 0;
+  color: var(--txd);
+  font-size: var(--fs-xs);
+  letter-spacing: .08em;
+  text-decoration: none;
+  transition: opacity .12s ease, color .12s ease;
+}
+.mr-task-group-head:hover .mr-task-group-wiki,
+.mr-task-group-wiki:focus-visible { opacity: 1; }
+/* A phone has no hover to reveal it with, and an invisible tap target is worse
+   than a visible link, so touch gets it outright. */
+@media (hover: none) { .mr-task-group-wiki { opacity: .7; } }
+.mr-task-group-wiki:hover { color: var(--goldtx); text-decoration: underline; }
+.mr-task-group-wiki:focus-visible { outline: 1px solid var(--gold); outline-offset: 1px; }
 .mr-task-group-tally { flex-shrink: 0; color: var(--txf); font-size: var(--fs-xs); }
 
 /* The row is the unit of work: the whole thing is the tick target. */
@@ -1603,6 +1682,24 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 [data-state='live'] .mr-task-chip { background: var(--sur3); color: #b9b5a8; }
 .mr-task-chip-button { cursor: pointer; }
 .mr-task-chip-button:hover { color: var(--goldtx); }
+
+/* DENSE: one line per objective, and the description gets the whole of it. */
+.mr-tasks.is-dense .mr-tasks-sub { display: none; }
+.mr-tasks.is-dense .mr-tasks-body { gap: 7px; padding: 0 10px 12px; }
+.mr-tasks.is-dense .mr-task-group:first-child { margin-top: 7px; }
+.mr-tasks.is-dense .mr-task-group { gap: 2px; }
+.mr-tasks.is-dense .mr-task-group-head { padding: 2px 2px 3px; }
+.mr-tasks.is-dense .mr-task { min-height: 0; align-items: center; gap: 7px; padding: 4px 8px; }
+.mr-tasks.is-dense .mr-task-box { margin-top: 0; width: 13px; height: 13px; line-height: 11px; font-size: 10px; }
+.mr-tasks.is-dense .mr-task-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The action and any carry hint move to the row's tooltip rather than sharing
+   the line: half a truncated verb reads worse than none, and in PLAN the PREP
+   chip already flags a row that needs something brought in. */
+.mr-tasks.is-dense .mr-task-action { display: none; }
 .mr-tasks-foot {
   flex: 0 0 auto;
   display: flex;

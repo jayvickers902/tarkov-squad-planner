@@ -27,6 +27,19 @@ export function objectiveTypeLabel(type) {
 }
 
 /**
+ * The wiki article for a task, on the ad-free antifandom mirror.
+ *
+ * Upstream hands us a fandom.com URL, which is unreadable on a phone mid-raid;
+ * every surface that offers a quest link goes through here so they all land on
+ * the same host.
+ */
+export function questWikiUrl(task) {
+  const url = typeof task === 'string' ? task : task?.wikiLink
+  if (!url) return null
+  return url.replace('escapefromtarkov.fandom.com', 'escapefromtarkov.antifandom.com')
+}
+
+/**
  * The trader gate a task sits behind, as one readable string, or null.
  *
  * Patch 1.1 moved 88 tasks off the quest chain and onto trader loyalty alone, so
