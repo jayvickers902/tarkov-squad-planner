@@ -17,7 +17,7 @@
 //
 //   curated   the `map_loot` table — hand-placed points for the Season 1 document
 //             items, which upstream has *no* coordinates for (see
-//             IMPLEMENTATION-PLAN.md line 205). Stored normalised 0-1 against the
+//             docs/archive/IMPLEMENTATION-PLAN.md line 205). Stored normalised 0-1 against the
 //             map image exactly like `map_keys`, so they have to be projected into
 //             world coordinates before they can sit alongside the prebaked ones.
 //

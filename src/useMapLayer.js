@@ -1,7 +1,7 @@
 // One Leaflet overlay layer, rebuilt wholesale — Phase 8.
 //
-// `PHASE7-HANDOFF.md` suggested extracting this before a seventh marker layer
-// went into MapLeaflet, and `PHASE8-HANDOFF.md` repeated it for the eighth.
+// `docs/archive/PHASE7-HANDOFF.md` suggested extracting this before a seventh marker layer
+// went into MapLeaflet, and `docs/archive/PHASE8-HANDOFF.md` repeated it for the eighth.
 // Phase 8 adds two (planning rings and replay trails), so here it is.
 //
 // Every layer it replaces had the same body: remove whatever was drawn last,
@@ -17,7 +17,7 @@
 //     world coordinates.
 //
 // Forcing those into this shape would change verified behaviour to buy
-// symmetry, which is the trade `PHASE8-HANDOFF.md` declined for good reason.
+// symmetry, which is the trade `docs/archive/PHASE8-HANDOFF.md` declined for good reason.
 //
 // `build` is called on every dep change and must be cheap. Phase 11 can reach
 // 344 hazard polygons and more than 1,300 loose-loot points; hazards are

@@ -650,7 +650,7 @@ export function adaptTasks({ rawTasks, taskTranslations, rawTraders, traderTrans
 }
 
 // Loose-loot spawn points for the older intel items (Phase 7's free layer).
-// Season 1 document items carry no coordinates upstream — see IMPLEMENTATION-PLAN.md.
+// Season 1 document items carry no coordinates upstream — see docs/archive/IMPLEMENTATION-PLAN.md.
 export const INTEL_ITEM_NAMES = ['Intelligence folder', 'Documents case']
 
 export function adaptIntel(rawMaps, itemTranslations) {

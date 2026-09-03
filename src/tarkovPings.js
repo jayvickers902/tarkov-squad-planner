@@ -67,7 +67,7 @@ export function inMapBounds(mapNorm, x, z) {
 /**
  * Validate a raw `playerPosition` command payload off the socket.
  *
- * The exact upstream field layout is not pinned down (see PHASE7-HANDOFF.md), so
+ * The exact upstream field layout is not pinned down (see docs/archive/PHASE7-HANDOFF.md), so
  * the reader is tolerant about *where* the numbers are and strict about what
  * counts as a number. Nothing that fails here reaches party state.
  *

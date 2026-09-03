@@ -2,7 +2,7 @@ export const TARKOV_API = 'https://api.tarkov.dev/graphql'
 
 // tarkov.dev's GraphQL API has been down since ~2026-07-21 with no fix in progress.
 // The flat JSON API is the supported path. json.tarkov.dev is primary; flip this to true to prefer GraphQL again
-// if it ever returns. See IMPLEMENTATION-PLAN.md, Phase 3.
+// if it ever returns. See docs/archive/IMPLEMENTATION-PLAN.md, Phase 3.
 export const GRAPHQL_ENABLED = false
 
 // FEATURED is not just a display list. It is the allowlist that gates ping validation
