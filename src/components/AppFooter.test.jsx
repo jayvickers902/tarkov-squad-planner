@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import AppFooter from './AppFooter'
 import { RELEASE_VERSION } from '../whatsNew'
@@ -17,16 +17,49 @@ describe('AppFooter', () => {
     expect(foot.querySelector('img.app-footer-mark')).toHaveAttribute('alt', '')
   })
 
-  it('links out to the repo, the issue form and the data source', () => {
+  it('links to the changelog, the repo, the issue form and the data source', () => {
     render(<AppFooter />)
     const links = screen.getAllByRole('link')
     expect(links.map(a => a.getAttribute('href'))).toEqual([
+      '/changelog',
       REPO,
       `${REPO}/issues/new`,
       'https://tarkov.dev',
     ])
-    // Every one leaves the app, so every one needs the opener guard.
-    for (const link of links) expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    // Every link that leaves the app needs the opener guard; the changelog is
+    // our own route, so it stays in the tab and takes neither target nor rel.
+    const [changelog, ...external] = links
+    expect(changelog).not.toHaveAttribute('target')
+    expect(changelog).not.toHaveAttribute('rel')
+    for (const link of external) expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('routes CHANGELOG in-app when it is given a handler', () => {
+    let opened = 0
+    render(<AppFooter onOpenChangelog={() => { opened += 1 }} />)
+    const link = screen.getByRole('link', { name: 'CHANGELOG' })
+    const event = createEvent.click(link)
+    fireEvent(link, event)
+    expect(opened).toBe(1)
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('leaves a modified click to the browser', () => {
+    let opened = 0
+    render(<AppFooter onOpenChangelog={() => { opened += 1 }} />)
+    const link = screen.getByRole('link', { name: 'CHANGELOG' })
+    const event = createEvent.click(link, { metaKey: true })
+    fireEvent(link, event)
+    expect(opened).toBe(0)
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  it('falls back to a plain page load when no handler is given', () => {
+    render(<AppFooter />)
+    const link = screen.getByRole('link', { name: 'CHANGELOG' })
+    const event = createEvent.click(link)
+    fireEvent(link, event)
+    expect(event.defaultPrevented).toBe(false)
   })
 
   it('states the licence and disclaims the trademark', () => {

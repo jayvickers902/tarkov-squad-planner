@@ -25,7 +25,7 @@ const CHIPS = [
   ['04', 'LIVE MAP FOLLOWS YOU IN RAID'],
 ]
 
-export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsign, error, profileError, setError }) {
+export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsign, error, profileError, setError, onOpenChangelog }) {
   const [mode, setMode]         = useState(needsCallsign ? 'callsign' : 'home')
   const [callsign, setCallsign] = useState('')
   const [busy, setBusy]         = useState(false)
@@ -133,7 +133,7 @@ export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsi
           <div className="mono auth-fact"><span className="auth-fact-label">PARTY SYNC</span><span className="auth-fact-live"><span className="auth-fact-dot" />REAL-TIME</span></div>
         </div>
 
-        <AppFooter compact />
+        <AppFooter compact onOpenChangelog={onOpenChangelog} />
       </div>
     </div>
   )

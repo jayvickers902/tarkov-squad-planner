@@ -89,7 +89,7 @@ function historyDate(value) {
   return at.toLocaleDateString(undefined, { day: '2-digit', month: 'short' }).toUpperCase()
 }
 
-export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onRestore, onDone, inParty, userSettings = {}, onSetUserSetting, onMarkCompleted, onReconcileLogEvents, onGetQuestHistory, gameMode: passedGameMode = null }) {
+export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggleImportant, onToggleSkipped, onClearAll, onRestore, onDone, inParty, userSettings = {}, onSetUserSetting, onMarkCompleted, onReconcileLogEvents, onGetQuestHistory, gameMode: passedGameMode = null, onOpenChangelog }) {
   const [mapFilter, setMapFilter]     = useState('all')
   const [searchMap, setSearchMap]     = useState('any')
   const [searchQ, setSearchQ]         = useState('')
@@ -1157,7 +1157,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
         .quest-new-flash { animation: goldFlash 2.4s ease forwards; }
       `}</style>
 
-      <AppFooter />
+      <AppFooter onOpenChangelog={onOpenChangelog} />
     </div>
   )
 }

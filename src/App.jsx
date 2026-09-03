@@ -20,6 +20,7 @@ import { resolveWelcomeVariant, welcomeStamp, WELCOME_SETTINGS_KEY } from './wel
 import { EftLogSyncProvider } from './EftLogSyncContext'
 
 const MyQuests = lazy(() => import('./components/MyQuests'))
+const Changelog = lazy(() => import('./components/Changelog'))
 const AdminKeyManager = lazy(() => import('./components/AdminKeyManager'))
 
 function AppSpinner() {
@@ -316,6 +317,19 @@ export default function App() {
     )
   }
 
+  // Public and above the auth gate: the changelog is a page about the product,
+  // so a signed-out visitor following the footer link lands on it rather than on
+  // the sign-in screen. Inside a party it is an overlay instead - see below.
+  const openChangelog = () => navigate({ screen: 'changelog' })
+
+  if (route.screen === 'changelog' && (!user || !profile)) {
+    return (
+      <Suspense fallback={<AppSpinner />}>
+        <Changelog navless onBack={() => navigate({ screen: 'lobby' }, { replace: true })} />
+      </Suspense>
+    )
+  }
+
   if (!user || !profile) {
     return (
       <AuthScreen
@@ -325,6 +339,7 @@ export default function App() {
         error={authError}
         profileError={authProfileError}
         setError={setAuthError}
+        onOpenChangelog={openChangelog}
       />
     )
   }
@@ -396,7 +411,7 @@ export default function App() {
         myName={myName}
         isAdmin={isAdmin}
         questsLoading={questsLoading}
-        hasRouteOverlay={leaveConfirmOpen || (route.code === party.code && (route.screen === 'quests' || (route.screen === 'admin' && isAdmin)))}
+        hasRouteOverlay={leaveConfirmOpen || route.screen === 'changelog' || (route.code === party.code && (route.screen === 'quests' || (route.screen === 'admin' && isAdmin)))}
         onLeave={handleLeave}
         onSelectMap={selectMap}
         onAddQuest={handleAddPartyQuest}
@@ -432,6 +447,7 @@ export default function App() {
         onRefreshFriends={refreshFriends}
         onRefresh={refreshParty}
         onRefreshQuests={refreshUserQuests}
+        onOpenChangelog={openChangelog}
         onStartRaid={startRaid}
         raidSession={raidSession}
         onRaidError={setPartyError}
@@ -460,6 +476,7 @@ export default function App() {
                 userSettings={userSettings}
                 onSetUserSetting={setUserSetting}
                 gameMode={gameMode}
+                onOpenChangelog={openChangelog}
                 onDone={() => navigate({ screen: 'room', code: party.code }, { replace: true })}
                 inParty={showPartyQuests}
               />
@@ -474,6 +491,14 @@ export default function App() {
           >
             <Suspense fallback={<AppSpinner />}>
               <AdminKeyManager gameMode={gameMode} onBack={() => navigate({ screen: 'room', code: party.code }, { replace: true })} />
+            </Suspense>
+          </div>
+        )}
+
+        {route.screen === 'changelog' && (
+          <div className="app-route-overlay">
+            <Suspense fallback={<AppSpinner />}>
+              <Changelog onBack={() => navigate({ screen: 'room', code: party.code }, { replace: true })} />
             </Suspense>
           </div>
         )}
@@ -515,8 +540,20 @@ export default function App() {
             userSettings={userSettings}
             onSetUserSetting={setUserSetting}
             gameMode={gameMode}
+            onOpenChangelog={openChangelog}
             onDone={() => navigate({ screen: 'lobby' }, { replace: true })}
           />
+        </Suspense>
+        {welcomeLayer}
+      </>
+    )
+  }
+
+  if (!party && route.screen === 'changelog') {
+    signedInView = (
+      <>
+        <Suspense fallback={<AppSpinner />}>
+          <Changelog onBack={() => navigate({ screen: 'lobby' }, { replace: true })} />
         </Suspense>
         {welcomeLayer}
       </>
@@ -552,7 +589,7 @@ export default function App() {
     return joined
   }
 
-  if (!party && route.screen !== 'quests' && !(route.screen === 'admin' && isAdmin)) {
+  if (!party && route.screen !== 'quests' && route.screen !== 'changelog' && !(route.screen === 'admin' && isAdmin)) {
     signedInView = (
     <>
       <Lobby
@@ -578,6 +615,7 @@ export default function App() {
         onRemoveRequest={removeRequest}
         onRemoveFriend={removeFriend}
         onRefreshFriends={refreshFriends}
+        onOpenChangelog={openChangelog}
       />
       {welcomeLayer}
     </>

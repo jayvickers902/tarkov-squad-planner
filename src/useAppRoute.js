@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const PARTY_CODE_RE = /^[A-Z0-9]{6}$/i
 const PARTY_SENTINEL_KEY = '__tarkovSquadPlannerPartySentinel'
 
+export const CHANGELOG_PATH = '/changelog'
+
 export const PARTY_ENTRY_SENTINEL_STATE = Object.freeze({
   [PARTY_SENTINEL_KEY]: true,
 })
@@ -25,6 +27,7 @@ export function parseAppPath(pathname = window.location.pathname) {
   const path = String(pathname || '/')
   if (path === '/' || path === '') return { screen: 'lobby' }
   if (/^\/quests$/i.test(path)) return { screen: 'quests' }
+  if (/^\/changelog$/i.test(path)) return { screen: 'changelog' }
   if (/^\/admin$/i.test(path)) return { screen: 'admin' }
   if (/^\/join\/[A-Z0-9]{6}$/i.test(path)) return { screen: 'lobby' }
 
@@ -44,6 +47,9 @@ export function parseAppPath(pathname = window.location.pathname) {
 
 export function appRoutePath(route) {
   if (!route || route.screen === 'lobby') return '/'
+  // Public and party-independent: the changelog never carries a party code,
+  // so a party member who opens it keeps their party without it in the URL.
+  if (route.screen === 'changelog') return CHANGELOG_PATH
 
   const code = normalizePartyCode(route.code)
   if (route.screen === 'quests') return code ? `/party/${code}/quests` : '/quests'

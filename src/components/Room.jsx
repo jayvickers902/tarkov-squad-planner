@@ -125,7 +125,7 @@ function compactMapName(map) {
   return map.normalizedName === 'streets-of-tarkov' ? 'Streets' : map.name
 }
 
-export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, activeQuestCount = 0, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, userObjProgress, userSettings = {}, onSetUserSetting, onRaidError, gameMode = 'regular', onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onRefreshQuests, onStartRaid, raidSession, onOpenRaid, onCloseRaid }) {
+export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, activeQuestCount = 0, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, userObjProgress, userSettings = {}, onSetUserSetting, onRaidError, gameMode = 'regular', onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onRefreshQuests, onStartRaid, raidSession, onOpenRaid, onCloseRaid, onOpenChangelog }) {
   const isMobile = useIsMobile()
   const questLogs = useEftLogSync({ optional: true })
   const [tab, setTab]           = useState('todo')
@@ -1011,7 +1011,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
       </div>
       </div>
 
-      <AppFooter />
+      <AppFooter onOpenChangelog={onOpenChangelog} />
 
       {pendingMap && (
         <div className="app-confirm-backdrop" role="presentation">

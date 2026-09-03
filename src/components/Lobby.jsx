@@ -6,7 +6,7 @@ import AppFooter from './AppFooter'
 
 const EMPTY_LIST = []
 
-export default function Lobby({ userId, callsign, userGameMode = 'regular', onEnter, onForceJoin, onManageQuests, onAdmin, isAdmin, error, friendsError = '', loading, autoJoinCode, friends = EMPTY_LIST, pendingIn = EMPTY_LIST, pendingOut = EMPTY_LIST, onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends }) {
+export default function Lobby({ userId, callsign, userGameMode = 'regular', onEnter, onForceJoin, onManageQuests, onAdmin, isAdmin, error, friendsError = '', loading, autoJoinCode, friends = EMPTY_LIST, pendingIn = EMPTY_LIST, pendingOut = EMPTY_LIST, onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onOpenChangelog }) {
   const [createGameMode, setCreateGameMode] = useState(() => normalizeGameMode(userGameMode))
   const [code, setCode] = useState('')
   const [local, setLocal] = useState('')
@@ -339,7 +339,7 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
         </aside>
       </div>
     </main>
-    <AppFooter />
+    <AppFooter onOpenChangelog={onOpenChangelog} />
     </>
   )
 }
