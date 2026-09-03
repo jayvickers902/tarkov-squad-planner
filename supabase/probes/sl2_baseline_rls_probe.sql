@@ -3,11 +3,12 @@
 -- Run this AFTER applying 10_15_raid_sessions.sql. It cannot run before that,
 -- because the table does not exist yet.
 --
--- Paste into the Supabase SQL editor and run the whole script. It is wrapped in
--- begin/rollback, so it persists nothing. It reuses two existing auth.users and
--- one existing party as fixtures, so it creates no auth rows and fires no
--- auth-side triggers. Results come back as a single table at the end; read the
--- `verdict` column.
+-- Run only against a local or explicitly approved staging database. This probe
+-- seeds rows and switches roles: the begin/rollback wrapper keeps it from
+-- persisting anything, but it still writes and takes locks, so it must not run
+-- against production. It reuses two existing auth.users and one existing party
+-- as fixtures, so it creates no auth rows and fires no auth-side triggers.
+-- Results come back as a single table at the end; read the `verdict` column.
 --
 -- Why this probe is necessary at all: raid_session_baselines has no
 -- authenticated write path -- no insert/update policy, no insert grant, and no
@@ -48,15 +49,18 @@ begin
   end if;
 end $$;
 
-select set_config('probe.session_id', (
-  with ins as (
-    insert into public.raid_sessions (party_id, game_mode, map_norm, created_by)
-    values (current_setting('probe.party_id')::bigint, 'regular', 'customs',
-            current_setting('probe.user_a')::uuid)
-    returning id
-  )
-  select id::text from ins
-), true);
+-- The insert is its own statement rather than a data-modifying CTE inside a
+-- scalar subquery: PostgreSQL only allows such a CTE at the top level, so the
+-- nested form aborted the whole probe before any check ran.
+create temporary table _probe_session (id uuid) on commit drop;
+with ins as (
+  insert into public.raid_sessions (party_id, game_mode, map_norm, created_by)
+  values (current_setting('probe.party_id')::bigint, 'regular', 'customs',
+          current_setting('probe.user_a')::uuid)
+  returning id
+)
+insert into _probe_session select id from ins;
+select set_config('probe.session_id', (select id::text from _probe_session), true);
 
 -- Seeded as the current BYPASSRLS role, since no authenticated path can write.
 insert into public.raid_session_baselines (session_id, user_id, quest_before)

@@ -34,3 +34,5 @@
 10_30_audit_hardening.sql
 10_31_restore_party_write_rpcs.sql
 10_32_amend_party_ping.sql
+10_33_restore_progress_scope.sql
+10_34_profiles_write_scope.sql

@@ -9,8 +9,18 @@ const migration = readFileSync(join(root, 'supabase', '10_10_security_hardening.
 const raidSessionMigration = readFileSync(join(root, 'supabase', '10_15_raid_sessions.sql'), 'utf8')
 const userDataMigration = readFileSync(join(root, 'supabase', '10_24_user_data_hardening.sql'), 'utf8')
 const profileScopeMigration = readFileSync(join(root, 'supabase', '10_25_profiles_column_scope.sql'), 'utf8')
+const progressScopeMigration = readFileSync(join(root, 'supabase', '10_33_restore_progress_scope.sql'), 'utf8')
+const profileWriteScopeMigration = readFileSync(join(root, 'supabase', '10_34_profiles_write_scope.sql'), 'utf8')
 const css = readFileSync(join(root, 'src', 'index.css'), 'utf8')
 
+// These assertions read migration files off disk. A green result proves the
+// FILE says the right thing -- it proves nothing about the live catalog, which
+// is a different question with a different answer. 10_10_security_hardening.sql
+// was never applied to production, and every assertion below that reads it
+// stayed green for the whole time invariant 2 was unenforced in production.
+// Behavioural proof lives in supabase/probes/, which must be run against a
+// local cluster seeded from the live catalog; see
+// docs/supabase-database-workflow.md.
 describe('security-sensitive contracts', () => {
   it('has no direct party update or legacy write fallback in the client', () => {
     expect(partyClient).not.toMatch(/from\(['"]parties['"]\)[\s\S]{0,120}\.update\(/)
@@ -29,6 +39,29 @@ describe('security-sensitive contracts', () => {
     expect(migration).toContain('Accepting replacement')
     expect(partyClient).not.toContain('p_markers:')
     expect(partyClient).not.toContain('p_drawings:')
+  })
+
+  // 10_33 and 10_34 are the files that were actually deployed for these two
+  // invariants. 10_10 above is retained as the design of record, but it is not
+  // what production runs.
+  it('restores caller-owned progress and closes the direct-write path', () => {
+    expect(progressScopeMigration).toContain("entry.key not like '%::' || auth.uid()::text")
+    expect(progressScopeMigration).toContain("p_changes ? '__raid_start__'")
+    expect(progressScopeMigration).toContain('revoke update on table public.parties from anon, authenticated')
+    for (const fn of ['merge_progress', 'merge_starred']) {
+      expect(progressScopeMigration).toContain(`create or replace function public.${fn}(p_code text, p_changes jsonb)`)
+    }
+  })
+
+  it('scopes profile writes to the callsign column and drops TRUNCATE', () => {
+    expect(profileWriteScopeMigration).toContain('revoke insert, update, truncate on table public.profiles from anon, authenticated')
+    expect(profileWriteScopeMigration).toContain('grant insert (id, callsign) on table public.profiles to authenticated')
+    expect(profileWriteScopeMigration).toContain('grant update (callsign) on table public.profiles to authenticated')
+    expect(profileWriteScopeMigration).toContain('with check (auth.uid() = id and is_admin = false)')
+    for (const table of ['parties', 'party_members', 'user_settings']) {
+      expect(profileWriteScopeMigration).toContain(`revoke truncate on table public.${table} from anon, authenticated`)
+    }
+    expect(profileWriteScopeMigration).not.toMatch(/grant\s+(insert|update)[^;]*is_admin/)
   })
 
   it('bounds user quest storage and scopes profile administration data', () => {

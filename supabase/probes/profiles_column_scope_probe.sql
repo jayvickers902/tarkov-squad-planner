@@ -16,9 +16,10 @@
 -- That migration scoped SELECT only. It did not touch INSERT or UPDATE, and
 -- this probe is what makes the consequence visible.
 --
--- CHECK 9 IS EXPECTED TO FAIL against the current production catalog: the
--- UPDATE grant still covers every column, so a user can self-grant is_admin.
--- See the note at the bottom of this file.
+-- CHECKS 4, 5, 9 AND 14 FAIL against the production catalog as it stands on
+-- 2026-09-03, and pass once supabase/10_34_profiles_write_scope.sql is applied:
+-- the UPDATE grant still covers every column, so a user can self-grant
+-- is_admin. See the note at the bottom of this file.
 
 begin;
 
@@ -112,14 +113,17 @@ from information_schema.column_privileges
 where table_schema = 'public' and table_name = 'profiles'
   and grantee = 'authenticated' and privilege_type = 'SELECT';
 
+-- INSERT as well as UPDATE: a first sign-in that could name is_admin would be
+-- the same escalation by another route.
 insert into _probe_results
-select 4, 'authenticated UPDATE does not reach is_admin',
+select 4, 'authenticated INSERT and UPDATE do not reach is_admin',
        case when count(*) = 0 then 'PASS'
             else 'FAIL - is_admin is directly writable by its owner' end,
-       coalesce(string_agg(distinct column_name, ', ' order by column_name), '(none)')
+       coalesce(string_agg(distinct privilege_type, ', ' order by privilege_type), '(none)')
 from information_schema.column_privileges
 where table_schema = 'public' and table_name = 'profiles'
-  and grantee = 'authenticated' and privilege_type = 'UPDATE'
+  and grantee in ('anon', 'authenticated')
+  and privilege_type in ('INSERT', 'UPDATE')
   and column_name = 'is_admin';
 
 insert into _probe_results
@@ -196,10 +200,17 @@ select 11, 'a user cannot change another user''s callsign',
 -- every fixture id already has a profile row, so an attempted insert would be
 -- refused by the primary key whether or not the policy holds, and would report
 -- PASS for the wrong reason.
+--
+-- Asserted as a property, not as one exact spelling. The original form matched
+-- the string '(auth.uid()=id)' literally, which marked 10_34's strictly
+-- stronger policy -- the same binding plus `and is_admin = false` -- as a
+-- failure. What matters is that the check binds the new row to the caller and
+-- is not vacuously true.
 insert into _probe_results
 select 12, 'the INSERT policy binds a new profile to the caller''s own uid',
        case when count(*) = 1
-             and bool_and(replace(with_check, ' ', '') in ('(auth.uid()=id)', 'auth.uid()=id'))
+             and bool_and(replace(with_check, ' ', '') like '%auth.uid()=id%')
+             and bool_and(replace(with_check, ' ', '') not in ('true', '(true)'))
             then 'PASS' else 'FAIL' end,
        coalesce(string_agg(policyname || ' -> ' || coalesce(with_check, '(none)'), ', '), '(no insert policy)')
 from pg_policies
@@ -244,10 +255,10 @@ rollback;
 
 -- Known failure, recorded 2026-09-03 against the linked project:
 --
---    4  authenticated UPDATE does not reach is_admin   FAIL
---    5  neither role holds TRUNCATE on profiles        FAIL
---    9  a user CANNOT grant themselves is_admin        FAIL
---   14  user A's is_admin is still false               FAIL
+--    4  authenticated INSERT and UPDATE do not reach is_admin  FAIL
+--    5  neither role holds TRUNCATE on profiles                FAIL
+--    9  a user CANNOT grant themselves is_admin                FAIL
+--   14  user A's is_admin is still false                       FAIL
 --
 -- 10_25_profiles_column_scope.sql revoked and re-granted SELECT only. The
 -- INSERT and UPDATE grants still cover all four columns, and the "Profiles own
@@ -259,13 +270,13 @@ rollback;
 -- quest_share_overrides, so a self-granted admin can rewrite curated reference
 -- data. It does not confer access to another user's party, quest or sync data.
 --
--- The fix is a column-scoped UPDATE grant that mirrors what 10_25 did for
--- SELECT, plus revoking TRUNCATE, which RLS never filters:
+-- supabase/10_34_profiles_write_scope.sql closes it: a column-scoped INSERT and
+-- UPDATE grant mirroring what 10_25 did for SELECT, the 10_10 policies that
+-- refuse an inserted row claiming admin, and a TRUNCATE revoke -- RLS never
+-- filters TRUNCATE, so that grant was a whole-table wipe no policy would stop.
+-- Rehearsed on a local cluster seeded from the live catalog: all four checks
+-- flip to PASS, and the probe reports 15 PASS / 0 FAIL.
 --
---   revoke update, truncate on table public.profiles from anon, authenticated;
---   revoke insert on table public.profiles from anon;
---   grant update (callsign) on table public.profiles to authenticated;
---   grant insert (id, callsign) on table public.profiles to authenticated;
---
--- Verify against the live catalog before writing that migration, and re-run
--- this probe locally afterwards. See HANDOFF-outstanding-work.md.
+-- Check 12 was rewritten at the same time. It matched the string
+-- '(auth.uid()=id)' exactly, which would have marked 10_34's strictly stronger
+-- policy as a failure; it now asserts the property the check name claims.

@@ -17,10 +17,12 @@
 -- policy fires inside them. Every isolation guarantee below therefore rests on
 -- the routine body's own auth.uid() checks, not on RLS.
 --
--- CHECK 14 IS EXPECTED TO FAIL against the current production catalog. It
--- asserts invariant 2 from CLAUDE.md -- "merge_progress rejects any progress
--- key not ending in the caller's uid". The live body does not implement that
--- check; see the note at the bottom of this file.
+-- CHECKS 3, 14, 16, 17 AND 18 FAIL against the production catalog as it stands
+-- on 2026-09-03, and pass once supabase/10_33_restore_progress_scope.sql is
+-- applied. Together they assert invariant 2 from CLAUDE.md -- "merge_progress
+-- rejects any progress key not ending in the caller's uid" -- by both routes a
+-- member has into parties.progress: the RPC, and direct DML. See the note at
+-- the bottom of this file.
 
 begin;
 
@@ -103,13 +105,26 @@ where n.nspname = 'public'
   and p.proname in ('create_party', 'join_party_secure', 'merge_progress');
 
 -- Party state must be unreachable by direct DML: the RPCs are the only writer.
+--
+-- Read column_privileges, not table_privileges. A column-level grant does not
+-- appear in table_privileges at all, and that blind spot hid a real hole: until
+-- 10_33, authenticated held UPDATE on eleven named columns of public.parties --
+-- progress among them -- while this check reported PASS. column_privileges
+-- expands table-level grants per column too, so it is the complete view.
+--
+-- party_members.quests and quests_all stay granted on purpose: useParty.js
+-- writes the caller's own member row directly, under the "Party members own
+-- update" policy. Everything else on either table belongs to the RPCs.
 insert into _probe_results
-select 3, 'authenticated holds no direct UPDATE on parties or party_members',
-       case when count(*) = 0 then 'PASS' else 'FAIL' end,
-       coalesce(string_agg(table_name || ':' || privilege_type, ', '), '(none)')
-from information_schema.table_privileges
+select 3, 'authenticated holds no direct UPDATE beyond party_members.quests',
+       case when count(*) = 0 then 'PASS'
+            else 'FAIL - direct DML bypasses the party write RPCs' end,
+       coalesce(string_agg(table_name || '.' || column_name, ', '
+                order by table_name, column_name), '(none)')
+from information_schema.column_privileges
 where table_schema = 'public' and table_name in ('parties', 'party_members')
-  and grantee = 'authenticated' and privilege_type = 'UPDATE';
+  and grantee = 'authenticated' and privilege_type = 'UPDATE'
+  and not (table_name = 'party_members' and column_name in ('quests', 'quests_all'));
 
 -- ---------------------------------------------------------------------------
 -- 2. create_party, as user A.
@@ -293,17 +308,34 @@ rollback;
 
 -- Known failure, recorded 2026-09-03 against the linked project:
 --
---   14  merge_progress REFUSES a progress key owned by another member   FAIL
---   16  merge_progress refuses the reserved __raid_start__ key          FAIL
---   17  merge_progress refuses a non-boolean progress value             FAIL
+--    3  authenticated holds no direct UPDATE beyond party_members.quests  FAIL
+--   14  merge_progress REFUSES a progress key owned by another member     FAIL
+--   16  merge_progress refuses the reserved __raid_start__ key            FAIL
+--   17  merge_progress refuses a non-boolean progress value               FAIL
+--   18  a member cannot UPDATE parties.progress directly                  FAIL
+--
+-- Two independent holes, and invariant 2 needs both closed.
 --
 -- The live merge_progress is the 10_08_atomic_writes.sql body, which merges
 -- p_changes into parties.progress after only a membership check. The key,
 -- value, size and reserved-key validation lives in 10_10_security_hardening.sql,
 -- which was never applied to production. 10_31_restore_party_write_rpcs.sql was
--- written to repair exactly that gap but restored only set_party_settings,
+-- written to repair that gap but restored only set_party_settings,
 -- set_party_spawn, set_party_quest_order and sweep_party_ephemeral -- it did
 -- not restore merge_progress or merge_starred.
 --
--- Until a migration restores the hardened body, invariant 2 holds by client
--- convention only. See HANDOFF-outstanding-work.md.
+-- Separately, anon and authenticated still hold column-level UPDATE on
+-- public.parties over progress, starred, drawings, markers, pings, ping_log,
+-- settings, spawn, quest_order, raid_id and last_active_at, and the "Parties
+-- member update" policy admits any member. A member can write a teammate's
+-- progress key with a plain UPDATE without going near the RPC, so hardening
+-- the function alone would have left the invariant just as open.
+--
+-- Check 3 did not catch that second hole until 2026-09-03 because it read
+-- information_schema.table_privileges, where a column-level grant does not
+-- appear at all. It now reads column_privileges. A denial check that passes
+-- for the wrong reason is the recurring failure mode in this directory.
+--
+-- supabase/10_33_restore_progress_scope.sql closes both. Rehearsed on a local
+-- cluster seeded from the live catalog: all five checks flip to PASS, and the
+-- probe reports 19 PASS / 0 FAIL.
