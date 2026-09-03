@@ -36,3 +36,5 @@
 10_32_amend_party_ping.sql
 10_33_restore_progress_scope.sql
 10_34_profiles_write_scope.sql
+10_35_revoke_truncate_trigger.sql
+10_36_restore_collab_payload_bounds.sql

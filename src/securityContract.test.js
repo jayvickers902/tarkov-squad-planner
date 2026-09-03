@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { FEATURED } from './constants'
+import { MAX_STROKE_POINTS } from './strokeBounds'
 
 const root = process.cwd()
 const partyClient = readFileSync(join(root, 'src', 'useParty.js'), 'utf8')
@@ -11,6 +12,8 @@ const userDataMigration = readFileSync(join(root, 'supabase', '10_24_user_data_h
 const profileScopeMigration = readFileSync(join(root, 'supabase', '10_25_profiles_column_scope.sql'), 'utf8')
 const progressScopeMigration = readFileSync(join(root, 'supabase', '10_33_restore_progress_scope.sql'), 'utf8')
 const profileWriteScopeMigration = readFileSync(join(root, 'supabase', '10_34_profiles_write_scope.sql'), 'utf8')
+const truncateSweepMigration = readFileSync(join(root, 'supabase', '10_35_revoke_truncate_trigger.sql'), 'utf8')
+const collabBoundsMigration = readFileSync(join(root, 'supabase', '10_36_restore_collab_payload_bounds.sql'), 'utf8')
 const css = readFileSync(join(root, 'src', 'index.css'), 'utf8')
 
 // These assertions read migration files off disk. A green result proves the
@@ -84,11 +87,44 @@ describe('security-sensitive contracts', () => {
     expect(profileScopeMigration).toContain('grant select (id, callsign) on table public.profiles to authenticated')
   })
 
+
+  // 10_35 exists because 10_34 named four tables and there were eight. RLS never
+  // filters TRUNCATE, so the grant was a whole-table wipe on the admin-curated
+  // reference tables. Sweeping the schema rather than a list is the point.
+  it('sweeps TRUNCATE and TRIGGER across the whole public schema', () => {
+    expect(truncateSweepMigration).toContain("revoke truncate, trigger on table %s from anon, authenticated")
+    expect(truncateSweepMigration).toContain("where schemaname = 'public'")
+    expect(truncateSweepMigration).not.toMatch(/revoke truncate on table public\.[a-z_]+ from/)
+  })
+
+  // 10_36 and src/strokeBounds.js are one change in two halves. The server half
+  // refuses what the client half guarantees; shipping the server alone would
+  // start refusing strokes that work today.
+  it('bounds collaboration payloads on both sides of the wire', () => {
+    for (const fn of ['append_drawing', 'append_marker', 'select_map_party']) {
+      expect(collabBoundsMigration).toContain(`create or replace function public.${fn}(`)
+    }
+    expect(collabBoundsMigration).toContain('party_collaboration_payload_bounds')
+    expect(collabBoundsMigration).toContain('party_members_quest_payload_bounds')
+    expect(collabBoundsMigration).toContain("(point->>0)::numeric not between 0 and 1")
+    // The client must normalize before the RPC, or the bounds above reject it.
+    expect(partyClient).toContain('normalizeStrokePoints')
+    expect(partyClient).toContain('normalizeMarkerPoint')
+  })
+
+  // A stroke of 2000 five-decimal points serializes past the server's 32768-byte
+  // payload cap, so the client point cap has to be the binding one.
+  it('keeps the client stroke cap under the server byte cap', () => {
+    const worstCaseBytesPerPoint = '[0.12345,0.67890],'.length
+    expect(MAX_STROKE_POINTS * worstCaseBytesPerPoint).toBeLessThan(32768)
+    expect(MAX_STROKE_POINTS).toBeLessThanOrEqual(2000)
+  })
+
   // A map the picker offers but the RPC refuses reads as a broken app, not as an
   // unsupported map. Icebreaker and Labyrinth sat on the wrong side of this for
   // two releases because nothing compared the two lists.
   it('offers exactly the maps the server will accept', () => {
-    const allowlists = [migration, raidSessionMigration]
+    const allowlists = [migration, raidSessionMigration, collabBoundsMigration]
       .flatMap(source => [...source.matchAll(/not in \(([^)]*'the-lab'[^)]*)\)/g)])
       .map(match => [...match[1].matchAll(/'([a-z0-9-]+)'/g)].map(entry => entry[1]))
 

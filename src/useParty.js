@@ -11,6 +11,7 @@ import {
 } from './partyMembers'
 import { nextDelay, recordFailure, recordSuccess } from './supabaseHealth'
 import { createPartySyncMetrics } from './partySyncMetrics'
+import { normalizeStrokePoints, normalizeMarkerPoint } from './strokeBounds'
 
 function saveLastPartyCode(code) {
   try {
@@ -925,8 +926,14 @@ export function useParty(userId, userSettings = {}, {
     const current = partyRef.current
     const currentUserId = userIdRef.current
     if (!current || !currentUserId) return
+    // append_drawing refuses points outside 0..1 and over-long strokes, and
+    // MapLeaflet guarantees neither. Normalize before the optimistic apply so
+    // the local render matches the row the server will store. See strokeBounds.js.
+    const pts = normalizeStrokePoints(stroke?.pts)
+    if (!pts) return
     const optimisticStroke = {
       ...stroke,
+      pts,
       user_id: currentUserId,
       user: stroke?.user || myNameRef.current,
       created_at: stroke?.created_at ?? Date.now(),
@@ -960,8 +967,13 @@ export function useParty(userId, userSettings = {}, {
     const current = partyRef.current
     const currentUserId = userIdRef.current
     if (!current || !currentUserId) return
+    // append_marker refuses a marker outside the map; clamp rather than be refused.
+    const point = normalizeMarkerPoint(marker)
+    if (!point) return
     const optimisticMarker = {
       ...marker,
+      x: point.x,
+      y: point.y,
       user_id: currentUserId,
       user: marker?.user || myNameRef.current,
       created_at: marker?.created_at ?? Date.now(),
