@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts/prebake.mjs",
     "prebake": "node scripts/prebake.mjs",
     "update:intel": "node scripts/update-battlepass-intel.mjs",
     "build": "vite build",
@@ -18,8 +17,7 @@
     "@supabase/supabase-js": "^2.112.2",
     "leaflet": "^1.9.4",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "tesseract.js": "^7.0.0"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
