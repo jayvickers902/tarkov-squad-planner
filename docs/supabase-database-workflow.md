@@ -73,14 +73,51 @@ but they do not exercise PostgreSQL policies. Probes under
 `supabase/probes/` are transaction-wrapped behavioral checks. For example,
 `sl2_baseline_rls_probe.sql` seeds only temporary rows, switches between two
 authenticated users, checks isolation and write denial, then rolls everything
-back. Run probes only against local or explicitly approved staging databases;
-they are not a production health check.
+back.
+
+There are five:
+
+| Probe | Covers |
+|---|---|
+| `party_members_rls_probe.sql` | Member isolation across `parties` and `party_members` |
+| `sl2_baseline_rls_probe.sql` | `raid_session_baselines`, and whether FORCE binds a definer reader |
+| `sync_client_status_rls_probe.sql` | The companion status and bootstrap RPCs |
+| `party_rpc_rls_probe.sql` | `create_party`, `join_party_secure`, `merge_progress` |
+| `profiles_column_scope_probe.sql` | Profile column scope and `is_admin` self-grant |
+
+Each ends in a single verdict table; read the `verdict` column. `PASS`/`FAIL`
+are assertions, `INFO` rows report fixtures and ownership. Two probes carry a
+"Known failure" note at the bottom recording what fails today and why.
+
+Which database a probe may touch is decided by what the probe *does*, not by
+what it is called:
+
+- **Read-only catalog observation belongs against the linked project, and is
+  required.** Table ownership, `rolbypassrls`, `prosecdef`, live routine
+  bodies, grants, and policy definitions exist nowhere else, and no local
+  cluster can be asked to supply them. Issue no writes, no `set role`, and no
+  `begin`-wrapped fixtures; hold credentials in memory only. See the schema
+  drift procedure below for the sanctioned access path.
+- **Anything that writes, switches roles, or takes locks runs locally only.**
+  A `begin`/`rollback` wrapper is not an exemption. Both current probes
+  `update` or `insert` into live application tables, which means lock
+  contention on hot rows while real parties are in a raid.
+
+Seed the local database from a production catalog capture before trusting a
+local pass. If the local cluster does not reproduce the real ownership and
+`BYPASSRLS` configuration, a probe asserting "the policy denies this" passes
+locally while proving nothing. That is precisely how `force row level
+security` on `raid_session_baselines` was assumed to constrain a
+`SECURITY DEFINER` function when it does not.
 
 When adding a policy or RPC, add a probe that proves the intended behavior as
 at least two roles (usually two authenticated users and, where relevant, the
-anonymous role). Assert both the positive path and the denied path. Prefer
-fixtures selected from existing rows or transaction-local inserts so a failed
-probe cannot leave test data behind.
+anonymous role). Assert both the positive path and the denied path. For a
+`SECURITY DEFINER` routine owned by a `BYPASSRLS` role, policies never fire
+inside the function, so the denial path must be proven against the routine's
+own `auth.uid()` filtering rather than against a policy. Prefer fixtures
+selected from existing rows or transaction-local inserts so a failed probe
+cannot leave test data behind.
 
 ## Schema drift procedure
 
@@ -146,8 +183,17 @@ inventory as audit evidence. Before making that cutover the team needs:
 
 - a production schema dump and extension/publication/cron inventory;
 - a local reset that succeeds from the new baseline;
-- behavioral RLS probes for member isolation, profile column scope, party RPCs,
-  and companion status;
+- ~~behavioral RLS probes for member isolation, profile column scope, party
+  RPCs, and companion status~~ — all five now exist under `supabase/probes/`,
+  see below;
 - a staging rehearsal for every file listed in
   `destructive-migrations.txt`; and
 - a rollback or restore procedure for destructive data transitions.
+
+Two of those probes fail against the current production catalog, by design:
+`merge_progress` does not enforce CLAUDE.md invariant 2, and `is_admin` can be
+self-granted. Both are written up in
+[HANDOFF-outstanding-work.md](../HANDOFF-outstanding-work.md#35-the-three-rls-probes--written-2026-09-03-and-they-found-two-real-holes).
+A probe that asserts the behaviour the system actually has, rather than the
+behaviour it is specified to have, would be worth nothing — so these are left
+failing until a migration closes the gap.
