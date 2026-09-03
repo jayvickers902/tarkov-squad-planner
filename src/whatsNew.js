@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.15'
+export const RELEASE_VERSION = '2026.16'
 
 export const SETUP_STEPS = [
   {
@@ -28,6 +28,18 @@ export const FIRST_LIVE_NOTES_VERSION = '2026.09'
 // Newest first — WelcomeModal shows RELEASES[0] and nothing else, so a new
 // release goes on top of this array and RELEASE_VERSION moves with it.
 export const RELEASES = [
+  {
+    version: '2026.16',
+    date: '2026-09-02',
+    title: 'PINGS WITHOUT THE WAIT',
+    items: [
+      {
+        tag: 'IMPROVED',
+        title: 'HERE PINGS LAND IMMEDIATELY',
+        body: 'Your first position ping no longer waits for the double-tap window. A second or third screenshot upgrades that same marker to CONTACT or NEED HELP for the whole squad.',
+      },
+    ],
+  },
   {
     version: '2026.15',
     date: '2026-09-02',

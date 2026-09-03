@@ -1,6 +1,6 @@
-# Handoff — what is outstanding
+# Handoff — post-release validation only
 
-**Written:** 2026-09-02 · **Branch:** `site-footer` · **Tip:** `1411f33` · **`origin/main`:** `cd0cedf`
+**Updated:** 2026-09-02 · **Branch:** `main`
 
 Read [CLAUDE.md](CLAUDE.md) first, then the deep reference that matches the task —
 [docs/map-and-raid.md](docs/map-and-raid.md), [docs/eft-log-import.md](docs/eft-log-import.md),
@@ -11,8 +11,8 @@ Do **not** read `docs/archive/`; it is superseded briefs, history rather than sp
 
 ## 1. Where things stand
 
-`site-footer` is twelve commits ahead of `origin/main` and carries everything below. It is pushed to
-`origin/site-footer` up to `ec297f1`; the changelog and companion commits after it are local.
+The original `site-footer` work is on `main`. The final latency change adds the live amendable ping
+RPC, immediate browser/companion publishing, companion 0.3.1, and release 2026.16.
 
 | Commit | |
 |---|---|
@@ -28,68 +28,46 @@ Do **not** read `docs/archive/`; it is superseded briefs, history rather than sp
 | `2bd705c` | Raid view's quest column condenses; wiki link per quest |
 | `10bcfdc` | `CENTRE ON ME`, and OVERVIEW no longer retires FOLLOW for good |
 
-Root suite **69 files / 629 tests**, companion **12 / 69**, `cargo check` and `cargo test` clean,
-build clean.
+Root suite **70 files / 631 tests**, companion **12 / 69**, `cargo check` and `cargo test` clean,
+web and companion builds clean.
 
 ---
 
-## 2. Yours, and nobody else can do them
+## 2. Completed 2026-09-02
 
-### 2.1 Rotate the Supabase management PAT · **do this first**
+### 2.1 Supabase management PAT
 
-`sbp_86e9a47911a96ead0d9856290419d836474f6faa` was committed in `.claude/settings.json` at `ce33eca`
-("keys and maps") inside a permission-allowlist entry, alongside the project anon key and a user
-access token. `b12d2a2` removed them from the tip and untracked `settings.local.json`, but **the
-history is already on GitHub and deleting from the tip revokes nothing.** Rotate the PAT in the
-Supabase dashboard. The anon key is public by design and the user JWT has long expired; the PAT is
-the one that matters.
+Confirmed in the Supabase dashboard that the exposed `sbp_86e9…f6faa` token is no longer present.
+The remaining tokens have different prefixes and suffixes.
 
-### 2.2 Rebuild and reinstall the companion
+### 2.2 Companion rebuilt and reinstalled
 
-Everything in `1411f33` that touches `companion/` reaches you only through a Tauri rebuild and
-reinstall. **A web deploy will not carry it.** Until then the desktop app still runs the old
-eight-second path.
+Built the x64 NSIS and MSI bundles as version 0.3.1, installed the NSIS bundle successfully, and
+restarted the installed companion in the background. The standalone bundles were produced; updater
+artifact signing still needs the release private key if 0.3.1 is published through GitHub updates.
 
-### 2.3 Prune the EFT Logs folder
+### 2.3 EFT Logs pruned
 
-**228.1 MiB — 89.1% of the 256 MiB scan cap**, measured 2026-09-02.
+Reduced from **228.1 MiB (89.1%)** to **70.6 MiB (27.6%)** of the 256 MiB scan cap. Forty-six
+session folders older than 2026-08-24 were sent to the Windows Recycle Bin, so they remain
+recoverable until the bin is emptied.
 
 ```bash
 du -sb "/c/Battlestate Games/Escape from Tarkov/Logs" | awk '{printf "%.1f MiB (%.1f%% of cap)\n", $1/1048576, 100*$1/268435456}'
 ```
 
-Crossing it is no longer fatal — `enumerate_logs` now drops the oldest whole sessions to fit instead
-of erroring, so pings keep flowing. But dropped sessions are **silently not imported**, so quest
-completions inside them are lost to the importer. Deleting old session folders is still the fix.
-
-### 2.4 Decide the deploy
-
-`site-footer` → `main` is a production deploy of all twelve commits at once. `main` is also one
-commit ahead of `origin/main` already (`10bcfdc`). Whoever merges should check that the changelog
-entry and `RELEASE_VERSION` cover the user-visible half — the quest column, the footer, the
-changelog page and `CENTRE ON ME` are all user-visible (CLAUDE.md invariant 6).
+The scan still degrades safely if the folder grows back over the cap.
 
 ---
 
 ## 3. Engineering that is genuinely left
 
-### 3.1 An amendable `append_party_ping` — the last ~1.2 s · **the only real one**
+### 3.1 Amendable `append_party_ping` — completed
 
-The tap window is a trailing debounce, so every solo ping waits it out. It is 1200 ms now, down from
-1800. It cannot go much lower: it is the CONTACT / NEED HELP gesture window, and below about a
-second a deliberate double press starts splitting into two HERE pings — the coalescing is measured
-on screenshot mtimes, not on key presses, so EFT's own write jitter is inside the budget.
-
-Codex proposed 600 ms and I overruled it to 1200 during review. If double-tap CONTACT ever feels
-unreliable in a raid, that constant (`TAP_WINDOW_MS`, [src/tarkovPings.js](src/tarkovPings.js)) is
-the first thing to raise, not to lower.
-
-The trade disappears entirely with an amendable append: emit the first ping immediately, then
-upgrade its `taps` if a second screenshot lands inside the window. `append_party_ping` inserts only
-and reuses idempotently by `source_event_id`, so a second insert cannot upgrade a sent row. This
-needs an RPC that takes a taps upgrade for an existing event within a bounded window, and it needs
-the live schema read first — **the files in `supabase/` are not all applied**, which is exactly how
-four party write RPCs went missing in production. Worth roughly a second off every ping.
+The browser and companion now emit the first HERE ping immediately and reuse its source event ID for
+later taps. `append_party_ping` upgrades taps only for the same caller, party, raid and event inside
+a five-second server/client bound; the live migration is applied. Realtime consumes INSERT and
+UPDATE events, and active/replay lists replace the prior version instead of duplicating it.
 
 ### 3.2 Verify the latency in a real raid
 

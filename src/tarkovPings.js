@@ -24,13 +24,10 @@ export const PING_MAX      = 24              // cap on the stored array
 // `startRaid` / `selectMap`), so this cap is a runaway guard, not a retention
 // policy — a raid producing 400 pings has other problems.
 export const PING_LOG_MAX  = 400
-// Taps closer than this are one ping. It is a trailing debounce, so it is also
-// the delay on every solo ping — but it is the CONTACT / NEED HELP gesture
-// window first, and a second screenshot has to land inside it. 1800 made every
-// ping wait almost two seconds; below ~1000 a deliberate double press starts
-// splitting into two HERE pings, measured on screenshot mtimes rather than on
-// key presses. The way out of the trade is an amendable append RPC, not a
-// shorter window — see the handoff.
+// Taps closer than this amend one ping. The first tap publishes immediately;
+// later taps reuse its source event id and upgrade it to CONTACT / NEED HELP.
+// Below ~1000 a deliberate double press starts splitting into two HERE pings,
+// measured on screenshot mtimes rather than on key presses.
 export const TAP_WINDOW_MS = 1200
 export const MAX_TAPS      = 3               // 3 taps is the loudest thing we encode
 export const MOTION_MAX_GAP_MS = 15000       // beyond this, heading of travel is a guess

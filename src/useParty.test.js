@@ -120,12 +120,12 @@ beforeEach(() => {
 })
 
 describe('settleOptimisticPing', () => {
-  it('keeps one optimistic ping for a matching stored id', () => {
+  it('settles a matching optimistic ping to the amended stored row', () => {
     const optimistic = {
       id: 'shot-1', user: 'PMC', user_id: 'user-1', map: 'customs', at: 1000, x: 1, y: 0, z: 2,
     }
-    const stored = { ...optimistic, at: 1001 }
-    expect(settleOptimisticPing([optimistic], stored, 1001, 10_000)).toEqual([optimistic])
+    const stored = { ...optimistic, at: 1001, taps: 2 }
+    expect(settleOptimisticPing([optimistic], stored, 1001, 10_000)).toEqual([stored])
   })
 
   it('does not resurrect a ping cleared while its write was in flight', () => {

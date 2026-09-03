@@ -21,7 +21,11 @@ function saveLastPartyCode(code) {
 export function settleOptimisticPing(pings, storedPing, now = Date.now(), ttl) {
   const current = Array.isArray(pings) ? pings : []
   if (!storedPing || !current.some(existing => existing.id === storedPing.id)) return null
-  return prunePings(current, now, ttl)
+  return prunePings([...current.filter(existing => existing.id !== storedPing.id), storedPing], now, ttl)
+}
+
+function upsertPingLog(log, ping) {
+  return appendLog((Array.isArray(log) ? log : []).filter(existing => existing.id !== ping.id), ping)
 }
 
 function normalizeParty(data, fallbackMembers = []) {
@@ -382,25 +386,30 @@ export function useParty(userId, userSettings = {}, {
     // party-row channel. During rollout an older project may not have the table
     // in its realtime publication; that must not take the core party channel
     // down with it.
+    const receivePingEvent = payload => {
+      const event = payload?.new
+      const current = partyRef.current
+      if (!event || !current || Number(event.raid_id) !== Number(current.raid_id ?? 0)) return
+      const ping = pingFromEvent(event)
+      if (!ping) return
+      const ttl = Number(resolveSetting('ping_ttl_ms', {
+        raid: current.settings || {}, unit: null, user: userSettingsRef.current,
+      }))
+      const pings = prunePings(
+        [...(current.pings || []).filter(existing => existing.id !== ping.id), ping],
+        Date.now(),
+        Number.isFinite(ttl) ? ttl : undefined,
+      )
+      applyParty({ ...current, pings, ping_log: upsertPingLog(current.ping_log, ping) })
+    }
     const pingChannel = supabase
       .channel(`party-pings-${partyId}`)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'party_ping_events', filter: `party_id=eq.${partyId}`,
-      }, payload => {
-        const event = payload?.new
-        const current = partyRef.current
-        if (!event || !current || Number(event.raid_id) !== Number(current.raid_id ?? 0)) return
-        const ping = pingFromEvent(event)
-        if (!ping || current.pings?.some(existing => existing.id === ping.id)) return
-        const ttl = Number(resolveSetting('ping_ttl_ms', {
-          raid: current.settings || {}, unit: null, user: userSettingsRef.current,
-        }))
-        const pings = prunePings([...(current.pings || []), ping], Date.now(), Number.isFinite(ttl) ? ttl : undefined)
-        const pingLog = current.ping_log?.some(existing => existing.id === ping.id)
-          ? current.ping_log
-          : appendLog(current.ping_log, ping)
-        applyParty({ ...current, pings, ping_log: pingLog })
-      })
+      }, receivePingEvent)
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'party_ping_events', filter: `party_id=eq.${partyId}`,
+      }, receivePingEvent)
       .subscribe()
 
     let poll = null
@@ -945,7 +954,7 @@ export function useParty(userId, userSettings = {}, {
       raid: current.settings || {}, unit: null, user: userSettingsRef.current,
     }))
     const pings = prunePings(
-      [...(current.pings || []), enriched],
+      [...(current.pings || []).filter(existing => existing.id !== enriched.id), enriched],
       Date.now(),
       Number.isFinite(ttl) ? ttl : undefined,
     )
@@ -983,9 +992,7 @@ export function useParty(userId, userSettings = {}, {
       // source_event_id round-trips as the ping id, so the optimistic entry is
       // already authoritative for this list. Keep it instead of stacking the
       // stored event at the same coordinates.
-      const mergedLog = latest.ping_log?.some(existing => existing.id === storedPing.id)
-        ? latest.ping_log
-        : appendLog(latest.ping_log, storedPing)
+      const mergedLog = upsertPingLog(latest.ping_log, storedPing)
       applyParty({ ...latest, pings: mergedPings, ping_log: mergedLog })
     }
     setError('')

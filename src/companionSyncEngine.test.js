@@ -406,7 +406,7 @@ describe('native-agnostic companion sync engine', () => {
     expect(read).not.toHaveBeenCalled()
   })
 
-  it('validates screenshots, resets at boundaries, coalesces 3 taps, and drops stale files', async () => {
+  it('validates screenshots, resets at boundaries, amends 3 taps, and drops stale files', async () => {
     const current = { files: [] }
     const screenshots = {
       async listScreenshots() { return current.files },
@@ -434,8 +434,10 @@ describe('native-agnostic companion sync engine', () => {
     expect(result.reason).toBeNull()
     expect(result.stale).toBe(1)
     await controller.flush()
-    expect(send).toHaveBeenCalledOnce()
-    expect(send.mock.calls[0][0]).toMatchObject({ taps: 2, map: 'customs', user: 'Scout' })
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(send.mock.calls.map(([ping]) => ping.taps)).toEqual([1, 2])
+    expect(new Set(send.mock.calls.map(([ping]) => ping.id)).size).toBe(1)
+    expect(send.mock.calls[1][0]).toMatchObject({ taps: 2, map: 'customs', user: 'Scout' })
     expect(send.mock.calls[0][1]).toEqual({ partyId: 'party-1', partyCode: 'ABCD', raidId: 'raid-1', mapNorm: 'customs' })
     expect(send.mock.calls[0][0]).not.toHaveProperty('filename')
   })
@@ -463,8 +465,9 @@ describe('native-agnostic companion sync engine', () => {
     expect(timers).toHaveLength(2)
     expect(cleared).toContain(timers[0])
     await controller.flush()
-    expect(send).toHaveBeenCalledOnce()
-    expect(send.mock.calls[0][0].taps).toBe(2)
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(send.mock.calls.map(([ping]) => ping.taps)).toEqual([1, 2])
+    expect(send.mock.calls[0][0].id).toBe(send.mock.calls[1][0].id)
   })
 
   it('contains delayed ping publish failures at the host error boundary', async () => {
@@ -481,7 +484,7 @@ describe('native-agnostic companion sync engine', () => {
     await controller.sync({ partyId: 'p', partyCode: 'CODE', raidId: 'r', mapNorm: 'customs' })
     files.push({ filename: name, size: 10, lastModified: 1000000 })
     await controller.sync({ partyId: 'p', partyCode: 'CODE', raidId: 'r', mapNorm: 'customs' })
-    timerCallback()
+    await controller.flush()
     await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
   })
 

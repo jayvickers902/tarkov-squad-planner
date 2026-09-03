@@ -887,7 +887,7 @@ function safePing(value, { userId, user, at, taps, sourceEventId }) {
   }
 }
 
-/** Create a screenshot metadata watcher and 1.8s/3-tap ping coalescer. */
+/** Create a screenshot metadata watcher and amendable 3-tap ping cadence. */
 export function createScreenshotPingSyncController({
   filesystem,
   checkpointStore,
@@ -915,7 +915,8 @@ export function createScreenshotPingSyncController({
   let pending = null
   let pendingContext = null
   let timer = null
-  let flushInFlight = null
+  let publishChain = Promise.resolve(null)
+  let publishesPending = 0
   const emittedAt = []
 
   async function list() {
@@ -925,22 +926,25 @@ export function createScreenshotPingSyncController({
     return dedupeEftScreenshotMetadata((Array.isArray(result) ? result : result?.files) || [])
   }
 
-  async function emitPending() {
-    if (!pending) return null
-    const value = pending
-    const pingContext = pendingContext || context
-    pending = null
-    pendingContext = null
-    timer = null
+  async function publish(value, pingContext, isNewCadence) {
     const nowValue = value.at
     while (emittedAt.length && nowValue - emittedAt[0] >= 60000) emittedAt.shift()
-    if (emittedAt.length >= maxPingsPerMinute) return { discarded: 1, reason: 'rate-limit' }
+    if (isNewCadence && emittedAt.length >= maxPingsPerMinute) return { discarded: 1, reason: 'rate-limit' }
     const send = pingMethod(network)
     if (typeof send !== 'function') throw new Error('Position ping network adapter is unavailable.')
     const result = await send.call(network, value, clone(pingContext))
     if (result?.error) throw result.error
-    emittedAt.push(nowValue)
+    if (isNewCadence) emittedAt.push(nowValue)
     return { ping: value, result }
+  }
+
+  function queuePublish(value, pingContext, isNewCadence) {
+    publishesPending += 1
+    const queued = publishChain.then(() => publish(value, pingContext, isNewCadence))
+    publishChain = queued
+      .catch(error => { onError(error); return { error: true } })
+      .finally(() => { publishesPending -= 1 })
+    return queued
   }
 
   function schedule() {
@@ -951,23 +955,20 @@ export function createScreenshotPingSyncController({
     }
     timer = set(() => {
       timer = null
-      flushInFlight = Promise.resolve()
-        .then(emitPending)
-        .catch(error => { onError(error); return { error: true } })
-        .finally(() => { flushInFlight = null })
+      pending = null
+      pendingContext = null
     }, TAP_WINDOW_MS)
   }
 
   async function flush() {
-    if (flushInFlight) return flushInFlight
-    if (!pending) return null
     if (timer !== null) {
       const clear = scheduler?.clearTimeout || globalThis.clearTimeout
       clear(timer)
       timer = null
     }
-    flushInFlight = Promise.resolve().then(emitPending).finally(() => { flushInFlight = null })
-    return flushInFlight
+    pending = null
+    pendingContext = null
+    return publishesPending ? publishChain : null
   }
 
   async function sync({ partyId = context.partyId, partyCode = context.partyCode, raidId = context.raidId, mapNorm = context.mapNorm, context: suppliedContext, online = true } = {}) {
@@ -1005,20 +1006,22 @@ export function createScreenshotPingSyncController({
       if (file.lastModified <= 0 || age < -5000 || age > freshnessMs) { discarded += 1; stale += 1; continue }
       const position = toEftScreenshotPosition(file.filename, nextContext.mapNorm, nextContext.mapNorm)
       if (!position.ok) { discarded += 1; continue }
+      const isNewCadence = !pending
       const ping = safePing(position, {
         userId,
         user,
         at: now(),
         taps: pending ? pending.taps + 1 : 1,
-        sourceEventId: screenshotPingSourceId(file.filename),
+        sourceEventId: pending?.id || screenshotPingSourceId(file.filename),
       })
       if (!ping) { discarded += 1; continue }
-      if (pending) {
-        pending = { ...ping, taps: Math.min(MAX_TAPS, pending.taps + 1), at: ping.at }
-      } else pending = ping
+      pending = ping
       pendingContext = nextContext
       queued += 1
       schedule()
+      // Do not make HERE wait for the gesture window. Each later tap reuses the
+      // first screenshot's id, so the server upgrades one durable event.
+      queuePublish(clone(pending), clone(pendingContext), isNewCadence)
     }
     const next = { version: 1, files: files.slice(-MAX_SCREENSHOT_METADATA), partyId: nextContext.partyId, partyCode: nextContext.partyCode, raidId: nextContext.raidId, mapNorm: nextContext.mapNorm, updatedAt: now() }
     await saveCheckpoint(checkpointStore, checkpointKey, next)
