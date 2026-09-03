@@ -671,11 +671,9 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .app-footer-brand { display: flex; align-items: center; gap: 11px; }
 .app-footer-mark {
   flex: 0 0 auto;
-  width: 84px;
-  height: 34px;
-  border: 1px solid var(--brds);
-  border-radius: 3px;
-  object-fit: cover;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
 }
 .app-footer-brand-copy { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 /* The hierarchy here is colour, not size — --fs-label belongs to .lbl eyebrows. */
@@ -3057,4 +3055,139 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   .lobby-active-actions .btn-danger { height: 44px; min-height: 44px; }
   .lobby-add-friend input,
   .lobby-add-friend button { height: 44px; min-height: 44px; }
+}
+
+
+/* ── Changelog ─────────────────────────────────────────────────────────────
+   A public page about the product rather than a tool for using it, so it is
+   the one screen built from prose: a version rail, a release column, and no
+   controls beyond the tag filter. It reuses .room-banner for its header so
+   the page still reads as part of the app. */
+.changelog-page { min-height: 100dvh; display: flex; flex-direction: column; background: var(--bg); }
+/* Signed out there is no AppNav above the page, so the sticky bar has no
+   chrome to clear - same reason .app-route-overlay zeroes it in a party. */
+.changelog-navless { --quest-toolbar-top: 0px; }
+.changelog-page .changelog-body { flex: 1; }
+.changelog-lede { max-width: 62ch; color: var(--txm); font-size: var(--fs-sm); text-wrap: pretty; }
+
+.changelog-toolbar {
+  position: sticky;
+  top: var(--quest-toolbar-top, var(--app-nav-h));
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 10px 16px;
+  width: 100%;
+  background: rgba(9,11,10,.94);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--brd);
+}
+.changelog-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.changelog-chip { padding: 5px 9px; border: 1px solid var(--brds); border-radius: 4px; background: transparent; color: var(--txm); font-size: var(--fs-xs); letter-spacing: .1em; }
+.changelog-chip:hover { border-color: var(--brd2); color: var(--tx); }
+.changelog-chip.is-active { border-color: var(--gold); background: rgba(201,168,76,.14); color: var(--goldtx); }
+.changelog-chip-count { color: var(--txl); }
+.changelog-chip.is-active .changelog-chip-count { color: var(--golddim); }
+.changelog-filter-note { margin-left: auto; color: var(--txd); font-size: var(--fs-xs); letter-spacing: .1em; }
+
+.changelog-body {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  align-items: start;
+  gap: 34px;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 26px 16px 44px;
+  width: 100%;
+}
+
+/* The index sticks below the toolbar rather than scrolling away with the list
+   it points into - a jump list you have to scroll back up to reach is furniture. */
+.changelog-index { position: sticky; top: calc(var(--quest-toolbar-top, var(--app-nav-h)) + 56px); }
+.changelog-index > .lbl { display: block; margin-bottom: 8px; }
+.changelog-index ol { list-style: none; display: flex; flex-direction: column; }
+.changelog-index a {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0 5px 9px;
+  border-left: 1px solid var(--brd);
+  color: var(--txd);
+  text-decoration: none;
+}
+.changelog-index a:hover,
+.changelog-index a:focus-visible { border-left-color: var(--gold); color: var(--tx); }
+.changelog-index-ver { flex: 0 0 auto; font-size: var(--fs-xs); color: var(--txm); }
+.changelog-index-title { min-width: 0; font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.changelog-list { display: flex; flex-direction: column; gap: 30px; min-width: 0; }
+
+/* Version and date form a left gutter that stays with the release as it scrolls
+   past, the way a printed changelog carries its date in the margin. */
+.changelog-release { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 8px 24px; scroll-margin-top: 96px; }
+.changelog-release-head { display: flex; flex-direction: column; gap: 4px; }
+.changelog-version {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--goldtx);
+  font-size: var(--fs-md);
+  letter-spacing: .06em;
+  text-decoration: none;
+}
+.changelog-version:hover,
+.changelog-version:focus-visible { color: var(--gold); text-decoration: underline; text-underline-offset: 4px; }
+.changelog-latest {
+  padding: 1px 5px;
+  border: 1px solid var(--brdg);
+  border-radius: 3px;
+  background: rgba(201,168,76,.14);
+  color: var(--goldtx);
+  font-size: var(--fs-label);
+  letter-spacing: .12em;
+}
+.changelog-date { color: var(--txf); font-size: var(--fs-xs); letter-spacing: .1em; }
+
+.changelog-release-body { min-width: 0; padding-bottom: 26px; border-bottom: 1px solid var(--brd); }
+.changelog-release-body > h2 { margin-bottom: 14px; font-size: 21px; color: var(--tx); }
+.changelog-items { list-style: none; display: flex; flex-direction: column; gap: 14px; }
+.changelog-item { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 12px; align-items: start; }
+.changelog-item-copy { min-width: 0; }
+.changelog-item-copy > h3 { margin-bottom: 3px; font-size: var(--fs-md); color: var(--txb); letter-spacing: .04em; }
+.changelog-item-copy > p { max-width: 74ch; color: var(--txm); font-size: var(--fs-sm); line-height: 1.65; text-wrap: pretty; }
+
+/* Four tags, four colours, all of them muted - the tag says which kind of line
+   this is, it does not compete with the headline next to it. */
+.changelog-tag {
+  justify-self: start;
+  margin-top: 2px;
+  padding: 2px 6px;
+  border: 1px solid var(--brds);
+  border-radius: 3px;
+  color: var(--txd);
+  font-size: var(--fs-label);
+  letter-spacing: .12em;
+}
+.changelog-tag.is-new { border-color: var(--brdg); background: rgba(201,168,76,.12); color: var(--goldtx); }
+.changelog-tag.is-improved { border-color: rgba(102,183,120,.4); background: rgba(102,183,120,.1); color: var(--grn); }
+.changelog-tag.is-changed { border-color: rgba(138,176,204,.4); background: rgba(138,176,204,.1); color: var(--night); }
+.changelog-tag.is-fixed { border-color: rgba(224,145,63,.4); background: rgba(224,145,63,.1); color: var(--org); }
+
+.changelog-provenance { max-width: 78ch; color: var(--txl); font-size: var(--fs-xs); line-height: 1.7; text-wrap: pretty; }
+.changelog-empty { color: var(--txd); font-size: var(--fs-sm); }
+
+@media (max-width: 1000px) {
+  .changelog-body { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  /* The rail duplicates the list below it; on one column it is only height. */
+  .changelog-index { display: none; }
+  .changelog-release { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .changelog-release-head { flex-direction: row; align-items: baseline; gap: 10px; }
+}
+
+@media (max-width: 560px) {
+  .changelog-item { grid-template-columns: minmax(0, 1fr); gap: 5px; }
 }

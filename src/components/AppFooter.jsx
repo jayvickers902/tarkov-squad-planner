@@ -10,18 +10,18 @@ const OPEN_SOURCE = 'Open source under the MIT licence — free to use, fork and
 // The mark is decoration, not information. It lives in public/ because the CSP
 // is img-src 'self', so it can never be hotlinked, and it drops itself if the
 // file is missing rather than leaving a broken-image box in the floor. The
-// byline carries the name either way. The art is a wide plate rather than an
-// avatar, so it sits at its own 2.5:1 and is never cropped square.
+// byline carries the name either way. The logo is transparent art rather than a
+// photo tile, so it is contained rather than cropped and takes no frame.
 function Mark() {
   const [failed, setFailed] = useState(false)
   if (failed) return null
   return (
     <img
       className="app-footer-mark"
-      src="/squadplanner.webp"
+      src="/jayshalla.webp"
       alt=""
-      width="84"
-      height="34"
+      width="40"
+      height="40"
       loading="lazy"
       decoding="async"
       onError={() => setFailed(true)}
