@@ -1,18 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('./components/QuestScanner', () => ({
-  default: ({ defaultOpen }) => defaultOpen
-    ? <div>SCREENSHOT IMPORT PANEL</div>
-    : <button>SCAN FROM SCREENSHOT</button>,
-}))
-
-vi.mock('./components/CatchUp', () => ({
-  default: ({ defaultOpen }) => defaultOpen
-    ? <div>CATCH-UP IMPORT PANEL</div>
-    : <button>CATCH ME UP</button>,
-}))
-
 vi.mock('./components/EftLogImport', async importOriginal => {
   const actual = await importOriginal()
   return {
