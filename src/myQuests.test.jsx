@@ -180,7 +180,7 @@ describe('MyQuests ordering', () => {
   }
 
   function dragHandle(name) {
-    return screen.getByRole('button', { name: new RegExp(`^Reorder ${name}\.`) })
+    return screen.getByRole('button', { name: new RegExp(`^Reorder ${name}[.]`) })
   }
 
   it('reorders on drop', () => {

@@ -10,6 +10,7 @@ import {
   progressQuestId,
 } from './partyMembers'
 import { nextDelay, recordFailure, recordSuccess } from './supabaseHealth'
+import { createPartySyncMetrics } from './partySyncMetrics'
 
 function saveLastPartyCode(code) {
   try {
@@ -38,11 +39,16 @@ function normalizeParty(data, fallbackMembers = []) {
 
 function comparableParty(data) {
   if (!data) return data
-  const { last_active_at, members, ...rest } = data
+  const { members, ...rest } = data
+  delete rest.last_active_at
   return {
     ...rest,
     members: Array.isArray(members)
-      ? members.map(({ last_seen, ...member }) => member)
+      ? members.map(member => {
+          const comparableMember = { ...member }
+          delete comparableMember.last_seen
+          return comparableMember
+        })
       : members,
   }
 }
@@ -202,6 +208,7 @@ export function useParty(userId, userSettings = {}, {
   questsLoading = true,
   settingsLoading = false,
   pendingJoinCode = null,
+  onSyncMetric = null,
 } = {}) {
   const [party, setParty] = useState(null)
   const [myName, setMyName] = useState('')
@@ -225,6 +232,12 @@ export function useParty(userId, userSettings = {}, {
   const presenceReadyRef = useRef(false)
   const autoRejoinAttemptedRef = useRef(null)
   const autoRejoinBlockedRef = useRef(false)
+  const syncMetricCallbackRef = useRef(onSyncMetric)
+  const syncMetricsRef = useRef(null)
+  if (!syncMetricsRef.current) {
+    syncMetricsRef.current = createPartySyncMetrics({ emit: event => syncMetricCallbackRef.current?.(event) })
+  }
+  syncMetricCallbackRef.current = onSyncMetric
 
   useEffect(() => {
     const previousUserId = userIdRef.current
@@ -282,8 +295,8 @@ export function useParty(userId, userSettings = {}, {
     if (clearHint) saveLastPartyCode(null)
   }
 
-  // The poll remains a reconnect/repair safety net for the row-based realtime
-  // channel. Stage C may demote it once child-table writes land.
+  // The poll is a reconnect/repair safety net for the row-based realtime
+  // channel. Healthy subscribed channels use their incremental events instead.
   useEffect(() => {
     if (!partyCode || !partyIdRef.current) return undefined
     const partyId = partyIdRef.current
@@ -294,9 +307,12 @@ export function useParty(userId, userSettings = {}, {
     async function refreshFromDatabase() {
       if (refreshInFlight) return
       refreshInFlight = true
+      const startedAt = Date.now()
+      syncMetricsRef.current.record('poll_start')
       try {
         const fresh = await fetchPartyById(partyId)
         recordSuccess()
+        syncMetricsRef.current.record('poll_success', { duration_ms: Date.now() - startedAt })
         if (cancelled || !fresh) return
         const pending = pendingFieldsRef.current
         const merged = { ...(partyRef.current || {}), ...fresh }
@@ -313,9 +329,52 @@ export function useParty(userId, userSettings = {}, {
         applyParty(merged)
       } catch (refreshError) {
         recordFailure(refreshError)
+        syncMetricsRef.current.record('poll_failure', { duration_ms: Date.now() - startedAt })
       } finally {
         refreshInFlight = false
       }
+    }
+
+    let poll = null
+    let heartbeat = null
+    let realtimeHealthy = false
+    let realtimeEverSubscribed = false
+
+    function stopPoll() {
+      if (poll) clearTimeout(poll)
+      poll = null
+    }
+
+    function schedulePoll() {
+      if (realtimeHealthy || document.hidden || cancelled || poll) return
+      poll = setTimeout(async () => {
+        poll = null
+        await refreshFromDatabase()
+        if (!realtimeHealthy) schedulePoll()
+      }, nextDelay(15000))
+    }
+
+    function setRealtimeStatus(status) {
+      syncMetricsRef.current.record('realtime_status', { status: String(status || 'UNKNOWN') })
+      if (status === 'SUBSCRIBED') {
+        const wasSubscribed = realtimeEverSubscribed
+        realtimeHealthy = true
+        realtimeEverSubscribed = true
+        stopPoll()
+        // A reconnect can miss row events while the channel was down. One
+        // immediate repair closes that gap before the channel resumes its
+        // incremental path; the initial RPC snapshot is already authoritative.
+        if (wasSubscribed) refreshFromDatabase()
+        return
+      }
+
+      realtimeHealthy = false
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        // Feed channel failures into the existing jitter/backoff breaker. The
+        // next poll is still the safe read-only fallback while Realtime heals.
+        recordFailure(new TypeError(`party realtime ${String(status).toLowerCase()}`))
+      }
+      schedulePoll()
     }
 
     function updatePresence(channel) {
@@ -374,6 +433,7 @@ export function useParty(userId, userSettings = {}, {
         refreshFromDatabase()
       })
       .subscribe(async status => {
+        setRealtimeStatus(status)
         if (status !== 'SUBSCRIBED') return
         try {
           await channel.track({ user_id: userIdRef.current, callsign: myNameRef.current })
@@ -412,32 +472,22 @@ export function useParty(userId, userSettings = {}, {
       }, receivePingEvent)
       .subscribe()
 
-    let poll = null
-    let heartbeat = null
-
     function stopTimers() {
-      if (poll) clearTimeout(poll)
+      stopPoll()
       if (heartbeat) clearTimeout(heartbeat)
-      poll = null
       heartbeat = null
     }
 
-    function schedulePoll() {
-      if (document.hidden || cancelled) return
-      poll = setTimeout(async () => {
-        poll = null
-        await refreshFromDatabase()
-        schedulePoll()
-      }, nextDelay(15000))
-    }
-
     async function runHeartbeat() {
+      const startedAt = Date.now()
       try {
         const result = await supabase.rpc('heartbeat', { p_code: code })
         if (result?.error) throw result.error
         recordSuccess()
+        syncMetricsRef.current.record('heartbeat_success', { duration_ms: Date.now() - startedAt })
       } catch (heartbeatError) {
         recordFailure(heartbeatError)
+        syncMetricsRef.current.record('heartbeat_failure', { duration_ms: Date.now() - startedAt })
       }
     }
 
@@ -480,7 +530,7 @@ export function useParty(userId, userSettings = {}, {
       supabase.removeChannel(channel)
       supabase.removeChannel(pingChannel)
     }
-  }, [partyCode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [partyCode])
 
   // Non-leaders import saved quests for the newly selected map after the
   // leader's select_map_party RPC has reset the leader's own row.

@@ -293,10 +293,10 @@ export default function Lobby({ userId, callsign, userGameMode = 'regular', onEn
                       </>
                     ) : <span className="lobby-friend-offline mono">OFFLINE</span>}
                     {confirmUnfriend === friend.user_id ? (
-                      <span className="lobby-unfriend-confirm">
+                      <span className="lobby-unfriend-confirm" role="group" aria-label={`Remove ${friend.callsign} from friends`}>
                         <span className="mono">REMOVE?</span>
-                        <button type="button" className="btn-danger" onClick={() => { onRemoveFriend(friend.user_id); setConfirmUnfriend(null) }}>YES</button>
-                        <button type="button" className="btn-ghost" onClick={() => setConfirmUnfriend(null)}>NO</button>
+                        <button type="button" className="btn-danger" onClick={() => { onRemoveFriend(friend.user_id); setConfirmUnfriend(null) }}>YES, REMOVE {friend.callsign}</button>
+                        <button type="button" className="btn-ghost" onClick={() => setConfirmUnfriend(null)}>NO, KEEP {friend.callsign}</button>
                       </span>
                     ) : (
                       <button type="button" className="lobby-row-icon" onClick={() => setConfirmUnfriend(friend.user_id)} title="Unfriend" aria-label={`Remove ${friend.callsign} from friends`}>×</button>

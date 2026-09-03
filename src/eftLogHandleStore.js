@@ -120,7 +120,7 @@ export function createEftLogHandleStore({
         let request
         try {
           request = indexedDB.open(dbName, DB_VERSION)
-        } catch (error) {
+        } catch {
           reject(new Error('Local folder storage is unavailable.'))
           return
         }

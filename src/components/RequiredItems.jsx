@@ -87,7 +87,7 @@ export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progr
 
       return { member, userId: memberRow.user_id, items: Object.values(itemMap) }
     })
-  }, [tasks, memberRows, progress, mapNorm, keyIdSet, keyIconMap]) // eslint-disable-line
+  }, [tasks, memberRows, progress, mapNorm, keyIdSet, keyIconMap])
 
   const hasAnyItems = memberItems.some(m => m.items.length > 0)
   const hasCliffDescent = RED_REBEL_MAPS.has(mapNorm)

@@ -106,7 +106,7 @@ export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsi
 
         {mode === 'home' && (
           <div className="card auth-card fade-in">
-            <button className="auth-google-primary" onClick={handleGoogle} disabled={busy}>
+            <button className="auth-google-primary" type="button" onClick={handleGoogle} disabled={busy} aria-busy={busy}>
               <GoogleIcon />
               CONTINUE WITH GOOGLE
             </button>
@@ -121,8 +121,8 @@ export default function AuthScreen({ onGoogleLogin, onCreateProfile, needsCallsi
             {err && <p className="mono auth-error" role="alert">! {err}</p>}
             {busy && <p className="mono auth-busy">SAVING...</p>}
             <div className="auth-form-actions">
-              {!needsCallsign && <button className="btn-ghost" onClick={reset} disabled={busy}>BACK</button>}
-              <button className="btn-gold" onClick={handleCallsign} disabled={busy || profileBlocked}>CONFIRM CALLSIGN</button>
+              {!needsCallsign && <button className="btn-ghost" type="button" onClick={reset} disabled={busy}>BACK</button>}
+              <button className="btn-gold" type="button" onClick={handleCallsign} disabled={busy || profileBlocked} aria-busy={busy}>CONFIRM CALLSIGN</button>
             </div>
           </div>
         )}

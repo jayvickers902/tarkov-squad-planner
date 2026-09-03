@@ -1,3 +1,5 @@
+import { listen } from '@tauri-apps/api/event'
+
 /**
  * The shell talks to the future sync/log engine through this contract only.
  * Keep engine concerns out of the Tauri window and tray lifecycle.
@@ -147,7 +149,6 @@ export function createTauriAdapter(invoke) {
     async startWatch() { await invoke('start_native_watch') },
     async stopWatch() { await invoke('stop_native_watch') },
     async registerWatchListener(onEvent) {
-      const { listen } = await import('@tauri-apps/api/event')
       return listen('native-fs-event', (event) => onEvent(event.payload))
     },
     // Stable aliases used by the runtime boundary while the UI remains host-agnostic.

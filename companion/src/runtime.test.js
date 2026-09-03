@@ -195,6 +195,47 @@ describe('companion runtime', () => {
     await runtime.dispose()
   })
 
+  it('deduplicates unchanged presence reports behind the 30-second lease', async () => {
+    vi.useFakeTimers()
+    const reportSyncClientStatus = vi.fn(async () => {})
+    const { runtime } = harness({ network: { reportSyncClientStatus }, fallbackIntervalMs: 0 })
+    await runtime.start()
+    await Promise.resolve()
+    await Promise.resolve()
+    await vi.runAllTicks()
+    reportSyncClientStatus.mockClear()
+
+    await runtime.requestSync('fallback')
+    expect(reportSyncClientStatus).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(reportSyncClientStatus).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(reportSyncClientStatus).toHaveBeenCalledOnce()
+    await runtime.dispose()
+  })
+
+  it('reuses fresh context for fallback checks and refreshes after the cache TTL', async () => {
+    vi.useFakeTimers()
+    const getDesktopSyncContext = vi.fn(async () => ({ userId: 'user-1', gameMode: 'regular' }))
+    const { runtime } = harness({
+      network: { getDesktopSyncContext },
+      fallbackIntervalMs: 0,
+      contextCacheTtlMs: 10_000,
+      fallbackContextCacheTtlMs: 30_000,
+    })
+    await runtime.start()
+    expect(getDesktopSyncContext).toHaveBeenCalledOnce()
+
+    await runtime.requestSync('fallback')
+    expect(getDesktopSyncContext).toHaveBeenCalledOnce()
+
+    await vi.advanceTimersByTimeAsync(30_001)
+    await runtime.requestSync('fallback')
+    expect(getDesktopSyncContext).toHaveBeenCalledTimes(2)
+    await runtime.dispose()
+  })
+
   it('restores heartbeat and fallback work after connectivity returns', async () => {
     vi.useFakeTimers()
     let onConnectivityChange
@@ -224,7 +265,7 @@ describe('companion runtime', () => {
 
     await vi.advanceTimersByTimeAsync(100)
     expect(sync.mock.calls.length).toBeGreaterThan(syncsAfterResume)
-    expect(reportSyncClientStatus.mock.calls.length).toBeGreaterThan(reportsAfterResume)
+    expect(reportSyncClientStatus.mock.calls.length).toBe(reportsAfterResume)
     await runtime.dispose()
   })
 

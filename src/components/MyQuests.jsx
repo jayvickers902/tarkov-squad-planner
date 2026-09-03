@@ -183,7 +183,7 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
         || (legacySnapKey ? localStorage.getItem(legacySnapKey) : null)
       setSnapshot(stored ? validSnapshot(JSON.parse(stored), gameMode) : null)
     } catch { setSnapshot(null) }
-  }, [snapKey, legacySnapKey])
+  }, [snapKey, legacySnapKey, gameMode])
   const [confirmRestore, setConfirmRestore] = useState(false)
   const [restoring, setRestoring] = useState(false)
   const [restoreError, setRestoreError] = useState('')
@@ -219,7 +219,8 @@ export default function MyQuests({ userId, userQuests, onAdd, onRemove, onToggle
   const { tasks, loading: tasksLoading } = useTasks(searchMap === 'any' ? null : searchMap, gameMode)
   // The persistent signed-in sync owner loads the complete task list once;
   // consume it here so opening/closing this route never creates another sync.
-  const allTasks = eftLogSync?.allTasks || []
+  const syncedTasks = eftLogSync?.allTasks
+  const allTasks = useMemo(() => syncedTasks || [], [syncedTasks])
   const kappaIds = useMemo(() => new Set(allTasks.filter(t => t.kappaRequired).map(t => t.id)), [allTasks])
   const taskById = useMemo(() => {
     const index = new Map()

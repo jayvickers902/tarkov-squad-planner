@@ -8,7 +8,6 @@ import { useFriends } from './useFriends'
 import { isPartyEntrySentinel, parseJoinCode, PARTY_ENTRY_SENTINEL_STATE, useAppRoute } from './useAppRoute'
 import AuthScreen from './components/AuthScreen'
 import Lobby from './components/Lobby'
-import Room from './components/Room'
 import WelcomeModal from './components/WelcomeModal'
 import AppNav from './components/AppNav'
 import { findMember, objectiveProgressKey, progressParts } from './partyMembers'
@@ -20,6 +19,7 @@ import { resolveWelcomeVariant, welcomeStamp, WELCOME_SETTINGS_KEY } from './wel
 import { EftLogSyncProvider } from './EftLogSyncContext'
 
 const MyQuests = lazy(() => import('./components/MyQuests'))
+const Room = lazy(() => import('./components/Room'))
 const Changelog = lazy(() => import('./components/Changelog'))
 const AdminKeyManager = lazy(() => import('./components/AdminKeyManager'))
 
@@ -112,7 +112,7 @@ export default function App() {
   // Keep the party hook's savedQuestsRef in sync — quests may load after joining
   useEffect(() => {
     if (party && !questsLoading && questGameMode === gameMode) syncSavedQuests(userQuests)
-  }, [party, userQuests, questsLoading, questGameMode, gameMode]) // eslint-disable-line
+  }, [party, userQuests, questsLoading, questGameMode, gameMode, syncSavedQuests])
 
   // Joining or rejoining is a hard freshness boundary. A desktop companion or
   // another browser may have completed quests while this client was dormant,
@@ -130,7 +130,7 @@ export default function App() {
     refreshUserQuests().catch(error => {
       console.warn('Party entry quest refresh failed', error)
     })
-  }, [party?.id, party?.code, gameMode, questGameMode, questsLoading, refreshUserQuests])
+  }, [party, gameMode, questGameMode, questsLoading, refreshUserQuests])
 
   // Persisted objective progress in party-key format — used as fallback in MyQuestPanel across parties
   const userObjProgress = useMemo(() => {
@@ -143,7 +143,7 @@ export default function App() {
       }
     }
     return out
-  }, [userQuests, user?.id]) // eslint-disable-line
+  }, [userQuests, user?.id])
 
   // Deep link: dudgy.net/join/XXXXXX → auto-join after login + quests load
   useEffect(() => {
@@ -184,7 +184,7 @@ export default function App() {
     navigate(roomRoute, { replace: true, historyState: PARTY_ENTRY_SENTINEL_STATE })
     navigate(roomRoute)
     if (preserveRoute) navigate(route)
-  }, [party?.code, route.code, route.screen, navigate])
+  }, [party?.code, route, navigate])
 
   // Browser Back must be explicit about leaving a live party. The route hook
   // marks the replaced room entry, so a pop to that same-path entry is still
@@ -402,58 +402,60 @@ export default function App() {
     // My Quests while in party — back button returns to room
     signedInView = (
       <>
-        <Room
-        party={party}
-        partyError={partyError}
-        friendsError={friendsError}
-        raidView={route.code === party.code && route.screen === 'raid'}
-        myUserId={user.id}
-        myName={myName}
-        isAdmin={isAdmin}
-        questsLoading={questsLoading}
-        hasRouteOverlay={leaveConfirmOpen || route.screen === 'changelog' || (route.code === party.code && (route.screen === 'quests' || (route.screen === 'admin' && isAdmin)))}
-        onLeave={handleLeave}
-        onSelectMap={selectMap}
-        onAddQuest={handleAddPartyQuest}
-        onRemoveQuest={handleRemovePartyQuest}
-        onSetSpawn={setSpawn}
-        onToggleStar={handleToggleStar}
-        onSubmitProgress={handleSubmitProgress}
-        userObjProgress={userObjProgress}
-        userSettings={userSettings}
-        onSetUserSetting={setUserSetting}
-        gameMode={gameMode}
-        activeQuestCount={userQuests.length}
-        onlineMemberIds={onlineMemberIds}
-        presenceReady={presenceReady}
-        onSetRaidSettings={setRaidSettings}
-        onSweepEphemeral={sweepEphemeral}
-        skippedQuestIds={new Set(userQuests.filter(q => q.skipped).map(q => q.quest_id))}
-        onAddStroke={addStroke}
-        onClearMyStrokes={clearMyStrokes}
-        onAddMarker={addMarker}
-        onClearMyMarkers={clearMyMarkers}
-        onAddPing={addPing}
-        onClearPings={clearPings}
-        onMyQuests={() => navigate({ screen: 'quests', code: party.code })}
-        onAdmin={() => navigate({ screen: 'admin', code: party.code })}
-        friends={friends}
-        pendingIn={pendingIn}
-        pendingOut={pendingOut}
-        onSendRequest={sendRequest}
-        onAcceptRequest={acceptRequest}
-        onRemoveRequest={removeRequest}
-        onRemoveFriend={removeFriend}
-        onRefreshFriends={refreshFriends}
-        onRefresh={refreshParty}
-        onRefreshQuests={refreshUserQuests}
-        onOpenChangelog={openChangelog}
-        onStartRaid={startRaid}
-        raidSession={raidSession}
-        onRaidError={setPartyError}
-        onOpenRaid={() => navigate({ screen: 'raid', code: party.code })}
-        onCloseRaid={() => navigate({ screen: 'room', code: party.code }, { replace: true })}
-        />
+        <Suspense fallback={<AppSpinner />}>
+          <Room
+          party={party}
+          partyError={partyError}
+          friendsError={friendsError}
+          raidView={route.code === party.code && route.screen === 'raid'}
+          myUserId={user.id}
+          myName={myName}
+          isAdmin={isAdmin}
+          questsLoading={questsLoading}
+          hasRouteOverlay={leaveConfirmOpen || route.screen === 'changelog' || (route.code === party.code && (route.screen === 'quests' || (route.screen === 'admin' && isAdmin)))}
+          onLeave={handleLeave}
+          onSelectMap={selectMap}
+          onAddQuest={handleAddPartyQuest}
+          onRemoveQuest={handleRemovePartyQuest}
+          onSetSpawn={setSpawn}
+          onToggleStar={handleToggleStar}
+          onSubmitProgress={handleSubmitProgress}
+          userObjProgress={userObjProgress}
+          userSettings={userSettings}
+          onSetUserSetting={setUserSetting}
+          gameMode={gameMode}
+          activeQuestCount={userQuests.length}
+          onlineMemberIds={onlineMemberIds}
+          presenceReady={presenceReady}
+          onSetRaidSettings={setRaidSettings}
+          onSweepEphemeral={sweepEphemeral}
+          skippedQuestIds={new Set(userQuests.filter(q => q.skipped).map(q => q.quest_id))}
+          onAddStroke={addStroke}
+          onClearMyStrokes={clearMyStrokes}
+          onAddMarker={addMarker}
+          onClearMyMarkers={clearMyMarkers}
+          onAddPing={addPing}
+          onClearPings={clearPings}
+          onMyQuests={() => navigate({ screen: 'quests', code: party.code })}
+          onAdmin={() => navigate({ screen: 'admin', code: party.code })}
+          friends={friends}
+          pendingIn={pendingIn}
+          pendingOut={pendingOut}
+          onSendRequest={sendRequest}
+          onAcceptRequest={acceptRequest}
+          onRemoveRequest={removeRequest}
+          onRemoveFriend={removeFriend}
+          onRefreshFriends={refreshFriends}
+          onRefresh={refreshParty}
+          onRefreshQuests={refreshUserQuests}
+          onOpenChangelog={openChangelog}
+          onStartRaid={startRaid}
+          raidSession={raidSession}
+          onRaidError={setPartyError}
+          onOpenRaid={() => navigate({ screen: 'raid', code: party.code })}
+          onCloseRaid={() => navigate({ screen: 'room', code: party.code }, { replace: true })}
+          />
+        </Suspense>
 
         {mountPartyQuests && (
           <div

@@ -18,6 +18,8 @@ import { normalizeMembers, findMember, memberIds as getMemberIds, memberNames as
 import { buildObjectiveRows, groupRowsByQuest, nearestRange } from '../raidObjectives'
 import { squadFrame } from '../squadFocus'
 import { CAMERA_MODES, effectiveCameraMode, readCameraMode, writeCameraMode } from '../cameraMode'
+
+const EMPTY_PROGRESS = {}
 import { useEftScreenshotSyncContext, useEftLogSync } from '../EftLogSyncContext'
 import { useCompanionSyncStatus } from '../useCompanionSyncStatus'
 import { screenshotChannelStatus, STATE_TEXT } from '../syncStatus'
@@ -160,8 +162,8 @@ export default function RaidView({
   const layers = { raid: party.settings || {}, unit: null, user: userSettings }
   const pingTtlMs = Number(resolveSetting('ping_ttl_ms', layers))
   const replayEnabled = resolveSetting('replay_enabled', layers)
-  const mapTasks = tasks?.length ? tasks : (allTasks || [])
-  const progress = party.progress || {}
+  const mapTasks = useMemo(() => tasks?.length ? tasks : (allTasks || []), [tasks, allTasks])
+  const progress = useMemo(() => party.progress || EMPTY_PROGRESS, [party.progress])
 
   const endedStamp = userSettings.raid_ended_stamp ?? null
   const live = isRaidLive({ raidKey, endedStamp, session: raidSession?.session })

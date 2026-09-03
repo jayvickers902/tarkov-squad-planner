@@ -1,7 +1,6 @@
-import { useState, useRef, useMemo, useEffect, useCallback, lazy, Suspense } from 'react'
+import { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react'
 import { useMaps, useTasks } from '../useTarkov'
 import { useIsMobile } from '../useIsMobile'
-import QuestSearch from './QuestSearch'
 import TodoList from './TodoList'
 import MyQuestPanel from './MyQuestPanel'
 import RequiredItems from './RequiredItems'
@@ -17,10 +16,12 @@ import { useEftLogSync } from '../EftLogSyncContext'
 import useEphemeralSweep from '../useEphemeralSweep'
 import { resolveSetting } from '../settings'
 import { gameModeLabel, resolvePartyMode } from '../gameMode'
-import { normalizeMembers, findMember, memberNames, progressOwnerId, progressQuestId } from '../partyMembers'
+import { normalizeMembers, findMember, memberNames } from '../partyMembers'
 import { memberColor } from '../memberColors'
 import { mapBannerLayers, mapReferenceArt } from '../mapBanners'
 import { taskIsOnMap } from '../tarkovObjectives'
+import { deriveMapStats } from '../roomViewModel'
+import useDialogFocus from '../useDialogFocus'
 
 const RaidView = lazy(() => import('./RaidView'))
 
@@ -125,7 +126,7 @@ function compactMapName(map) {
   return map.normalizedName === 'streets-of-tarkov' ? 'Streets' : map.name
 }
 
-export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, activeQuestCount = 0, onLeave, onSelectMap, onAddQuest, onRemoveQuest, onSetSpawn, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onAddPing, onClearPings, onMyQuests, onAdmin, onSubmitProgress, userObjProgress, userSettings = {}, onSetUserSetting, onRaidError, gameMode = 'regular', onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onRefreshQuests, onStartRaid, raidSession, onOpenRaid, onCloseRaid, onOpenChangelog }) {
+export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, activeQuestCount = 0, onLeave, onSelectMap, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onClearPings, onMyQuests, onAdmin, onSubmitProgress, userObjProgress, userSettings = {}, onSetUserSetting, onRaidError, gameMode = 'regular', onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onRefreshQuests, onStartRaid, raidSession, onOpenRaid, onCloseRaid, onOpenChangelog }) {
   const isMobile = useIsMobile()
   const questLogs = useEftLogSync({ optional: true })
   const [tab, setTab]           = useState('todo')
@@ -137,12 +138,12 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   const [addError, setAddError] = useState('')
   const [addBusy, setAddBusy]   = useState(false)
   const [confirmUnfriend, setConfirmUnfriend] = useState(null)
-  const [chipTooltip, setChipTooltip] = useState(null)  // { task, anchor }
   const [startRaidPending, setStartRaidPending] = useState(false)
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [overflowOpen, setOverflowOpen] = useState(false)
   const [pendingMap, setPendingMap] = useState(null)
+  const confirmDialogRef = useDialogFocus(Boolean(pendingMap), () => setPendingMap(null))
   const [questSyncState, setQuestSyncState] = useState('idle')
   const [questSyncMessage, setQuestSyncMessage] = useState('')
   const overflowRef = useRef(null)
@@ -290,38 +291,10 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   const mineWasNonEmpty = useRef(mine.length > 0)
   if (mine.length > 0) mineWasNonEmpty.current = true
 
-  // Completed quests — only my own entries, keyed by user_id.
-  const completedQuests = Object.fromEntries(
-    Object.entries(party.progress || {})
-      .filter(([k, v]) => k.startsWith('__done__:') && progressOwnerId(k) === myUserId && v)
-      .map(([k]) => [progressQuestId(k), true])
-  )
-
   // Map recommendation: uses each party_members row's full quests_all list.
-  const mapStats = useMemo(() => {
-    const activeMembers = members.filter(member => member.quests_all.length > 0)
-    if (!allTasks.length || !maps.length || !activeMembers.length) return []
-    return maps.map(m => {
-      const perMember = {}
-      const questIdSets = {}
-      activeMembers.forEach(member => {
-        const ids = member.quests_all
-          .filter(q => taskIsOnMap(allTasksById.get(q.id), m.normalizedName))
-          .map(q => q.id)
-        perMember[member.callsign] = ids.length
-        if (ids.length) questIdSets[member.callsign] = new Set(ids)
-      })
-      const allIds = new Set(Object.values(questIdSets).flatMap(s => [...s]))
-      let crossover = 0
-      allIds.forEach(id => {
-        if (Object.values(questIdSets).filter(s => s.has(id)).length >= 2) crossover++
-      })
-      const total = Object.values(perMember).reduce((s, v) => s + v, 0)
-      return { map: m, total, crossover, perMember }
-    })
-    .filter(s => s.total > 0)
-    .sort((a, b) => b.total - a.total || b.crossover - a.crossover)
-  }, [allTasks, allTasksById, maps, members]) // eslint-disable-line
+  const mapStats = useMemo(() => deriveMapStats({
+    allTasks, allTasksById, maps, members, taskIsOnMap,
+  }), [allTasks, allTasksById, maps, members])
 
 
   // Cross-fade rather than hard-cut: the layer below holds whatever art was
@@ -802,7 +775,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
                               {(() => {
                                 const activeEntries = Object.entries(stat.perMember).filter(([, v]) => v > 0)
                                 const barTotal = activeEntries.reduce((s, [, v]) => s + v, 0)
-                                return activeEntries.map(([name, count], idx) => {
+                                return activeEntries.map(([name, count]) => {
                                   const c = memberColor(name, memberNameList)
                                   const segPct = barTotal ? (count / barTotal) * pct : 0
                                   return (
@@ -1015,13 +988,13 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
 
       {pendingMap && (
         <div className="app-confirm-backdrop" role="presentation">
-          <div className="card app-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="room-map-confirm-title">
+          <div ref={confirmDialogRef} className="card app-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="room-map-confirm-title" aria-describedby="room-map-confirm-description" tabIndex={-1}>
             <h2 id="room-map-confirm-title">CHANGE MAP?</h2>
-            <p>
+            <p id="room-map-confirm-description">
               Switching to {pendingMap.name} clears the squad&rsquo;s markers, drawings, starred quests and TODO progress.
             </p>
             <div className="app-confirm-actions">
-              <button type="button" className="btn-ghost btn-sm" onClick={() => setPendingMap(null)}>CANCEL</button>
+              <button data-autofocus type="button" className="btn-ghost btn-sm" onClick={() => setPendingMap(null)}>CANCEL</button>
               <button type="button" className="btn-gold btn-sm" onClick={() => { const map = pendingMap; setPendingMap(null); commitSelectMap(map) }}>CHANGE MAP</button>
             </div>
           </div>

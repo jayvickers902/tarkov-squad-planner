@@ -5,6 +5,8 @@ companion/release
 .env.local
 
 .vercel
+playwright-report
+test-results
 public/garrettrage.png
 design/
 .aidesigner/*

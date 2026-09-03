@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { objectiveProgressKey } from '../partyMembers'
 import { objectiveIsOnMap, objectiveTypeLabel, traderGateLabel } from '../tarkovObjectives'
 import { objectiveShare, taskShare } from '../questShare'
@@ -45,6 +45,8 @@ function objsForMap(task, mapNorm) {
 
 export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgress, myUserId, myName, onSubmit, onOpenQuestManager, mapNorm, mapName, loading, settings = {}, onSetSetting, gameMode = 'regular' }) {
   const [pending, setPending] = useState({}) // key → boolean (unsaved local changes)
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
   const { overrides } = useQuestShareOverrides()
   const { tallies, myReports, report } = useQuestShareReports()
 
@@ -66,8 +68,8 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
   // Persist order through the user-settings abstraction whenever it changes.
   useEffect(() => {
     if (!myUserId || !onSetSetting) return
-    onSetSetting('quest_order', { ...(settings.quest_order || {}), [myUserId]: questOrder })
-  }, [questOrder, myUserId, onSetSetting]) // settings is read from the latest callback closure
+    onSetSetting('quest_order', { ...(settingsRef.current.quest_order || {}), [myUserId]: questOrder })
+  }, [questOrder, myUserId, onSetSetting])
 
   // Sync questOrder when myQuests changes — new quests bubble to front
   useEffect(() => {

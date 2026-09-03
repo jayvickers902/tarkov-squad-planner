@@ -215,11 +215,14 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
   const [objOrder, setObjOrder]         = useState([])
   const [dragObjKey, setDragObjKey]     = useState(null)
   const [dragOverObjKey, setDragOverObjKey] = useState(null)
-  const memberRows = normalizeMembers(memberQuests)
+  const memberRows = useMemo(() => normalizeMembers(memberQuests), [memberQuests])
   const { overrides } = useQuestShareOverrides()
   const { tallies, myReports, report } = useQuestShareReports()
   const members = memberRows.map(member => member.callsign)
-  const memberIdsByName = new Map(memberRows.map(member => [member.callsign, member.user_id]))
+  const memberIdsByName = useMemo(
+    () => new Map(memberRows.map(member => [member.callsign, member.user_id])),
+    [memberRows],
+  )
 
   const handleToggleExpand = useCallback((taskId) => {
     setExpanded(e => ({ ...e, [taskId]: !e[taskId] }))
@@ -277,7 +280,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
         const allObjs = (r.task.objectives || []).filter(o => !o.optional)
         return allObjs.length === 0 || r.objs.length > 0
       })
-  }, [tasks, memberRows, progress, starredQuests, myUserId, mapNorm])
+  }, [tasks, memberRows, progress, starredQuests, myUserId, mapNorm, memberIdsByName])
 
   const sortedRows = useMemo(() => {
     if (!questOrder || !questOrder.length) {

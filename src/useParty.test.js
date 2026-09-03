@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const db = vi.hoisted(() => ({
   from: vi.fn(),
@@ -35,6 +35,7 @@ function makeQuery(result) {
 function makeChannel() {
   const channel = {
     handlers: [],
+    statusCallback: null,
     on: vi.fn((topic, config, callback) => {
       if (topic === 'postgres_changes') channel.handlers.push({ config, callback })
       return channel
@@ -42,9 +43,11 @@ function makeChannel() {
     presenceState: vi.fn(() => ({})),
     track: vi.fn(() => Promise.resolve()),
     subscribe: vi.fn(callback => {
+      channel.statusCallback = callback
       if (callback) callback('SUBSCRIBED')
       return channel
     }),
+    emitStatus: status => channel.statusCallback?.(status),
   }
   db.channels.push(channel)
   return channel
@@ -72,7 +75,7 @@ function makeParty() {
   }
 }
 
-async function renderPartyHook() {
+async function renderPartyHook({ onSyncMetric } = {}) {
   const party = makeParty()
   const partyRow = { ...party }
   delete partyRow.members
@@ -94,17 +97,18 @@ async function renderPartyHook() {
   const hook = renderHook(() => {
     renderCount += 1
     return useParty('u1', { auto_rejoin: false }, {
-      callsign: 'Raven', questsLoading: true,
+      callsign: 'Raven', questsLoading: true, onSyncMetric,
     })
   })
   await act(async () => {
     await hook.result.current.createParty('Raven', 'regular', [])
   })
-  await waitFor(() => expect(db.channels.length).toBeGreaterThan(0))
+  expect(db.channels.length).toBeGreaterThan(0)
   const memberHandler = db.channels[0].handlers.find(({ config }) => config.table === 'party_members')
   const partyHandler = db.channels[0].handlers.find(({ config }) => config.table === 'parties')
   return {
     ...hook,
+    channel: db.channels[0],
     party,
     setFreshPartyRow: value => { freshPartyRow = value },
     setFreshMembers: value => { freshMembers = value },
@@ -117,6 +121,11 @@ async function renderPartyHook() {
 beforeEach(() => {
   vi.clearAllMocks()
   db.channels.length = 0
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 describe('settleOptimisticPing', () => {
@@ -209,6 +218,62 @@ describe('autoRejoinQuestPayload', () => {
 })
 
 describe('party realtime refresh guards', () => {
+  it('emits privacy-safe sync lifecycle metrics when requested', async () => {
+    const metrics = []
+    const hook = await renderPartyHook({ onSyncMetric: event => metrics.push(event) })
+
+    expect(metrics.some(event => event.type === 'realtime_status' && event.status === 'SUBSCRIBED')).toBe(true)
+    expect(metrics.every(event => !('user_id' in event) && !('payload' in event) && !('error' in event))).toBe(true)
+    hook.unmount()
+  })
+
+  it('does not periodically refetch while the party channel is healthy', async () => {
+    vi.useFakeTimers()
+    const hook = await renderPartyHook()
+    const before = db.from.mock.calls.length
+
+    await act(async () => {
+      vi.advanceTimersByTime(15_000)
+      await Promise.resolve()
+    })
+
+    expect(db.from).toHaveBeenCalledTimes(before)
+    hook.unmount()
+  })
+
+  it('uses jittered repair polling while Realtime is unhealthy and reconciles on reconnect', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const hook = await renderPartyHook()
+    const before = db.from.mock.calls.length
+
+    await act(async () => {
+      await hook.channel.emitStatus('CHANNEL_ERROR')
+    })
+    await act(async () => {
+      vi.advanceTimersByTime(14_999)
+      await Promise.resolve()
+    })
+    expect(db.from).toHaveBeenCalledTimes(before)
+
+    await act(async () => {
+      vi.advanceTimersByTime(1)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(db.from).toHaveBeenCalledTimes(before + 3)
+
+    const afterRepair = db.from.mock.calls.length
+    await act(async () => {
+      await hook.channel.emitStatus('SUBSCRIBED')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(db.from).toHaveBeenCalledTimes(afterRepair + 3)
+
+    hook.unmount()
+  })
+
   it('does not refetch for a heartbeat-only member update, but does for quest changes', async () => {
     const hook = await renderPartyHook()
     const before = db.from.mock.calls.length

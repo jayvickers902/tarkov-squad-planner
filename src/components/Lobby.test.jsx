@@ -50,4 +50,16 @@ describe('Lobby', () => {
     expect(props.onEnter).toHaveBeenCalledWith('create', '', 'pve')
     expect(props.onRefreshFriends).toHaveBeenCalledTimes(1)
   })
+
+  it('gives the unfriend confirmation actions a friend-specific accessible context', () => {
+    const props = renderLobby({
+      friends: [{ user_id: 'friend-1', callsign: 'Hawk', partyCode: null }],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Hawk from friends' }))
+
+    expect(screen.getByRole('group', { name: 'Remove Hawk from friends' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'YES, REMOVE Hawk' }))
+    expect(props.onRemoveFriend).toHaveBeenCalledWith('friend-1')
+  })
 })

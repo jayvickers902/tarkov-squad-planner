@@ -123,8 +123,8 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 /* -- Party room shell -----------------------------------------------------
    The banner is full-bleed, so the shell carries no padding of its own -
    .room-body holds the page gutter instead. */
-.room-shell { min-height: calc(100dvh - var(--app-nav-h)); width: 100%; overflow-x: clip; }
-.room-body { padding: 14px 16px; }
+.room-shell { min-height: calc(100dvh - var(--app-nav-h)); width: 100%; display: flex; flex-direction: column; overflow-x: clip; }
+.room-body { flex: 1; padding: 14px 16px; }
 
 /* -- Map-art banner: the art IS the top bar ------------------------------- */
 .room-banner { position: relative; z-index: 20; min-height: 96px; border-bottom: 1px solid var(--brd); background: var(--bg); }

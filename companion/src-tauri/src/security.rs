@@ -74,7 +74,7 @@ fn split_secret(secret: &str) -> Vec<String> {
 fn read_direct(account: &str) -> Result<Option<String>, NativeError> {
     match entry(account)?.get_password() {
         Ok(secret) => Ok(Some(secret)),
-        Err(error) if matches!(error, keyring::Error::NoEntry) => Ok(None),
+        Err(keyring::Error::NoEntry) => Ok(None),
         Err(error) => Err(NativeError::Credential(error.to_string())),
     }
 }
@@ -82,7 +82,7 @@ fn read_direct(account: &str) -> Result<Option<String>, NativeError> {
 fn delete_direct(account: &str) -> Result<(), NativeError> {
     match entry(account)?.delete_credential() {
         Ok(()) => Ok(()),
-        Err(error) if matches!(error, keyring::Error::NoEntry) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(NativeError::Credential(error.to_string())),
     }
 }

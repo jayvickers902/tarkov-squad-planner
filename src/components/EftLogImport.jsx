@@ -96,7 +96,7 @@ export function deriveImportSteps(preview) {
   }))
 }
 
-export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGetQuestHistory, userQuests = [], sync, onImportStart, onImportComplete, onViewQuests, defaultOpen = false }) {
+export default function EftLogImport({ allTasks, gameMode, onApply, onGetQuestHistory, userQuests = [], sync, onImportStart, onImportComplete, onViewQuests, defaultOpen = false }) {
   const inputRef = useRef(null)
   const fileInputRef = useRef(null)
   const [needsFileFallback, setNeedsFileFallback] = useState(false)
@@ -169,7 +169,7 @@ export default function EftLogImport({ allTasks, gameMode, userId, onApply, onGe
       }
       return true
     })
-  }, [gameMode, knownTaskIds, preview])
+  }, [knownTaskIds, preview])
   const seasonalSessionKeys = useMemo(() => new Set((preview?.sessions || []).filter(session => session.hasSeasonalSignal).map(session => session.sessionKey)), [preview])
   const selectedEvents = useMemo(() => scopedEvents.filter(event => {
     if (isSeasonalEvent(event, seasonalSessionKeys)) return false

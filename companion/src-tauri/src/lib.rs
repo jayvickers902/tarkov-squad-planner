@@ -358,7 +358,7 @@ pub fn run() {
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { button, .. } = event {
                         if button == tauri::tray::MouseButton::Left {
-                            show_main_window(&tray.app_handle());
+                            show_main_window(tray.app_handle());
                         }
                     }
                 })

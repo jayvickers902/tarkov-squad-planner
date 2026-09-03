@@ -420,7 +420,7 @@ describe('useEftLogImport', () => {
       kind: 'directory',
       name: 'Logs',
       async queryPermission() { return 'granted' },
-      async *values() { throw new Error('NotFoundError') },
+      async *values() { yield* []; throw new Error('NotFoundError') },
     }
     const environment = persistentEnvironment(handle)
     const store = memoryStore()

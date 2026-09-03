@@ -29,9 +29,9 @@ describe('WelcomeModal', () => {
   })
 
   it.each([
-    ['Escape', container => fireEvent.keyDown(document, { key: 'Escape' })],
+    ['Escape', () => fireEvent.keyDown(document, { key: 'Escape' })],
     ['backdrop click', container => fireEvent.click(container)],
-    ['primary button', container => fireEvent.click(screen.getByRole('button', { name: 'GOT IT' }))],
+    ['primary button', () => fireEvent.click(screen.getByRole('button', { name: 'GOT IT' }))],
   ])('dismisses through %s', (_label, action) => {
     const { onDismiss } = renderModal()
     action(screen.getByRole('dialog').parentElement)

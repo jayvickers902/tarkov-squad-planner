@@ -8,7 +8,7 @@ import {
   registerDeepLinkListener,
   tauriAdapter,
 } from './tauri.js'
-import { createCompanionSyncEngine } from '../../src/companionSyncEngine.js'
+import { createCompanionSyncEngine } from '../../shared/companionSyncEngine.js'
 
 const UNCONFIGURED_STATUS = Object.freeze({
   state: 'error',
@@ -192,10 +192,12 @@ export function createCompanionService({
   }
 
   async function dispose() {
-    try { deepLinkCleanup?.() } catch {}
-    try { authCleanup?.() } catch {}
-    try { runtimeCleanup?.() } catch {}
-    try { backgroundLockCleanup?.() } catch {}
+    // Cleanup is best-effort: one stale listener must not prevent the others
+    // from being released when the tray service is closed.
+    try { deepLinkCleanup?.() } catch { /* best effort */ }
+    try { authCleanup?.() } catch { /* best effort */ }
+    try { runtimeCleanup?.() } catch { /* best effort */ }
+    try { backgroundLockCleanup?.() } catch { /* best effort */ }
     deepLinkCleanup = authCleanup = runtimeCleanup = null
     backgroundLockCleanup = null
     await runtime?.dispose?.()

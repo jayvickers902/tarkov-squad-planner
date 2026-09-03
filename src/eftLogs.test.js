@@ -125,7 +125,7 @@ describe('parseEftLogFiles', () => {
   })
 
   it('parses multiline JSON, braces, and escaped quotes without confusing strings', () => {
-    const text = `prefix ${jsonNotification({ eventId: 'multiline-event', templateId: `${regularTask} {quoted} \"value\"` }).replace('{"type"', '{\n  "type"')}`
+    const text = `prefix ${jsonNotification({ eventId: 'multiline-event', templateId: `${regularTask} {quoted} "value"` }).replace('{"type"', '{\n  "type"')}`
     const preview = parse([
       { name: 'Logs/0.16.9.0/notifications.log', text },
       { name: 'Logs/0.16.9.0/application.log', text: 'Session mode: PVP' },

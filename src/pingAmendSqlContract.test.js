@@ -16,5 +16,16 @@ describe('amendable party ping SQL contract', () => {
     expect(sql.indexOf("source_event_id = v_event_id")).toBeLessThan(sql.indexOf("ping rate limit exceeded"))
     expect(sql).toMatch(/v_taps\s*>\s*v_row\.taps/i)
     expect(sql).toMatch(/least\(greatest[\s\S]*?,\s*1\),\s*3\)::smallint/i)
+    expect(sql).toMatch(/pg_advisory_xact_lock\(hashtext\(v_party_id::text \|\| ':' \|\| auth\.uid\(\)::text\)\)/i)
+    expect(sql).toMatch(/server_at\s*>\s*now\(\)\s*-\s*interval '1 minute'/i)
+    expect(sql).toMatch(/\)\s*>?=\s*20\s*then raise exception 'ping rate limit exceeded'/i)
+  })
+
+  it('bounds the wire payload and clears only the authenticated party raid', () => {
+    expect(sql).toMatch(/octet_length\(p_ping::text\) > 8192/i)
+    expect(sql).toMatch(/v_x\s+not between -100000 and 100000/i)
+    expect(sql).toMatch(/v_yaw\s+not between -360000 and 360000/i)
+    expect(sql).toMatch(/v_at\s+not between floor\(extract\(epoch from now\(\) - interval '1 day'\)/i)
+    expect(sql).toMatch(/on conflict \(party_id, user_id, source_event_id\) do nothing/i)
   })
 })

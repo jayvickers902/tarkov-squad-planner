@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePositionPingCadence } from './usePositionPingCadence'
 import {
   getEftScreenshotMetadata,
@@ -110,7 +110,10 @@ export function useEftScreenshotSync({
   observerDebounceMs = DEFAULT_OBSERVER_DEBOUNCE_MS,
   now = currentTime,
 } = {}) {
-  const env = environment || (typeof globalThis !== 'undefined' ? globalThis : {})
+  const env = useMemo(
+    () => environment || (typeof globalThis !== 'undefined' ? globalThis : {}),
+    [environment],
+  )
   const documentObject = env.document || (typeof document !== 'undefined' ? document : null)
   const showDirectoryPicker = env.showDirectoryPicker || env.window?.showDirectoryPicker
   const persistentSupported = Boolean(showDirectoryPicker && isIndexedDbSupported(env))

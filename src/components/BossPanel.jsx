@@ -22,7 +22,7 @@ function MapBossSection({ label, bosses }) {
 
 export default function BossPanel({ mapNorm, gameMode }) {
   const { getBossesForMap, loading: bossLoading } = useBossSpawns(gameMode)
-  const { keys, allKeys, loading: keysLoading } = useKeys(mapNorm, gameMode)
+  const { keys, loading: keysLoading } = useKeys(mapNorm, gameMode)
   const { mapKeys } = useMapKeys(mapNorm)
 
   const isFactory   = mapNorm === 'factory'

@@ -471,13 +471,12 @@ describe('native-agnostic companion sync engine', () => {
   })
 
   it('contains delayed ping publish failures at the host error boundary', async () => {
-    let timerCallback
     const files = []
     const onError = vi.fn()
     const controller = createScreenshotPingSyncController({
       filesystem: { async list() { return files } }, checkpointStore: store(),
       network: { async publishPing() { throw new Error('provider detail') } },
-      scheduler: { setTimeout(callback) { timerCallback = callback; return 1 }, clearTimeout() {} },
+      scheduler: { setTimeout() { return 1 }, clearTimeout() {} },
       onError, now: () => 1000000, user: 'Scout',
     })
     const name = '2026-08-26[12-34]_12.50, 0.00, -8.25_0.000, 0.000, 0.000, 1.000 (1).png'

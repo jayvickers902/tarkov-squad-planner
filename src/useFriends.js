@@ -5,6 +5,13 @@ function otherUserId(row, userId) {
   return row.requester_id === userId ? row.addressee_id : row.requester_id
 }
 
+// A friendship has no canonical endpoint orientation: either user may have
+// sent the request. Keep removal as one PostgREST DELETE statement so both
+// rows (including a legacy duplicate orientation) are removed atomically.
+export function friendshipPairFilter(userId, friendUserId) {
+  return `and(requester_id.eq.${userId},addressee_id.eq.${friendUserId}),and(requester_id.eq.${friendUserId},addressee_id.eq.${userId})`
+}
+
 export function useFriends(userId, myCallsign) {
   const [friends, setFriends]       = useState([]) // [{ user_id, callsign, partyCode }]
   const [pendingIn, setPendingIn]   = useState([]) // [{ id, user_id, callsign }]
@@ -133,18 +140,12 @@ export function useFriends(userId, myCallsign) {
   }, [refresh])
 
   const removeFriend = useCallback(async (friendUserId) => {
-    const first = await supabase
+    const { error } = await supabase
       .from('friendships')
       .delete()
-      .eq('requester_id', userId)
-      .eq('addressee_id', friendUserId)
-    const second = await supabase
-      .from('friendships')
-      .delete()
-      .eq('requester_id', friendUserId)
-      .eq('addressee_id', userId)
-    if (first.error || second.error) {
-      const message = first.error?.message || second.error?.message || 'Could not remove friend.'
+      .or(friendshipPairFilter(userId, friendUserId))
+    if (error) {
+      const message = error.message || 'Could not remove friend.'
       setError(message)
       return message
     }

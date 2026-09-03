@@ -28,6 +28,8 @@ import { classifyPmcSpawns } from '../tarkovSpawns'
 import { framePositionSignature } from '../squadFocus'
 import { effectiveCameraMode, readCameraMode, writeCameraMode } from '../cameraMode'
 import { escapeHtml, parseSanitizedSvg, safeColor, safeImageUrl } from '../mapHtml'
+import { focusedPingIds as getFocusedPingIds, pingCompanionCards } from '../mapPingPolicy'
+import useDialogFocus from '../useDialogFocus'
 
 const PALETTE = ['#e85d5d', '#f5a623', '#e8e85d', '#5de87a', '#5de8d4', '#5db8e8', '#c45de8', '#e85da8', '#ffffff', '#b0b0b0']
 
@@ -501,20 +503,9 @@ function makePingIcon(color, initial, angle, opacity, taps, focusState = 'normal
   })
 }
 
-function pingCompanionCards(target, cards) {
-  if (!target) return []
-  return cards.filter(other =>
-    other.ping.id !== target.ping.id
-    && other.ping.user_id !== target.ping.user_id
-    && other.age <= 90000
-    && other.floor === target.floor
-    && bearingRange(target.ping, other.ping)?.dist <= 150
-  )
-}
-
 export default function MapLeaflet({
-  mapNorm, mapName, gameMode = 'regular',
-  drawings = [], markers = [], pings = [], extracts = [],
+  mapNorm, gameMode = 'regular',
+  drawings = [], markers = [], pings = [],
   pingLog,              // party.ping_log — raw on purpose: undefined means the
                         // Phase 8 column is not applied, [] means no pings yet
   myUserId, myName, memberNames = [], memberIds = [],
@@ -613,7 +604,7 @@ export default function MapLeaflet({
   const [selectedQuestId, setSelectedQuestId] = useState('')
   const [myColor, setMyColor] = useState(() => getUserColor(myName, memberNames, myUserId, memberIds))
   const [svgReady, setSvgReady] = useState(false)
-  const [tileOnly, setTileOnly] = useState(false) // true when map has no SVG
+  const [, setTileOnly] = useState(false) // true when map has no SVG
 
   const isDrawing = useRef(false)
   const currentPolyline = useRef(null)
@@ -630,6 +621,7 @@ export default function MapLeaflet({
   const followSigRef = useRef('')
   const announcementHoverRef = useRef(false)
   const announcementFocusRef = useRef(false)
+  const layersDialogRef = useDialogFocus(layersOpen, () => setLayersOpen(false))
 
   function changeMode(m) {
     if (modeProp !== undefined) onModeChange?.(m)
@@ -780,11 +772,7 @@ export default function MapLeaflet({
   const visualFocusPingId = resolvedHoverPingId || resolvedFocusPingId
   const focusedPingCard = pingCards.find(card => card.ping.id === visualFocusPingId) || null
   const focusedPingIds = useMemo(() => {
-    if (!focusedPingCard) return new Set()
-    return new Set([
-      focusedPingCard.ping.id,
-      ...pingCompanionCards(focusedPingCard, pingCards).map(card => card.ping.id),
-    ])
+    return getFocusedPingIds(focusedPingCard, pingCards)
   }, [focusedPingCard, pingCards])
   const pingFocusActive = showPings && !!focusedPingCard
   // In-raid full-bleed view hides the strip for space; replay is a post-raid
@@ -1000,8 +988,6 @@ export default function MapLeaflet({
     const map = mapRef.current
     const bounds = boundsRef.current
     if (!map || !bounds) return
-    const container = map.getContainer()
-
     // Remove old polylines
     for (const pl of drawingLayersRef.current) {
       map.removeLayer(pl)
@@ -1569,7 +1555,7 @@ export default function MapLeaflet({
       bindTacticalTooltip(lm, tooltipHtml, { offset: [0, -18] })
       return lm
     })
-  }, [focusedPingIds, pingFocusActive, pingSig, showPings, mapNorm]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [focusedPingIds, pingFocusActive, pingSig, showPings, mapNorm])
 
   useEffect(() => {
     const announcementId = pingAnnouncement?.id
@@ -1708,7 +1694,7 @@ export default function MapLeaflet({
       lm.on('click', () => toggleChecked(point.id))
       return lm
     })
-  }, [intelSig, showIntel, mapNorm]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [intelSig, showIntel, mapNorm])
 
   // ─── Planning rings ─────────────────────────────────────────────────────────
   // One ring per unchecked spawn. Checked spawns get none: the rings answer
@@ -1730,7 +1716,7 @@ export default function MapLeaflet({
         pane: 'ringsPane',
       })
     })
-  }, [showIntel, ringRadius, ringData, intelSig, mapNorm]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showIntel, ringRadius, ringData, intelSig, mapNorm])
 
   // ─── Drawing pointer handlers ──────────────────────────────────────────────
   useEffect(() => {
@@ -1889,16 +1875,9 @@ export default function MapLeaflet({
     function onPointerDown(event) {
       if (!layersMenuRef.current?.contains(event.target)) setLayersOpen(false)
     }
-    function onKeyDown(event) {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      setLayersOpen(false)
-    }
     document.addEventListener('pointerdown', onPointerDown)
-    window.addEventListener('keydown', onKeyDown)
     return () => {
       document.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('keydown', onKeyDown)
     }
   }, [layersOpen])
 
@@ -1933,14 +1912,18 @@ export default function MapLeaflet({
   const styleControls = !hideStyleControls && canToggle && svgReady ? (
     <>
       <button
+        type="button"
         className={mapStyle === 'svg' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
         onClick={() => setMapStyle('svg')}
+        aria-pressed={mapStyle === 'svg'}
         style={{ fontSize: 'var(--fs-xs)' }}>
         ABSTRACT
       </button>
       <button
+        type="button"
         className={mapStyle === 'tile' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
         onClick={() => setMapStyle('tile')}
+        aria-pressed={mapStyle === 'tile'}
         style={{ fontSize: 'var(--fs-xs)' }}>
         SATELLITE
       </button>
@@ -1982,8 +1965,10 @@ export default function MapLeaflet({
         {!hideDrawButton && (
           <>
             <button
+              type="button"
               className={mode === 'draw' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
               onClick={() => { changeMode(mode === 'draw' ? 'pan' : 'draw'); setSelectedQuestId('') }}
+              aria-pressed={mode === 'draw'}
               style={{ fontSize: 'var(--fs-xs)' }}>
               ✏ DRAW
             </button>
@@ -1995,8 +1980,10 @@ export default function MapLeaflet({
           </>
         )}
         <button
+          type="button"
           className={mode === 'marker' ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
           onClick={() => { changeMode(mode === 'marker' ? 'pan' : 'marker'); setSelectedQuestId('') }}
+          aria-pressed={mode === 'marker'}
           style={{ fontSize: 'var(--fs-xs)' }}>
           ◎ QUEST MARKER
         </button>
@@ -2018,21 +2005,27 @@ export default function MapLeaflet({
             is inside the compact layer popover so the toolbar remains usable. */}
         <div className="map-layer-controls">
           <button
+            type="button"
             className={showSpawns ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
             onClick={() => setShowSpawns(s => !s)}
+            aria-pressed={showSpawns}
             style={{ fontSize: 'var(--fs-xs)' }}>
             ⊕ PMC SPAWNS
           </button>
           <button
+            type="button"
             className={showQuestPins ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
             onClick={() => setShowQuestPins(q => !q)}
+            aria-pressed={showQuestPins}
             style={{ fontSize: 'var(--fs-xs)' }}>
             ◆ QUEST PINS
           </button>
           {pingList.length > 0 && (
             <button
+              type="button"
               className={showPings ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
               onClick={() => setShowPings(p => !p)}
+              aria-pressed={showPings}
               style={{ fontSize: 'var(--fs-xs)' }}>
               ▲ PINGS ({pingList.length})
             </button>
@@ -2062,15 +2055,17 @@ export default function MapLeaflet({
           </button>
           <div className="map-layer-menu" ref={layersMenuRef}>
             <button
+              type="button"
               className={layersOpen ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
               onClick={() => setLayersOpen(open => !open)}
               aria-expanded={layersOpen}
-              aria-haspopup="true"
+              aria-haspopup="dialog"
+              aria-controls="map-layer-popover"
               style={{ fontSize: 'var(--fs-xs)' }}>
               ◈ LAYERS
             </button>
             {layersOpen && (
-              <div className="map-layer-popover" role="dialog" aria-label="Map layers">
+              <div id="map-layer-popover" ref={layersDialogRef} className="map-layer-popover" role="dialog" aria-modal="false" aria-label="Map layers" tabIndex={-1}>
                 <div className="map-layer-popover-title">MAP LAYERS{zonesLoading ? ' · LOADING' : ''}</div>
 
                 <LayerToggleRow
@@ -2083,6 +2078,7 @@ export default function MapLeaflet({
                 {showIntel && allIntel.length > 0 && (
                   <div className="map-layer-subcontrols">
                     <button
+                      type="button"
                       className={ringRadius ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
                       onClick={() => setRingRadius(r => {
                         const i = RING_RADII_M.indexOf(r)
@@ -2093,7 +2089,7 @@ export default function MapLeaflet({
                       ◎ RINGS{ringRadius ? ` ${ringRadius} M` : ''}
                     </button>
                     {checkedCount > 0 && (
-                      <button className="btn-ghost btn-sm" onClick={clearChecked} style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
+                      <button type="button" className="btn-ghost btn-sm" onClick={clearChecked} style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
                         UNCHECK {checkedCount}
                       </button>
                     )}
@@ -2114,9 +2110,11 @@ export default function MapLeaflet({
                       ['pmc', 'PMC', factionCounts.pmc + factionCounts.shared],
                     ].map(([value, label, count]) => (
                       <button
+                        type="button"
                         key={value}
                         className={exitFaction === value ? 'map-faction-filter-active' : ''}
                         onClick={() => setExitFaction(value)}
+                        aria-pressed={exitFaction === value}
                         title={`${label} exits: ${count}`}>
                         {label}
                       </button>
@@ -2176,12 +2174,13 @@ export default function MapLeaflet({
                 {(onClearPings && pingList.length > 0 && !replayOn) || canReplay ? (
                   <div className="map-layer-secondary-controls">
                     {onClearPings && pingList.length > 0 && !replayOn && (
-                      <button className="btn-ghost btn-sm" onClick={onClearPings} style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
+                      <button type="button" className="btn-ghost btn-sm" onClick={onClearPings} style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
                         CLEAR
                       </button>
                     )}
                     {canReplay && (
                       <button
+                        type="button"
                         className={replayOn ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
                         onClick={() => setReplay(r => (r ? null : { t: replayData.from, playing: false, speed: 4 }))}
                         title="Scrub back through this raid's pings"
@@ -2240,14 +2239,14 @@ export default function MapLeaflet({
           <>
             <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', marginRight: 2 }}>COLOR</span>
             {PALETTE.map(c => (
-              <button key={c} onClick={() => setMyColor(c)} aria-label={`Use drawing color ${c}`} aria-pressed={myColor === c} style={{
+              <button type="button" key={c} onClick={() => setMyColor(c)} aria-label={`Use drawing color ${c}`} aria-pressed={myColor === c} style={{
                 width: 16, height: 16, borderRadius: '50%', padding: 0, flexShrink: 0,
                 background: c,
                 border: myColor === c ? '2px solid var(--gold)' : '1.5px solid rgba(255,255,255,0.2)',
                 boxShadow: myColor === c ? '0 0 6px rgba(247,183,49,0.7)' : 'none',
               }} />
             ))}
-            <button className="btn-ghost btn-sm" onClick={onClearMyStrokes}
+            <button type="button" className="btn-ghost btn-sm" onClick={onClearMyStrokes}
               style={{ fontSize: 'var(--fs-xs)', marginLeft: 'auto', flexShrink: 0 }}>
               CLEAR MY LINES
             </button>
@@ -2259,7 +2258,7 @@ export default function MapLeaflet({
               ? <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--gold)' }}>CLICK MAP TO PLACE MARKER</span>
               : <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>SELECT A QUEST ABOVE, THEN CLICK THE MAP</span>
             }
-            <button className="btn-ghost btn-sm" onClick={onClearMyMarkers}
+            <button type="button" className="btn-ghost btn-sm" onClick={onClearMyMarkers}
               style={{ fontSize: 'var(--fs-xs)', marginLeft: 'auto', flexShrink: 0 }}>
               CLEAR MY MARKERS
             </button>
@@ -2382,6 +2381,7 @@ export default function MapLeaflet({
           <div className="replay-row">
             <span className="mono replay-title">⏱ REPLAY</span>
             <button
+              type="button"
               className="btn-gold btn-sm"
               aria-label={replay.playing ? 'Pause replay' : 'Play replay'}
               aria-pressed={replay.playing}
@@ -2411,6 +2411,7 @@ export default function MapLeaflet({
             </span>
             {[1, 4, 16].map(s => (
               <button
+                type="button"
                 key={s}
                 className={replay.speed === s ? 'btn-gold btn-sm' : 'btn-ghost btn-sm'}
                 aria-label={`Replay speed ${s} times`}
@@ -2420,7 +2421,7 @@ export default function MapLeaflet({
                 {s}×
               </button>
             ))}
-            <button className="btn-ghost btn-sm" onClick={() => setReplay(null)} style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
+            <button type="button" className="btn-ghost btn-sm" onClick={() => setReplay(null)} style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)' }}>
               CLOSE
             </button>
           </div>

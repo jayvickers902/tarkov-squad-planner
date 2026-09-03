@@ -293,6 +293,19 @@ describe('Room map selector', () => {
     expect(props.onSelectMap).toHaveBeenCalledWith(expect.objectContaining({ id: 'map-customs' }))
   })
 
+  it('moves focus into the map confirmation and restores it on Escape', () => {
+    renderRoom({ party: { markers: [{ id: 'm1' }] } })
+    const customs = screen.getByRole('button', { name: 'CUSTOMS' })
+
+    customs.focus()
+    fireEvent.click(customs)
+    expect(screen.getByRole('dialog', { name: 'CHANGE MAP?' })).toContainElement(document.activeElement)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'CHANGE MAP?' })).not.toBeInTheDocument()
+    expect(document.activeElement).toBe(customs)
+  })
+
   it('leaves the selector alone for a member who cannot change the map', () => {
     renderRoom({ props: { myUserId: 'user-2', myName: 'BOOTS' } })
     expect(screen.getByRole('button', { name: 'CUSTOMS' })).toBeDisabled()

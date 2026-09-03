@@ -21,6 +21,9 @@ describe('sync client status SQL contract', () => {
     expect(migration).toMatch(/last_seen_at >= now\(\) - interval '90 seconds'/i)
     expect(migration).toMatch(/char_length\(detail\) <= 160/i)
     expect(migration).toMatch(/jsonb_array_length\(p_statuses\) > 2/i)
+    expect(migration).toMatch(/delete from public\.sync_client_status\s+where user_id = v_uid\s+and last_seen_at < now\(\) - interval '30 days'/i)
+    expect(migration).toMatch(/v_last_sync_at := least\(v_last_sync_at, now\(\) \+ interval '5 minutes'\)/i)
+    expect(migration).toMatch(/on conflict \(user_id, client_source, service\) do update/i)
   })
 
   it('keeps the schema-editor definition in sync', () => {

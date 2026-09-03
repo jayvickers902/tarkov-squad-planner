@@ -1,0 +1,36 @@
+# Canonical execution order for the historical Supabase cutover files.
+# Keep one repository-relative filename per line.  Numeric prefixes alone are
+# not sufficient because 10_08 and 10_19 each contain more than one file.
+10_01_party_members.sql
+10_02_parties_columns.sql
+10_03_rls.sql
+10_04_rpcs.sql
+10_05_lifecycle.sql
+10_06_user_settings.sql
+10_07_schema_drift.sql
+10_08_atomic_writes.sql
+10_08_party_ping_events.sql
+10_09_drop_quest_scan_log.sql
+10_10_security_hardening.sql
+10_11_quest_share_overrides.sql
+10_12_map_keys_policy_cleanup.sql
+10_14_game_mode_scoping.sql
+10_15_raid_sessions.sql
+10_16_restore_legacy_start_party_raid.sql
+10_17_quest_log_sync.sql
+10_18_quest_log_reconcile_perf.sql
+10_19_desktop_sync_context.sql
+10_19_desktop_sync_status.sql
+10_20_sync_client_status.sql
+10_21_quest_log_reconcile_seasonal.sql
+10_22_sync_scan_metrics.sql
+10_23_reset_quest_log_imports.sql
+10_24_user_data_hardening.sql
+10_25_profiles_column_scope.sql
+10_26_quest_log_name_repair.sql
+10_27_quest_share_provenance.sql
+10_28_quest_share_reports.sql
+10_29_user_quests_realtime.sql
+10_30_audit_hardening.sql
+10_31_restore_party_write_rpcs.sql
+10_32_amend_party_ping.sql

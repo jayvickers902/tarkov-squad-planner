@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { parseEftLogFiles, resolveWipeBoundary, isSeasonalEvent } from './eftLogs'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { isSeasonalEvent } from './eftLogs'
 import {
   classifyChangedEftLogMetadata,
   enumerateRelevantEftLogFiles,
@@ -15,6 +15,7 @@ import {
 import { CHECKPOINT_VERSION, createEftLogHandleStore, isIndexedDbSupported } from './eftLogHandleStore'
 import { createQuestLogImportJob, loadPendingJob, QUEST_LOG_IMPORT_CHUNK_SIZE } from './questLogImportJob'
 import { taskMetadataFor } from './questLogState'
+import { previewWipeBoundary, safeProfileKey, selectImportEvents, VALID_MODES } from './eftLogImportSelection'
 
 // Resumability is a convenience, not a precondition. A browser in private mode
 // or with site data blocked rejects every IndexedDB write, and letting that
@@ -41,7 +42,6 @@ function createResilientJobStore(store, memory) {
   }
 }
 
-const VALID_MODES = new Set(['regular', 'pve'])
 const MAX_PREVIEW_DETAIL_ROWS = 100
 const STALE_REQUEST = 'A newer EFT log scan replaced this one.'
 
@@ -89,20 +89,6 @@ function newestVersion(versions) {
     }
     return String(right).localeCompare(String(left))
   })[0]
-}
-
-function safeProfileKey(profile) {
-  return profile?.profileKey ?? profile?.key ?? profile?.id ?? null
-}
-
-// A preview parsed before wipe boundaries were profile-scoped carries only the
-// flat value, so fall back to it rather than dropping the boundary entirely.
-function previewWipeBoundary(preview, profileKey) {
-  const boundaries = preview?.wipeBoundaryByProfile
-  if (boundaries && Object.keys(boundaries).length) {
-    return resolveWipeBoundary(boundaries, preview?.discoveredProfiles, profileKey)
-  }
-  return preview?.wipeBoundaryAt || null
 }
 
 function currentProfileKeyForCheckpoint(preview, storedKey) {
@@ -292,46 +278,6 @@ function checkpointFrom(sourceMetadata, preview, selection, autoSync, gameMode, 
   }
 }
 
-function selectedEvents(preview, selection, targetMode, knownTaskIds = null, taskMetadata = null) {
-  const selectedVersions = new Set(selection.includedVersions)
-  const profileRequired = preview.discoveredProfiles.length > 1
-  if (profileRequired && !selection.profileKey) throw new Error('Select one local EFT profile before importing.')
-  const sourceEvents = Array.isArray(preview.matchedEvents) ? preview.matchedEvents : preview.events
-  const knownIds = knownTaskIds ? new Set(knownTaskIds) : null
-  const seasonalSessions = new Set((preview.sessions || []).filter(session => session.hasSeasonalSignal).map(session => session.sessionKey))
-  const boundary = selection.includePreWipeHistory ? null : Date.parse(previewWipeBoundary(preview, selection.profileKey) || '')
-  const candidates = sourceEvents.filter(event => {
-    if (knownIds && !knownIds.has(event?.taskId)) return false
-    if (selectedVersions.size && !selectedVersions.has(String(event?.version || ''))) return false
-    if (profileRequired && safeProfileKey(event) !== selection.profileKey && event?.profileKey !== selection.profileKey
-      && !(event?.legacyProfileKeys || []).includes(selection.profileKey)) return false
-    if (Number.isFinite(boundary)) {
-      const occurredAt = Date.parse(event?.occurredAt || '')
-      if (!Number.isFinite(occurredAt) || occurredAt < boundary) return false
-    }
-    return true
-  })
-  return candidates
-    .filter(event => {
-      if (isSeasonalEvent(event, seasonalSessions)) return false
-      const eventMode = event?.gameMode || selection.unknownModeTargets?.[event?.sessionKey]
-      if (!event?.gameMode && !selection.unknownModeTargets?.[event?.sessionKey]) return false
-      if (event?.modeConfidence === 'conflicted' || event?.modeConfidence === 'absent') {
-        if (!selection.unknownModeTargets?.[event?.sessionKey]) return false
-      }
-      return VALID_MODES.has(eventMode) && eventMode === targetMode
-    })
-    .map(event => {
-      const metadata = taskMetadata?.get(event?.taskId)
-      if (!metadata?.questName && !metadata?.mapNorm) return event
-      return {
-        ...event,
-        ...(metadata.questName ? { questName: metadata.questName } : {}),
-        ...(metadata.mapNorm ? { mapNorm: metadata.mapNorm } : {}),
-      }
-    })
-}
-
 function handlePermission(handle) {
   if (typeof handle?.queryPermission !== 'function') return Promise.resolve('granted')
   return Promise.resolve().then(() => handle.queryPermission({ mode: 'read' })).then(permission => {
@@ -359,7 +305,10 @@ export function useEftLogImport({
   maxFileBytes = MAX_RELEVANT_FILE_BYTES,
   maxTotalBytes = MAX_TOTAL_RELEVANT_BYTES,
 } = {}) {
-  const env = environment || (typeof globalThis !== 'undefined' ? globalThis : {})
+  const env = useMemo(
+    () => environment || (typeof globalThis !== 'undefined' ? globalThis : {}),
+    [environment],
+  )
   const documentObject = env.document || (typeof document !== 'undefined' ? document : null)
   const showDirectoryPicker = env.showDirectoryPicker || env.window?.showDirectoryPicker
   const persistentSupported = Boolean(showDirectoryPicker && isIndexedDbSupported(env))
@@ -733,7 +682,7 @@ export function useEftLogImport({
         includePreWipeHistory: checkpointRef.current?.includePreWipeHistory === true,
       }
       if (mode !== targetModeRef.current) return { changed: false, metadata, preview: nextPreview }
-      const events = selectedEvents(nextPreview, nextSelection, mode, taskIdsFor(allTasksRef.current), taskMetadataFor(allTasksRef.current))
+      const events = selectImportEvents(nextPreview, nextSelection, mode, taskIdsFor(allTasksRef.current), taskMetadataFor(allTasksRef.current))
       if (events.length) {
         const callback = onApplyRef.current
         if (typeof callback !== 'function') throw new Error('Quest import is not connected.')
@@ -1020,7 +969,14 @@ export function useEftLogImport({
       if (mountedRef.current) { setError(nextError.message); setState('permission-needed') }
       return false
     }
-  }, [key, persistentSupported, startWatching, store])
+  }, [key, persistentSupported, startWatching, stopWatching, store])
+
+  // The lifecycle effect below is intentionally keyed to the import identity,
+  // not to injectable host adapters. Test and host integrations may recreate
+  // those objects while React rerenders; refs keep the latest callbacks without
+  // resetting an active preview or watch session on every state update.
+  const lifecycleRef = useRef({ startWatching, stopWatching, terminateWorker, store })
+  lifecycleRef.current = { startWatching, stopWatching, terminateWorker, store }
 
   const setIncludedVersions = useCallback(versions => {
     setPreview(current => {
@@ -1093,14 +1049,14 @@ export function useEftLogImport({
     return jobSummaryRef.current || { inserted: 0, updated: 0, ignored: 0, affected_task_ids: [] }
   }, [])
 
-  const confirmImport = useCallback(async ({ autoSync = false, remember = false } = {}) => {
+  const confirmImport = useCallback(async ({ autoSync = false } = {}) => {
     if (!preview) throw new Error('Choose EFT logs before confirming the import.')
     if (preview.availableVersions.length && !selectionRef.current.includedVersions.length) throw new Error('Include at least one EFT log version.')
     const mode = targetModeRef.current
     if (!VALID_MODES.has(mode)) throw new Error('EFT log import supports Regular and PvE only.')
     let events
     try {
-      events = selectedEvents(preview, selectionRef.current, mode, taskIdsFor(allTasksRef.current), taskMetadataFor(allTasksRef.current))
+      events = selectImportEvents(preview, selectionRef.current, mode, taskIdsFor(allTasksRef.current), taskMetadataFor(allTasksRef.current))
     } catch (caughtError) {
       if (mountedRef.current) { setError(caughtError.message); setState('preview') }
       throw caughtError
@@ -1259,8 +1215,8 @@ export function useEftLogImport({
   useEffect(() => {
     mountedRef.current = true
     const effectGeneration = ++generationRef.current
-    terminateWorker()
-    stopWatching()
+    lifecycleRef.current.terminateWorker()
+    lifecycleRef.current.stopWatching()
     selectionRef.current = { includedVersions: [], profileKey: null, unknownModeTargets: {}, includePreWipeHistory: false }
     setPreview(null)
     setError(null)
@@ -1273,14 +1229,14 @@ export function useEftLogImport({
     checkpointRef.current = null
     setRememberedFolderName(null)
     setLastSuccessfulCheck(null)
-    Promise.all([store.loadHandle(key), store.loadCheckpoint(key)]).then(([handle, checkpoint]) => {
+    Promise.all([lifecycleRef.current.store.loadHandle(key), lifecycleRef.current.store.loadCheckpoint(key)]).then(([handle, checkpoint]) => {
       if (cancelled || !handle) return
       directoryHandleRef.current = handle
       checkpointRef.current = checkpoint
       if (mountedRef.current) setRememberedFolderName(handle?.name || 'Remembered EFT folder')
       if (mountedRef.current && checkpoint?.updatedAt) setLastSuccessfulCheck(new Date(checkpoint.updatedAt).toISOString())
       return handlePermission(handle).then(() => {
-        if (!cancelled && checkpoint?.autoSync) startWatching()
+        if (!cancelled && checkpoint?.autoSync) lifecycleRef.current.startWatching()
       })
     }).catch(caughtError => {
       if (cancelled) return
@@ -1291,8 +1247,8 @@ export function useEftLogImport({
       cancelled = true
       if (generationRef.current === effectGeneration) {
         generationRef.current += 1
-        terminateWorker()
-        stopWatching()
+        lifecycleRef.current.terminateWorker()
+        lifecycleRef.current.stopWatching()
       }
     }
   }, [key, persistentSupported, targetMode])
@@ -1302,8 +1258,8 @@ export function useEftLogImport({
     return () => {
     mountedRef.current = false
     generationRef.current += 1
-    stopWatching()
-    terminateWorker()
+    lifecycleRef.current.stopWatching()
+    lifecycleRef.current.terminateWorker()
     }
   }, [])
 

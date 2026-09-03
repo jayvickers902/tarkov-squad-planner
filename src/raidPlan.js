@@ -567,7 +567,11 @@ export function scoreSquadMaps({
       || a._tie.blockers - b._tie.blockers
       || b._tie.exactPairs - a._tie.exactPairs
       || lexical(a.map.normalizedName, b.map.normalizedName))
-    .map(({ _tie, ...result }) => result)
+    .map(result => {
+      const cleaned = { ...result }
+      delete cleaned._tie
+      return cleaned
+    })
 }
 
 function assignmentEntries(assignments) {

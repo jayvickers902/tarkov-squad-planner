@@ -1,0 +1,18 @@
+# Local Supabase CLI configuration for tarkov-squad-planner.
+#
+# This file enables `supabase start` once Docker is available. It intentionally
+# does not declare a migration source yet: the repository's root-level
+# 10_*.sql files are historical/manual cutovers, not a CLI migration directory,
+# and the linked project currently reports no recorded migrations. Do not run
+# `supabase db reset` until a verified baseline has been added under
+# supabase/migrations/.
+# Local Docker stack identifier, intentionally not a hosted project ref.
+# `supabase link` stores the selected remote ref under `.temp/project-ref`.
+project_id = "tarkov-squad-planner"
+
+[db]
+# Match the linked catalog reported by `supabase inspect db`.
+major_version = 17
+
+[db.migrations]
+enabled = true

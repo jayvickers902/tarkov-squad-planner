@@ -1,5 +1,4 @@
-import { SCREENSHOT_PING_CADENCE_MS } from '../../src/companionSyncEngine.js'
-import { TAP_WINDOW_MS } from '../../src/tarkovPings.js'
+import { SCREENSHOT_PING_CADENCE_MS, TAP_WINDOW_MS } from '../../shared/pingCadence.js'
 
 // The companion and the browser must coalesce taps on the same window, or a
 // double press reads as CONTACT on one side and two HERE pings on the other.

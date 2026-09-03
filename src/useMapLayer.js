@@ -44,10 +44,9 @@ export function useMapLayer(mapRef, build, deps) {
     layersRef.current = made
 
     return () => {
-      // On a map change the container effect has already run `map.remove()` and
-      // nulled the ref — the layers went with it, so there is nothing to detach.
-      const current = mapRef.current
-      if (current) for (const layer of layersRef.current) current.removeLayer(layer)
+      // Use the map captured when these layers were created. The ref may already
+      // point at the next map by the time React runs this cleanup.
+      for (const layer of layersRef.current) map.removeLayer(layer)
       layersRef.current = []
     }
   }, deps) // eslint-disable-line react-hooks/exhaustive-deps

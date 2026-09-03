@@ -49,6 +49,8 @@ function keyToMap(name) {
 
 const keysCache = new Map()
 const tasksCache = new Map() // cache busted — requiredKeys moved to inline fragments
+const mapsCache = new Map()
+const mapsCacheAt = new Map()
 const mapBossCache = new Map()
 const bossPortraitsCache = new Map()
 const keysCacheAt = new Map()
@@ -214,7 +216,7 @@ const TASKS_QUERY = `{ tasks { id name kappaRequired minPlayerLevel wikiLink tra
 
 export function useMaps(gameMode = 'regular') {
   const mode = resolveGameMode(gameMode)
-  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.maps, new Map(), new Map(), mode, [], Array.isArray))
+  const [seed] = useState(() => cacheSeed(STORAGE_KEYS.maps, mapsCache, mapsCacheAt, mode, [], Array.isArray))
   const [maps, setMaps] = useState(seed.data)
   const [cachedAt, setCachedAt] = useState(seed.savedAt)
   const [loading, setLoading] = useState(seed.data.length === 0)
@@ -225,10 +227,11 @@ export function useMaps(gameMode = 'regular') {
     const controller = new AbortController()
     let active = true
     setError(null)
-    const currentSeed = cacheSeed(STORAGE_KEYS.maps, new Map(), new Map(), mode, [], Array.isArray)
+    const currentSeed = cacheSeed(STORAGE_KEYS.maps, mapsCache, mapsCacheAt, mode, [], Array.isArray)
     setMaps(currentSeed.data)
     setCachedAt(currentSeed.savedAt)
     setLoading(currentSeed.data.length === 0)
+    if (currentSeed.fromMemory && retryToken === 0) return
     const markLive = currentSeed.data.length === 0
       ? seedFromPrebaked('maps', mode, prebaked => {
           if (!active) return
@@ -248,6 +251,8 @@ export function useMaps(gameMode = 'regular') {
       .then(result => {
         markLive()
         if (!active) return
+        mapsCache.set(mode, result.data)
+        mapsCacheAt.set(mode, result.cachedAt)
         setMaps(result.data)
         setCachedAt(result.cachedAt)
         if (result.source === 'graphql') writePersisted(scopedStorageKey(STORAGE_KEYS.maps, mode), result.data)
@@ -260,7 +265,7 @@ export function useMaps(gameMode = 'regular') {
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
-  }, [retryToken, mode]) // eslint-disable-line
+  }, [retryToken, mode])
 
   return { maps, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
 }
@@ -310,7 +315,7 @@ export function useExtracts(mapNorm = null, gameMode = 'regular') {
       .finally(() => { if (active) setLoading(false) })
 
     return () => { active = false; controller.abort() }
-  }, [retryToken, mode]) // eslint-disable-line
+  }, [retryToken, mode])
 
   const current = mapNorm ? extracts.find(map => map.normalizedName === mapNorm)?.extracts || [] : []
   return { extracts: current, loading, error, retry: () => setRetryToken(v => v + 1), cachedAt }
@@ -397,7 +402,7 @@ export function useTasks(mapNorm, gameMode = 'regular') {
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
-  }, [retryToken, mode]) // eslint-disable-line
+  }, [retryToken, mode])
 
   const filtered = mapNorm === null
     ? tasks
@@ -610,7 +615,7 @@ export function useKeys(mapNorm, gameMode = 'regular') {
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false; controller.abort() }
-  }, [retryToken, mode]) // eslint-disable-line
+  }, [retryToken, mode])
 
   const keys = useMemo(() => {
     if (!mapNorm || !allKeys.length) return []

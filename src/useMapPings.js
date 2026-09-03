@@ -347,7 +347,7 @@ export function useMapPings({
         announcementTimerRef.current = null
       }
     }
-  }, [dismissPingAnnouncement, pingAnnouncement?.id, pingAnnouncementPaused])
+  }, [dismissPingAnnouncement, pingAnnouncement, pingAnnouncementPaused])
 
   // The rail is an echo, not a packet inspector: one summary per teammate,
   // newest position wins, while the map still receives every ping for replay.

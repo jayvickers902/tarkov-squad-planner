@@ -14,10 +14,11 @@
 // limit differs by progression mode. It counts what was checked today and does
 // not pretend the app knows which character limit the player is looking at.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 const CHECK_KEY = 'tsp.intel.checked'
 const DAILY_KEY = 'tsp.intel.daily'
+const EMPTY_IDS = {}
 
 function readJson(key, fallback) {
   try {
@@ -59,7 +60,10 @@ export function useIntelChecklist(mapNorm, raidKey) {
     })
   }, [mapNorm, raidKey])
 
-  const ids = (mapNorm && state[mapNorm]?.ids) || {}
+  const ids = useMemo(
+    () => (mapNorm && state[mapNorm]?.ids) || EMPTY_IDS,
+    [mapNorm, state],
+  )
 
   const isChecked = useCallback(id => !!ids[id], [ids])
 

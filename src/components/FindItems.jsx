@@ -3,7 +3,7 @@ import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
 import { memberColor } from '../memberColors'
 import { objectiveIsOnMap } from '../tarkovObjectives'
 
-export default function FindItems({ tasks, memberQuests = [], mapNorm, progress, myName, myUserId, userObjProgress }) {
+export default function FindItems({ tasks, memberQuests = [], mapNorm, progress, myUserId, userObjProgress }) {
   const memberRows = normalizeMembers(memberQuests)
   const members = memberRows.map(member => member.callsign)
   const [activeMember, setActiveMember] = useState('all')
@@ -46,7 +46,7 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
 
       return { member, userId: memberRow.user_id, items: Object.values(itemMap).sort((a, b) => (b.foundInRaid ? 1 : 0) - (a.foundInRaid ? 1 : 0)) }
     })
-  }, [tasks, memberRows, progress, userObjProgress, mapNorm, myUserId]) // eslint-disable-line
+  }, [tasks, memberRows, progress, userObjProgress, mapNorm, myUserId])
 
   // Build a cross-party view: group by item, show which members need it
   const sharedItems = useMemo(() => {

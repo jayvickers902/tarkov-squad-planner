@@ -27,6 +27,30 @@ export function EftLogSyncProvider({
   // users must not start task loading or touch the filesystem sync hook.
   const { tasks: allTasks } = useTasks(null, gameMode)
   const controller = useEftLogImport({ allTasks, gameMode, userId, onApply })
+  const {
+    supported: controllerSupported,
+    persistentSupported: controllerPersistentSupported,
+    state: controllerState,
+    preview: controllerPreview,
+    error: controllerError,
+    rememberedFolderName: controllerFolderName,
+    lastSuccessfulCheck: controllerLastSuccessfulCheck,
+    progress: controllerProgress,
+    pendingJob: controllerPendingJob,
+    resumeImport: controllerResumeImport,
+    discardPendingJob: controllerDiscardPendingJob,
+    parseSelectedFiles: controllerParseSelectedFiles,
+    connectRememberedFolder: controllerConnectRememberedFolder,
+    reconnectRememberedFolder: controllerReconnectRememberedFolder,
+    setIncludedVersions: controllerSetIncludedVersions,
+    setProfileSelection: controllerSetProfileSelection,
+    setUnknownModeTarget: controllerSetUnknownModeTarget,
+    setWipeScope: controllerSetWipeScope,
+    confirmImport: controllerConfirmImport,
+    forgetFolder: controllerForgetFolder,
+    reset: controllerReset,
+    checkNow: controllerCheckNow,
+  } = controller
   const repairedScopesRef = useRef(new Set())
   const checkedPartyRef = useRef(null)
 
@@ -48,14 +72,14 @@ export function EftLogSyncProvider({
       checkedPartyRef.current = null
       return
     }
-    if (controller.state !== 'watching' || !controller.rememberedFolderName || typeof controller.checkNow !== 'function') return
+    if (controllerState !== 'watching' || !controllerFolderName || typeof controllerCheckNow !== 'function') return
     const key = `${userId}:${gameMode}:${questPartyId}`
     if (checkedPartyRef.current === key) return
     checkedPartyRef.current = key
-    Promise.resolve(controller.checkNow()).catch(error => {
+    Promise.resolve(controllerCheckNow()).catch(error => {
       console.warn('Party entry EFT log check failed', error)
     })
-  }, [controller.state, controller.rememberedFolderName, controller.checkNow, gameMode, questPartyId, userId])
+  }, [controllerState, controllerFolderName, controllerCheckNow, gameMode, questPartyId, userId])
   const screenshotController = useEftScreenshotController({
     userId,
     myName,
@@ -63,51 +87,118 @@ export function EftLogSyncProvider({
     mapNorm,
     partyId,
   })
-  const screenshotValue = useMemo(() => screenshotController, [
-    screenshotController.supported,
-    screenshotController.persistentSupported,
-    screenshotController.readyForPings,
-    screenshotController.state,
-    screenshotController.error,
-    screenshotController.folderName,
-    screenshotController.rememberedFolderName,
-    screenshotController.lastSuccessfulCheck,
-    screenshotController.lastScreenshot,
-    screenshotController.lastSkipped,
-    screenshotController.pending,
-    screenshotController.lastPing,
-    screenshotController.connect,
-    screenshotController.reconnect,
-    screenshotController.forget,
-    screenshotController.checkNow,
+  const {
+    supported: screenshotSupported,
+    persistentSupported: screenshotPersistentSupported,
+    readyForPings: screenshotReadyForPings,
+    state: screenshotState,
+    error: screenshotError,
+    folderName: screenshotFolderName,
+    rememberedFolderName: screenshotRememberedFolderName,
+    lastSuccessfulCheck: screenshotLastSuccessfulCheck,
+    lastScreenshot: screenshotLastScreenshot,
+    lastSkipped: screenshotLastSkipped,
+    pending: screenshotPending,
+    lastPing: screenshotLastPing,
+    connect: screenshotConnect,
+    reconnect: screenshotReconnect,
+    forget: screenshotForget,
+    checkNow: screenshotCheckNow,
+  } = screenshotController
+  const screenshotValue = useMemo(() => ({
+    supported: screenshotSupported,
+    persistentSupported: screenshotPersistentSupported,
+    readyForPings: screenshotReadyForPings,
+    state: screenshotState,
+    error: screenshotError,
+    folderName: screenshotFolderName,
+    rememberedFolderName: screenshotRememberedFolderName,
+    lastSuccessfulCheck: screenshotLastSuccessfulCheck,
+    lastScreenshot: screenshotLastScreenshot,
+    lastSkipped: screenshotLastSkipped,
+    pending: screenshotPending,
+    lastPing: screenshotLastPing,
+    status: {
+      pending: screenshotPending,
+      lastPing: screenshotLastPing,
+      lastSkipped: screenshotLastSkipped,
+      state: screenshotState,
+      folderName: screenshotFolderName,
+      readyForPings: screenshotReadyForPings,
+    },
+    connect: screenshotConnect,
+    reconnect: screenshotReconnect,
+    forget: screenshotForget,
+    checkNow: screenshotCheckNow,
+  }), [
+    screenshotSupported,
+    screenshotPersistentSupported,
+    screenshotReadyForPings,
+    screenshotState,
+    screenshotError,
+    screenshotFolderName,
+    screenshotRememberedFolderName,
+    screenshotLastSuccessfulCheck,
+    screenshotLastScreenshot,
+    screenshotLastSkipped,
+    screenshotPending,
+    screenshotLastPing,
+    screenshotConnect,
+    screenshotReconnect,
+    screenshotForget,
+    screenshotCheckNow,
   ])
   // useEftLogImport returns a fresh object on each render. Keep the context
   // value stable when only the parent route changed, so hidden Quest Manager
   // consumers do not rerender for unrelated navigation.
-  const value = useMemo(() => ({ ...controller, allTasks }), [
+  const value = useMemo(() => ({
+    supported: controllerSupported,
+    persistentSupported: controllerPersistentSupported,
+    state: controllerState,
+    preview: controllerPreview,
+    error: controllerError,
+    rememberedFolderName: controllerFolderName,
+    lastSuccessfulCheck: controllerLastSuccessfulCheck,
+    progress: controllerProgress,
+    pendingJob: controllerPendingJob,
+    resumeImport: controllerResumeImport,
+    discardPendingJob: controllerDiscardPendingJob,
+    parseSelectedFiles: controllerParseSelectedFiles,
+    connectRememberedFolder: controllerConnectRememberedFolder,
+    reconnectRememberedFolder: controllerReconnectRememberedFolder,
+    setIncludedVersions: controllerSetIncludedVersions,
+    setProfileSelection: controllerSetProfileSelection,
+    setUnknownModeTarget: controllerSetUnknownModeTarget,
+    setWipeScope: controllerSetWipeScope,
+    confirmImport: controllerConfirmImport,
+    forgetFolder: controllerForgetFolder,
+    reset: controllerReset,
+    checkNow: controllerCheckNow,
     allTasks,
-    controller.supported,
-    controller.persistentSupported,
-    controller.state,
-    controller.preview,
-    controller.error,
-    controller.rememberedFolderName,
-    controller.lastSuccessfulCheck,
-    controller.progress,
-    controller.pendingJob,
-    controller.resumeImport,
-    controller.discardPendingJob,
-    controller.parseSelectedFiles,
-    controller.connectRememberedFolder,
-    controller.reconnectRememberedFolder,
-    controller.setIncludedVersions,
-    controller.setProfileSelection,
-    controller.setUnknownModeTarget,
-    controller.setWipeScope,
-    controller.confirmImport,
-    controller.forgetFolder,
-    controller.reset,
-    controller.checkNow,
+  }), [
+    allTasks,
+    controllerSupported,
+    controllerPersistentSupported,
+    controllerState,
+    controllerPreview,
+    controllerError,
+    controllerFolderName,
+    controllerLastSuccessfulCheck,
+    controllerProgress,
+    controllerPendingJob,
+    controllerResumeImport,
+    controllerDiscardPendingJob,
+    controllerParseSelectedFiles,
+    controllerConnectRememberedFolder,
+    controllerReconnectRememberedFolder,
+    controllerSetIncludedVersions,
+    controllerSetProfileSelection,
+    controllerSetUnknownModeTarget,
+    controllerSetWipeScope,
+    controllerConfirmImport,
+    controllerForgetFolder,
+    controllerReset,
+    controllerCheckNow,
   ])
 
   return (

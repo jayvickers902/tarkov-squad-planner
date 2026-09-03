@@ -1,153 +1,104 @@
 # Tarkov Squad Planner
 
-Real-time raid planning tool for Escape from Tarkov squads.
-Built with React + Vite, Supabase (real-time multiplayer), and the tarkov.dev GraphQL API.
+Tarkov Squad Planner is a React application for coordinating Escape from Tarkov squads. It combines party presence and raid planning, quest progress, map intelligence, and an optional Tauri desktop companion that imports local EFT logs.
 
----
+## Repository layout
 
-## Setup: Step by Step
+- `src/` — React/Vite web application
+- `companion/` — React/Vite UI and Rust/Tauri desktop runtime
+- `supabase/` — ordered database change scripts, Edge Functions, and policy probes
+- `scripts/` — data prebaking, migration validation, and scaling analysis
+- `docs/` — current architecture and feature documentation
+- `docs/archive/` — historical handoffs; useful context, but not current authority
 
-### 1. Get the code onto your machine
+Start with [the architecture and ownership guide](docs/architecture-ownership.md). Feature-specific references are in [quest-system.md](docs/quest-system.md), [map-and-raid.md](docs/map-and-raid.md), [eft-log-import.md](docs/eft-log-import.md), and [quest-shareability.md](docs/quest-shareability.md).
 
-Download or unzip this folder somewhere you'll remember, e.g. `C:\Projects\tarkov-squad-planner`.
+## Prerequisites
 
-Open a terminal in that folder:
-- Windows: right-click the folder → "Open in Terminal" (or open PowerShell and `cd` to it)
-- Mac: right-click the folder → "New Terminal at Folder"
+- Node.js 22 or another currently supported Node release
+- npm
+- For desktop work: Rust stable, the Windows MSVC toolchain, and Tauri's platform prerequisites
+- For database work: Supabase CLI and Docker Desktop for local database commands
 
-### 2. Install dependencies
+## Local web development
 
-```bash
-npm install
+1. Install dependencies with `npm ci`.
+2. Copy `.env.example` to `.env.local` and supply the public Supabase project URL and anonymous key.
+3. Run `npm run dev`.
+4. Open the local URL printed by Vite.
+
+The browser receives only the public anonymous Supabase key. Never place service-role keys, database passwords, access tokens, or other privileged credentials in a `VITE_*` variable.
+
+## Desktop companion development
+
+1. Run `npm ci` in `companion/`.
+2. Provide the same public Vite environment variables used by the web application.
+3. Run `npm run dev` for the browser shell or `npm run tauri:dev` for the native application.
+
+The companion currently consumes a small amount of shared web-domain code. See the dependency rules and intended package boundary in [architecture-ownership.md](docs/architecture-ownership.md) before moving shared modules.
+
+## Required checks
+
+Run these before opening a pull request:
+
+```powershell
+npm run validate:migrations
+npm run lint
+npm test
+npm run build
+
+Push-Location companion
+npm run lint
+npm test
+npm run build
+Pop-Location
+
+Push-Location companion/src-tauri
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-targets --all-features
+Pop-Location
 ```
 
-This downloads React, Vite, and the Supabase client into a `node_modules` folder. Takes about 30 seconds.
+Pull requests run the same checks in GitHub Actions. See [CONTRIBUTING.md](CONTRIBUTING.md) for change and review expectations.
 
-### 3. Set up Supabase (free — no credit card needed)
+## Database changes
 
-Supabase is the real-time database that lets your squad share party state across devices.
+Do not paste `supabase-schema.sql` into a live project. It is a historical snapshot and is not the migration source of truth.
 
-**a) Create a project**
-- Go to https://supabase.com and sign in
-- Click "New project"
-- Give it a name (e.g. `tarkov-planner`), pick a region close to you, set a database password (save it somewhere)
-- Wait ~2 minutes for it to provision
+Read [the Supabase database workflow](docs/supabase-database-workflow.md) before changing SQL. In brief:
 
-**b) Create the database table**
-- In your Supabase dashboard, click "SQL Editor" in the left sidebar
-- Click "New query"
-- Open the file `supabase-schema.sql` from this folder, copy the entire contents, paste it in, and click "Run"
-- You should see "Success. No rows returned."
+1. Reconcile against a verified schema dump from the target project.
+2. Add an ordered, forward-only SQL change under `supabase/`.
+3. Update `supabase/migration-order.txt` and the destructive-change allowlist when applicable.
+4. Run `npm run validate:migrations` and the relevant policy probes locally.
+5. Review the generated diff before applying it to any shared environment.
 
-**c) Get your API keys**
-- In Supabase, go to Settings (gear icon) → API
-- You need two values:
-  - **Project URL** — looks like `https://abcdefgh.supabase.co`
-  - **anon public key** — a long string starting with `eyJ...`
+Never run a production push as part of routine local verification.
 
-### 4. Create your .env file
+## Scaling notes
 
-In the project folder, create a file called `.env` (no extension, just `.env`).
-Open it in any text editor and paste:
+Realtime subscriptions are the healthy path for party state. Repair polling is enabled only while a channel is unhealthy, and clients reconcile immediately after reconnection or visibility recovery. Heartbeats remain periodic.
 
-```
-VITE_SUPABASE_URL=https://your-project-id.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key-here
+The current capacity assumptions, bottlenecks, and local model are documented in [scaling-assessment.md](docs/scaling-assessment.md). Re-run the model after changing polling, payload shape, heartbeat cadence, or bundle composition:
+
+```powershell
+node scripts/scaling-model.mjs --dist dist
 ```
 
-Replace the values with your actual URL and key from step 3c.
+## Deployment
 
-**Important:** Never share this file or commit it to Git. It's already in `.gitignore`.
+The web build is a static Vite deployment and requires these environment variables in the hosting platform:
 
-### 5. Run it locally to test
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
-```bash
-npm run dev
-```
+Desktop releases use the workflow under `.github/workflows/`. Release signing and updater credentials belong in the CI secret store, never in the repository.
 
-Open http://localhost:5173 in your browser. You should see the Squad Planner lobby.
-Test it: create a party in one tab, copy the code, open a new tab and join with the same code — you should see each other in real time.
+## Security
 
-### 6. Deploy to Vercel
+- Treat party codes as join secrets, not user authentication.
+- Keep authorization in Postgres RLS policies and security-definer RPCs; UI checks are not security boundaries.
+- Follow [SECURITY.md](SECURITY.md) and report suspected vulnerabilities privately instead of filing a public issue containing exploit details or credentials.
 
-**a) Push to GitHub first**
-Vercel deploys from GitHub. If you don't have Git installed:
-- Download from https://git-scm.com and install it
-- Then in your project terminal:
-
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-```
-
-- Go to https://github.com, create a new repository (call it `tarkov-squad-planner`)
-- GitHub will show you two commands — run the ones under "push an existing repository":
-
-```bash
-git remote add origin https://github.com/YOUR_USERNAME/tarkov-squad-planner.git
-git branch -M main
-git push -u origin main
-```
-
-**b) Deploy on Vercel**
-- Go to https://vercel.com and sign in with your GitHub account
-- Click "Add New → Project"
-- Find and select your `tarkov-squad-planner` repository
-- Click "Import"
-- **Before clicking Deploy**, open "Environment Variables" and add:
-  - `VITE_SUPABASE_URL` → your Supabase project URL
-  - `VITE_SUPABASE_ANON_KEY` → your Supabase anon key
-- Click "Deploy"
-- Wait ~1 minute. Vercel will give you a URL like `tarkov-squad-planner.vercel.app`
-
-**c) Connect your own domain**
-- In Vercel, go to your project → Settings → Domains
-- Click "Add Domain" and type your domain (e.g. `tarkov.yourdomain.com`)
-- Vercel will show you DNS records to add
-- Log into wherever your domain is registered (e.g. Namecheap, GoDaddy, Cloudflare)
-- Add the DNS records Vercel gives you (usually a CNAME record)
-- Wait up to 10 minutes for DNS to propagate — then your site is live at your domain
-
-### 7. Future updates
-
-Any time you change the code, just:
-
-```bash
-git add .
-git commit -m "describe what you changed"
-git push
-```
-
-Vercel automatically redeploys within about 30 seconds.
-
----
-
-## How the app works
-
-- **Party codes** — 6-character codes stored in Supabase. Anyone with the code can join.
-- **Real-time sync** — Supabase broadcasts database changes instantly to all connected players via WebSockets. No polling.
-- **Quest data** — fetched live from https://api.tarkov.dev (community-maintained GraphQL API). Includes all quests, filtered to show only quests for the selected map plus map-agnostic quests.
-- **Map images** — loaded from assets.tarkov.dev. The SVG terrain overlay is shown as fallback if the image fails.
-- **Route optimization** — nearest-first algorithm from the selected spawn point through all active quest objective locations.
-
----
-
-## Project structure
-
-```
-src/
-  App.jsx           — root, wires everything together
-  main.jsx          — React entry point
-  index.css         — global styles
-  supabase.js       — Supabase client
-  useParty.js       — all party state + Supabase real-time logic
-  useTarkov.js      — tarkov.dev API calls (maps + tasks)
-  constants.js      — spawn zones, terrain data, map list
-  components/
-    Lobby.jsx       — create/join party screen
-    Room.jsx        — main party view, map selector, tabs
-    QuestSearch.jsx — autocomplete quest search
-    TodoList.jsx    — merged party objective checklist
-    MapOverlay.jsx  — SVG map with spawn markers + route
-```
+This project is licensed under the terms in [LICENSE](LICENSE).

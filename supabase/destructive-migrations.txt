@@ -1,0 +1,6 @@
+# These files contain data-loss or object-removal statements.  They require a
+# reviewed backup and an explicit local/staging rehearsal before deployment.
+10_02_parties_columns.sql
+10_07_schema_drift.sql
+10_09_drop_quest_scan_log.sql
+10_17_quest_log_sync.sql

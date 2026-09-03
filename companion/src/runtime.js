@@ -9,6 +9,7 @@
 export const DEFAULT_RUNTIME_OPTIONS = Object.freeze({
   eventDebounceMs: 300,
   contextCacheTtlMs: 10_000,
+  fallbackContextCacheTtlMs: 30_000,
   fallbackIntervalMs: 15_000,
   retryBaseMs: 1_000,
   retryMaxMs: 60_000,
@@ -266,6 +267,7 @@ export function createCompanionRuntime({
   scheduler = globalThis,
   eventDebounceMs = DEFAULT_RUNTIME_OPTIONS.eventDebounceMs,
   contextCacheTtlMs = DEFAULT_RUNTIME_OPTIONS.contextCacheTtlMs,
+  fallbackContextCacheTtlMs = DEFAULT_RUNTIME_OPTIONS.fallbackContextCacheTtlMs,
   fallbackIntervalMs = DEFAULT_RUNTIME_OPTIONS.fallbackIntervalMs,
   retryBaseMs = DEFAULT_RUNTIME_OPTIONS.retryBaseMs,
   retryMaxMs = DEFAULT_RUNTIME_OPTIONS.retryMaxMs,
@@ -308,6 +310,10 @@ export function createCompanionRuntime({
   let connectivityCleanup = null
   let visibilityCleanup = null
   let presenceTimer = null
+  let presenceLastSentAt = null
+  let presenceStateKey = ''
+  let presenceRequest = null
+  let presenceQueued = false
   let selectionByMode = Object.create(null)
   let forceNextScan = false
   let lifecycleGeneration = 0
@@ -378,7 +384,38 @@ export function createCompanionRuntime({
   function reportPresence() {
     const report = method(network, 'reportSyncClientStatus', 'reportSyncStatus')
     if (!report || !signedIn || disposed) return
-    Promise.resolve(report.call(network, serviceStatusRows())).catch(() => {})
+    const rows = serviceStatusRows()
+    // last_sync_at changes on every successful run, but service state/config
+    // changes are the freshness boundary consumers actually need immediately.
+    // Keep a 30-second lease for unchanged state and coalesce updates while an
+    // RPC is in flight; this preserves reconnect/setup visibility without
+    // turning every scan status update into a database write.
+    const stateKey = JSON.stringify(rows.map(({ service, configured, state }) => ({ service, configured, state })))
+    const currentTime = now()
+    const stateChanged = stateKey !== presenceStateKey
+    const leaseExpired = presenceLastSentAt === null || currentTime - presenceLastSentAt >= 30_000
+    let previousRows = []
+    try { previousRows = JSON.parse(presenceStateKey) } catch { /* first report */ }
+    const unhealthy = row => row?.state === 'error' || row?.state === 'offline'
+    const completedRun = previousRows.some(row => row?.state === 'syncing')
+      && rows.some(row => row?.state === 'watching')
+    const urgentStateChange = rows.some(unhealthy) || previousRows.some(unhealthy) || completedRun
+    if ((!stateChanged || !urgentStateChange) && !leaseExpired && presenceLastSentAt !== null) return
+    if (presenceRequest) {
+      presenceQueued = true
+      return
+    }
+    presenceStateKey = stateKey
+    presenceLastSentAt = currentTime
+    presenceRequest = Promise.resolve(report.call(network, rows))
+      .catch(() => {})
+      .finally(() => {
+        presenceRequest = null
+        if (presenceQueued) {
+          presenceQueued = false
+          reportPresence()
+        }
+      })
   }
   const setStatus = next => {
     status = safeStatus({ ...status, ...next })
@@ -492,7 +529,8 @@ export function createCompanionRuntime({
     return createdEngine
   }
 
-  async function refreshContext() {
+  async function refreshContext({ allowCached = false } = {}) {
+    if (allowCached && hasFreshContext(fallbackContextCacheTtlMs)) return context
     const provider = contextProvider || firstFunction(
       network.getDesktopSyncContext, network.fetchDesktopSyncContext,
       network.getDesktopContext,
@@ -506,12 +544,12 @@ export function createCompanionRuntime({
     return context
   }
 
-  function hasFreshContext() {
+  function hasFreshContext(ttlMs = contextCacheTtlMs) {
     return Boolean(context) && contextRefreshedAt !== null
-      && now() - contextRefreshedAt <= Math.max(0, Number(contextCacheTtlMs) || DEFAULT_RUNTIME_OPTIONS.contextCacheTtlMs)
+      && now() - contextRefreshedAt <= Math.max(0, Number(ttlMs) || DEFAULT_RUNTIME_OPTIONS.contextCacheTtlMs)
   }
 
-  async function oneRun(generation = lifecycleGeneration) {
+  async function oneRun(generation = lifecycleGeneration, reason = 'event') {
     const active = () => generation === lifecycleGeneration && started && !disposed
     const prereq = prerequisitesStatus()
     // Offline is a valid local-baseline condition. Other missing prerequisites
@@ -530,7 +568,7 @@ export function createCompanionRuntime({
     }
     if (!active()) return false
     setStatus({ state: 'connecting', detail: 'Syncing EFT data', pendingCount: 1, selectionRequired: null, selectionOptions: [] })
-    await refreshContext()
+    await refreshContext({ allowCached: reason === 'fallback' })
     const host = await ensureEngine()
     if (!active()) return false
     const mode = context?.gameMode || gameMode
@@ -645,11 +683,11 @@ export function createCompanionRuntime({
     retryTimer = setTimeoutFn(() => { retryTimer = null; requestSync('retry') }, delay)
   }
 
-  async function executeLoop(generation = lifecycleGeneration) {
+  async function executeLoop(generation = lifecycleGeneration, reason = 'event') {
     try {
       do {
         rerunRequested = false
-        try { await oneRun(generation) } catch (error) {
+        try { await oneRun(generation, reason) } catch (error) {
           if (generation !== lifecycleGeneration || disposed || !started) return getStatus()
           if (!isOnline() || error?.offline === true || error?.code === 'OFFLINE') {
             setStatus({ state: 'offline', detail: 'Offline — waiting for connection', pendingCount: 1 })
@@ -708,7 +746,7 @@ export function createCompanionRuntime({
     if (!ready()) { const prereq = prerequisitesStatus(); if (prereq) setStatus(prereq); return Promise.resolve(getStatus()) }
     if (runPromise) { if (reason !== 'manual' || options.force) rerunRequested = true; return runPromise }
     if (pingRunPromise) { fullRequestedWhilePing = true; return pingRunPromise }
-    runPromise = executeLoop()
+    runPromise = executeLoop(lifecycleGeneration, reason)
     return runPromise
   }
 

@@ -120,8 +120,30 @@ export function useRaidSession(party, userId, { onError } = {}) {
     }
 
     let cancelled = false
+    let refreshInFlight = false
+    let refreshQueued = false
     const load = () => {
-      if (!cancelled) void refresh()
+      if (cancelled) return
+      // Realtime can deliver a row event for each member of a burst. Keep one
+      // repair fetch in flight and coalesce the burst into one trailing fetch;
+      // the session response still comes from the database and therefore
+      // remains authoritative without multiplying reads during reconnects.
+      if (refreshInFlight) {
+        refreshQueued = true
+        return
+      }
+      refreshInFlight = true
+      void refresh().finally(() => {
+        refreshInFlight = false
+        if (cancelled) {
+          refreshQueued = false
+          return
+        }
+        if (refreshQueued) {
+          refreshQueued = false
+          load()
+        }
+      })
     }
     load()
 
