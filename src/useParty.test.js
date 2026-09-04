@@ -16,7 +16,13 @@ vi.mock('./supabase', () => ({ supabase: {
   removeChannel: db.removeChannel,
 } }))
 
-import { settleOptimisticPing, derivePartyQuestRow, autoRejoinQuestPayload, useParty } from './useParty'
+import {
+  settleOptimisticPing,
+  derivePartyQuestRow,
+  autoRejoinQuestPayload,
+  pingEventMatchesParty,
+  useParty,
+} from './useParty'
 
 function makeQuery(result) {
   const query = {
@@ -139,6 +145,16 @@ describe('settleOptimisticPing', () => {
 
   it('does not resurrect a ping cleared while its write was in flight', () => {
     expect(settleOptimisticPing([], { id: 'shot-1', at: 1001 }, 1001, 10_000)).toBeNull()
+  })
+})
+
+describe('pingEventMatchesParty', () => {
+  const party = { id: 41, raid_id: 7, map_norm: 'woods' }
+
+  it('accepts only events for both the current raid and current map', () => {
+    expect(pingEventMatchesParty({ raid_id: 7, map_norm: 'woods' }, party)).toBe(true)
+    expect(pingEventMatchesParty({ raid_id: 7, map_norm: 'customs' }, party)).toBe(false)
+    expect(pingEventMatchesParty({ raid_id: 6, map_norm: 'woods' }, party)).toBe(false)
   })
 })
 

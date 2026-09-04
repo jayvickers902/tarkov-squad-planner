@@ -38,3 +38,5 @@
 10_34_profiles_write_scope.sql
 10_35_revoke_truncate_trigger.sql
 10_36_restore_collab_payload_bounds.sql
+10_37_map_change_ping_isolation.sql
+10_38_validate_collab_payload_bounds.sql

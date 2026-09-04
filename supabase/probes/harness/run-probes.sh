@@ -19,6 +19,7 @@ for p in party_members_rls_probe \
          sl2_baseline_rls_probe \
          sync_client_status_rls_probe \
          party_rpc_rls_probe \
+         party_ping_map_change_probe \
          profiles_column_scope_probe; do
   echo "########## $p"
   out="$("$PSQL" -d "$DB" -f "$PROBES/$p.sql" 2>&1)"

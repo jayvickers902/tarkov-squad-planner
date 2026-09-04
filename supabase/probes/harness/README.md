@@ -26,11 +26,17 @@ SCRATCH=/c/Users/jayvi/AppData/Local/Temp/tsp-harness   # any throwaway path
 ./supabase/probes/harness/capture-live-catalog.sh "$SCRATCH/capture"
 ./supabase/probes/harness/rebuild.sh "$SCRATCH/capture"
 
-# 3. Baseline, then apply a migration, then compare.
+# 3. Baseline, then apply migrations, then compare.
 ./supabase/probes/harness/run-probes.sh
 "/c/Program Files/PostgreSQL/16/bin/psql.exe" \
   -d "postgresql://postgres@127.0.0.1:55432/postgres" \
   -v ON_ERROR_STOP=1 -f supabase/10_33_restore_progress_scope.sql
+"/c/Program Files/PostgreSQL/16/bin/psql.exe" \
+  -d "postgresql://postgres@127.0.0.1:55432/postgres" \
+  -v ON_ERROR_STOP=1 -f supabase/10_36_restore_collab_payload_bounds.sql
+"/c/Program Files/PostgreSQL/16/bin/psql.exe" \
+  -d "postgresql://postgres@127.0.0.1:55432/postgres" \
+  -v ON_ERROR_STOP=1 -f supabase/10_37_map_change_ping_isolation.sql
 ./supabase/probes/harness/run-probes.sh
 ```
 
@@ -77,6 +83,7 @@ gives the right-hand column:
 | `sl2_baseline_rls_probe` | 12 PASS / 1 FAIL | 12 PASS / 1 FAIL |
 | `sync_client_status_rls_probe` | 20 PASS / 0 FAIL | 20 PASS / 0 FAIL |
 | `party_rpc_rls_probe` | 14 PASS / 5 FAIL (3, 14, 16, 17, 18) | **19 PASS / 0 FAIL** |
+| `party_ping_map_change_probe` | 3 PASS / 3 FAIL (4, 5, 6) | **6 PASS / 0 FAIL after `10_37`** |
 | `profiles_column_scope_probe` | 11 PASS / 4 FAIL (4, 5, 9, 14) | **15 PASS / 0 FAIL** |
 
 `sl2` check 13 is the known FORCE-RLS finding. It is unrelated to any of these
@@ -84,10 +91,15 @@ migrations and stays failing by design.
 
 `10_36_restore_collab_payload_bounds.sql` is written but **not applied to
 production** -- it waits on the client deploy carrying `src/strokeBounds.js`.
-Applying it to the harness changes no probe verdict; the probes do not cover
-drawing or marker geometry. Prove that one with
+Applying it to the harness changes no pre-existing probe verdict; the probes
+do not cover drawing or marker geometry. Prove that one with
 `check-live-invariants.sh` and the behavioural checks described in
 [HANDOFF-rls-probes.md](../../../HANDOFF-rls-probes.md).
+
+`party_ping_map_change_probe` is the exception because it covers the separate
+`10_37` behavior change. Against a fresh live capture it reproduces all three
+failures. Apply `10_36` first because `10_37` preserves that migration's
+`select_map_party` bounds, then apply `10_37`; all six checks pass.
 
 ## Fidelity checks
 

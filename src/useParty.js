@@ -70,6 +70,12 @@ export function partySignature(data) {
   ].join('|')
 }
 
+export function pingEventMatchesParty(event, party) {
+  if (!event || !party) return false
+  return Number(event.raid_id) === Number(party.raid_id ?? 0)
+    && event.map_norm === party.map_norm
+}
+
 function sameMemberExceptLastSeen(cached, incoming) {
   if (!cached || !incoming) return false
   return cached.callsign === incoming.callsign
@@ -114,14 +120,18 @@ async function fetchPartyById(partyId) {
   // Position events are the source of truth for the current raid. Keep this
   // read best-effort so a transient event-query failure does not hide the room.
   try {
-    const { data: eventRows, error: eventError } = await supabase
+    let eventQuery = supabase
       .from('party_ping_events')
       .select('id, party_id, raid_id, user_id, callsign, source_event_id, map_norm, x, y, z, yaw, taps, client_at, server_at')
       .eq('party_id', party.id)
       .eq('raid_id', party.raid_id ?? 0)
-      .order('server_at', { ascending: true })
+    if (party.map_norm) eventQuery = eventQuery.eq('map_norm', party.map_norm)
+    const { data: eventRows, error: eventError } = await eventQuery.order('server_at', { ascending: true })
     if (!eventError && Array.isArray(eventRows)) {
-      const events = eventRows.map(pingFromEvent).filter(Boolean)
+      const events = eventRows
+        .filter(event => pingEventMatchesParty(event, party))
+        .map(pingFromEvent)
+        .filter(Boolean)
       const byId = new Map()
       ;[...(party.pings || []), ...events].forEach(ping => {
         if (ping?.id && !byId.has(ping.id)) byId.set(ping.id, ping)
@@ -450,7 +460,7 @@ export function useParty(userId, userSettings = {}, {
     const receivePingEvent = payload => {
       const event = payload?.new
       const current = partyRef.current
-      if (!event || !current || Number(event.raid_id) !== Number(current.raid_id ?? 0)) return
+      if (!pingEventMatchesParty(event, current)) return
       const ping = pingFromEvent(event)
       if (!ping) return
       const ttl = Number(resolveSetting('ping_ttl_ms', {

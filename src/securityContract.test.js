@@ -14,6 +14,8 @@ const progressScopeMigration = readFileSync(join(root, 'supabase', '10_33_restor
 const profileWriteScopeMigration = readFileSync(join(root, 'supabase', '10_34_profiles_write_scope.sql'), 'utf8')
 const truncateSweepMigration = readFileSync(join(root, 'supabase', '10_35_revoke_truncate_trigger.sql'), 'utf8')
 const collabBoundsMigration = readFileSync(join(root, 'supabase', '10_36_restore_collab_payload_bounds.sql'), 'utf8')
+const pingMapIsolationMigration = readFileSync(join(root, 'supabase', '10_37_map_change_ping_isolation.sql'), 'utf8')
+const collabValidationMigration = readFileSync(join(root, 'supabase', '10_38_validate_collab_payload_bounds.sql'), 'utf8')
 const css = readFileSync(join(root, 'src', 'index.css'), 'utf8')
 
 // These assertions read migration files off disk. A green result proves the
@@ -112,6 +114,11 @@ describe('security-sensitive contracts', () => {
     expect(partyClient).toContain('normalizeMarkerPoint')
   })
 
+  it('keeps legacy-row validation as an explicit follow-up migration', () => {
+    expect(collabValidationMigration).toContain('validate constraint party_members_quest_payload_bounds')
+    expect(collabValidationMigration).toContain('validate constraint party_collaboration_payload_bounds')
+  })
+
   // A stroke of 2000 five-decimal points serializes past the server's 32768-byte
   // payload cap, so the client point cap has to be the binding one.
   it('keeps the client stroke cap under the server byte cap', () => {
@@ -120,11 +127,19 @@ describe('security-sensitive contracts', () => {
     expect(MAX_STROKE_POINTS).toBeLessThanOrEqual(2000)
   })
 
+  it('keeps position pings scoped to the current map across server and client', () => {
+    expect(pingMapIsolationMigration).toContain('delete from public.party_ping_events where party_id = v_party.id')
+    expect(pingMapIsolationMigration).toContain('for update of p')
+    expect(pingMapIsolationMigration).toContain("v_ping_map is distinct from v_map_norm")
+    expect(partyClient).toContain("eventQuery.eq('map_norm', party.map_norm)")
+    expect(partyClient).toContain('pingEventMatchesParty(event, current)')
+  })
+
   // A map the picker offers but the RPC refuses reads as a broken app, not as an
   // unsupported map. Icebreaker and Labyrinth sat on the wrong side of this for
   // two releases because nothing compared the two lists.
   it('offers exactly the maps the server will accept', () => {
-    const allowlists = [migration, raidSessionMigration, collabBoundsMigration]
+    const allowlists = [migration, raidSessionMigration, collabBoundsMigration, pingMapIsolationMigration]
       .flatMap(source => [...source.matchAll(/not in \(([^)]*'the-lab'[^)]*)\)/g)])
       .map(match => [...match[1].matchAll(/'([a-z0-9-]+)'/g)].map(entry => entry[1]))
 

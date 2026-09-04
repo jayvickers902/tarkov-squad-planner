@@ -75,7 +75,7 @@ but they do not exercise PostgreSQL policies. Probes under
 authenticated users, checks isolation and write denial, then rolls everything
 back.
 
-There are five:
+There are six:
 
 | Probe | Covers |
 |---|---|
@@ -84,6 +84,7 @@ There are five:
 | `sync_client_status_rls_probe.sql` | The companion status and bootstrap RPCs |
 | `party_rpc_rls_probe.sql` | `create_party`, `join_party_secure`, `merge_progress` |
 | `profiles_column_scope_probe.sql` | Profile column scope and `is_admin` self-grant |
+| `party_ping_map_change_probe.sql` | Position-ping cleanup and in-flight old-map rejection across map changes |
 
 Each ends in a single verdict table; read the `verdict` column. `PASS`/`FAIL`
 are assertions, `INFO` rows report fixtures and ownership. Two probes carry a
