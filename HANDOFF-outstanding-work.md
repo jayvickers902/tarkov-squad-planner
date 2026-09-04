@@ -211,12 +211,33 @@ Thirteen invariants, read-only, exit 0 when they all hold. **Run it after any de
 SQL**, and before trusting a green `securityContract.test.js` — that test reads migration files, and
 it was green for the entire time invariant 2 was unenforced in production.
 
-### 3.6 The `loot` chunk is past its bundle warn line
+### 3.6 The `loot` chunk is past its bundle warn line — completed
 
-`npm run check:bundle` reports largest async raw at **843.5 KiB** against an 830.1 KiB warn and an
-878.9 KiB fail — about 4% of headroom. Warnings do not fail CI, so this is not blocking yet, but the
-next data refresh could take it over. `loot-*.js` is the driver; splitting it or trimming the
-prebaked payload buys the headroom back.
+`check:bundle` now passes on every metric. Largest async raw went from **843.5 KiB (WARN)** to
+**779.3 KiB (PASS)** against the unchanged 830.1 KiB warn line, and `loot` is no longer the driver
+of anything — `tasks-*.js` is.
+
+Two changes, both in the prebaked payload rather than in bundler config:
+
+- **One loot file per map.** `src/data/prebaked/loot.json` became
+  `src/data/prebaked/loot/<map>.json`, ten files on the `FEATURED` allowlist, loaded through a new
+  `loadPrebakedLoot(mapNorm)`. The app only ever renders the loot for the map in view, so nine of
+  the ten are never fetched. Worst case is `streets-of-tarkov` at **128.4 KiB**.
+- **Item ids in points, one dictionary per map.** `points[].items` held the full item object —
+  id, name and rouble value — repeated across 7,859 references drawn from 66 distinct items. They
+  are ids now, resolved against the per-map `items` array that already existed. Verified lossless:
+  all 7,859 references resolve with matching name and value. This is most of the 958 KiB → 557 KiB
+  drop in raw JSON.
+
+`scripts/prebake.mjs` emits the new shape, so the Vercel deploy-time refresh stays consistent.
+`MapLeaflet` resolves ids for its tooltip; `lootPointsFor` already accepted string ids.
+
+**The new ceiling is `tasks-*.js` at 779.3 KiB — 6.1% under the warn line.** 577 KiB of its 874 KiB
+of JSON is the `objectives` array. It is passing and out of scope here, but it is the next thing to
+cross the line, and unlike loot it has no per-map axis to split on: trimming it means deciding which
+objective fields the app actually reads.
+
+Cost: about an hour. Root suite stayed 86 files / 708 tests.
 
 ### 3.7 Optional gate widening, now cheap
 

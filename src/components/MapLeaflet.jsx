@@ -1272,10 +1272,20 @@ export default function MapLeaflet({
     })
   }, [showHazards, hazards, mapNorm])
 
+  // Points carry item ids only; `lootItems` is the per-map dictionary that
+  // resolves them. See src/data/prebaked/index.js for why the payload is shaped
+  // that way.
+  const lootItemsById = useMemo(
+    () => new Map(lootItems.map(item => [item.id, item])),
+    [lootItems],
+  )
+
   useMapLayer(mapRef, () => {
     if (!showLoot) return []
     return selectedLootPoints.filter(point => point?.position).map(point => {
-      const matchedItems = Array.isArray(point.items) ? point.items : []
+      const matchedItems = (Array.isArray(point.items) ? point.items : [])
+        .map(item => (typeof item === 'string' ? lootItemsById.get(item) : item))
+        .filter(Boolean)
       const dedicated = point.dedicated ?? Number(point.pool) <= 3
       const poolSize = Number.isFinite(Number(point.pool)) ? Number(point.pool) : matchedItems.length
       const tooltip = makeZoneTooltip(dedicated ? 'DEDICATED LOOT SPAWN' : 'POOLED LOOT SPAWN', dedicated ? '#c9a84c' : '#c45de8', [
@@ -1292,7 +1302,7 @@ export default function MapLeaflet({
       bindTacticalTooltip(marker, tooltip)
       return marker
     })
-  }, [showLoot, selectedLootPoints, mapNorm])
+  }, [showLoot, selectedLootPoints, lootItemsById, mapNorm])
 
   // ─── Sync PMC spawn markers ───────────────────────────────────────────────
   useMapLayer(mapRef, () => {

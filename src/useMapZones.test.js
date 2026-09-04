@@ -2,23 +2,24 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useMapZones } from './useMapZones'
 
-const { loadPrebaked, getRestZones } = vi.hoisted(() => ({
+const { loadPrebaked, loadPrebakedLoot, getRestZones } = vi.hoisted(() => ({
   loadPrebaked: vi.fn(),
+  loadPrebakedLoot: vi.fn(),
   getRestZones: vi.fn(),
 }))
 
-vi.mock('./data/prebaked', () => ({ loadPrebaked }))
+vi.mock('./data/prebaked', () => ({ loadPrebaked, loadPrebakedLoot }))
 vi.mock('./tarkovRest', () => ({ getRestZones }))
 
 describe('useMapZones', () => {
   beforeEach(() => {
     loadPrebaked.mockReset()
+    loadPrebakedLoot.mockReset()
     getRestZones.mockReset()
-    loadPrebaked.mockImplementation(name => Promise.resolve({
-      data: name === 'loot'
-        ? [{ normalizedName: 'customs', points: [{ id: 'loot-1' }], items: [] }]
-        : [],
-    }))
+    loadPrebaked.mockResolvedValue({ data: [] })
+    loadPrebakedLoot.mockResolvedValue({
+      normalizedName: 'customs', points: [{ id: 'loot-1' }], items: [],
+    })
     getRestZones.mockResolvedValue({ data: [] })
   })
 
@@ -30,12 +31,12 @@ describe('useMapZones', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(loadPrebaked).toHaveBeenCalledWith('zones')
-    expect(loadPrebaked).not.toHaveBeenCalledWith('loot')
+    expect(loadPrebakedLoot).not.toHaveBeenCalled()
     expect(result.current.lootLoaded).toBe(false)
 
     await act(async () => { rerender({ includeLoot: true }) })
     await waitFor(() => expect(result.current.lootLoaded).toBe(true))
-    expect(loadPrebaked).toHaveBeenCalledWith('loot')
+    expect(loadPrebakedLoot).toHaveBeenCalledWith('customs')
     expect(result.current.lootPoints).toEqual([{ id: 'loot-1' }])
 
     rerender({ includeLoot: false })

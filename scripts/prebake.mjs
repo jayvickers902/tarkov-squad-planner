@@ -177,17 +177,40 @@ async function main() {
     await keepExisting('zones.json', 'map bundle unavailable')
   }
 
-  // loot.json — high-value loose-loot index; the full item pool stays out.
+  // loot/<map>.json — high-value loose-loot index; the full item pool stays out.
+  //
+  // One file per map, not one file for all ten. The app only ever renders the
+  // loot for the map it is on, and as a single chunk this dataset was the
+  // largest async asset in the build (843.5 KiB raw, past its budget warn
+  // line). Split, the biggest map is well under a sixth of that.
+  //
+  // Within a file, `points[].items` holds item *ids* only; `items` is the
+  // per-map dictionary that resolves them to name and value. The ids repeated
+  // across ~8k point references with their full name and rouble value were
+  // most of the weight, and the dictionary is lossless — every reference
+  // resolves.
+  await mkdir(join(OUT_DIR, 'loot'), { recursive: true })
   const loot = bundle && itemIndex
     ? adaptLoot(raw.maps, raw.items, raw.items_en, itemIndex)
       .filter(map => FEATURED.includes(map.normalizedName))
     : null
   if (loot) {
-    const pointCount = loot.reduce((total, map) => total + map.points.length, 0)
-    const itemCount = new Set(loot.flatMap(map => map.items.map(item => item.id))).size
-    await emit('loot.json', loot, { maps: loot.length, points: pointCount, items: itemCount })
+    for (const map of loot) {
+      const record = {
+        normalizedName: map.normalizedName,
+        items: map.items,
+        points: map.points.map(point => ({ ...point, items: point.items.map(item => item.id) })),
+      }
+      await emit(
+        join('loot', `${map.normalizedName}.json`),
+        record,
+        { points: record.points.length, items: record.items.length },
+      )
+    }
   } else {
-    await keepExisting('loot.json', 'map or item data unavailable')
+    for (const name of FEATURED) {
+      await keepExisting(join('loot', `${name}.json`), 'map or item data unavailable')
+    }
   }
 
   // bosses.json — resolved boss data, with item joins when the item payload exists.

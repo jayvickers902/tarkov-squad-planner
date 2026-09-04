@@ -17,9 +17,27 @@ const LOADERS = {
   spawns: () => import('./spawns.json'),
   extracts: () => import('./extracts.json'),
   zones: () => import('./zones.json'),
-  loot: () => import('./loot.json'),
   intel: () => import('./intel.json'),
   battlepassIntel: () => import('./battlepass-intel.json'),
+}
+
+// Loose loot is keyed by map rather than bundled, because only the map the
+// player is on is ever rendered. As one file it was the largest async chunk in
+// the build and past its budget warn line; per map, the biggest is a fraction
+// of that and the other nine are never fetched. Keys are the FEATURED
+// allowlist — written out rather than imported from constants.js so this module
+// stays free of app imports. See scripts/prebake.mjs for the file shape.
+const LOOT_LOADERS = {
+  customs: () => import('./loot/customs.json'),
+  woods: () => import('./loot/woods.json'),
+  interchange: () => import('./loot/interchange.json'),
+  shoreline: () => import('./loot/shoreline.json'),
+  factory: () => import('./loot/factory.json'),
+  lighthouse: () => import('./loot/lighthouse.json'),
+  'streets-of-tarkov': () => import('./loot/streets-of-tarkov.json'),
+  reserve: () => import('./loot/reserve.json'),
+  'ground-zero': () => import('./loot/ground-zero.json'),
+  'the-lab': () => import('./loot/the-lab.json'),
 }
 
 const cache = new Map()
@@ -41,4 +59,25 @@ export function loadPrebaked(name) {
     cache.set(name, promise)
   }
   return cache.get(name)
+}
+
+// Resolves to the one map's loot record — { normalizedName, items, points } —
+// or null when the map is not in the allowlist or its file is missing. Never
+// rejects. `points[].items` are item ids; resolve them against `items`.
+export function loadPrebakedLoot(mapNorm) {
+  const key = `loot:${mapNorm}`
+  if (!cache.has(key)) {
+    const loader = LOOT_LOADERS[mapNorm]
+    const promise = !loader
+      ? Promise.resolve(null)
+      : loader().then(module => {
+          const payload = module?.default ?? module
+          return payload?.data ?? null
+        }).catch(error => {
+          console.warn(`prebaked loot ${mapNorm} unavailable`, error)
+          return null
+        })
+    cache.set(key, promise)
+  }
+  return cache.get(key)
 }

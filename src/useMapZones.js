@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { loadPrebaked } from './data/prebaked'
+import { loadPrebaked, loadPrebakedLoot } from './data/prebaked'
 import { getRestZones } from './tarkovRest'
 
 const EMPTY_ZONES = []
-const EMPTY_LOOT = []
+const EMPTY_LOOT = null
 
 function mapRecord(data, mapNorm) {
   if (!Array.isArray(data) || !mapNorm) return null
@@ -67,9 +67,10 @@ export function useMapZones(mapNorm, { includeLoot = false } = {}) {
 
     const controller = new AbortController()
     setLootLoading(true)
-    loadPrebaked('loot').then(prebaked => {
+    // Loot is per map: one chunk per map, fetched only for the map in view.
+    loadPrebakedLoot(mapNorm).then(record => {
       if (controller.signal.aborted) return
-      setLootData(Array.isArray(prebaked?.data) ? prebaked.data : EMPTY_LOOT)
+      setLootData(record || EMPTY_LOOT)
       setLootLoaded(true)
     }).finally(() => {
       if (!controller.signal.aborted) setLootLoading(false)
@@ -80,7 +81,7 @@ export function useMapZones(mapNorm, { includeLoot = false } = {}) {
 
   return useMemo(() => {
     const zones = mapRecord(zoneData, mapNorm)
-    const loot = mapRecord(lootData, mapNorm)
+    const loot = lootData?.normalizedName === mapNorm ? lootData : null
     return {
       extracts: zones?.extracts || [],
       transits: zones?.transits || [],
