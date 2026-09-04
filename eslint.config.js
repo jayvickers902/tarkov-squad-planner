@@ -34,16 +34,17 @@ export default [
       'react-hooks': reactHooks,
     },
     rules: {
-      // Keep the existing application lintable while the warning backlog is
-      // reduced. New correctness rules remain errors; these legacy hygiene
-      // diagnostics are visible and can be ratcheted to errors incrementally.
-      'no-unused-vars': 'warn',
-      'no-empty': 'warn',
-      'no-control-regex': 'warn',
-      'no-useless-escape': 'warn',
-      'require-yield': 'warn',
+      // The warning backlog these were softened for is gone: `eslint .
+      // --max-warnings 0` exits 0 across the tree. They are errors now so a
+      // regression fails the gate instead of accumulating quietly. If one
+      // fires, fix the code rather than re-softening the rule.
+      'no-unused-vars': 'error',
+      'no-empty': 'error',
+      'no-control-regex': 'error',
+      'no-useless-escape': 'error',
+      'require-yield': 'error',
       'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
+      'react-hooks/exhaustive-deps': 'error',
     },
   },
   {

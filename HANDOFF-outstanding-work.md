@@ -222,10 +222,11 @@ prebaked payload buys the headroom back.
 
 - `tsconfig.typecheck.json` includes **2 files**. Adding files to that `include` list is the whole
   mechanism for widening type coverage; do it in small batches and fix what surfaces.
-- `eslint.config.js` still sets `no-unused-vars`, `no-empty`, `no-control-regex`, `no-useless-escape`,
-  `require-yield`, and `react-hooks/exhaustive-deps` to `warn` on the assumption of a backlog. The
-  backlog is gone — `npx eslint . --max-warnings 0` exits 0 — so ratcheting them to `error` is a
-  no-op today and prevents regression tomorrow.
+- **ESLint ratchet — completed.** `no-unused-vars`, `no-empty`, `no-control-regex`,
+  `no-useless-escape`, `require-yield` and `react-hooks/exhaustive-deps` are `error` in
+  `eslint.config.js`. `npx eslint . --max-warnings 0` exited 0 before and after, so nothing had to
+  be fixed: the change is a regression guard, not a cleanup. Cost: one config edit. If one of these
+  fires in future, fix the code rather than re-softening the rule.
 - Playwright covers the signed-out shell only (2 tests). Party, map, quest, and import flows have no
   end-to-end coverage.
 
