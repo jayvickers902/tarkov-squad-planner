@@ -40,3 +40,16 @@ test('keeps the auth shell usable at a narrow responsive viewport', async ({ pag
   }))
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth)
 })
+
+test('keeps the changelog usable at a narrow responsive viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/changelog')
+
+  await expect(page.getByRole('heading', { name: 'CHANGELOG' })).toBeVisible()
+
+  const dimensions = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }))
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth)
+})

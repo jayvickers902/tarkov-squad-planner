@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.16'
+export const RELEASE_VERSION = '2026.17'
 
 export const SETUP_STEPS = [
   {
@@ -28,6 +28,18 @@ export const FIRST_LIVE_NOTES_VERSION = '2026.09'
 // Newest first — WelcomeModal shows RELEASES[0] and nothing else, so a new
 // release goes on top of this array and RELEASE_VERSION moves with it.
 export const RELEASES = [
+  {
+    version: '2026.17',
+    date: '2026-09-04',
+    title: 'NO MORE SIDEWAYS SCROLLING',
+    items: [
+      {
+        tag: 'FIXED',
+        title: 'RELEASE HISTORY FITS THE SCREEN',
+        body: 'On a narrow phone the release history header could push the whole page wider than the screen, forcing a sideways scroll just to read a release. The header now wraps like the rest of the page.',
+      },
+    ],
+  },
   {
     version: '2026.16',
     date: '2026-09-02',
