@@ -106,11 +106,37 @@ async function fetchPartyByIdSafe(partyId) {
   }
 }
 
+// Every column the client actually consumes, and no more. This read is the
+// repair poll (~15s while Realtime is unhealthy), the reconnect repair, and the
+// visibility-return refresh, so a bare select() multiplies the largest jsonb
+// columns -- progress, drawings, markers, ping_log, settings -- across every
+// degraded client. The lists below are derived, not guessed:
+//
+//   parties      -- normalizeParty spreads the row wholesale, so the list comes
+//                   from the consumers instead: partySignature (raid_id,
+//                   map_norm, spawn, drawings, markers, pings, ping_log,
+//                   progress, starred), useParty itself (id, code, leader_id,
+//                   settings, quest_order, map_id, map_name), resolvePartyMode
+//                   (game_mode) and useRaidSession (active_session_id).
+//                   Deliberately omitted: created_at and unit_id have no reader
+//                   anywhere in the tree, and last_active_at is stripped by
+//                   comparableParty before it can be compared.
+//   party_members-- normalizeMember keeps exactly seven fields and discards the
+//                   rest, so selecting more is pure waste. party_id is already
+//                   known from the filter.
+//
+// Omitting a consumed column does not throw -- it arrives as undefined and
+// surfaces later as lost party state (MapLeaflet reads party.ping_log raw:
+// undefined there means "column missing" and renders REPLAY UNAVAILABLE). Check
+// the live catalog, not the migration files, before editing either list.
+const PARTY_COLUMNS = 'id, code, map_id, map_name, map_norm, spawn, progress, starred, drawings, markers, pings, ping_log, leader_id, raid_id, settings, quest_order, game_mode, active_session_id'
+const PARTY_MEMBER_COLUMNS = 'user_id, callsign, role, quests, quests_all, joined_at, last_seen'
+
 async function fetchPartyById(partyId) {
   if (!partyId) return null
   const [partyResult, membersResult] = await Promise.all([
-    supabase.from('parties').select().eq('id', partyId).maybeSingle(),
-    supabase.from('party_members').select().eq('party_id', partyId).order('joined_at', { ascending: true }),
+    supabase.from('parties').select(PARTY_COLUMNS).eq('id', partyId).maybeSingle(),
+    supabase.from('party_members').select(PARTY_MEMBER_COLUMNS).eq('party_id', partyId).order('joined_at', { ascending: true }),
   ])
   if (partyResult.error) throw partyResult.error
   if (membersResult.error) throw membersResult.error
