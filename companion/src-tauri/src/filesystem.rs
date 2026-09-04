@@ -235,13 +235,38 @@ pub fn enumerate_logs(root: impl AsRef<Path>) -> Result<ScanResult, NativeError>
     }
     let mut kept = Vec::new();
     let mut total_bytes = 0;
-    for (_session, session_files) in sessions.into_iter().rev() {
+    for (_session, mut session_files) in sessions.into_iter().rev() {
         let session_bytes: u64 = session_files.iter().map(|file| file.size).sum();
-        if session_bytes > MAX_LOG_SCAN_BYTES.saturating_sub(total_bytes) {
+        let remaining = MAX_LOG_SCAN_BYTES.saturating_sub(total_bytes);
+        if session_bytes <= remaining {
+            total_bytes += session_bytes;
+            kept.extend(session_files);
             continue;
         }
-        total_bytes += session_bytes;
-        kept.extend(session_files);
+        if session_bytes <= MAX_LOG_SCAN_BYTES {
+            continue;
+        }
+
+        // A single session can exceed the whole scan cap when EFT rotates many
+        // component logs. Keeping none of it and filling the budget with older
+        // sessions reverses the newest-first contract. This is the one case
+        // where a partial session is preferable: retain its newest individual
+        // files until the remaining budget is exhausted.
+        session_files.sort_by(|left, right| {
+            right
+                .last_modified
+                .cmp(&left.last_modified)
+                .then_with(|| right.path.cmp(&left.path))
+        });
+        for file in session_files {
+            if file.size <= MAX_LOG_SCAN_BYTES.saturating_sub(total_bytes) {
+                total_bytes += file.size;
+                kept.push(file);
+            }
+            if total_bytes == MAX_LOG_SCAN_BYTES {
+                break;
+            }
+        }
     }
     kept.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(ScanResult {
@@ -511,6 +536,31 @@ mod tests {
             .files
             .iter()
             .any(|file| file.path.starts_with(sessions[2])));
+    }
+
+    #[test]
+    fn enumeration_keeps_newest_files_when_one_session_exceeds_the_scan_cap() {
+        let directory = tempfile::tempdir().unwrap();
+        let older = "log_2026.08.29_12-32-39_1.1.0.1.46911";
+        let newest = "log_2026.08.30_12-32-39_1.1.0.1.46911";
+        for (session, count, bytes) in [
+            (older, 4, 25 * 1024 * 1024),
+            (newest, 9, MAX_LOG_FILE_BYTES),
+        ] {
+            let path = directory.path().join(session);
+            std::fs::create_dir(&path).unwrap();
+            for index in 0..count {
+                let file =
+                    std::fs::File::create(path.join(format!("notifications_{index}.log"))).unwrap();
+                file.set_len(bytes).unwrap();
+            }
+        }
+
+        let scan = enumerate_logs(directory.path()).unwrap();
+
+        assert_eq!(scan.total_bytes, MAX_LOG_SCAN_BYTES);
+        assert_eq!(scan.files.len(), 8);
+        assert!(scan.files.iter().all(|file| file.path.starts_with(newest)));
     }
 
     #[test]

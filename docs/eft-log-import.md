@@ -12,6 +12,11 @@ Mode evidence is tallied per session; only certain or safely dominant regular/Pv
 importable. Conflicting, absent, and any seasonal-signal session is excluded. Profile keys hash
 identity IDs alone, with legacy mode-suffixed keys retained only for local checkpoint lookup.
 
+The companion's 256 MiB native scan cap prefers complete sessions from newest to oldest. If one
+session alone exceeds the whole cap, it keeps that session's newest individual log files up to the
+cap instead of discarding the current session and filling the budget with older data. Every file
+still has its independent 32 MiB ceiling.
+
 ## One `Logs` directory is one account
 
 **Its characters are separated by mode facet, not by ID.**

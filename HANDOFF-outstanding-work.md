@@ -94,12 +94,14 @@ delay. This distinction matters: `client_at` is stamped when the companion notic
 old query's `client_at`/`server_at` comparison measured only the network leg, not file to database.
 Pass the screenshot path explicitly if the newest file is not the test shot. The query is read-only.
 
-### 3.3 A session larger than the whole cap keeps the wrong files
+### 3.3 A session larger than the whole cap keeps the wrong files — completed
 
-`enumerate_logs` walks sessions newest-first and skips any that does not fit the remaining budget.
-If one session ever exceeds 256 MiB on its own, it is skipped and *older* sessions fill the budget
-instead — the opposite of the intent. No real session is near that today; it wants a partial-session
-keep, or a per-session cap, if it ever bites.
+`enumerate_logs` still keeps complete sessions newest-first when they fit. A session larger than the
+whole 256 MiB cap now takes the narrow partial-session path: its individual files are sorted newest
+first and retained until the remaining budget is exhausted. It can no longer be skipped in favor of
+older sessions. The regression fixture builds a 288 MiB newest session plus a 100 MiB older session
+and proves the scan contains eight files / 256 MiB, all from the newest session. The independent 32
+MiB per-file ceiling is unchanged.
 
 ### 3.4 `CENTRE ON ME` has no test on the map half
 
