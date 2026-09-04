@@ -56,9 +56,26 @@ hand:
 | `rebuild.sh` | Replays a capture into the local cluster |
 | `run-probes.sh` | Runs all six probes and summarises the verdicts |
 | `check-live-invariants.sh` | Read-only assertion of the 13 security invariants against LIVE |
+| `measure-live-ping-latency.sh` | Read-only end-to-end timing for one local screenshot ping |
 | `00_bootstrap.sql` | Roles, `auth` schema, the `auth.uid()` stub, the realtime publication |
 | `02_seed.sql` | Three fixture identities and one party |
 | `03_publication.sql` | Realtime publication membership, mirrored from live |
+
+## Live ping latency measurement
+
+`client_at` is stamped when the watcher notices a screenshot, not when EFT
+writes the file. Comparing it with `server_at` therefore measures only the
+publish/RPC leg. To measure the complete path, take a screenshot during a live
+raid, wait for its ping to appear, then run:
+
+```bash
+./supabase/probes/harness/measure-live-ping-latency.sh
+```
+
+The script selects the newest screenshot by default, derives the same stable
+event ID as the browser and companion, and reports `file_to_db_ms`, split into
+`watcher_ms` and `publish_rpc_ms`. Pass a screenshot path when the newest file
+is not the one being tested. It reads one live row and makes no database writes.
 
 ## Expected output
 

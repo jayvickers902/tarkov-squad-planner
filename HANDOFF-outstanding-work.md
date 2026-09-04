@@ -78,15 +78,17 @@ UPDATE events, and active/replay lists replace the prior version instead of dupl
 
 The projection is **~8 s → ~1.5–2 s**, file to database. It is arithmetic over the 2026-09-02
 measurement, not a measurement — no one has timed the new path, because that needs a live raid, a
-rebuilt companion and Google OAuth. Re-measure with:
+rebuilt companion and Google OAuth. After taking a screenshot and seeing its ping, re-measure with:
 
 ```bash
-supabase db query "select id, raid_id, taps, round(x::numeric,2) x, round(z::numeric,2) z, to_char(to_timestamp(client_at/1000.0) at time zone 'America/New_York','HH24:MI:SS') client_local, to_char(server_at at time zone 'America/New_York','HH24:MI:SS.MS') server_local from public.party_ping_events order by id desc limit 6;" --linked
+./supabase/probes/harness/measure-live-ping-latency.sh
 ```
 
-`client_at` is bigint epoch-ms, `server_at` is timestamptz — subtracting them directly is a type
-error. The shell clock on this machine reads an hour ahead of the timezone Postgres reports; compare
-deltas within one clock, never across.
+The script matches the newest local screenshot to its database row by the stable source event ID.
+It reports the full file-mtime-to-database delta and splits it into watcher delay and publish/RPC
+delay. This distinction matters: `client_at` is stamped when the companion notices the file, so the
+old query's `client_at`/`server_at` comparison measured only the network leg, not file to database.
+Pass the screenshot path explicitly if the newest file is not the test shot. The query is read-only.
 
 ### 3.3 A session larger than the whole cap keeps the wrong files
 
