@@ -3,12 +3,23 @@
 // Per-device rather than per-account — which monitor you are reading the map on
 // is a property of the device, and this shares the key ping focus already used.
 
+/** @typedef {'follow' | 'alerts' | 'all' | 'off'} CameraMode */
+
+/** @type {readonly CameraMode[]} */
 export const CAMERA_MODES = ['follow', 'alerts', 'all', 'off']
+/** @type {CameraMode} */
 export const CAMERA_MODE_DEFAULT = 'follow'
 export const CAMERA_MODE_STORAGE_KEY = 'tsp.ping_autofocus'
 
+/**
+ * A type guard, so callers past this point hold a `CameraMode` rather than a
+ * string that happens to look like one. The cast is confined to here: this is
+ * the one place an unvalidated value becomes a mode.
+ * @param {unknown} value
+ * @returns {value is CameraMode}
+ */
 export function isCameraMode(value) {
-  return CAMERA_MODES.includes(value)
+  return CAMERA_MODES.includes(/** @type {CameraMode} */ (value))
 }
 
 export function readCameraMode() {
@@ -21,6 +32,10 @@ export function readCameraMode() {
   }
 }
 
+/**
+ * @param {unknown} mode
+ * @returns {void}
+ */
 export function writeCameraMode(mode) {
   if (typeof window === 'undefined' || !isCameraMode(mode)) return
   try {
@@ -33,6 +48,10 @@ export function writeCameraMode(mode) {
 // OVERVIEW has to leave FOLLOW, or follow re-frames on the next ping and the
 // button reads as broken. ALERTS is the right landing state — the reader still
 // hears about contact.
+/**
+ * @param {CameraMode} mode
+ * @returns {CameraMode}
+ */
 export function demoteForOverview(mode) {
   return mode === 'follow' ? 'alerts' : mode
 }
@@ -43,6 +62,11 @@ export function demoteForOverview(mode) {
 // ALERTS skips your own pings and single-tap pings, so the camera then never
 // moved for a position ping again. The demotion is therefore session state and
 // only `preference` is ever written to storage.
+/**
+ * @param {CameraMode} preference
+ * @param {boolean} [overviewDemoted=false]
+ * @returns {CameraMode}
+ */
 export function effectiveCameraMode(preference, overviewDemoted = false) {
   return overviewDemoted ? demoteForOverview(preference) : preference
 }

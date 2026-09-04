@@ -1,10 +1,18 @@
 const RELOAD_MARKER = 'tsp.chunk-reload-at'
 const RELOAD_COOLDOWN_MS = 10_000
 
+/**
+ * @param {Window} [target=window]
+ * @param {{ now?: () => number, reload?: () => void }} [options={}]
+ * @returns {() => void}
+ */
 export function installChunkLoadRecovery(target = window, options = {}) {
   const now = options.now || (() => Date.now())
   const reload = options.reload || (() => target.location.reload())
 
+  /**
+   * @param {Event} event
+   */
   const handlePreloadError = event => {
     const currentTime = now()
     let recentlyReloaded = false

@@ -8,7 +8,8 @@
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "include": [
     "src/partySyncMetrics.js",
@@ -30,6 +31,9 @@
     "src/questDiagnostic.js",
     "src/questVisibility.js",
     "src/operationalTasks.js",
-    "src/squadFocus.js"
+    "src/squadFocus.js",
+
+    "src/cameraMode.js",
+    "src/chunkLoadRecovery.js"
   ]
 }
