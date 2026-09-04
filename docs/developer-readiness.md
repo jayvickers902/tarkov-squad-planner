@@ -41,7 +41,7 @@ starting points rather than coverage:
 
 - **The type check is opt-in per file.** `tsconfig.typecheck.json` compiles
   exactly `src/partySyncMetrics.js` and `scripts/check-bundle-budget.mjs` under
-  `strict` + `checkJs` — 2 files out of roughly 224. Widening it means adding
+  `strict` + `checkJs` — 2 files out of 231. Widening it means adding
   files to that `include` list and fixing what surfaces.
 - **The Playwright suite is two tests against the unauthenticated shell.** It
   renders the sign-in shell, walks the lazy changelog chunk, and checks a narrow
@@ -133,11 +133,14 @@ prints, so the two can be compared directly.
 
 These are repository gates, not provider limits.
 
-**The build is already over one warn line.** As of 2026-09-03 the largest async
-raw chunk is `loot` at 843.5 KiB against a 830.1 KiB warn and an 878.9 KiB fail
-— roughly 4% of headroom left before CI fails. Warnings do not fail the job, so
-this is visible but not blocking today. Reducing the `loot` chunk, or splitting
-it, is the cheapest way to buy headroom back.
+**Every budget passes.** As of 2026-09-04 the largest async raw chunk is
+`tasks` at 779.3 KiB against a 830.1 KiB warn and an 878.9 KiB fail — 6.1% of
+headroom. The `loot` chunk that held this line at 843.5 KiB (WARN) is gone: it
+is one file per map now, carrying item ids against a per-map dictionary instead
+of the full item object at each of 7,859 references, so the browser fetches only
+the map in view — 128.4 KiB at worst. `tasks` is the next dataset to watch, and
+577 KiB of its 874 KiB of JSON is the `objectives` array. Unlike loot it has no
+per-map axis to split on.
 
 ## Operational budgets
 
@@ -211,29 +214,32 @@ approved staging database. They were not replaced by local unit tests.
    [database workflow](supabase-database-workflow.md); never use a production
    push as a routine verification command.
 
-   The probes needed for this step now exist. `supabase/probes/` holds five:
+   The probes needed for this step now exist. `supabase/probes/` holds six:
 
    | Probe | Covers | Result 2026-09-03 |
    | --- | --- | --- |
-   | `party_members_rls_probe.sql` | Member isolation on `party_members` | — |
-   | `sl2_baseline_rls_probe.sql` | `raid_session_baselines` isolation | — |
-   | `sync_client_status_rls_probe.sql` | Companion status and bootstrap RPCs | 20/20 PASS |
-   | `party_rpc_rls_probe.sql` | `create_party` / `join_party_secure` / `merge_progress` | 14 PASS / 5 FAIL |
-   | `profiles_column_scope_probe.sql` | Profile column scope, `is_admin` self-grant | 11 PASS / 4 FAIL |
+   | `party_members_rls_probe.sql` | Member isolation on `party_members` | 6 PASS / 0 FAIL |
+   | `sl2_baseline_rls_probe.sql` | `raid_session_baselines` isolation | 12 PASS / 1 known FAIL |
+   | `sync_client_status_rls_probe.sql` | Companion status and bootstrap RPCs | 20 PASS / 0 FAIL |
+   | `party_rpc_rls_probe.sql` | `create_party` / `join_party_secure` / `merge_progress` | 19 PASS / 0 FAIL |
+   | `profiles_column_scope_probe.sql` | Profile column scope, `is_admin` self-grant | 15 PASS / 0 FAIL |
+   | `party_ping_map_change_probe.sql` | Map-change ping isolation | 6 PASS / 0 FAIL |
 
-   The three new probes were written against the verified live catalog and
-   executed against a disposable local cluster seeded with the real grants,
-   policies, ownership and routine bodies; each failing assertion was then
-   confirmed by a read-only query against the linked project.
+   The probes were written against the verified live catalog and executed
+   against a disposable local cluster seeded with the real grants, policies,
+   ownership and routine bodies; each failing assertion was then confirmed by a
+   read-only query against the linked project.
 
-   **They found three production holes**, written up in
-   [HANDOFF-rls-probes.md](../HANDOFF-rls-probes.md) and in
-   [HANDOFF-outstanding-work.md](../HANDOFF-outstanding-work.md#35-the-three-rls-probes--written-2026-09-03-and-they-found-two-real-holes):
-   `merge_progress` does not enforce invariant 2, and any signed-in user can
-   self-grant `is_admin`. Both trace to migrations that were never applied or
-   never went far enough. Treat this step as **executed but not clean**: the
-   probes exist and run, and two of them are failing on purpose until a
-   migration closes the gap.
+   **They found four production holes, and all four are now closed.**
+   `merge_progress` did not enforce invariant 2 and a column-level `UPDATE`
+   grant bypassed it entirely; any signed-in user could self-grant `is_admin`;
+   `TRUNCATE` was granted to `anon` and `authenticated` on four tables, which no
+   RLS policy filters; and old-map ping events survived a map change. Repaired
+   by `10_33`, `10_34`, `10_35` and `10_37`, all applied to production and
+   verified against the live catalog — see
+   [HANDOFF-rls-probes.md](../HANDOFF-rls-probes.md). Treat this step as
+   **executed and clean**: the one remaining FAIL is the `sl2` FORCE-RLS finding,
+   which is unrelated to these migrations and fails by design.
 
    Note also that the RPC previously listed here as `join_party` does not
    exist; the live join path is `join_party_secure`. That is the concrete
@@ -262,12 +268,13 @@ npm run validate:migrations
 - The shared-domain migration must remain complete and independently buildable;
   every imported pure dependency must exist under `/shared` and must remain
   free of React, Tauri, Supabase, `window`, and `document` dependencies.
-- The application still contains large data chunks, and one of them is already
-  past its bundle warn line. The lint backlog, by contrast, is cleared:
-  `npx eslint . --max-warnings 0` exits 0 across 224 files. Several rules in
-  `eslint.config.js` are still set to `warn` rather than `error` on the
-  assumption of a backlog that no longer exists; ratcheting them to `error` is
-  now a no-op change that would keep the backlog from returning.
+- The application still contains large data chunks, but all six bundle budgets
+  pass; `tasks` is the one to watch. The lint backlog is cleared and fenced:
+  `npx eslint . --max-warnings 0` exits 0 across 231 files, and the six rules
+  that were softened for that backlog — `no-unused-vars`, `no-empty`,
+  `no-control-regex`, `no-useless-escape`, `require-yield` and
+  `react-hooks/exhaustive-deps` — are `error` in `eslint.config.js`, so a
+  regression fails the gate instead of accumulating.
 - App composition, party synchronization, Room, MapLeaflet, and EFT import
   remain responsibility centers. Route future work through the ownership guide
   and add characterization tests before broad refactors.

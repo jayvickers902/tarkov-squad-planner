@@ -1,0 +1,664 @@
+<title>Raid Planner Work Queue</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg:      #E7E9E3;
+    --panel:   #F7F8F5;
+    --sunk:    #DDE0D8;
+    --ink:     #1B1E1A;
+    --muted:   #5E645B;
+    --faint:   #868C82;
+    --rule:    #CBCFC4;
+    --accent:  #5F7434;
+    --warn:    #96650F;
+    --stop:    #8A392C;
+
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --disp: "Archivo", "IBM Plex Sans", ui-sans-serif, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+    --pad: clamp(18px, 4vw, 40px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:     #151714;
+      --panel:  #1E211C;
+      --sunk:   #121412;
+      --ink:    #E5E8E0;
+      --muted:  #9AA193;
+      --faint:  #757C6F;
+      --rule:   #313629;
+      --accent: #A8BF6A;
+      --warn:   #D8A544;
+      --stop:   #D2755F;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:     #151714;
+    --panel:  #1E211C;
+    --sunk:   #121412;
+    --ink:    #E5E8E0;
+    --muted:  #9AA193;
+    --faint:  #757C6F;
+    --rule:   #313629;
+    --accent: #A8BF6A;
+    --warn:   #D8A544;
+    --stop:   #D2755F;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 400 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: var(--pad) var(--pad) 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 36px;
+  }
+
+  /* ---- masthead ---- */
+  header { display: flex; flex-direction: column; gap: 14px; }
+  .eyebrow {
+    font: 500 11px/1 var(--mono);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  h1 {
+    font: 700 clamp(26px, 4.4vw, 38px)/1.1 var(--disp);
+    letter-spacing: -.015em;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .standfirst { margin: 0; max-width: 62ch; color: var(--muted); }
+  .standfirst code, .eyebrow code { font: 400 .92em/1 var(--mono); }
+
+  .tallies {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin-top: 4px;
+  }
+  @media (max-width: 560px) { .tallies { grid-template-columns: 1fr; } }
+  .tally {
+    background: var(--panel);
+    padding: 15px 17px 17px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .tally .k {
+    font: 400 11px/1 var(--mono);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .tally .n {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    flex-wrap: wrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .tally .n b { font: 700 26px/1 var(--disp); }
+  .tally .n span { color: var(--muted); font-size: 13px; }
+
+  .meter {
+    height: 9px;
+    background: var(--sunk);
+    border: 1px solid var(--rule);
+    display: flex;
+    overflow: hidden;
+  }
+  .meter i { display: block; height: 100%; }
+  .meter .done  { background: var(--accent); }
+  .meter .check { background: var(--warn); }
+  .meter .block { background: var(--stop); }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    font: 400 12.5px/1.5 var(--sans);
+    color: var(--muted);
+  }
+  .legend b { color: var(--ink); font-weight: 500; }
+  .dot { display: inline-block; width: 8px; height: 8px; margin-right: 7px; vertical-align: 1px; }
+  .dot.done  { background: var(--accent); }
+  .dot.check { background: var(--warn); }
+  .dot.open  { background: var(--rule); }
+  .dot.block { background: var(--stop); }
+
+  /* ---- section frames ---- */
+  section { display: flex; flex-direction: column; gap: 14px; }
+  h2 {
+    font: 600 12px/1 var(--mono);
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0;
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .lede { margin: -2px 0 0; max-width: 68ch; color: var(--muted); font-size: 13.5px; }
+  .lede code { font: 400 .92em/1 var(--mono); }
+
+  /* ---- gates ---- */
+  .gates {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+  .gate {
+    background: var(--panel);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .gate .k {
+    font: 400 11px/1 var(--mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .gate .v {
+    font: 500 14px/1.25 var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .gate.pass .v { color: var(--accent); }
+  .gate.warn .v { color: var(--warn); }
+  @media (max-width: 640px) { .gates { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 380px) { .gates { grid-template-columns: 1fr; } }
+
+  /* ---- bundle scale ---- */
+  .bundle {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    padding: 16px 18px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .bundle .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .bundle .top b { font: 500 13px/1 var(--sans); }
+  .bundle .top b code { font: 400 .92em/1 var(--mono); }
+  .bundle .top span { font: 400 12px/1 var(--mono); color: var(--muted); }
+  .track {
+    position: relative;
+    height: 26px;
+    background: var(--sunk);
+    border: 1px solid var(--rule);
+  }
+  .track .fill {
+    position: absolute; inset: 0 auto 0 0;
+    width: 62.3%;
+    background: var(--warn);
+    opacity: .85;
+  }
+  .track .tick {
+    position: absolute; top: -1px; bottom: -1px;
+    width: 2px;
+    background: var(--ink);
+  }
+  .track .tick.fail { background: var(--stop); right: 0; width: 3px; }
+  .scale {
+    position: relative;
+    height: 30px;
+    font: 400 11px/1.3 var(--mono);
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .scale span { position: absolute; top: 0; white-space: nowrap; }
+  .scale .s-min  { left: 0; }
+  .scale .s-warn { left: 53.4%; transform: translateX(-50%); color: var(--ink); }
+  .scale .s-now  { left: 62.3%; transform: translateX(-8%); color: var(--warn); font-weight: 500; }
+  .scale .s-fail { right: 0; text-align: right; color: var(--stop); }
+  @media (max-width: 560px) { .scale .s-warn { display: none; } }
+
+  /* ---- queue / workstream rows ---- */
+  .queue { display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .item {
+    background: var(--panel);
+    display: grid;
+    grid-template-columns: 4px 62px 1fr auto;
+    gap: 0 14px;
+    align-items: start;
+  }
+  .item.wide { grid-template-columns: 4px 30px 1fr auto; }
+  .item .stripe { grid-row: 1 / span 2; background: var(--rule); align-self: stretch; }
+  .item.done  .stripe { background: var(--accent); }
+  .item.check .stripe { background: var(--warn); }
+  .item.block .stripe { background: var(--stop); }
+  .item .id {
+    font: 500 13px/1.6 var(--mono);
+    color: var(--faint);
+    padding: 14px 0 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .item h3 {
+    margin: 0;
+    padding: 14px 0 0;
+    font: 500 15.5px/1.35 var(--sans);
+    text-wrap: balance;
+  }
+  .item .est {
+    padding: 14px 16px 0 0;
+    font: 500 12px/1.6 var(--mono);
+    white-space: nowrap;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .item.done .est, .item.check .est { color: var(--faint); font-weight: 400; }
+  .item.block .est { color: var(--stop); }
+  .item p {
+    grid-column: 3 / span 2;
+    margin: 4px 0 0;
+    padding: 0 16px 14px 0;
+    max-width: 66ch;
+    color: var(--muted);
+    font-size: 13.5px;
+  }
+  .item p code, .item h3 code {
+    font: 400 .92em/1 var(--mono);
+    background: var(--sunk);
+    padding: 1px 4px;
+  }
+  .item p b { color: var(--ink); font-weight: 500; }
+  .item p b.warnword { color: var(--warn); }
+  .item p b.stopword { color: var(--stop); }
+
+  /* ---- release checklist ---- */
+  .checklist { display: flex; flex-direction: column; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .check-row {
+    background: var(--panel);
+    display: grid;
+    grid-template-columns: 26px 1fr auto;
+    gap: 0 12px;
+    align-items: baseline;
+    padding: 12px 16px 13px;
+  }
+  .check-row .mark { font: 500 14px/1.5 var(--mono); color: var(--accent); }
+  .check-row.open  .mark { color: var(--rule); }
+  .check-row.part  .mark { color: var(--warn); }
+  .check-row .txt { font-size: 14px; }
+  .check-row .txt small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .check-row .txt code { font: 400 .9em/1 var(--mono); background: var(--sunk); padding: 1px 4px; }
+  .check-row .state {
+    font: 400 11px/1.6 var(--mono);
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--faint);
+    white-space: nowrap;
+  }
+  .check-row.done .state { color: var(--accent); }
+  .check-row.part .state { color: var(--warn); }
+
+  /* ---- next up ---- */
+  .next {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--accent);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .next h3 { margin: 0; font: 600 17px/1.25 var(--disp); }
+  .next p { margin: 0; max-width: 64ch; color: var(--muted); font-size: 14px; }
+  .next ol { margin: 2px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+  .next code { font: 400 .9em/1 var(--mono); background: var(--sunk); padding: 1px 5px; }
+
+  .basis { font-size: 13px; color: var(--muted); max-width: 68ch; margin: 0; }
+  .basis b { color: var(--ink); font-weight: 500; }
+  .basis code { font: 400 .92em/1 var(--mono); }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 16px;
+    font: 400 12.5px/1.6 var(--sans);
+    color: var(--faint);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  footer code { font: 400 .92em/1 var(--mono); }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Tarkov Squad Planner &middot; dudgy.net &middot; branch main</div>
+    <h1>Outstanding work queue</h1>
+    <p class="standfirst">
+      Two levels: the program in <code>docs/developer-readiness.md</code>, and the live queue in
+      <code>HANDOFF-outstanding-work.md</code>. Verified against <code>f72f469</code>,
+      2026&#8209;09&#8209;04.
+    </p>
+
+    <div class="tallies">
+      <div class="tally">
+        <span class="k">Program &middot; workstreams</span>
+        <span class="n"><b>4 of 7</b><span>closed &middot; 3 open</span></span>
+        <span class="meter" role="img" aria-label="Four of seven workstreams closed, three open">
+          <i class="done" style="width:57.1%"></i>
+        </span>
+      </div>
+      <div class="tally">
+        <span class="k">Current queue &middot; units</span>
+        <span class="n"><b>10 of 12</b><span>closed &middot; 1 to verify &middot; 1 open</span></span>
+        <span class="meter" role="img" aria-label="Ten of twelve queue units closed, one awaiting live verification, one open">
+          <i class="done" style="width:83.3%"></i>
+          <i class="check" style="width:8.3%"></i>
+        </span>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><i class="dot done"></i><b>Closed</b> — landed and gated</span>
+      <span><i class="dot check"></i><b>Verify / in flight</b></span>
+      <span><i class="dot open"></i><b>Open</b> — not started</span>
+      <span><i class="dot block"></i><b>Blocked</b> — waiting on something outside the repo</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>The larger program — seven workstreams</h2>
+    <p class="lede">
+      A–G are themes, not tickets — a grouping of what lives in
+      <code>docs/developer-readiness.md</code>. The numbered 3.x items further down are the actual
+      tasks. Some themes are finished, some have a single task left, and F and G have no tasks
+      written yet. G is bigger than everything else on this page put together.
+    </p>
+    <div class="queue">
+
+      <article class="item done wide">
+        <i class="stripe"></i>
+        <div class="id">A</div>
+        <h3>CI and quality gates</h3>
+        <div class="est">closed</div>
+        <p>Automated checks on every push: lint, tests, typecheck, build, bundle size. The real bug was that they ran <b>only on pull requests</b> while everyone commits straight to <code>main</code> — so the gate was decorative and essentially never fired. It now runs on push too, across the web app, the companion shell and the Rust crate. One of those checks is still far narrower than its name suggests, which is what item 3.7a is for; 3.7b ratcheted the six softened ESLint rules to errors.</p>
+      </article>
+
+      <article class="item done wide">
+        <i class="stripe"></i>
+        <div class="id">B</div>
+        <h3>Architecture and React correctness</h3>
+        <div class="est">closed</div>
+        <p>Decision logic that mattered was buried inside huge React components where nothing could test it — which ping is mine, which log files to import, which quests count as shareable. Those rules are plain tested functions now, alongside a batch of React fixes (stale closures, cleanup running against the wrong map instance) and real keyboard and screen-reader behaviour on dialogs. <b>Deliberately skipped:</b> focus outlines and tap-target sizes, because they live in <code>src/index.css</code>, which is yours.</p>
+      </article>
+
+      <article class="item done wide">
+        <i class="stripe"></i>
+        <div class="id">C</div>
+        <h3>Security, RLS and data boundaries</h3>
+        <div class="est">closed</div>
+        <p>Row Level Security is Postgres enforcing permissions itself, so a hostile client cannot do what your UI simply does not offer. Six probes found <b>four real holes in production:</b> you could tick off a teammate's quest progress; any signed-in user could make themselves an admin and rewrite your curated map keys and loot; anonymous users held <code>TRUNCATE</code> on four tables, which no RLS policy filters at all; and pings from the previous map survived a map change. All four closed by <code>10_33</code>, <code>10_34</code>, <code>10_35</code> and <code>10_37</code>, and verified against the live database.</p>
+      </article>
+
+      <article class="item done wide">
+        <i class="stripe"></i>
+        <div class="id">D</div>
+        <h3>Bundle and payload budgets — closed</h3>
+        <div class="est">done</div>
+        <p>Size limits on what the browser has to download. All six pass. The loot dataset that was over its warning line is now one file per map, and carries item ids against a per-map dictionary instead of repeating every item’s name and price at all 7,859 places it appears. The browser downloads only the map it is showing — 128.4 KiB at worst, against 843.5 KiB for the whole thing before. The largest chunk is now the quest dataset at 779.3 KiB, comfortably inside its line.</p>
+      </article>
+
+      <article class="item wide">
+        <i class="stripe"></i>
+        <div class="id">E</div>
+        <h3>End-to-end coverage</h3>
+        <div class="est">~4–8 h</div>
+        <p>Tests that drive a real browser. Today they check the signed-out landing page and nothing else — no test has ever created a party, opened the map or imported a quest. The blocker is not writing the tests; it is that Google OAuth is the only way in, so a test robot cannot log in without a seeded session or a stubbed Supabase. Item 3.7c.</p>
+      </article>
+
+      <article class="item block wide">
+        <i class="stripe"></i>
+        <div class="id">F</div>
+        <h3>Scaling evidence</h3>
+        <div class="est">~6–12 h</div>
+        <p>Every capacity number in the docs — how many clients we can carry, latency budgets, error-rate thresholds — came out of a spreadsheet model. <b>Nothing has been measured.</b> Replacing the guesses with data needs a staging environment and a full export of the live database schema. <b class="stopword">Blocked:</b> that export failed on 2026&#8209;09&#8209;03 on Docker and database-password limits, and the linked project's applied-migration ledger is empty, so deployment history cannot be read off the filenames either. This one waits on access, not on hours.</p>
+      </article>
+
+      <article class="item wide">
+        <i class="stripe"></i>
+        <div class="id">G</div>
+        <h3>Incremental realtime architecture</h3>
+        <div class="est">~20–40 h</div>
+        <p>When anything in a party changes today, every client re-fetches the <b>whole party</b> — all progress, every drawing, every marker, every ping — not just the thing that changed. Fine for a squad of four. It stops being fine when realtime goes unhealthy and clients fall back to polling every 15 seconds: at 10,000 visible clients that is roughly <b>2,333 requests a second</b>, almost all of it data the client already had. That is not a legacy path — it is where any live client lands the moment its channel drops, and the database already shows the strain, with <code>realtime.list_changes</code> at 45.1% of execution time. The fix: give progress, markers, drawings and pings their own tables, send only what changed, and acknowledge a write with a small receipt instead of a whole snapshot. Schema migration, new RLS, a client rewrite, new probes and tests.</p>
+      </article>
+
+    </div>
+    <p class="basis">
+      <b>Whole-program remainder: roughly 35–70 agent hours</b>, call it eight to fifteen sessions,
+      and G is more than half of it. F cannot start at all until someone with database credentials
+      and a working Docker gets the catalog dump out.
+    </p>
+  </section>
+
+  <section>
+    <h2>Release-ready checklist — 3 of 5</h2>
+    <div class="checklist">
+      <div class="check-row done">
+        <span class="mark">&#10003;</span>
+        <span class="txt">Root, companion and Rust required checks all green
+          <small>Verified 2026-09-03 and again at <code>f72f469</code>.</small></span>
+        <span class="state">Satisfied</span>
+      </div>
+      <div class="check-row part">
+        <span class="mark">&#9646;</span>
+        <span class="txt">Both external database validations, with sanitized artifacts kept out of source control
+          <small>Probes executed and now clean. The remote catalog capture is the blocked half — see workstream F.</small></span>
+        <span class="state">Half</span>
+      </div>
+      <div class="check-row open">
+        <span class="mark">&#9633;</span>
+        <span class="txt">Scaling harness plus a staging scenario with reconnect and burst traffic, compared against the budget table
+          <small>The harness exists and is deterministic; the staging run does not.</small></span>
+        <span class="state">Open</span>
+      </div>
+      <div class="check-row done">
+        <span class="mark">&#10003;</span>
+        <span class="txt">Diff, migration order, destructive inventory and CI output reviewed
+          <small>Routine per change; <code>npm run validate:migrations</code> is the repository-side prerequisite.</small></span>
+        <span class="state">Satisfied</span>
+      </div>
+      <div class="check-row done">
+        <span class="mark">&#10003;</span>
+        <span class="txt">No credentials, party codes, local paths, raw logs or user data in artifacts
+          <small>Exposed PAT confirmed gone; credentials out of <code>.claude/settings.json</code> in <code>b12d2a2</code>.</small></span>
+        <span class="state">Satisfied</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Gates as of 5054152</h2>
+    <div class="gates">
+      <div class="gate pass"><span class="k">Vitest root</span><span class="v">86 files, 708 tests</span></div>
+      <div class="gate pass"><span class="k">Vitest companion</span><span class="v">14 files, 76 tests</span></div>
+      <div class="gate pass"><span class="k">ESLint</span><span class="v">0 warn, 231 files, 6 rules ratcheted</span></div>
+      <div class="gate pass"><span class="k">Typecheck</span><span class="v">2 opt-in files</span></div>
+      <div class="gate pass"><span class="k">Playwright</span><span class="v">2 / 2 signed-out</span></div>
+      <div class="gate pass"><span class="k">Bundle</span><span class="v">779.3 KiB PASS</span></div>
+    </div>
+
+    <div class="bundle">
+      <div class="top">
+        <b>Largest async chunk — <code>tasks-*.js</code></b>
+        <span>50.8 KiB below the warn line</span>
+      </div>
+      <div class="track" role="img" aria-label="Largest async chunk is 779.3 KiB, below the 830.1 KiB warn line and the 878.9 KiB fail line">
+        <i class="fill" style="width:22.7%"></i>
+        <i class="tick" style="left:62.1%"></i>
+        <i class="tick fail"></i>
+      </div>
+      <div class="scale">
+        <span class="s-min">750.0 KiB</span>
+        <span class="s-now">now 779.3</span>
+        <span class="s-warn">warn 830.1</span>
+        <span class="s-fail">fail 878.9</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Queue &middot; operations — closed 2026-09-02</h2>
+    <div class="queue">
+      <article class="item done">
+        <i class="stripe"></i>
+        <div class="id">2.1</div>
+        <h3>Supabase management PAT rotated out</h3>
+        <div class="est">done</div>
+        <p>The exposed <code>sbp_86e9…f6faa</code> token is confirmed absent from the dashboard.</p>
+      </article>
+      <article class="item done">
+        <i class="stripe"></i>
+        <div class="id">2.2</div>
+        <h3>Companion 0.3.1 rebuilt and reinstalled</h3>
+        <div class="est">done</div>
+        <p>x64 NSIS and MSI bundles built and installed. Updater signing still needs the release private key if 0.3.1 ever ships through GitHub updates.</p>
+      </article>
+      <article class="item done">
+        <i class="stripe"></i>
+        <div class="id">2.3</div>
+        <h3>EFT logs pruned below the scan cap</h3>
+        <div class="est">done</div>
+        <p>228.1 MiB (89.1% of the 256 MiB cap) down to 70.6 MiB (27.6%). Forty-six session folders went to the Recycle Bin, so they are recoverable.</p>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <h2>Queue &middot; engineering — 7 closed, 1 to verify, 1 open</h2>
+    <div class="queue">
+
+      <article class="item done">
+        <i class="stripe"></i>
+        <div class="id">3.1</div>
+        <h3>Amendable <code>append_party_ping</code></h3>
+        <div class="est">done</div>
+        <p>A HERE ping used to wait for its tap window to close before publishing. The first ping now goes out immediately and later taps amend that same row rather than racing it — the server accepts an amendment only from the same person, party, raid and event, inside five seconds.</p>
+      </article>
+
+      <article class="item done">
+        <i class="stripe"></i>
+        <div class="id">3.2</div>
+        <h3>Ping latency verified in a real raid</h3>
+        <div class="est">done</div>
+        <p><b>902 ms</b> file to database on live Shoreline — 743 ms watcher, 159 ms publish/RPC. Beats the projected 1.5–2 s and the old ~8 s path. Repeat with <code>measure-live-ping-latency.sh</code>.</p>
+      </article>
+
+      <article class="item done">
+        <i class="stripe"></i>
+        <div class="id">3.3</div>
+        <h3>Oversized session no longer loses its newest logs</h3>
+        <div class="est">done</div>
+        <p>If your newest log session was bigger than the whole 256 MiB scan budget, the scanner skipped it and imported older sessions instead — exactly backwards. It now takes that session's newest files until the budget runs out. The fixture proves 8 files / 256 MiB, all from the newest session.</p>
+      </article>
+
+      <article class="item check">
+        <i class="stripe"></i>
+        <div class="id">3.4</div>
+        <h3><code>CENTRE ON ME</code> regression coverage</h3>
+        <div class="est">1 live click</div>
+        <p>Resolution extracted to <code>ownPingCard</code> and pinned by six cases; the flight covered by thirteen against Leaflet's real <code>flyTo</code>/<code>fitBounds</code>. Mounting surfaced and fixed an SVG-fetch unmount race. <b class="warnword">Still owed:</b> one click on the deployed map — nothing here proves the tile server or the real container size.</p>
+      </article>
+
+      <article class="item done">
+        <i class="stripe"></i>
+        <div class="id">3.5</div>
+        <h3>RLS probes — every hole closed in production</h3>
+        <div class="est">done</div>
+        <p>Six probes rehearse the real permission checks against a throwaway copy of the live database: 78 PASS / 1 known FAIL. The four repairs are applied to production and verified there. Kept as the tool for the next SQL change, not as open work — the detail is in workstream C above.</p>
+      </article>
+
+      <article class="item done">
+        <i class="stripe"></i>
+        <div class="id">3.6</div>
+        <h3>The <code>loot</code> chunk — split per map, items dictionaried</h3>
+        <div class="est">done</div>
+        <p>843.5 KiB WARN → 779.3 KiB PASS, and loot is no longer the largest anything. <code>loot.json</code> became ten <code>loot/&lt;map&gt;.json</code> files behind <code>loadPrebakedLoot(mapNorm)</code>, so only the map in view is fetched — 128.4 KiB at worst. Inside each file, <code>points[].items</code> holds ids resolved against the per-map dictionary rather than repeating name and price across 7,859 references to 66 distinct items; verified lossless. <code>prebake.mjs</code> emits the new shape, so the deploy-time refresh stays consistent. Closes workstream D. About an hour.</p>
+      </article>
+
+      <article class="item">
+        <i class="stripe"></i>
+        <div class="id">3.7a</div>
+        <h3>Widen <code>tsconfig.typecheck.json</code></h3>
+        <div class="est">~1 h / batch</div>
+        <p>Exactly two files in the repo are type-checked today. Adding to that <code>include</code> list is the entire mechanism — do it in batches of about five and fix what surfaces. Full coverage of 231 files is several sessions, not one.</p>
+      </article>
+
+      <article class="item done">
+        <i class="stripe"></i>
+        <div class="id">3.7b</div>
+        <h3>Six ESLint rules ratcheted to <code>error</code></h3>
+        <div class="est">done</div>
+        <p><code>no-unused-vars</code>, <code>no-empty</code>, <code>no-control-regex</code>, <code>no-useless-escape</code>, <code>require-yield</code> and <code>react-hooks/exhaustive-deps</code> are errors. <code>eslint . --max-warnings 0</code> exited 0 before and after, so nothing had to be fixed — the change is purely a regression guard.</p>
+      </article>
+
+      <article class="item">
+        <i class="stripe"></i>
+        <div class="id">3.7c</div>
+        <h3>End-to-end coverage past the signed-out shell</h3>
+        <div class="est">~4–8 h</div>
+        <p>The queue's name for workstream E. Party, map, quest and import flows have no coverage; the auth harness is the real cost, not the tests.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Next up</h2>
+    <div class="next">
+      <h3>3.7a, then 3.7c, then G</h3>
+      <p>
+        3.7b and 3.6 are done, which closes workstream D and leaves the queue with one open
+        engineering item and one live click owed on 3.4. Widening
+        <code>tsconfig.typecheck.json</code> is the cheap next move — batches of about five files,
+        fixing what surfaces. Leave 3.7c until you want to spend a session on the auth harness
+        rather than on a feature, and treat G as a planning conversation before it is a coding one.
+        F stays blocked on credentials and a working Docker, not on effort.
+      </p>
+      <ol>
+        <li>Add about five files to <code>include</code> in <code>tsconfig.typecheck.json</code>.</li>
+        <li>Run <code>npm run typecheck</code> and fix what surfaces — widen, do not loosen.</li>
+        <li>Run the full matrix; CI fires on the push to <code>main</code>.</li>
+        <li>Commit by explicit path — three agents share this checkout.</li>
+      </ol>
+    </div>
+    <p class="basis">
+      <b>Where the estimates come from.</b> Agent time on comparable work in this repo, wall clock
+      between first and last commit: item 3.3 ran about 45 minutes for a 67-line change; item 3.4
+      about an hour for 427 lines including mutation-checking every assertion; the whole RLS block
+      (workstream C, eight commits) ran roughly 1 hour 35 minutes. Add four minutes to any of them
+      for the full local gate matrix. Workstreams F and G have no comparable precedent in this
+      repository — those two ranges are judgement, and F additionally depends on access nobody here
+      has yet.
+    </p>
+  </section>
+
+  <footer>
+    <span>Sources of truth are <code>docs/developer-readiness.md</code> (program) and <code>HANDOFF-outstanding-work.md</code> (queue). This page is a read of both — update it when an item closes, never instead of them.</span>
+    <span>Not a CI surface. Every number is as of the commit named in the masthead, not live.</span>
+  </footer>
+
+</div>
