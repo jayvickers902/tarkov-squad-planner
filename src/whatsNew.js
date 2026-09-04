@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.17'
+export const RELEASE_VERSION = '2026.18'
 
 export const SETUP_STEPS = [
   {
@@ -28,6 +28,23 @@ export const FIRST_LIVE_NOTES_VERSION = '2026.09'
 // Newest first — WelcomeModal shows RELEASES[0] and nothing else, so a new
 // release goes on top of this array and RELEASE_VERSION moves with it.
 export const RELEASES = [
+  {
+    version: '2026.18',
+    date: '2026-09-04',
+    title: 'BIGGER BUTTONS, QUIETER ICONS',
+    items: [
+      {
+        tag: 'FIXED',
+        title: 'EASIER TO HIT ON A PHONE',
+        body: 'The footer links and the version headings on the changelog were small enough to miss on a touchscreen. Their tap area is taller now, and the text itself is unchanged.',
+      },
+      {
+        tag: 'FIXED',
+        title: 'THE MAP TOOLBAR READS CLEANLY ALOUD',
+        body: 'Each map toolbar button carries a small icon before its label. A screen reader used to announce the icon as well as the name; it now reads just DRAW, QUEST MARKER, PMC SPAWNS and the rest.',
+      },
+    ],
+  },
   {
     version: '2026.17',
     date: '2026-09-04',

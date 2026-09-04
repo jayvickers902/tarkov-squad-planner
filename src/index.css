@@ -686,7 +686,10 @@ button:disabled { cursor: not-allowed; opacity: .58; }
 .app-footer-heart { color: var(--red); }
 
 .app-footer-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; list-style: none; }
-.app-footer-links a { color: var(--txm); font-size: var(--fs-xs); letter-spacing: .12em; text-decoration: none; }
+/* inline-flex + min-height only: these are already wider than the 24px target
+   minimum, and horizontal padding would widen the visual gap the row's own
+   `gap: 6px 20px` already sets. Height was the only failing axis. */
+.app-footer-links a { display: inline-flex; align-items: center; min-height: 24px; color: var(--txm); font-size: var(--fs-xs); letter-spacing: .12em; text-decoration: none; }
 .app-footer-links a:hover,
 .app-footer-links a:focus-visible { color: var(--goldtx); }
 
@@ -3153,6 +3156,7 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   display: flex;
   align-items: center;
   gap: 7px;
+  min-height: 24px;
   color: var(--goldtx);
   font-size: var(--fs-md);
   letter-spacing: .06em;

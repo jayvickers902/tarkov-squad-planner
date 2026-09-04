@@ -1991,7 +1991,7 @@ export default function MapLeaflet({
               onClick={() => { changeMode(mode === 'draw' ? 'pan' : 'draw'); setSelectedQuestId('') }}
               aria-pressed={mode === 'draw'}
               style={{ fontSize: 'var(--fs-xs)' }}>
-              ✏ DRAW
+              <span aria-hidden="true">✏</span> DRAW
             </button>
             {mode === 'draw' && (
               <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--txd)', letterSpacing: '.05em' }}>
@@ -2006,7 +2006,7 @@ export default function MapLeaflet({
           onClick={() => { changeMode(mode === 'marker' ? 'pan' : 'marker'); setSelectedQuestId('') }}
           aria-pressed={mode === 'marker'}
           style={{ fontSize: 'var(--fs-xs)' }}>
-          ◎ QUEST MARKER
+          <span aria-hidden="true">◎</span> QUEST MARKER
         </button>
 
         {mode === 'marker' && (
@@ -2031,7 +2031,7 @@ export default function MapLeaflet({
             onClick={() => setShowSpawns(s => !s)}
             aria-pressed={showSpawns}
             style={{ fontSize: 'var(--fs-xs)' }}>
-            ⊕ PMC SPAWNS
+            <span aria-hidden="true">⊕</span> PMC SPAWNS
           </button>
           <button
             type="button"
@@ -2039,7 +2039,7 @@ export default function MapLeaflet({
             onClick={() => setShowQuestPins(q => !q)}
             aria-pressed={showQuestPins}
             style={{ fontSize: 'var(--fs-xs)' }}>
-            ◆ QUEST PINS
+            <span aria-hidden="true">◆</span> QUEST PINS
           </button>
           {pingList.length > 0 && (
             <button
@@ -2048,7 +2048,7 @@ export default function MapLeaflet({
               onClick={() => setShowPings(p => !p)}
               aria-pressed={showPings}
               style={{ fontSize: 'var(--fs-xs)' }}>
-              ▲ PINGS ({pingList.length})
+              <span aria-hidden="true">▲</span> PINGS ({pingList.length})
             </button>
           )}
           {pingList.length > 0 && !hideAutofocusControl && (
