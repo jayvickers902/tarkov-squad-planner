@@ -575,8 +575,21 @@ mod tests {
 
         let error = enumerate_logs(directory.path()).unwrap_err().to_string();
 
-        assert!(error.contains("32 MiB per-file safety limit"));
-        assert!(error.contains(directory.path().to_string_lossy().as_ref()));
+        assert!(
+            error.contains("32 MiB per-file safety limit"),
+            "error = {error}"
+        );
+        // enumerate_logs canonicalizes its root, so the message names the folder
+        // as the filesystem spells it rather than as the caller typed it. Testing
+        // against the raw temp path only passes where those two agree: a Windows
+        // runner hands out TEMP in 8.3 form, so runneradmin arrives as RUNNER~1
+        // and the canonical form differs in the middle, not merely by a prefix.
+        let canonical = std::fs::canonicalize(directory.path()).unwrap();
+        let canonical = canonical.display().to_string();
+        assert!(
+            error.contains(&canonical),
+            "error = {error}, canonical = {canonical}"
+        );
     }
 
     #[test]
