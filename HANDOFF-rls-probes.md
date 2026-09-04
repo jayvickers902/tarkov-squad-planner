@@ -26,59 +26,36 @@ the user first.
 | `10_33_restore_progress_scope.sql` | Self-only progress and direct-write closure | **APPLIED** |
 | `10_34_profiles_write_scope.sql` | Profile write scope and first TRUNCATE repair | **APPLIED** |
 | `10_35_revoke_truncate_trigger.sql` | Schema-wide TRUNCATE/TRIGGER sweep | **APPLIED** |
-| `10_36_restore_collab_payload_bounds.sql` | Payload constraints, geometry validation, map allowlist | **NOT APPLIED** |
-| `10_37_map_change_ping_isolation.sql` | Delete old-map ping events and reject races | **NOT APPLIED** |
-| `10_38_validate_collab_payload_bounds.sql` | Validate the two `10_36` constraints | **NOT APPLIED** |
+| `10_36_restore_collab_payload_bounds.sql` | Payload constraints, geometry validation, map allowlist | **APPLIED** |
+| `10_37_map_change_ping_isolation.sql` | Delete old-map ping events and reject races | **APPLIED** |
+| `10_38_validate_collab_payload_bounds.sql` | Validate the two `10_36` constraints | **APPLIED** |
 
-The production bundle prerequisite for `10_36` is now satisfied. On
-2026-09-03, `https://dudgy.net/` served `/assets/index-B1pE00Dl.js`; that bundle
-contains the exact `src/strokeBounds.js` normalizer: clamp to `0..1`,
-`toFixed(5)`, 1,200-point decimation, and its result passed to
-`append_drawing`. Git still showed `e0259bd` ahead of `origin/main`, so verify
-the live bundle rather than inferring deployment from the remote branch.
+The production client is deployed. On 2026-09-03, `https://dudgy.net/` served
+`/assets/index-CvPjYYLR.js`; it contains the exact `src/strokeBounds.js`
+normalizer and the new `party_ping_events` query/realtime guards for both
+`raid_id` and `map_norm`.
 
-The user has been asked for permission to apply `10_36`. No production write
-has occurred in this session. Do not treat the request as approval.
+The first deployment of commit `3ed7132` failed because 14 generated shared
+modules ended with a literal `\n` token. Commit `a560ece` removes only those
+invalid tokens and their extra trailing blank lines. Its replacement Vercel
+production deployment completed successfully.
 
-Current live checker result before `10_36`: six PASS and the expected three
-FAILs:
+`10_36`, `10_38`, then `10_37` were applied with explicit user approval. The
+live invariant checker is fully green. Both payload constraints report
+`convalidated=true`.
 
-- `select_map_party` lacks the FEATURED allowlist;
-- both collaboration bounds constraints are absent;
-- `append_drawing` lacks geometry validation.
+## 2. Next steps
 
-## 2. Next steps, in order
+The collaboration-bound and map-change ping tasks are complete. After any
+future database deploy, run the read-only live checker. The unrelated known
+SL2 FORCE-RLS finding remains deliberately out of scope.
 
-1. Wait for explicit approval to apply `10_36`.
-2. If approved, run exactly:
+The live `10_37` verification returned:
 
-   ```bash
-   supabase db query -f supabase/10_36_restore_collab_payload_bounds.sql --linked
-   ./supabase/probes/harness/check-live-invariants.sh
-   ```
-
-   Every existing live invariant must pass. If the SQL command reports any
-   error, stop; do not continue to `10_37` or `10_38`.
-3. Deploy commit `0958af0`'s client change and confirm the live bundle filters
-   ping rows/realtime events by `map_norm`. The server migration is backward
-   compatible, but shipping the two halves together gives defense in depth.
-4. Ask separately before applying `10_37` to production. If approved:
-
-   ```bash
-   supabase db query -f supabase/10_37_map_change_ping_isolation.sql --linked
-   ```
-
-   Then confirm the live bodies, read-only:
-
-   ```bash
-   supabase db query "select proname, prosrc like '%delete from public.party_ping_events where party_id = v_party.id%' as deletes_on_map_change, prosrc like '%for update of p%' as locks_party, prosrc like '%v_ping_map is distinct from v_map_norm%' as checks_current_map from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and proname in ('select_map_party','append_party_ping') order by proname;" --linked
-   ```
-
-   Expected: `select_map_party.deletes_on_map_change=true`; and
-   `append_party_ping.locks_party=true`, `checks_current_map=true`.
-5. The evidence supports validating the two `NOT VALID` constraints. Ask
-   before applying `10_38`, because validation takes locks. If approved, apply
-   it after `10_36`, then verify `convalidated=true` for both constraints.
+- `select_map_party`: deletes old events;
+- `append_party_ping`: locks the party row and checks the current map;
+- both functions: `authenticated` and `service_role` execute, no `anon` or
+  `PUBLIC` execute.
 
 ## 3. Map-change ping leak — confirmed and fixed in `0958af0`
 
@@ -141,6 +118,8 @@ own migration preserves the explicit production decision.
 
 Commit `0958af0` contains the server/client ping fix, its behavioral probe,
 the explicit constraint-validation migration, and documentation updates.
+Commit `a560ece` is the minimal generated-file syntax repair that allowed the
+Vercel deployment to build.
 
 Completed successfully:
 
@@ -228,6 +207,4 @@ Other sessions still own uncommitted changes in `companion/`, `shared/domain/`,
 `docs/scaling-assessment.md`, and `src/partySyncMetrics.test.js`, plus untracked
 companion/shared-boundary files. Leave them alone and never use `git add -A`.
 
-The current throwaway cluster is at
-`C:\Users\jayvi\AppData\Local\Temp\tsp-harness-10_37` on port 55432. Stop it
-and delete that exact validated path before ending the session.
+The throwaway cluster and its live catalog capture were stopped and deleted.
