@@ -1598,6 +1598,3 @@ export const __eftLogInternals = {
   accountIdentityFor,
   makeProfileKey,
 }
-
-
-\n

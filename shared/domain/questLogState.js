@@ -217,6 +217,3 @@ export function manualQuestStatePatch(state = 'active') {
     source_event_key: null,
   }
 }
-
-
-\n

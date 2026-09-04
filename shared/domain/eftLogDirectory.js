@@ -288,6 +288,3 @@ export function classifyChangedEftLogMetadata(previousFiles, nextFiles) {
     change: classifyEftLogFileChange(previous.get(file.relativeFilename), file),
   }))
 }
-
-
-\n

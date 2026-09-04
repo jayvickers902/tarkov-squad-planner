@@ -1085,6 +1085,3 @@ export const __companionSyncInternals = {
   createScreenshotPositionCandidate,
   getEftScreenshotMetadata,
 }
-
-
-\n

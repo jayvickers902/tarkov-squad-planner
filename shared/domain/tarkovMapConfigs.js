@@ -121,6 +121,3 @@ export const TARKOV_MAP_CONFIGS = {
     tilePath: 'https://assets.tarkov.dev/maps/labyrinth/main/{z}/{x}/{y}.png',
   },
 }
-
-
-\n

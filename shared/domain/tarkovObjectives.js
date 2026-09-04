@@ -367,6 +367,3 @@ export function objectivePins(tasks = [], members = [], names = [], progress = {
 
   return pins
 }
-
-
-\n

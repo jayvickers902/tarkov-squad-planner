@@ -79,6 +79,3 @@ export function detectQuestWipeBoundary(events = [], allTasks = []) {
 }
 
 export const __questWipeInternals = { knownTaskIds }
-
-
-\n

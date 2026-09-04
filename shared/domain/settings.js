@@ -33,6 +33,3 @@ export function settingSource(key, { raid = null, unit = null, user = null } = {
   if (layerValue(key, user) !== undefined) return 'user'
   return 'default'
 }
-
-
-\n

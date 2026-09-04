@@ -275,6 +275,3 @@ export const TERRAIN_LABELS = {
   'ground-zero':       [{ x:49, y:29, label:'SCHOOL' },     { x:63, y:43, label:'CLINIC' }],
   lighthouse:          [{ x:42, y:46, label:'VILLAGE' },    { x:72, y:49, label:'ROGUE CAMP' }, { x:88, y:34, label:'LIGHTHOUSE' }],
 }
-
-
-\n

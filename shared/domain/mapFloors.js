@@ -51,6 +51,3 @@ export const MAP_FLOORS = {
     { below: Infinity, label: 'SURFACE' },
   ],
 }
-
-
-\n

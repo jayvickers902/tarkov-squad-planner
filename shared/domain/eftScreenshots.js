@@ -203,6 +203,3 @@ export const __eftScreenshotInternals = {
   TIMESTAMP_RE,
   VERSION_PREFIX_RE,
 }
-
-
-\n
