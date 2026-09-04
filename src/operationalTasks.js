@@ -1,10 +1,26 @@
 const TASK_ID_RE = /^[a-f0-9]{24}$/i
 
+/**
+ * @typedef {{
+ *   taskId?: unknown, task_id?: unknown,
+ *   state?: unknown,
+ *   occurredAt?: unknown, occurred_at?: unknown, at?: unknown,
+ * }} TaskEvent
+ */
+
+/**
+ * @param {TaskEvent | null | undefined} event
+ * @returns {string}
+ */
 function taskIdOf(event) {
   const value = event?.taskId ?? event?.task_id
   return typeof value === 'string' ? value.trim() : ''
 }
 
+/**
+ * @param {unknown} value
+ * @returns {number | null}
+ */
 function timestampValue(value) {
   if (value === null || value === undefined || value === '') return null
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -15,11 +31,22 @@ function timestampValue(value) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+/**
+ * Null exactly when timestampValue is null — the two are derived from the same
+ * input by the same pure function, which is why the caller can narrow on both.
+ *
+ * @param {unknown} value
+ * @returns {string | null}
+ */
 function normalizedTimestamp(value) {
   const parsed = timestampValue(value)
   return parsed === null ? null : new Date(parsed).toISOString()
 }
 
+/**
+ * @param {unknown} value
+ * @returns {Set<string>}
+ */
 function knownIdsOf(value) {
   if (value instanceof Set) return value
   if (Array.isArray(value)) return new Set(value.filter(item => typeof item === 'string'))
@@ -32,10 +59,26 @@ function knownIdsOf(value) {
  * EFT emits no operational-task start or expiry records, so recurrence of
  * completion records is the only signal used here. An active event is a
  * conservative static-quest signal; a single completion remains unknown.
+ *
+ * @param {TaskEvent[]} [events]
+ * @param {Iterable<string> | Set<string>} [knownTaskIds]
+ * @returns {Map<string, {
+ *   verdict: 'static-missing' | 'operational' | 'unknown',
+ *   completions: number,
+ *   starts: number,
+ *   firstSeen: string | null,
+ *   lastSeen: string | null,
+ *   confidence: 'low' | 'high',
+ * }>}
  */
 export function classifyUnknownTasks(events = [], knownTaskIds = []) {
   const known = knownIdsOf(knownTaskIds)
-  const stats = new Map()
+  const stats = /** @type {Map<string, {
+    completions: number, starts: number,
+    firstSeen: string | null, lastSeen: string | null,
+    firstTime: number | null, lastTime: number | null,
+    order: number,
+  }>} */ (new Map())
 
   for (const event of Array.isArray(events) ? events : []) {
     const taskId = taskIdOf(event)
@@ -62,7 +105,8 @@ export function classifyUnknownTasks(events = [], knownTaskIds = []) {
     const rawAt = event?.occurredAt ?? event?.occurred_at ?? event?.at
     const at = normalizedTimestamp(rawAt)
     const time = timestampValue(rawAt)
-    if (at !== null) {
+    // at is null exactly when time is, so narrowing both keeps the same branch.
+    if (at !== null && time !== null) {
       if (row.firstTime === null || time < row.firstTime) {
         row.firstTime = time
         row.firstSeen = at

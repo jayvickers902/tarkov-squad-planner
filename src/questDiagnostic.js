@@ -1,19 +1,51 @@
 const HEX_PREFIX = /^profile-([a-f0-9]{8})/i
 
+/**
+ * The preview this reads is unvalidated upstream JSON, so every field is
+ * declared unknown and coerced at the point of use rather than trusted.
+ *
+ * @typedef {{
+ *   filesScanned?: unknown,
+ *   filesParsed?: unknown,
+ *   sessions?: unknown,
+ *   eventsSeen?: unknown,
+ *   events?: unknown,
+ *   ambiguousModeEvents?: unknown,
+ *   modeConfidenceDistribution?: unknown,
+ *   wipeBoundaryAt?: unknown,
+ *   availableVersions?: unknown,
+ *   parseErrors?: unknown,
+ *   malformedRecords?: unknown,
+ *   discoveredProfiles?: unknown,
+ * }} QuestLogPreview
+ */
+
+/**
+ * @param {{ profileKey?: unknown } | null | undefined} profile
+ * @returns {string | null}
+ */
 function profileFingerprint(profile) {
   const match = String(profile?.profileKey || '').match(HEX_PREFIX)
   return match ? match[1].toLowerCase() : null
 }
 
+/**
+ * @param {unknown} records
+ * @returns {Record<string, number>}
+ */
 function countReasons(records) {
   return (Array.isArray(records) ? records : []).reduce((counts, record) => {
     const reason = String(record?.reason || 'UNKNOWN').slice(0, 80)
     counts[reason] = (counts[reason] || 0) + 1
     return counts
-  }, {})
+  }, /** @type {Record<string, number>} */ ({}))
 }
 
-/** Build the clipboard-only, privacy-safe import diagnostic. */
+/**
+ * Build the clipboard-only, privacy-safe import diagnostic.
+ *
+ * @param {QuestLogPreview} [preview]
+ */
 export function buildQuestLogDiagnostic(preview = {}) {
   const profiles = Array.isArray(preview.discoveredProfiles) ? preview.discoveredProfiles : []
   return {
@@ -55,6 +87,10 @@ export function buildQuestLogDiagnostic(preview = {}) {
   }
 }
 
+/**
+ * @param {QuestLogPreview} preview
+ * @returns {string}
+ */
 export function diagnosticText(preview) {
   return JSON.stringify(buildQuestLogDiagnostic(preview), null, 2)
 }

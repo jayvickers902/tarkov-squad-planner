@@ -24,6 +24,12 @@
     "src/questImportRoutes.js",
     "src/welcome.js",
     "src/strokeBounds.js",
-    "src/roomViewModel.js"
+    "src/roomViewModel.js",
+
+    "src/objectivePinLayout.js",
+    "src/questDiagnostic.js",
+    "src/questVisibility.js",
+    "src/operationalTasks.js",
+    "src/squadFocus.js"
   ]
 }

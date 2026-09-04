@@ -17,11 +17,21 @@ export const HIDDEN_QUESTS_KEY = 'quest_hidden'
 // silently refusing the write.
 export const HIDDEN_QUESTS_CAP = 1000
 
+/**
+ * @param {Record<string, unknown> | null | undefined} settings
+ * @returns {Record<string, unknown>}
+ */
 function hiddenLists(settings) {
   const value = settings?.[HIDDEN_QUESTS_KEY]
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? /** @type {Record<string, unknown>} */ (value)
+    : {}
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string[]}
+ */
 function cleanList(value) {
   if (!Array.isArray(value)) return []
   const out = []
@@ -34,22 +44,42 @@ function cleanList(value) {
   return out
 }
 
-// Ids the given mode currently hides, as a Set for row-level lookups.
+/**
+ * Ids the given mode currently hides, as a Set for row-level lookups.
+ *
+ * @param {Record<string, unknown> | null | undefined} settings
+ * @param {unknown} gameMode
+ * @returns {Set<string>}
+ */
 export function hiddenQuestIds(settings, gameMode) {
   return new Set(cleanList(hiddenLists(settings)[normalizeGameMode(gameMode)]))
 }
 
+/**
+ * @param {Record<string, unknown> | null | undefined} settings
+ * @param {unknown} gameMode
+ * @param {string} questId
+ * @returns {boolean}
+ */
 export function isQuestHidden(settings, gameMode, questId) {
   return hiddenQuestIds(settings, gameMode).has(questId)
 }
 
-// Returns the next value for the whole `quest_hidden` setting — other modes are
-// carried through untouched, so a write from one character never disturbs
-// another's list.
+/**
+ * Returns the next value for the whole `quest_hidden` setting — other modes are
+ * carried through untouched, so a write from one character never disturbs
+ * another's list.
+ *
+ * @param {Record<string, unknown> | null | undefined} settings
+ * @param {unknown} gameMode
+ * @param {unknown} questId
+ * @param {boolean} hidden
+ * @returns {Record<string, string[]>}
+ */
 export function withQuestHidden(settings, gameMode, questId, hidden) {
   const mode = normalizeGameMode(gameMode)
   const lists = hiddenLists(settings)
-  const next = {}
+  const next = /** @type {Record<string, string[]>} */ ({})
   for (const [key, value] of Object.entries(lists)) {
     const cleaned = cleanList(value)
     if (cleaned.length) next[key] = cleaned

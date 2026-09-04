@@ -15,22 +15,50 @@ export const FOLLOW_MAX_AGE_MS = 180000
 export const FRAME_MIN_SPAN_M = 120
 export const FRAME_MAX_SPAN_M = 500
 
+/**
+ * @typedef {{ x: number, z: number }} Point2D
+ * @typedef {Point2D & { memberKey: string }} MemberPoint
+ * @typedef {{ minX: number, maxX: number, minZ: number, maxZ: number }} FrameBounds
+ * @typedef {{
+ *   ping?: { user_id?: string, user?: string, x?: unknown, z?: unknown } | null,
+ *   age?: unknown,
+ * }} EchoCard
+ */
+
+/**
+ * @param {EchoCard | null | undefined} card
+ * @returns {string | null}
+ */
 function memberKeyOf(card) {
   return card?.ping?.user_id || card?.ping?.user || null
 }
 
-// Number(null) is 0, and a ping missing a coordinate must not frame the origin.
+/**
+ * Number(null) is 0, and a ping missing a coordinate must not frame the origin.
+ *
+ * @param {unknown} value
+ * @returns {number}
+ */
 function coordinate(value) {
   if (value === null || value === undefined || value === '') return NaN
   return Number(value)
 }
 
+/**
+ * @param {EchoCard | null | undefined} card
+ * @returns {Point2D | null}
+ */
 function positionOf(card) {
   const x = coordinate(card?.ping?.x)
   const z = coordinate(card?.ping?.z)
   return Number.isFinite(x) && Number.isFinite(z) ? { x, z } : null
 }
 
+/**
+ * @param {Point2D} a
+ * @param {Point2D} b
+ * @returns {number}
+ */
 function distance(a, b) {
   return Math.hypot(a.x - b.x, a.z - b.z)
 }
@@ -38,12 +66,16 @@ function distance(a, b) {
 /**
  * Clamp a point cloud to a box between FRAME_MIN_SPAN_M and FRAME_MAX_SPAN_M
  * on each axis, centred on the cloud.
+ *
+ * @param {readonly Point2D[] | null | undefined} points
+ * @param {{ minSpanM?: number, maxSpanM?: number }} [options]
+ * @returns {FrameBounds | null}
  */
 export function frameBounds(points, { minSpanM = FRAME_MIN_SPAN_M, maxSpanM = FRAME_MAX_SPAN_M } = {}) {
   if (!points?.length) return null
   const xs = points.map(point => point.x)
   const zs = points.map(point => point.z)
-  const axis = (values) => {
+  const axis = (/** @type {number[]} */ values) => {
     const low = Math.min(...values)
     const high = Math.max(...values)
     const centre = (low + high) / 2
@@ -56,9 +88,22 @@ export function frameBounds(points, { minSpanM = FRAME_MIN_SPAN_M, maxSpanM = FR
 }
 
 /**
- * @param cards echoCards from useMapPings — already one card per member.
- * @returns { points, anchor, bounds, spreadM, dropped } or null when there is
- *          nothing fresh enough to frame.
+ * @param {readonly EchoCard[] | null | undefined} cards echoCards from
+ *        useMapPings — already one card per member.
+ * @param {{
+ *   myUserId?: string | null,
+ *   myName?: string | null,
+ *   maxAgeMs?: number,
+ *   radiusM?: number,
+ * }} [options]
+ * @returns {{
+ *   points: MemberPoint[],
+ *   anchor: Point2D,
+ *   bounds: FrameBounds | null,
+ *   spreadM: number,
+ *   dropped: string[],
+ *   anchoredOnMe: boolean,
+ * } | null} null when there is nothing fresh enough to frame.
  */
 export function squadFrame(cards, {
   myUserId = null,
@@ -68,7 +113,7 @@ export function squadFrame(cards, {
 } = {}) {
   // Floor is deliberately not a filter: framing decides where to point the
   // camera, and a teammate one floor up is still somewhere you want on screen.
-  const fresh = []
+  const fresh = /** @type {MemberPoint[]} */ ([])
   for (const card of cards || []) {
     const position = positionOf(card)
     const key = memberKeyOf(card)
@@ -124,6 +169,9 @@ export function squadFrame(cards, {
  * A signature over member positions only. The follow effect keys on this rather
  * than on `pingSig`, which folds a 15-second age bucket into itself and would
  * re-frame the camera every 15 seconds with nobody having moved.
+ *
+ * @param {{ points?: readonly MemberPoint[] } | null | undefined} frame
+ * @returns {string}
  */
 export function framePositionSignature(frame) {
   if (!frame?.points?.length) return ''

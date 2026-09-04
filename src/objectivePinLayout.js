@@ -1,3 +1,20 @@
+/**
+ * @typedef {{ memberId?: string, memberName?: string, color?: string, initial?: string }} PinOwner
+ *
+ * @typedef {PinOwner & {
+ *   id: string,
+ *   key: string,
+ *   lat: number,
+ *   lng: number,
+ * }} ObjectivePin
+ *
+ * @typedef {ObjectivePin & { owners: PinOwner[], sourcePinIds: string[] }} SharedObjectivePin
+ */
+
+/**
+ * @param {ObjectivePin} pin
+ * @returns {PinOwner}
+ */
 function ownerOf(pin) {
   return {
     memberId: pin.memberId,
@@ -10,8 +27,12 @@ function ownerOf(pin) {
 // A shared quest objective is one map action with several owners, not several
 // competing markers. Collapse identical objective zones first so the icon and
 // tooltip can say that directly.
+/**
+ * @param {ObjectivePin[]} pins
+ * @returns {SharedObjectivePin[]}
+ */
 function groupSharedObjectives(pins) {
-  const groups = new Map()
+  const groups = /** @type {Map<string, SharedObjectivePin>} */ (new Map())
   for (const pin of pins) {
     const key = `${pin.key}::${pin.lat}::${pin.lng}`
     const existing = groups.get(key)
@@ -32,9 +53,13 @@ function groupSharedObjectives(pins) {
 // Different objectives can still publish the same coordinate. Keep the real
 // map coordinate untouched and fan only those grouped marker artworks out so
 // they remain individually hoverable.
+/**
+ * @param {ObjectivePin[]} [pins]
+ * @returns {(SharedObjectivePin & { offsetX: number, offsetY: number, overlapCount: number })[]}
+ */
 export function layoutObjectivePins(pins = []) {
   const sharedPins = groupSharedObjectives(pins)
-  const groups = new Map()
+  const groups = /** @type {Map<string, SharedObjectivePin[]>} */ (new Map())
 
   for (const pin of sharedPins) {
     const coordinate = `${pin.lat}::${pin.lng}`
@@ -43,7 +68,7 @@ export function layoutObjectivePins(pins = []) {
     groups.set(coordinate, group)
   }
 
-  const layoutById = new Map()
+  const layoutById = /** @type {Map<string, { offsetX: number, offsetY: number, overlapCount: number }>} */ (new Map())
   for (const group of groups.values()) {
     if (group.length === 1) {
       layoutById.set(group[0].id, { offsetX: 0, offsetY: 0, overlapCount: 1 })
