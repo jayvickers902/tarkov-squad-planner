@@ -124,3 +124,26 @@ in place; nothing was automated around it.
 
 Root suite, companion suite and bundle numbers are unchanged from the start of the session,
 which is the point: fifteen files gained types and nothing moved.
+
+## Postscript — what happened after the push
+
+Judgement call 2 above is superseded: the seven commits were pushed to `origin/main` on
+request the same morning, as `f72f469..5582d2d`.
+
+CI then went red, and it is worth recording why, because the local matrix did not predict it.
+**`Web checks` and `Companion web checks` both passed.** `Companion Rust checks` failed —
+and had been failing on every recent run, `f72f469` and `da5bbe1` and `358c611` included, with
+a message byte-identical to the one on `5582d2d`. `tauri::generate_context!()` at
+`companion/src-tauri/src/lib.rs:404` reads `companion/dist` at compile time, `dist/` is
+gitignored, and the job never built it.
+
+Fixed in `c17a57c`: the job now runs `npm ci` and `npm run build` in `companion/` before the
+cargo steps. The same commit moves the three `actions/*` pins to current majors, which CI had
+been warning about separately.
+
+**The lesson worth keeping:** the matrix this brief calls "full" —
+`validate:migrations && lint && typecheck && test && build && check:bundle && test:e2e` —
+does not include the companion's Rust checks, which is precisely why a break there survived so
+many green local runs. Running `cargo fmt --check`, `cargo clippy --all-targets
+--all-features -- -D warnings` and `cargo test --all-targets --all-features` in
+`companion/src-tauri` closes that hole, and it needs `companion/dist` to exist locally too.
