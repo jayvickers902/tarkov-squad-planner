@@ -16,12 +16,19 @@ import { isRaidLive } from './raidLive'
 import useDialogFocus from './useDialogFocus'
 import { RELEASE_VERSION } from './whatsNew'
 import { resolveWelcomeVariant, welcomeStamp, WELCOME_SETTINGS_KEY } from './welcome'
-import { EftLogSyncProvider } from './EftLogSyncContext'
 
 const MyQuests = lazy(() => import('./components/MyQuests'))
 const Room = lazy(() => import('./components/Room'))
 const Changelog = lazy(() => import('./components/Changelog'))
 const AdminKeyManager = lazy(() => import('./components/AdminKeyManager'))
+// The log-sync provider pulls in the EFT log parser, the screenshot watcher
+// and (through useTasks) the whole tarkov.dev REST layer - none of which a
+// signed-out visitor can reach. Keeping it out of the entry chunk means the
+// auth screen no longer waits on ~270 KB of source it will never run.
+// The effect in App below prefetches this module as soon as a session exists,
+// so the signed-in path does not trade a parse cost for a request waterfall.
+const loadEftLogSync = () => import('./EftLogSyncContext')
+const EftLogSyncProvider = lazy(() => loadEftLogSync().then(m => ({ default: m.EftLogSyncProvider })))
 
 function AppSpinner() {
   return <div style={{ width: 28, height: 28, border: '2px solid var(--brd)', borderTop: '2px solid var(--gold)', borderRadius: '50%', animation: 'spin .8s linear infinite', margin: '0 auto' }} />
@@ -46,6 +53,14 @@ export default function App() {
   } = useAuth()
 
   const { settings: userSettings, loading: settingsLoading, setSetting: setUserSetting } = useSettings(user?.id, profile?.callsign)
+
+  // Start fetching the log-sync chunk as soon as we know there is a session,
+  // which happens while the profile lookup is still in flight. React reuses
+  // this in-flight module promise when it renders the lazy provider below.
+  useEffect(() => {
+    if (!user) return
+    loadEftLogSync().catch(() => {})
+  }, [user])
 
   // The party is discovered by useParty, while useParty needs the currently
   // loaded quest list for joins. Keep the last known party mode as a bootstrap
@@ -298,7 +313,7 @@ export default function App() {
       <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div style={{ width: '100%', maxWidth: 430, textAlign: 'center' }}>
           <div style={{ position: 'relative', width: '100%', height: 180, marginBottom: 24, borderRadius: 6, overflow: 'hidden' }}>
-            <img src="/splash.jpg" alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} />
+            <div className="boot-art" />
             <div style={{
               position: 'absolute', inset: 0,
               background: `linear-gradient(to right, #0c0e0d 0%, transparent 40%, transparent 60%, #0c0e0d 100%), linear-gradient(to bottom, #0c0e0d 0%, transparent 45%, transparent 55%, #0c0e0d 100%)`,
@@ -625,29 +640,31 @@ export default function App() {
   }
 
   return (
-    <EftLogSyncProvider
-      userId={user.id}
-      myName={myName}
-      gameMode={gameMode}
-      onApply={reconcileLogEvents}
-      onRepairRows={repairQuestRows}
-      questsLoading={questsLoading || questGameMode !== gameMode}
-      onAddPing={party ? addPing : null}
-      mapNorm={party?.map_norm || null}
-      partyId={party ? `${party.id || party.code}:${Number(party.raid_id) || 0}` : null}
-      questPartyId={party ? (party.id || party.code) : null}
-    >
-      <AppNav
-        route={route}
-        party={party}
-        raidLive={raidLive}
-        callsign={profile.callsign}
-        onNavigate={navigate}
-        onRequestLeave={() => setLeaveConfirmOpen(true)}
-        onOpenGuide={openWelcomeGuide}
-        onLogout={logout}
-      />
-      {signedInView}
-    </EftLogSyncProvider>
+    <Suspense fallback={<AppSpinner />}>
+      <EftLogSyncProvider
+        userId={user.id}
+        myName={myName}
+        gameMode={gameMode}
+        onApply={reconcileLogEvents}
+        onRepairRows={repairQuestRows}
+        questsLoading={questsLoading || questGameMode !== gameMode}
+        onAddPing={party ? addPing : null}
+        mapNorm={party?.map_norm || null}
+        partyId={party ? `${party.id || party.code}:${Number(party.raid_id) || 0}` : null}
+        questPartyId={party ? (party.id || party.code) : null}
+      >
+        <AppNav
+          route={route}
+          party={party}
+          raidLive={raidLive}
+          callsign={profile.callsign}
+          onNavigate={navigate}
+          onRequestLeave={() => setLeaveConfirmOpen(true)}
+          onOpenGuide={openWelcomeGuide}
+          onLogout={logout}
+        />
+        {signedInView}
+      </EftLogSyncProvider>
+    </Suspense>
   )
 }

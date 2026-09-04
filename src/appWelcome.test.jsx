@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RELEASE_VERSION, RELEASES } from './whatsNew'
 import { WELCOME_SETTINGS_KEY } from './welcome'
@@ -41,6 +41,15 @@ vi.mock('./components/Lobby', () => ({
       <button onClick={onOpenGuide}>GUIDE</button>
     </div>
   ),
+}))
+
+// App loads this through React.lazy so the EFT log parser and the tarkov.dev
+// REST layer stay out of the entry chunk. These tests are about welcome gating,
+// so the provider is a pass-through and renderApp() below flushes the boundary.
+vi.mock('./EftLogSyncContext', () => ({
+  EftLogSyncProvider: ({ children }) => <>{children}</>,
+  useEftLogSync: () => null,
+  useEftScreenshotSyncContext: () => null,
 }))
 
 const { default: App } = await import('./App')
@@ -96,42 +105,51 @@ beforeEach(() => {
 
 afterEach(cleanup)
 
+// The signed-in tree sits behind a lazy provider. Without flushing its module
+// promise, every `queryBy... not.toBeInTheDocument()` here would pass against
+// the Suspense fallback rather than against the real tree.
+async function renderApp() {
+  const result = render(<App />)
+  await act(async () => {})
+  return result
+}
+
 describe('App welcome gating', () => {
-  it('shows nothing on the auth screen', () => {
+  it('shows nothing on the auth screen', async () => {
     setAuth({ user: null, profile: null })
-    render(<App />)
+    await renderApp()
 
     expect(screen.getByText('AUTH SCREEN')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('shows nothing on the callsign screen', () => {
+  it('shows nothing on the callsign screen', async () => {
     setAuth({ profile: null, isNewProfile: false })
-    render(<App />)
+    await renderApp()
 
     expect(screen.getByText('AUTH SCREEN')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('shows nothing while the auth splash is up', () => {
+  it('shows nothing while the auth splash is up', async () => {
     setAuth({ loading: true })
-    render(<App />)
+    await renderApp()
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   // The flash bug: an account that has already seen the notes must not see them
   // blink while its stored settings are still in flight.
-  it('shows nothing while settings are still loading', () => {
+  it('shows nothing while settings are still loading', async () => {
     setSettings({}, { loading: true })
-    render(<App />)
+    await renderApp()
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('shows the setup guide to a profile created in this session', () => {
+  it('shows the setup guide to a profile created in this session', async () => {
     setAuth({ isNewProfile: true })
-    render(<App />)
+    await renderApp()
 
     expect(setupHeading()).toBeInTheDocument()
     expect(newsHeading()).not.toBeInTheDocument()
@@ -139,23 +157,23 @@ describe('App welcome gating', () => {
     expect(screen.queryByRole('heading', { name: 'GO INTO RAID' })).not.toBeInTheDocument()
   })
 
-  it('shows the release notes to an existing account with no welcome state', () => {
-    render(<App />)
+  it('shows the release notes to an existing account with no welcome state', async () => {
+    await renderApp()
 
     expect(newsHeading()).toBeInTheDocument()
     expect(setupHeading()).not.toBeInTheDocument()
   })
 
-  it('shows nothing once the stored version matches the release', () => {
+  it('shows nothing once the stored version matches the release', async () => {
     setSettings({ [WELCOME_SETTINGS_KEY]: { news_version: RELEASE_VERSION } })
-    render(<App />)
+    await renderApp()
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('shows the notes again after a version bump', () => {
+  it('shows the notes again after a version bump', async () => {
     setSettings({ [WELCOME_SETTINGS_KEY]: { news_version: 'not-the-current-release' } })
-    render(<App />)
+    await renderApp()
 
     expect(newsHeading()).toBeInTheDocument()
   })
@@ -164,7 +182,7 @@ describe('App welcome gating', () => {
 describe('App welcome dismissal', () => {
   it('stamps the current release and closes', async () => {
     const setSetting = setSettings({}, { setSetting: vi.fn().mockResolvedValue({}) })
-    render(<App />)
+    await renderApp()
 
     fireEvent.click(screen.getByRole('button', { name: 'GOT IT' }))
 
@@ -178,7 +196,7 @@ describe('App welcome dismissal', () => {
   it('stamps both flags for a new profile, so it never sees the notes as well', async () => {
     setAuth({ isNewProfile: true })
     const setSetting = setSettings({}, { setSetting: vi.fn().mockResolvedValue({}) })
-    render(<App />)
+    await renderApp()
 
     fireEvent.click(screen.getByRole('button', { name: 'SET UP QUESTS' }))
 
@@ -196,7 +214,7 @@ describe('App welcome dismissal', () => {
     const setSetting = setSettings({}, {
       setSetting: vi.fn().mockRejectedValue(new Error('offline')),
     })
-    render(<App />)
+    await renderApp()
 
     fireEvent.click(screen.getByRole('button', { name: 'SET UP QUESTS' }))
 
@@ -213,7 +231,7 @@ describe('App welcome suppression during a deep-link join', () => {
     const joinParty = vi.fn(() => new Promise(resolve => { resolveJoin = resolve }))
     setParty({ joinParty })
 
-    render(<App />)
+    await renderApp()
 
     await waitFor(() => expect(joinParty).toHaveBeenCalledTimes(1))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -230,7 +248,7 @@ describe('App welcome guide button', () => {
       { [WELCOME_SETTINGS_KEY]: { news_version: RELEASE_VERSION } },
       { setSetting: vi.fn().mockResolvedValue({}) },
     )
-    render(<App />)
+    await renderApp()
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Primary navigation' }))
@@ -247,7 +265,7 @@ describe('App welcome guide button', () => {
   it('takes a new profile directly to Quest Manager', async () => {
     setAuth({ isNewProfile: true })
     setSettings({}, { setSetting: vi.fn().mockResolvedValue({}) })
-    render(<App />)
+    await renderApp()
 
     fireEvent.click(screen.getByRole('button', { name: 'SET UP QUESTS' }))
 

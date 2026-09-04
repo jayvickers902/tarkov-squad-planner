@@ -16,8 +16,12 @@ import { pathToFileURL } from 'node:url'
 /** @type {BundleBudgets} */
 export const BUNDLE_BUDGETS = Object.freeze({
   entry: {
-    rawBytes: { warn: 560_000, fail: 600_000 },
-    gzipBytes: { warn: 170_000, fail: 180_000 },
+    // Lowered from 560_000/600_000 raw and 170_000/180_000 gzip once the
+    // unreachable Supabase sub-clients and the EFT log-sync subsystem left the
+    // entry chunk. The old ceilings would have let all of it drift back in
+    // unnoticed; these sit just above the shape the entry actually ships.
+    rawBytes: { warn: 465_000, fail: 495_000 },
+    gzipBytes: { warn: 137_000, fail: 146_000 },
   },
   largestAsync: {
     rawBytes: { warn: 850_000, fail: 900_000 },

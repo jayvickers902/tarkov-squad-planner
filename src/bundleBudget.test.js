@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { BUNDLE_BUDGETS, evaluateBundleBudget } from '../scripts/check-bundle-budget.mjs'
 
 const currentShape = {
-  entry: { rawBytes: 550_191, gzipBytes: 160_970 },
+  // Measured from a production build after the entry chunk shed the unreachable
+  // Supabase Storage/Functions clients and the lazily-loaded EFT log subsystem.
+  entry: { rawBytes: 444_503, gzipBytes: 130_387 },
   largestAsyncRaw: { name: 'loot.js', rawBytes: 863_704, gzipBytes: 70_770 },
   largestAsyncGzip: { name: 'tasks.js', rawBytes: 797_995, gzipBytes: 109_960 },
   largestCssRaw: { name: 'index.css', rawBytes: 125_849, gzipBytes: 21_840 },

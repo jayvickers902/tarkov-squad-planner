@@ -18,9 +18,30 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://dudgy.net/og.png" />
     <meta name="theme-color" content="#0c0e0d" />
+    <!-- The first thing the app does after the entry chunk parses is
+         auth.getSession() followed by the current_profile RPC. Without this the
+         DNS + TCP + TLS handshake for that origin only starts once the bundle
+         has downloaded and executed; warming it during HTML parse takes that
+         round trip off the critical path. Vite substitutes the env value here. -->
+    <link rel="preconnect" href="%VITE_SUPABASE_URL%" crossorigin />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&family=Noto+Sans:wght@300;400;500&display=swap" />
+    <!-- Orbitron was requested but is not referenced by any rule in index.css or
+         any inline style, and no rule uses a weight below 400. Dropping both
+         removes ~3.5 KB and 9 @font-face blocks from a render-blocking
+         third-party stylesheet, plus one font file. Rajdhani 500 and Noto Sans
+         500 stay: CSS weight matching resolves the 600-weight rules onto them. -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&family=Noto+Sans:wght@400;500&display=swap" />
+
+    <!-- The hero is a CSS background-image on .auth-art-layer / .lobby-art, so
+         the browser cannot discover it until the stylesheet has loaded, the
+         bundle has executed and React has committed the element - it is the
+         last thing to start and the largest thing to paint. Preloading starts
+         it during HTML parse instead. The media queries mirror the 900px
+         breakpoint in index.css so each viewport fetches exactly one source. -->
+    <link rel="preload" as="image" href="/splash-1280.webp" media="(max-width: 900px)" fetchpriority="high" />
+    <link rel="preload" as="image" href="/splash-2560.webp" media="(min-width: 901px)" fetchpriority="high" />
   </head>
   <body>
     <div id="root"></div>

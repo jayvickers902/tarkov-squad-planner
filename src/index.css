@@ -1014,6 +1014,22 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   background-size: cover;
   background-position: 52% 55%;
 }
+/* The pre-auth boot screen showed a separate /splash.jpg, a fourth hero source
+   downloaded on the critical path and thrown away as soon as the session
+   resolved. It reuses the preloaded .auth-art-layer sources instead, so the
+   boot screen costs no additional bytes and the art no longer changes when the
+   auth screen takes over. Breakpoint mirrors the @media rule below. */
+.boot-art {
+  position: absolute;
+  inset: 0;
+  background-image: url('/splash-2560.webp');
+  background-size: cover;
+  background-position: center;
+}
+@media (max-width: 900px) {
+  .boot-art { background-image: url('/splash-1280.webp'); }
+}
+
 .auth-art-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(12,14,13,.86) 0%, rgba(12,14,13,.34) 34%, rgba(12,14,13,.5) 74%, var(--bg) 100%); }
 .auth-art-vignette { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(12,14,13,.7) 0%, rgba(12,14,13,0) 40%, rgba(12,14,13,.78) 100%); }
 
