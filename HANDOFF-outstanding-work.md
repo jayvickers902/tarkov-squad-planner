@@ -33,7 +33,7 @@ RPC, immediate browser/companion publishing, companion 0.3.1, and release 2026.1
 | `2bd705c` | Raid view's quest column condenses; wiki link per quest |
 | `10bcfdc` | `CENTRE ON ME`, and OVERVIEW no longer retires FOLLOW for good |
 
-Root suite **84 files / 669 tests** (~22s), companion **14 / 76**, lint and typecheck clean,
+Root suite **86 files / 708 tests** (~12s), companion **14 / 76**, lint and typecheck clean,
 Playwright 2/2, web and companion builds clean. Verified 2026-09-03.
 
 ---
@@ -103,11 +103,36 @@ older sessions. The regression fixture builds a 288 MiB newest session plus a 10
 and proves the scan contains eight files / 256 MiB, all from the newest session. The independent 32
 MiB per-file ceiling is unchanged.
 
-### 3.4 `CENTRE ON ME` has no test on the map half
+### 3.4 `CENTRE ON ME` has no test on the map half — completed
 
-The header button, the `C` key, the disabled states and the modifier guard are covered. Resolving
-the reader's newest ping and flying to it lives in `MapLeaflet`, which is expensive to mount, and is
-covered by nothing. Worth one live click after the deploy.
+The map half is covered now, split the way the code is. The resolution rule came out of
+`MapLeaflet` into `ownPingCard` in [src/mapPingPolicy.js](src/mapPingPolicy.js), beside the
+proximity policy and pure for the same reason, and `mapPingPolicy.test.js` pins it down: newest own
+ping first, teammates skipped however fresh, an id match ahead of a fresher callsign match, callsign
+as the fallback for a row that carries no id, and no match when neither handle fits — including the
+case where an absent `myUserId` used to match a ping that had no `user_id` either, which would have
+centred the reader on somebody else. That guard is the one behavior change; everything else is the
+shipped rule moved.
+
+The flight is covered by [src/components/MapLeaflet.centreOnMe.test.jsx](src/components/MapLeaflet.centreOnMe.test.jsx),
+which mounts the real component. Mounting it turned out to be cheap — about 320 ms for thirteen cases —
+once the eight upstream data hooks are stubbed and `sharedPingState` supplies the cards, and it
+asserts against Leaflet's own `flyTo`/`fitBounds` rather than a mock map. It covers the flight to
+the reader's own ping, passing over a teammate's newer one, the callsign fallback, moving nothing
+when the reader has no ping, re-centring on every nonce bump, staying still when a realtime payload
+re-renders without one, widening to `fitBounds` when a teammate is inside the proximity window,
+centring under all four camera policies and with the draw tool active, and — the point of
+`fromUser: true` — FOLLOW deferring its re-frame for six seconds afterwards, against a control case
+that proves FOLLOW does fire in this harness when nobody centred.
+
+Mounting also surfaced one real defect, fixed in the same change: the map-init effect's SVG fetch
+had no cancellation, so a response landing after the reader switched maps or closed the view called
+`addTo` on a removed map and threw. Both landings now check a `cancelled` flag set by the effect
+teardown, and the last two cases in the same file hold that — the image is added when it lands while
+the map is up, and dropped when it lands after.
+
+Still worth one live click after the deploy — none of this proves the tile server or the real
+container size.
 
 ### 3.5 The RLS probes — every hole they found is now closed in production
 

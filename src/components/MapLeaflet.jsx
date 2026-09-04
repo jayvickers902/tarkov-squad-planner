@@ -28,7 +28,7 @@ import { classifyPmcSpawns } from '../tarkovSpawns'
 import { framePositionSignature } from '../squadFocus'
 import { effectiveCameraMode, readCameraMode, writeCameraMode } from '../cameraMode'
 import { escapeHtml, parseSanitizedSvg, safeColor, safeImageUrl } from '../mapHtml'
-import { focusedPingIds as getFocusedPingIds, pingCompanionCards } from '../mapPingPolicy'
+import { focusedPingIds as getFocusedPingIds, ownPingCard, pingCompanionCards } from '../mapPingPolicy'
 import useDialogFocus from '../useDialogFocus'
 
 const PALETTE = ['#e85d5d', '#f5a623', '#e8e85d', '#5de87a', '#5de8d4', '#5db8e8', '#c45de8', '#e85da8', '#ffffff', '#b0b0b0']
@@ -852,6 +852,11 @@ export default function MapLeaflet({
     }
 
     // ── SVG layer ───────────────────────────────────────────────────────────
+    // The fetch outlives the map when the reader switches maps or closes the
+    // view first, and adding a layer to a removed map throws. Both landings
+    // check the flag rather than the ref: the ref is reassigned by the next
+    // map, which would let a stale response decorate its successor.
+    let cancelled = false
     if (cfg.svgPath) {
       const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
       svgEl.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
@@ -859,6 +864,7 @@ export default function MapLeaflet({
       fetch(cfg.svgPath)
         .then(r => r.text())
         .then(text => {
+          if (cancelled) return
           const inner = parseSanitizedSvg(text)
           svgEl.appendChild(inner)
           if (inner) svgEl.setAttribute('viewBox', inner.getAttribute('viewBox'))
@@ -887,6 +893,7 @@ export default function MapLeaflet({
           setSvgReady(true)
         })
         .catch(() => {
+          if (cancelled) return
           // SVG failed — fall back to tile
           if (tileLayerRef.current) {
             tileLayerRef.current.addTo(map)
@@ -901,6 +908,7 @@ export default function MapLeaflet({
     }
 
     return () => {
+      cancelled = true
       if (mapRef.current) {
         mapRef.current.remove()
         mapRef.current = null
@@ -1421,8 +1429,7 @@ export default function MapLeaflet({
   // camera from ever framing a solo position ping. `fromUser` stamps the
   // interaction guard, so FOLLOW yields the usual six seconds afterwards.
   const centreOnMe = useCallback(() => {
-    const mine = pingCards.find(card => card.ping.user_id === myUserId)
-      || pingCards.find(card => card.ping.user === myName)
+    const mine = ownPingCard(pingCards, { myUserId, myName })
     if (!mine) return false
     return focusPing(mine.ping.id, { fromUser: true })
   }, [focusPing, myName, myUserId, pingCards])

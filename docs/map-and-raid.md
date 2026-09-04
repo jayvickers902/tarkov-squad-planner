@@ -211,6 +211,14 @@ you have dragged away. It stays visible but disabled through a live raid with no
 absence is never what someone hunting for their own position finds; in PLAN it appears only once
 there is a ping to centre on.
 
+Which card counts as yours is `ownPingCard` in `src/mapPingPolicy.js`, next to the proximity policy
+and pure for the same reason. The id pass runs over the whole list before the callsign pass begins:
+a callsign is display text a second member can carry, so an id match outranks a fresher name match
+rather than merely losing a tie, and a row with no id still resolves by name. Coverage is split the
+same way — `mapPingPolicy.test.js` for the rule, `MapLeaflet.centreOnMe.test.jsx` for the flight,
+which mounts the real map with its data hooks stubbed and asserts against Leaflet's own `flyTo` and
+`fitBounds`.
+
 `src/squadFocus.js` holds the framing arithmetic — pure, no React, no Leaflet. It is
 anchor-and-radius, not clustering: anchor on my latest ping (or the mean when I have none), include
 members within 250 m of it over a 180 s age window, and clamp the fitted box to a 120–500 m span so

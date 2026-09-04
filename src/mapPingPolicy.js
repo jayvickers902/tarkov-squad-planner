@@ -21,3 +21,15 @@ export function focusedPingIds(target, cards = []) {
     ...pingCompanionCards(target, cards).map(card => card.ping.id),
   ])
 }
+
+// CENTRE ON ME resolves the reader's own newest ping. `pingCards` arrives newest
+// first, so the first match on each pass is the newest one. The id pass runs
+// over the whole list before the callsign pass starts: a callsign is display
+// text a second member can carry, so an id match outranks a fresher name match
+// rather than merely losing a tie. Callers without an id still get the name
+// fallback, which is the only handle an older ping row carries.
+export function ownPingCard(cards = [], { myUserId, myName } = {}) {
+  return (myUserId ? cards.find(card => card.ping.user_id === myUserId) : null)
+    || (myName ? cards.find(card => card.ping.user === myName) : null)
+    || null
+}

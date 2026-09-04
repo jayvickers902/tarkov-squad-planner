@@ -9,10 +9,10 @@ Escape from Tarkov raid-coordination tool. Live at **dudgy.net**.
 - **Hosting:** Vercel (SPA rewrite + CSP in `vercel.json`)
 - **Maps:** Leaflet (`react-leaflet` not used; raw Leaflet in `MapLeaflet.jsx`)
 
-ESLint runs clean (`eslint.config.js`, zero warnings across 224 files) and is a CI gate. There is no
+ESLint runs clean (`eslint.config.js`, zero warnings across 231 files) and is a CI gate. There is no
 TypeScript in the source, but `npm run typecheck` runs `tsc --strict --checkJs` over an opt-in list
 of two files in `tsconfig.typecheck.json` — widen that list rather than adding `.ts` files. Vitest
-suite: 84 files, 669 tests, ~22s. Companion: 14 files, 76 tests. Vite build warnings about chunk
+suite: 86 files, 708 tests, ~12s. Companion: 14 files, 76 tests. Vite build warnings about chunk
 size are acceptable; the bundle budget is the real gate.
 
 ## Commands
