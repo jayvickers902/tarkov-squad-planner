@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inferredTaskMapNorm, objectiveIsOnMap, objectiveIsUnplacedMapAction, objectivePins, objectiveRequiredKeyGroups, objectiveSubjectItem, requiredKeyItems, taskIsOnMap } from './tarkovObjectives'
+import { inferredTaskMapNorm, mapRefName, objectiveHasMapLocation, objectiveIsOnMap, objectiveIsUnplacedMapAction, objectivePins, objectiveRequiredKeyGroups, objectiveSubjectItem, requiredKeyItems, taskIsOnMap } from './tarkovObjectives'
 
 describe('inferredTaskMapNorm', () => {
   it('assigns Supervisor-style objectives to Interchange', () => {
@@ -319,5 +319,64 @@ describe('objective pin presentation data', () => {
     expect(requiredKeyItems({ requiredKeys: [[key], [key, { id: 'k2', name: 'Key two' }]] })
       .map(entry => entry.name)).toEqual(['Key one', 'Key two'])
     expect(requiredKeyItems({})).toEqual([])
+  })
+})
+
+// The REST payload ships `objective.maps[]` and `zone.map` as plain
+// normalized-name strings; the GraphQL shape behind `GRAPHQL_ENABLED` still
+// nests them in `{ id, normalizedName }`. Every map reader goes through
+// `mapRefName`, so both shapes must produce the same verdicts.
+describe('objective map references in either payload shape', () => {
+  const asObjects = {
+    id: 'quality-standard',
+    name: 'Quality Standard',
+    map: { id: 'lab-id', normalizedName: 'the-lab' },
+    objectives: [{
+      id: 'find-ledx',
+      type: 'findQuestItem',
+      description: 'Locate and obtain the special version of the LEDX Skin Transilluminator',
+      optional: false,
+      maps: [{ id: 'lab-id', normalizedName: 'the-lab' }],
+      zones: [{ id: 'zone-1', position: { x: -173, y: 1, z: -374 }, map: { id: 'lab-id', normalizedName: 'the-lab' } }],
+    }],
+  }
+  const asStrings = {
+    ...asObjects,
+    objectives: [{
+      ...asObjects.objectives[0],
+      maps: ['the-lab'],
+      zones: [{ id: 'zone-1', position: { x: -173, y: 1, z: -374 }, map: 'the-lab' }],
+    }],
+  }
+
+  it('reads a normalized-name string exactly as it reads the object', () => {
+    expect(mapRefName('the-lab')).toBe('the-lab')
+    expect(mapRefName({ id: 'lab-id', normalizedName: 'the-lab' })).toBe('the-lab')
+    expect(mapRefName(null)).toBe(null)
+    expect(mapRefName('')).toBe(null)
+    expect(mapRefName({})).toBe(null)
+  })
+
+  it('agrees on map membership, placement and pins across both shapes', () => {
+    for (const mapNorm of ['the-lab', 'customs']) {
+      const [objects, strings] = [asObjects, asStrings]
+      expect(objectiveIsOnMap(strings.objectives[0], strings, mapNorm))
+        .toBe(objectiveIsOnMap(objects.objectives[0], objects, mapNorm))
+      expect(objectiveHasMapLocation(strings.objectives[0], strings, mapNorm))
+        .toBe(objectiveHasMapLocation(objects.objectives[0], objects, mapNorm))
+      expect(taskIsOnMap(strings, mapNorm)).toBe(taskIsOnMap(objects, mapNorm))
+
+      const members = [{ user_id: 'u1', callsign: 'Jay', quests: ['quality-standard'] }]
+      expect(objectivePins([strings], members, [], {}, mapNorm).map(pin => pin.id))
+        .toEqual(objectivePins([objects], members, [], {}, mapNorm).map(pin => pin.id))
+    }
+  })
+
+  it('keeps a Ground Zero -21 variant string resolving to ground-zero', () => {
+    const objective = { id: 'gz', type: 'visit', optional: false, maps: ['ground-zero-21'], zones: [{ id: 'z', position: { x: 1, y: 2, z: 3 }, map: 'ground-zero-21' }] }
+    const task = { id: 't', name: 'Ground Zero task', map: null, objectives: [objective] }
+    expect(objectiveIsOnMap(objective, task, 'ground-zero')).toBe(true)
+    expect(objectiveHasMapLocation(objective, task, 'ground-zero')).toBe(true)
+    expect(inferredTaskMapNorm(task)).toBe('ground-zero-21')
   })
 })

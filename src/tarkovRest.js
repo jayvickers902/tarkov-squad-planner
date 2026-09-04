@@ -147,6 +147,15 @@ function mapReference(id, mapsById) {
   return map ? { id: map.id, normalizedName: map.normalizedName } : null
 }
 
+// Objective `maps[]` and `zone.map` are read through `normalizeMapName` and
+// `mapRefName`, which both take a plain name, so the id is dead weight repeated
+// across ~2,100 references in the task payload. Task-level `map`, transits,
+// `neededKeys` and goon reports keep the object form — their consumers read the
+// id. See `mapRefName` in shared/domain/tarkovObjectives.js for the read side.
+function mapName(id, mapsById) {
+  return mapReference(id, mapsById)?.normalizedName ?? null
+}
+
 function itemReference(id, itemTranslations, itemMetadata = {}) {
   const itemId = typeof id === 'object' ? id?.id : id
   if (!itemId) return null
@@ -226,23 +235,38 @@ function requiredKeyReferences(requiredKeys, itemTranslations) {
     .filter(group => group.length)
 }
 
+// Upstream repeats byte-identical zone entries inside a single objective. They
+// already collapse at render (see objectivePinLayout.js) and duplicate entries
+// produce colliding pin ids, so the copies only cost payload.
 function objectiveZones(objective, mapsById) {
   const zones = []
+  const seen = new Set()
+  const push = zone => {
+    const { x, y, z } = zone.position || {}
+    const key = `${zone.id}|${zone.map}|${x},${y},${z}`
+    if (seen.has(key)) return
+    seen.add(key)
+    zones.push(zone)
+  }
+  // The fallback id counts every positioned zone, deduplicated or not, so the
+  // generated ids stay identical to the pre-dedupe payload.
+  let index = 0
   for (const zone of objective?.zones || []) {
     if (!zone?.position) continue
-    zones.push({
-      id: zone.id || `${zone.map || 'zone'}-${zones.length}`,
+    push({
+      id: zone.id || `${zone.map || 'zone'}-${index}`,
       position: zone.position,
-      map: mapReference(zone.map, mapsById),
+      map: mapName(zone.map, mapsById),
     })
+    index += 1
   }
   for (const location of objective?.possibleLocations || []) {
-    for (const [index, position] of (location.positions || []).entries()) {
+    for (const [locationIndex, position] of (location.positions || []).entries()) {
       if (!position) continue
-      zones.push({
-        id: `${location.map || 'location'}-${index}`,
+      push({
+        id: `${location.map || 'location'}-${locationIndex}`,
         position,
-        map: mapReference(location.map, mapsById),
+        map: mapName(location.map, mapsById),
       })
     }
   }
@@ -251,10 +275,10 @@ function objectiveZones(objective, mapsById) {
 
 function adaptObjective(objective, mapsById, taskTranslations, itemTranslations) {
   const maps = normalizeIds(objective?.maps)
-    .map(id => mapReference(id, mapsById))
+    .map(id => mapName(id, mapsById))
     .filter(Boolean)
   const zones = objectiveZones(objective, mapsById)
-  const mapRefs = maps.length ? maps : [...new Map(zones.map(zone => [zone.map?.id, zone.map]).filter(([id]) => id)).values()]
+  const mapRefs = maps.length ? maps : [...new Set(zones.map(zone => zone.map).filter(Boolean))]
   const itemId = objective?.item || objective?.questItem || objective?.items?.[0]
   const markerItemId = objective?.markerItem
   const adapted = {

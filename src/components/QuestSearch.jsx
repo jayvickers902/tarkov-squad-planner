@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from 'react'
-import { inferredTaskMapNorm, objectiveTypeLabel } from '../tarkovObjectives'
+import { inferredTaskMapNorm, mapRefName, objectiveTypeLabel } from '../tarkovObjectives'
 import { indexTasksById } from '../taskIndex'
 
 function QuestTooltip({ task, anchor, mapNorm }) {
@@ -7,7 +7,7 @@ function QuestTooltip({ task, anchor, mapNorm }) {
   const objs = (task.objectives || []).filter(o => {
     if (o.optional) return false
     if (!mapNorm || !o.maps || o.maps.length === 0) return true
-    return o.maps.some(m => m.normalizedName === mapNorm)
+    return o.maps.some(m => mapRefName(m) === mapNorm)
   })
   if (!objs.length) return null
 

@@ -2,7 +2,7 @@
 // MY TASKS column are the same derivation with different filters, so the maths
 // lives here and both surfaces render it.
 import { bearingRange } from './tarkovPings'
-import { getUserColor, objectiveHasMapLocation, mapNameMatches, questWikiUrl } from './tarkovObjectives'
+import { getUserColor, objectiveHasMapLocation, mapNameMatches, mapRefName, questWikiUrl } from './tarkovObjectives'
 import { questRailColor } from './questColors'
 import { normalizeMembers, objectiveProgressKey, questDoneKey } from './partyMembers'
 
@@ -52,7 +52,7 @@ function memberIndex(name, members) {
 function belongsToMap(objective, task, mapNorm) {
   if (!mapNorm) return true
   if (mapNameMatches(task?.map?.normalizedName, mapNorm)) return true
-  return (objective?.maps || []).some(map => mapNameMatches(map?.normalizedName, mapNorm))
+  return (objective?.maps || []).some(map => mapNameMatches(mapRefName(map), mapNorm))
 }
 
 /**

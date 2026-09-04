@@ -144,16 +144,33 @@ const MAP_DESCRIPTION_PATTERNS = [
     .map(name => [name, new RegExp(`\\b(?:on|in|at|from|into|inside|through|across|near|around|within|or|,)\\s+(?:the )?${name}\\b`, 'i')]),
 ]
 
+/**
+ * The normalized name of an objective map reference.
+ *
+ * `objective.maps[]` and `zone.map` are plain normalized-name strings in the
+ * REST payload the app actually ships; the GraphQL shape (gated off behind
+ * `GRAPHQL_ENABLED`) still nests them in a `{ id, normalizedName }` object.
+ * Read both so neither producer needs a second reader. Task-level `task.map`
+ * is always the object form and is not read through here.
+ */
+export function mapRefName(value) {
+  if (typeof value === 'string') return value || null
+  return value?.normalizedName || null
+}
+
 function explicitObjectiveMaps(objective) {
   const names = new Set()
   for (const map of objective?.maps || []) {
-    if (map?.normalizedName) names.add(map.normalizedName)
+    const name = mapRefName(map)
+    if (name) names.add(name)
   }
   for (const zone of objective?.zones || []) {
-    if (zone?.map?.normalizedName) names.add(zone.map.normalizedName)
+    const name = mapRefName(zone?.map)
+    if (name) names.add(name)
   }
   for (const location of objective?.possibleLocations || []) {
-    if (location?.map?.normalizedName) names.add(location.map.normalizedName)
+    const name = mapRefName(location?.map)
+    if (name) names.add(name)
   }
   return [...names]
 }
@@ -222,11 +239,11 @@ export function objectiveIsOnMap(objective, task, mapNorm) {
 // qualify even when the quest appears in the member's active quest list.
 export function objectiveHasMapLocation(objective, task, mapNorm) {
   if (!mapNorm) return true
-  const objectiveMaps = (objective?.maps || []).map(map => map?.normalizedName).filter(Boolean)
+  const objectiveMaps = (objective?.maps || []).map(mapRefName).filter(Boolean)
   const taskMap = task?.map?.normalizedName || null
   return (objective?.zones || []).some(zone => {
     if (!zone?.position) return false
-    const zoneMap = zone.map?.normalizedName
+    const zoneMap = mapRefName(zone.map)
     if (zoneMap) return mapNameMatches(zoneMap, mapNorm)
     if (objectiveMaps.length) return objectiveMaps.some(mapName => mapNameMatches(mapName, mapNorm))
     return mapNameMatches(taskMap, mapNorm)
@@ -336,7 +353,8 @@ export function objectivePins(tasks = [], members = [], names = [], progress = {
         if (objective.optional || !objectiveHasMapLocation(objective, task, mapNorm)) continue
         for (const zone of objective.zones || []) {
           if (!zone.position) continue
-          if (zone.map?.normalizedName && !mapNameMatches(zone.map.normalizedName, mapNorm)) continue
+          const zoneMap = mapRefName(zone.map)
+          if (zoneMap && !mapNameMatches(zoneMap, mapNorm)) continue
 
           const subject = objectiveSubjectItem(objective)
           pins.push({
