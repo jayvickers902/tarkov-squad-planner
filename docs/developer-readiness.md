@@ -40,20 +40,23 @@ Two of those gates are narrower than their names suggest, and should be read as
 starting points rather than coverage:
 
 - **The type check is opt-in per file.** `tsconfig.typecheck.json` compiles
-  **17 files out of 231** under `strict` + `checkJs`: `partySyncMetrics.js`,
-  `scripts/check-bundle-budget.mjs`, and fifteen pure helpers added in three
-  batches on 2026-09-04. Widening it means adding files to that `include` list
-  and fixing what surfaces — reliably implicit-any parameters and options
+  **19 files out of 237** under `strict` + `checkJs`: `partySyncMetrics.js`,
+  `scripts/check-bundle-budget.mjs`, fifteen pure helpers added in three
+  batches on 2026-09-04, plus `cameraMode.js` and `chunkLoadRecovery.js` added
+  once the DOM lib landed. Widening it means adding files to that `include`
+  list and fixing what surfaces — reliably implicit-any parameters and options
   objects whose type is inferred from `= {}`, fixed by annotating in JSDoc.
 
   It earns its keep beyond the annotations: `squadFocus.js` held a `@returns`
   that was never valid TypeScript, so it failed to parse and mis-inferred the
   function's return type. A JSDoc type nobody compiles is a comment that can be
-  wrong. The limit on going further is not effort but one unmade decision — the
-  config declares `"types": ["node"]` and no `"dom"` lib, so any file
-  referencing `window` or `document` cannot be added until that changes, and
-  changing it affects every included file at once.
-- **The Playwright suite is two tests against the unauthenticated shell.** It
+  wrong. The `"dom"`-lib decision that used to block widening is made: the
+  config now declares `"lib": ["ES2022", "DOM", "DOM.Iterable"]`, which left
+  the existing files clean and resolved `window`/`document`/`localStorage`
+  globals with zero residual errors. The remaining work is ordinary annotation
+  batches — implicit-any parameters and untyped options objects — not a
+  blocked decision.
+- **The Playwright suite is three tests against the unauthenticated shell.** It
   renders the sign-in shell, walks the lazy changelog chunk, and checks a narrow
   viewport. Party, map, quest, and log-import flows have no end-to-end coverage.
 
@@ -134,8 +137,8 @@ prints, so the two can be compared directly.
 
 | Signal | Warn | Fail | Warn (KiB) | Fail (KiB) |
 | --- | ---: | ---: | ---: | ---: |
-| Initial entry, raw | 560,000 B | 600,000 B | 546.9 | 585.9 |
-| Initial entry, gzip | 170,000 B | 180,000 B | 166.0 | 175.8 |
+| Initial entry, raw | 465,000 B | 495,000 B | 454.1 | 483.4 |
+| Initial entry, gzip | 137,000 B | 146,000 B | 133.8 | 142.6 |
 | Largest async JavaScript, raw | 850,000 B | 900,000 B | 830.1 | 878.9 |
 | Largest async JavaScript, gzip | 120,000 B | 130,000 B | 117.2 | 127.0 |
 | Largest CSS, raw | 135,000 B | 150,000 B | 131.8 | 146.5 |
@@ -144,13 +147,27 @@ prints, so the two can be compared directly.
 These are repository gates, not provider limits.
 
 **Every budget passes.** As of 2026-09-04 the largest async raw chunk is
-`tasks` at 779.3 KiB against a 830.1 KiB warn and an 878.9 KiB fail — 6.1% of
+`tasks` at 677.1 KiB against a 830.1 KiB warn and an 878.9 KiB fail — 18.4% of
 headroom. The `loot` chunk that held this line at 843.5 KiB (WARN) is gone: it
 is one file per map now, carrying item ids against a per-map dictionary instead
 of the full item object at each of 7,859 references, so the browser fetches only
-the map in view — 128.4 KiB at worst. `tasks` is the next dataset to watch, and
-577 KiB of its 874 KiB of JSON is the `objectives` array. Unlike loot it has no
-per-map axis to split on.
+the map in view — 128.4 KiB at worst.
+
+`tasks` was the next dataset to watch, and it was not actually unsplittable —
+the redundancy was in the shape, not the data. `objective.maps[]` and
+`zone.map` carried `{id, normalizedName}` objects at 2,065 references where
+every reader wanted only the name, and byte-identical zones within an
+objective (58 of them) were being shipped once per duplicate. Both were
+removed: `tasks.json` went 853.1 KiB → 742.0 KiB, and the chunk followed,
+779.3 KiB → 677.1 KiB. The `objectives` array is still the bulk of the file at
+a measured 466.0 KiB of the 742.0 KiB total.
+
+Dropping the `icebreaker` / `the-labyrinth` map references was considered and
+rejected: it is worth only 2.4 KiB and is not behaviour-neutral. 18 objectives
+would lose their map scope entirely and fall through `objectiveIsOnMap`'s
+permissive branch onto featured lists, and `TASK_MAP_SCOPE_OVERRIDES` depends
+on a stale Labyrinth reference to suppress a wrong key on Offensive
+Reconnaissance.
 
 ## Operational budgets
 
@@ -280,7 +297,7 @@ npm run validate:migrations
   free of React, Tauri, Supabase, `window`, and `document` dependencies.
 - The application still contains large data chunks, but all six bundle budgets
   pass; `tasks` is the one to watch. The lint backlog is cleared and fenced:
-  `npx eslint . --max-warnings 0` exits 0 across 231 files, and the six rules
+  `npx eslint . --max-warnings 0` exits 0 across 237 files, and the six rules
   that were softened for that backlog — `no-unused-vars`, `no-empty`,
   `no-control-regex`, `no-useless-escape`, `require-yield` and
   `react-hooks/exhaustive-deps` — are `error` in `eslint.config.js`, so a

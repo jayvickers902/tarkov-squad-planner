@@ -9,12 +9,12 @@ Escape from Tarkov raid-coordination tool. Live at **dudgy.net**.
 - **Hosting:** Vercel (SPA rewrite + CSP in `vercel.json`)
 - **Maps:** Leaflet (`react-leaflet` not used; raw Leaflet in `MapLeaflet.jsx`)
 
-ESLint runs clean (`eslint.config.js`, zero warnings across 231 files) and is a CI gate. There is no
+ESLint runs clean (`eslint.config.js`, zero warnings across 237 files) and is a CI gate. There is no
 TypeScript in the source, but `npm run typecheck` runs `tsc --strict --checkJs` over an opt-in list
-of 17 files in `tsconfig.typecheck.json` — widen that list rather than adding `.ts` files. The
-config has no `"dom"` lib, so a file referencing `window` or `document` cannot be added as-is. Vitest
-suite: 86 files, 708 tests, ~12s. Companion: 14 files, 76 tests. Vite build warnings about chunk
-size are acceptable; the bundle budget is the real gate.
+of 19 files in `tsconfig.typecheck.json` — widen that list rather than adding `.ts` files. The config
+declares `lib: ["ES2022", "DOM", "DOM.Iterable"]`, so `window`/`document` globals resolve for any
+file added to the list. Vitest suite: 89 files, 731 tests, ~15s. Companion: 14 files, 76 tests. Vite
+build warnings about chunk size are acceptable; the bundle budget is the real gate.
 
 ## Commands
 
@@ -24,9 +24,9 @@ npm run build      # production build to dist/ (~2s)
 npm test           # vitest run
 npm run test:watch # vitest watch
 npm run lint       # eslint — CI gate, must stay at zero warnings
-npm run typecheck  # tsc over tsconfig.typecheck.json's 17 opt-in files
+npm run typecheck  # tsc over tsconfig.typecheck.json's 19 opt-in files
 npm run check:bundle # size budgets against dist/ — run after build
-npm run test:e2e   # playwright smoke, 2 tests on the signed-out shell
+npm run test:e2e   # playwright smoke, 3 tests on the signed-out shell
 npm run prebake    # refresh src/data/prebaked/*.json from tarkov.dev — explicit only
 ```
 
@@ -64,21 +64,25 @@ src/
   main.jsx             # ReactDOM entry
   EftLogSyncContext.jsx# provider for folder-check sync state
   supabase.js          # Supabase client (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)
-  constants.js         # API URL, FEATURED map list, map images, PMC spawns, terrain SVG
+  constants.js†        # API URL, FEATURED map list, map images, PMC spawns, terrain SVG
   index.css            # all styles (single file, ~2900 lines, section-commented)
 ```
 
+† = 2-line re-export shim; the real implementation is the same-named file under `shared/domain/` (see
+the `shared/` block below and [docs/shared-domain-boundary.md](docs/shared-domain-boundary.md)). Edit
+the `shared/domain/` file, not the shim.
+
 **Pure helpers** (bare `*.js`, no React):
 
-- *Party / raid:* `partyMembers.js` `raidPlan.js` `raidObjectives.js` `raidLive.js` `raidSession.js`
-  `raidEnd.js` `raidDebrief.js` `operationalTasks.js` `settings.js`
-- *Map / pings:* `tarkovPings.js` `tarkovSpawns.js` `tarkovZones.js` `tarkovIntel.js`
-  `tarkovObjectives.js` `mapBanners.js` `mapHtml.js` `objectivePinLayout.js` `squadFocus.js`
+- *Party / raid:* `partyMembers.js`† `raidPlan.js` `raidObjectives.js` `raidLive.js` `raidSession.js`
+  `raidEnd.js` `raidDebrief.js` `operationalTasks.js` `settings.js`†
+- *Map / pings:* `tarkovPings.js`† `tarkovSpawns.js` `tarkovZones.js` `tarkovIntel.js`
+  `tarkovObjectives.js`† `mapBanners.js` `mapHtml.js` `objectivePinLayout.js` `squadFocus.js`
   `cameraMode.js` `memberColors.js`
-- *Quests:* `questShare.js` `questColors.js` `questVisibility.js` `questWipe.js` `questGraph.js`
-  `questDiagnostic.js` `questImportRoutes.js` `questLogImportJob.js` `questLogState.js`
-- *EFT logs:* `eftLogs.js` `eftLogWorker.js` `eftLogDirectory.js` `eftLogHandleStore.js`
-  `eftLocations.js` `eftScreenshots.js` `eftNotifications.js` `companionSyncEngine.js`
+- *Quests:* `questShare.js` `questColors.js` `questVisibility.js` `questWipe.js`† `questGraph.js`
+  `questDiagnostic.js` `questImportRoutes.js` `questLogImportJob.js` `questLogState.js`†
+- *EFT logs:* `eftLogs.js`† `eftLogWorker.js` `eftLogDirectory.js`† `eftLogHandleStore.js`
+  `eftLocations.js` `eftScreenshots.js`† `eftNotifications.js` `companionSyncEngine.js`†
   `syncStatus.js` `tarkovCharacters.js`
 - *Data / misc:* `tarkovRest.js` `gameMode.js` `supabaseHealth.js` `chunkLoadRecovery.js`
   `welcome.js` `whatsNew.js`
@@ -102,9 +106,15 @@ src/
 
 ```
 src/data/
-  tarkovMapConfigs.js  # Leaflet bounds/config per map
+  tarkovMapConfigs.js† # Leaflet bounds/config per map
+  mapFloors.js†        # per-map floor/level metadata
   prebaked/            # build-time tarkov.dev payloads, dynamically imported per chunk
 companion/             # Tauri desktop companion (own package.json, excluded from vitest)
+shared/                # web/companion seam — no React, Tauri, Supabase, window or document
+  domain/              # framework-free implementations behind every † shim above (14 files, flat)
+  companionSyncEngine.js  # facade: the sync API the companion and web both import
+  pingCadence.js          # facade: tap window and max tap count
+  taskCatalog.js          # facade: sanitized task IDs and display names, injectable loader
 supabase/              # ordered cutover SQL, 10_01 … 10_30
 scripts/               # prebake.mjs, sync-coop.mjs, update-battlepass-intel.mjs, …
 ```

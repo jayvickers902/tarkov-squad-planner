@@ -13,6 +13,15 @@ tests · all six bundle budgets PASS · largest async raw `tasks-*.js` at 779.3 
 Note that `docs/developer-readiness.md` records 86/708 and an entry budget of 560,000 B; both are
 stale. Step 9 fixes them.
 
+**Status as of 2026-09-04:** Steps 1 through 9 are done and committed. **Step 10 is the only one
+left.** Gates on the finished tree: `npm run lint` clean across 237 files · `npm run typecheck`
+clean at 19 files · `npm test` at **89 files / 731 tests** · `npm run test:e2e` 3/3 · all six bundle
+budgets PASS · largest async raw `tasks-*.js` at **677.1 KiB (18.4% headroom, up from 6.1%)**.
+
+See each step's **Status** line below for what actually shipped, including where it differed from
+the plan — Step 5 in particular rejected a sub-step this plan had asked for, with reasoning worth
+reading before anyone re-attempts it.
+
 ---
 
 ## Execution rules
@@ -27,7 +36,11 @@ These are not optional. The repo has been burned by both of them before.
    [README.md](README.md#required-checks) exactly.
 4. Steps 1, 2, 5 and 10 are user-visible. Each needs `RELEASE_VERSION` bumped and a `RELEASES`
    entry prepended in `src/whatsNew.js` **in the same commit** — invariant 6.
-5. Commit messages end with `Co-Authored-By: WOZCODE <contact@withwoz.com>`.
+5. [HANDOFF-outstanding-work.md](HANDOFF-outstanding-work.md) says commit messages end with
+   `Co-Authored-By: WOZCODE <contact@withwoz.com>`. The nine commits from this plan instead carry
+   `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`, because the agent that wrote them is
+   required to attribute itself. Flagged rather than settled — if the house trailer is wanted, the
+   nine are amendable as a batch.
 
 ---
 
@@ -79,6 +92,10 @@ Dependency graph: 2←1 · 5←3 · 8←3 · 7←2 · 9←5,6 · 10←3,7
 
 ### Step 1 — Fix the changelog horizontal scroll · **Sonnet**
 
+**Status: shipped in `7187d99`.** Matched the plan: `.room-banner-identity` now shrinks, the
+Playwright suite grew to 3 tests, and the shared Room banner was checked unchanged at 375px and
+1280px (the plan named 1024px as the wide check; the shipped verification used 1280px instead).
+
 **Verified defect.** At 375×812 on `/changelog`, `document.documentElement.scrollWidth` is **447**
 against a `clientWidth` of **375** — the page scrolls sideways by 72px. Root cause is
 `.room-banner-identity { flex-shrink: 0 }` at [src/index.css:171](src/index.css:171): the element
@@ -103,6 +120,11 @@ child is `.room-banner-readout` (line 207), measured at left 269, width 179.
 ---
 
 ### Step 3 — Replace seven linear task lookups with one index · **Sonnet**
+
+**Status: shipped in `5d12a8b`.** Matched the plan exactly: the new helper is `src/taskIndex.js`
+(`indexTasksById`, plus `src/taskIndex.test.js`), all seven listed call sites were converted, the
+`MyQuestPanel`/`TodoList` absent-task distinction was preserved, and no existing test needed a
+change.
 
 `tasks` holds 517 entries. Seven sites scan it linearly, several inside loops:
 `FindItems.jsx:21` sits inside `memberRows.forEach → quests.forEach`, so a 5-member party with 40
@@ -129,6 +151,13 @@ distinction is load-bearing and commented in both files. Preserve it exactly.
 
 ### Step 4 — Bound the party repair-poll payload · **Opus**
 
+**Status: shipped in `765222b`.** Differed from the plan's draft column list: verifying against the
+live catalog (not the `supabase/` files) surfaced four columns the plan's 14-field guess missed —
+`spawn` (read by `partySignature`'s change detection), `pings`, `game_mode` (read by
+`resolvePartyMode`) and `active_session_id` (read by `useRaidSession`) — landing on 18 of 21 live
+`parties` columns and 7 of 8 `party_members` columns, both derived from the actual consumers rather
+than assumed.
+
 [src/useParty.js:112-113](src/useParty.js:112) uses a bare `select()` — every column — on both
 `parties` and `party_members`. That is the payload for repair polling, reconnect and visibility
 recovery, and `parties` carries `progress`, `drawings`, `markers` and `ping_log`. Twelve lines
@@ -154,6 +183,12 @@ model in `docs/developer-readiness.md` is still the real fix.
 ---
 
 ### Step 6 — Add the DOM lib and widen the type check · **Haiku**
+
+**Status: shipped in `78872f9`.** Matched the plan exactly: the `lib` array landed alone first, then
+`cameraMode.js` and `chunkLoadRecovery.js` were added in JSDoc only, taking the include list to 19
+files with zero emitted-code changes. `cameraMode.js` also picked up a `CameraMode` typedef and a
+real `isCameraMode` type guard as part of the annotation, which is more precise than "comments only"
+but still emits no runtime code.
 
 `docs/developer-readiness.md` records this as blocked on an unmade decision: the config declares
 `"types": ["node"]` with no `"dom"` lib, so any file touching `window` or `document` cannot be
@@ -184,6 +219,14 @@ never by loosening the compiler:
 
 ### Step 2 — Target sizes and decorative glyphs · **Haiku**
 
+**Status: shipped in `211cd7d`.** Differed from the plan's file list: `src/components/Changelog.jsx`
+was not touched — the changelog version anchors are styled from `index.css` alone and carry no
+decorative glyph, so there was nothing there for the aria-hidden pass to do. Only
+`src/components/MapLeaflet.jsx`, `src/index.css` and `src/whatsNew.js` changed. `min-height` used
+`inline-flex` with no horizontal padding (padding would have widened the footer row past its own
+`gap: 6px 20px`), and accessible names were confirmed unchanged since `mapControlsA11y` and the
+Playwright suite both query by them.
+
 Measured on the signed-out shell: all four footer links render **14px tall**, under the WCAG 2.2 AA
 2.5.8 minimum of 24×24. Changelog version anchors are 23px — marginal, fix in the same pass.
 
@@ -204,6 +247,29 @@ Toolbar buttons put icon glyphs inside the label (`✏ DRAW`, `◎ QUEST MARKER`
 ---
 
 ### Step 5 — Shrink the `tasks` chunk · **Opus**
+
+**Status: shipped in `6adb889`, with the rejected sub-step called out explicitly.** The plan's table
+combined "map refs → strings" with "drop `icebreaker`/`the-labyrinth` refs, dedupe 58 identical
+zones" into one 739.6 KiB / 13.3% row. The shipped change separates them: it does the name-string
+conversion *and* the byte-identical zone dedupe (both land together, since the dedupe falls out of
+the same `adaptObjective` rewrite), but **does not** drop the `icebreaker` / `the-labyrinth`
+references. That sub-step was evaluated and rejected — it is worth only 2.4 KiB and is not
+behaviour-neutral: 18 objectives would lose their map scope entirely and fall through
+`objectiveIsOnMap`'s permissive branch onto featured lists, and `TASK_MAP_SCOPE_OVERRIDES` depends on
+a stale Labyrinth reference to suppress a wrong key on Offensive Reconnaissance.
+
+**Measured result:** `tasks.json` 853.1 → 742.0 KiB (not the plan's 739.6 KiB estimate, since the
+drop was excluded); the chunk 779.3 → 677.1 KiB; headroom 6.1% → 18.4%. All six budgets pass. Verified
+lossless against one upstream fetch through both adapters: 2,123 map references in, 2,065 out, every
+survivor resolving to the same normalized name, zero non-duplicate references removed.
+
+**File list differed from the plan.** The plan named only `src/tarkovRest.js`,
+`src/components/QuestSearch.jsx`, `src/raidObjectives.js`, `src/data/prebaked/tasks.json`,
+`src/tarkovRest.test.js` and `src/whatsNew.js`. The change actually landed in
+`shared/domain/tarkovObjectives.js` (not `src/tarkovRest.js` — `adaptObjective` lives on the shared
+domain side of the shim boundary) and the test file touched was `src/tarkovObjectives.test.js`, not
+`src/tarkovRest.test.js`. No `src/whatsNew.js` release entry was part of this commit; this is a data
+and bundle-size change, not user-facing behaviour.
 
 `tasks-*.js` is 779.3 KiB against an 830.1 KiB warn — 6.1% headroom, and the next chunk to cross.
 `docs/developer-readiness.md` says the `objectives` array "has no per-map axis to split on," which
@@ -252,6 +318,15 @@ in sync.
 
 ### Step 8 — Cover `AdminKeyManager` · **Sonnet**
 
+**Status: shipped in `37353ce`.** `src/components/AdminKeyManager.test.jsx` landed at 182 lines with
+seven cases: the write controls in all three sections, the exact hook payload for a priority toggle,
+a document delete and an override save, plus three submit guards (SAVE OVERRIDE disabled without a
+task; a map click ignored in either placement section until something is armed). Assertions check
+exact call arguments rather than that a spy fired. The file states up front that UI gating is not the
+authorization boundary — the component takes no `isAdmin` prop and does no `is_admin` lookup itself;
+the gate is `isAdmin && ...` at the two `App.jsx` mount sites, and `profiles.is_admin` plus RLS are
+the real boundary.
+
 456 lines, no test, and the only UI that writes curated `map_keys` / `map_loot` — the exact data the
 `is_admin` self-grant hole (closed by `10_34`) exposed.
 
@@ -270,6 +345,10 @@ in sync.
 ## Wave 3
 
 ### Step 7 — a11y contract from source-text to render test · **Sonnet**
+
+**Status: in flight.** A concurrent agent is replacing `src/mapControlsA11y.test.js` with
+`src/components/MapLeaflet.a11y.test.jsx` while Step 9 (this reconciliation) runs. Not yet committed
+as of this pass — do not assume either file's final state from this document.
 
 [src/mapControlsA11y.test.js](src/mapControlsA11y.test.js) asserts accessibility by slicing
 `MapLeaflet.jsx` as a string with a magic `source.indexOf(label) - 500` window. It proves an
@@ -299,14 +378,27 @@ CLAUDE.md calls itself the map, and the map has drifted from the `/shared` move.
 project-structure tree at all. An agent following the map to "the `FEATURED` list in
 `src/constants.js`" opens a two-line file.
 
-**Files**
-- `CLAUDE.md` — add a `shared/domain/` block to *Project structure*; annotate the shimmed helpers;
-  correct the test counts to **87 files / 712 tests**.
-- `docs/developer-readiness.md` — the entry budget is **465,000 B warn / 495,000 B fail**, not
-  560,000 / 600,000 (see `scripts/check-bundle-budget.mjs:23`); record the `"dom"` decision from
-  Step 6 as made rather than pending; update the bundle figures after Step 5.
-- `docs/shared-domain-boundary.md` — make the module table name the `shared/domain/` paths the code
-  actually imports.
+**Status: in flight — this pass.** Landed against the tree as it stood once Steps 1–6 and 8 had
+already shipped (Step 7 still mid-flight concurrently), so the numbers corrected below are the
+current ones, not the 87/712 baseline this plan was drafted against.
+
+**Files** (grew by one beyond the original list — this file needed the same reconciliation)
+- `CLAUDE.md` — added a `shared/` block (`shared/domain/` plus the three root facades) to *Project
+  structure*; marked every shimmed helper with a `†` back to its `shared/domain/` implementation;
+  corrected ESLint scope to **237 files**, typecheck to **19 files** (DOM lib recorded as shipped),
+  and the vitest count to **89 files / 731 tests** (written as 726 during the pass, while Step 7's
+  concurrent file swap was still in flight, and corrected to the settled figure afterwards).
+- `docs/developer-readiness.md` — corrected the entry budget to **465,000 B warn / 495,000 B fail**
+  raw and **137,000 B warn / 146,000 B fail** gzip (`scripts/check-bundle-budget.mjs:23`; the other
+  four budget rows were verified correct and left alone); recorded the `"dom"`-lib decision as made,
+  not pending, at 19/237 files; replaced the `tasks`-chunk narrative with the Step 5 result (779.3 →
+  677.1 KiB, 6.1% → 18.4% headroom) and the rejected icebreaker/labyrinth sub-step; corrected the
+  231-file lint-scope mention to 237.
+- `docs/shared-domain-boundary.md` — made the module table name the `shared/domain/` implementation
+  paths the code actually imports, alongside the `shared/` facade paths, and listed the twelve other
+  `shared/domain/` modules backing the `src/`-level shims.
+- `HANDOFF-optimization-plan.md` (this file) — added the status block above and a **Status** line to
+  each shipped/in-flight step, recording where the shipped commit differed from the plan.
 
 **Success criteria**
 - Every path named in CLAUDE.md's structure section exists and holds what the description claims.
@@ -317,6 +409,9 @@ project-structure tree at all. An agent following the map to "the `FEATURED` lis
 ## Wave 4
 
 ### Step 10 — Extract MapLeaflet's presentation builders · **Sonnet**
+
+**Status: not started.** `src/components/mapMarkerHtml.js` does not exist yet and `MapLeaflet.jsx` is
+still 2,577 lines as of this pass.
 
 `MapLeaflet.jsx` is 2,573 lines: 40 props, 26 `useState`, 12 refs, 23 `useEffect` — four of them
 over 100 lines. Lines 34–505 are pure DOM-string builders that touch no React and no map instance:
