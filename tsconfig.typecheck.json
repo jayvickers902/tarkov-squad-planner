@@ -18,6 +18,12 @@
     "src/memberColors.js",
     "src/raidLive.js",
     "src/gameMode.js",
-    "src/questColors.js"
+    "src/questColors.js",
+
+    "src/mapBanners.js",
+    "src/questImportRoutes.js",
+    "src/welcome.js",
+    "src/strokeBounds.js",
+    "src/roomViewModel.js"
   ]
 }

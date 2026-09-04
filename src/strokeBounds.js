@@ -28,6 +28,10 @@ export const MAX_STROKE_POINTS = 1200
 
 // Clamp to the unit interval and round. Returns null for anything non-finite,
 // so a caller can drop the point rather than send NaN and be refused.
+/**
+ * @param {unknown} value
+ * @returns {number | null}
+ */
 export function clampUnit(value) {
   // Number(null), Number('') and Number([]) are all 0, so a bare Number() cast
   // would turn a missing coordinate into a point at the map corner instead of
@@ -43,20 +47,30 @@ export function clampUnit(value) {
 
 // Evenly sample down to `max`, always keeping the first and last point so the
 // stroke still starts and ends where the user drew it.
+/**
+ * @template T
+ * @param {T[]} points
+ * @param {number} [max]
+ * @returns {T[]}
+ */
 export function decimatePoints(points, max = MAX_STROKE_POINTS) {
   if (!Array.isArray(points) || points.length <= max) return points
   if (max < 2) return points.slice(0, max)
   const step = (points.length - 1) / (max - 1)
-  const out = []
+  const out = /** @type {T[]} */ ([])
   for (let i = 0; i < max; i++) out.push(points[Math.round(i * step)])
   return out
 }
 
 // Returns a stroke's points in the shape the server accepts, or null when the
 // stroke has fewer than the two valid points the server requires.
+/**
+ * @param {unknown} points
+ * @returns {[number, number][] | null}
+ */
 export function normalizeStrokePoints(points) {
   if (!Array.isArray(points)) return null
-  const cleaned = []
+  const cleaned = /** @type {[number, number][]} */ ([])
   for (const point of points) {
     if (!Array.isArray(point) || point.length !== 2) continue
     const x = clampUnit(point[0])
@@ -69,6 +83,10 @@ export function normalizeStrokePoints(points) {
 }
 
 // Returns {x, y} clamped into the map, or null if either is unusable.
+/**
+ * @param {{ x?: unknown, y?: unknown } | null | undefined} marker
+ * @returns {{ x: number, y: number } | null}
+ */
 export function normalizeMarkerPoint(marker) {
   if (!marker || typeof marker !== 'object') return null
   const x = clampUnit(marker.x)

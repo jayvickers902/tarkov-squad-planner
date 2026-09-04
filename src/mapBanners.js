@@ -7,11 +7,19 @@
 const HEADER_DIR = '/map-banners/header'
 const REFERENCE_DIR = '/map-banners/reference'
 
+/**
+ * @param {string | null | undefined} mapNorm
+ * @returns {string | null}
+ */
 export function mapReferenceArt(mapNorm) {
   if (!mapNorm) return null
   return `${REFERENCE_DIR}/${mapNorm}.webp`
 }
 
+/**
+ * @param {string | null | undefined} mapNorm
+ * @returns {string | null}
+ */
 export function mapHeaderBanner(mapNorm) {
   if (!mapNorm) return null
   return `${HEADER_DIR}/${mapNorm}.webp`
@@ -20,6 +28,10 @@ export function mapHeaderBanner(mapNorm) {
 // Two stacked layers: the wide banner paints over the reference art, and a map
 // that has no banner yet simply falls through to the art below it. A missing
 // background layer draws nothing, so no error state is needed.
+/**
+ * @param {string | null | undefined} mapNorm
+ * @returns {string | null}
+ */
 export function mapBannerLayers(mapNorm) {
   const header = mapHeaderBanner(mapNorm)
   const reference = mapReferenceArt(mapNorm)
