@@ -27,6 +27,7 @@ import { bearingRange, useMapPings } from '../useMapPings'
 import { classifyPmcSpawns } from '../tarkovSpawns'
 import { framePositionSignature } from '../squadFocus'
 import { effectiveCameraMode, readCameraMode, writeCameraMode } from '../cameraMode'
+import { indexTasksById } from '../taskIndex'
 import { escapeHtml, parseSanitizedSvg, safeColor, safeImageUrl } from '../mapHtml'
 import { focusedPingIds as getFocusedPingIds, ownPingCard, pingCompanionCards } from '../mapPingPolicy'
 import useDialogFocus from '../useDialogFocus'
@@ -728,6 +729,9 @@ export default function MapLeaflet({
     () => objectivePins(tasks, memberQuests, memberNames, progress, mapNorm),
     [memberQuests, tasks, mapNorm, memberNames, progress],
   )
+  // id -> task, so the quest-marker sync effect below is O(1) per marker
+  // instead of scanning the full task list for every marker on every sync.
+  const taskById = useMemo(() => indexTasksById(tasks), [tasks])
   const laidOutObjPins = useMemo(() => layoutObjectivePins(autoObjPins), [autoObjPins])
 
   // ─── Position pings ─────────────────────────────────────────────────────────
@@ -1051,7 +1055,7 @@ export default function MapLeaflet({
       const color = getUserColor(m.user, memberNames, m.user_id, memberIds)
       const markerUser = String(m.user || 'Unknown')
       const icon = makeQuestIcon(color, escapeHtml(markerUser[0].toUpperCase()))
-      const task = tasks.find(t => t.id === m.questId)
+      const task = taskById.get(m.questId)
       const objectives = task?.objectives?.filter(o => !o.optional) || []
       const tooltipHtml = makeQuestMarkerTooltip({
         color,
@@ -1066,7 +1070,7 @@ export default function MapLeaflet({
       lm.addTo(map)
       markerLayersRef.current[m.id] = lm
     }
-  }, [markers, memberNames, memberIds, tasks, mapNorm, showQuestPins])
+  }, [markers, memberNames, memberIds, taskById, mapNorm, showQuestPins])
 
   // ─── Sync key markers ─────────────────────────────────────────────────────
   // Rebuilt wholesale rather than diffed — keys change infrequently.

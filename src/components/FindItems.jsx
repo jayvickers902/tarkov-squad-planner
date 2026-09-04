@@ -2,11 +2,13 @@ import { useMemo, useState } from 'react'
 import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
 import { memberColor } from '../memberColors'
 import { objectiveIsOnMap } from '../tarkovObjectives'
+import { indexTasksById } from '../taskIndex'
 
 export default function FindItems({ tasks, memberQuests = [], mapNorm, progress, myUserId, userObjProgress }) {
   const memberRows = normalizeMembers(memberQuests)
   const members = memberRows.map(member => member.callsign)
   const [activeMember, setActiveMember] = useState('all')
+  const taskById = useMemo(() => indexTasksById(tasks), [tasks])
 
   // Build per-member find-item lists from their active quests' objectives
   const memberItems = useMemo(() => {
@@ -18,7 +20,7 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
       const itemMap = {}
 
       quests.forEach(q => {
-        const task = tasks.find(t => t.id === q.id)
+        const task = taskById.get(q.id)
         if (!task) return
         task.objectives?.forEach(obj => {
           if (obj.optional) return
@@ -46,7 +48,7 @@ export default function FindItems({ tasks, memberQuests = [], mapNorm, progress,
 
       return { member, userId: memberRow.user_id, items: Object.values(itemMap).sort((a, b) => (b.foundInRaid ? 1 : 0) - (a.foundInRaid ? 1 : 0)) }
     })
-  }, [tasks, memberRows, progress, userObjProgress, mapNorm, myUserId])
+  }, [taskById, memberRows, progress, userObjProgress, mapNorm, myUserId])
 
   // Build a cross-party view: group by item, show which members need it
   const sharedItems = useMemo(() => {

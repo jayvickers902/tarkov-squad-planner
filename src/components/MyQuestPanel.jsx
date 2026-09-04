@@ -9,6 +9,7 @@ import ShareVote from './ShareVote'
 import { questRailColor } from '../questColors'
 import { mapReferenceArt } from '../mapBanners'
 import { HIDDEN_QUESTS_KEY, hiddenQuestIds, withQuestHidden } from '../questVisibility'
+import { indexTasksById } from '../taskIndex'
 import Icon from './Icon'
 
 
@@ -58,6 +59,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
   const canHide = Boolean(onSetSetting)
   const [showHidden, setShowHidden] = useState(false)
   const hidden = useMemo(() => hiddenQuestIds(settings, gameMode), [settings, gameMode])
+  const taskById = useMemo(() => indexTasksById(tasks), [tasks])
 
   const [questOrder, setQuestOrder] = useState(() => {
     const saved = myUserId ? settings.quest_order?.[myUserId] : null
@@ -117,7 +119,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
     }
     const mapped = myQuests
       .map(q => {
-        const matchedTask = tasks.find(t => t.id === q.id)
+        const matchedTask = taskById.get(q.id)
         // `tasks` is already scoped to the selected map. If a quest is absent
         // from that list, it belongs on another map; do not turn it into an
         // objective-less placeholder card. Keep the fallback only for the
@@ -155,7 +157,7 @@ export default function MyQuestPanel({ myQuests, tasks, progress, userObjProgres
       ...mapped.filter(r => r.isMapSpecific && r.isComplete).sort(byOrder),
       ...mapped.filter(r => !r.isMapSpecific && r.isComplete).sort(byOrder),
     ]
-  }, [myQuests, tasks, mapNorm, pending, progress, myUserId, questOrder, hidden])
+  }, [myQuests, taskById, mapNorm, pending, progress, myUserId, questOrder, hidden])
 
   // Hidden rows keep the same ordering; they are simply lifted out of the list
   // into the drawer at the bottom of the column.

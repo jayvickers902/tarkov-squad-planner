@@ -7,6 +7,7 @@ import { useIntel } from '../useIntel'
 import { useIsMobile } from '../useIsMobile'
 import { INTEL_KINDS, worldToNorm } from '../tarkovIntel'
 import { useQuestShareOverrides } from '../useQuestShareOverrides'
+import { indexTasksById } from '../taskIndex'
 
 // Season 1 "Kord Breach" document items. Upstream has these items but *no*
 // coordinates for them on any map — 0 hits across all 17 maps in lootLoose and
@@ -54,6 +55,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
   const { lootRows, error: lootError, addLoot, removeLoot } = useMapLoot(mapNorm)
   const { intelPoints } = useIntel(mapNorm)
   const { tasks } = useTasks(null, gameMode)
+  const taskById = useMemo(() => indexTasksById(tasks), [tasks])
   const { overrides, loading: overridesLoading, upsertOverride } = useQuestShareOverrides()
 
   // The prebaked loose-loot points, projected back onto the flat map image, so a
@@ -116,7 +118,7 @@ export default function AdminKeyManager({ onBack, gameMode = 'regular' }) {
 
   function selectOverrideTask(taskId) {
     setOverrideTaskId(taskId)
-    const task = tasks.find(entry => entry.id === taskId)
+    const task = taskById.get(taskId)
     const existing = overrides[taskId]
     setOverrideTaskName(existing?.task_name || task?.name || '')
     setOverrideVerdict(existing?.verdict || 'solo')

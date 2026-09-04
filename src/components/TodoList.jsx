@@ -8,6 +8,7 @@ import SquadBadge from './SquadBadge'
 import ShareVote from './ShareVote'
 import { memberColor } from '../memberColors'
 import { questRailColor } from '../questColors'
+import { indexTasksById } from '../taskIndex'
 
 
 // A member reads as a colour bar butted against their callsign, so a row's
@@ -223,6 +224,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
     () => new Map(memberRows.map(member => [member.callsign, member.user_id])),
     [memberRows],
   )
+  const taskById = useMemo(() => indexTasksById(tasks), [tasks])
 
   const handleToggleExpand = useCallback((taskId) => {
     setExpanded(e => ({ ...e, [taskId]: !e[taskId] }))
@@ -241,7 +243,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
     const ids = [...new Set(allQuestEntries.map(q => q.id))]
     return ids
       .map(id => {
-        const matchedTask = tasks.find(t => t.id === id)
+        const matchedTask = taskById.get(id)
         // A missing task in a map-scoped list is an off-map quest, not missing
         // quest data. Rendering the generic fallback here creates the empty
         // cards with no trader portrait or objective details.
@@ -280,7 +282,7 @@ export default function TodoList({ tasks, memberQuests = [], progress, onToggleS
         const allObjs = (r.task.objectives || []).filter(o => !o.optional)
         return allObjs.length === 0 || r.objs.length > 0
       })
-  }, [tasks, memberRows, progress, starredQuests, myUserId, mapNorm, memberIdsByName])
+  }, [taskById, memberRows, progress, starredQuests, myUserId, mapNorm, memberIdsByName])
 
   const sortedRows = useMemo(() => {
     if (!questOrder || !questOrder.length) {

@@ -1,5 +1,6 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useMemo } from 'react'
 import { inferredTaskMapNorm, objectiveTypeLabel } from '../tarkovObjectives'
+import { indexTasksById } from '../taskIndex'
 
 function QuestTooltip({ task, anchor, mapNorm }) {
   if (!task || !anchor) return null
@@ -53,6 +54,7 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
   const [tooltip, setTooltip] = useState(null)  // { task, anchor }
   const ref = useRef()
   const tooltipTimer = useRef(null)
+  const taskById = useMemo(() => indexTasksById(tasks), [tasks])
 
   const activeQuests    = mine.filter(item => !completedQuests[item.id])
   const completedActive = mine.filter(item => completedQuests[item.id])
@@ -65,11 +67,11 @@ export default function QuestSearch({ tasks, mine, completedQuests = {}, onAdd, 
     const anchor = e.currentTarget.getBoundingClientRect()
     clearTimeout(tooltipTimer.current)
     tooltipTimer.current = setTimeout(() => {
-      const task = tasks.find(t => t.id === itemId)
+      const task = taskById.get(itemId)
       if (!task) return
       setTooltip({ task, anchor })
     }, 300)
-  }, [tasks])
+  }, [taskById])
 
   const hideTooltip = useCallback(() => {
     clearTimeout(tooltipTimer.current)

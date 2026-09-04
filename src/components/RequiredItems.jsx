@@ -4,12 +4,14 @@ import { RED_REBEL_MAPS } from '../constants'
 import { normalizeMembers, objectiveProgressKey } from '../partyMembers'
 import { memberColor } from '../memberColors'
 import { objectiveIsOnMap, objectiveRequiredKeyGroups } from '../tarkovObjectives'
+import { indexTasksById } from '../taskIndex'
 
 export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progress, gameMode }) {
   const memberRows = normalizeMembers(memberQuests)
   const members = memberRows.map(member => member.callsign)
   const [activeMember, setActiveMember] = useState('all')
   const { allKeys } = useKeys(mapNorm, gameMode)
+  const taskById = useMemo(() => indexTasksById(tasks), [tasks])
 
   const keyIdSet = useMemo(() => new Set(allKeys.map(k => k.id)), [allKeys])
   // Lookup map for key iconLink by id — tasks query may return null iconLink, fall back to keys query
@@ -23,7 +25,7 @@ export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progr
       const itemMap = {}
 
       quests.forEach(q => {
-        const task = tasks.find(t => t.id === q.id)
+        const task = taskById.get(q.id)
         if (!task) return
         task.objectives?.forEach(obj => {
           if (obj.optional) return
@@ -87,7 +89,7 @@ export default function RequiredItems({ tasks, memberQuests = [], mapNorm, progr
 
       return { member, userId: memberRow.user_id, items: Object.values(itemMap) }
     })
-  }, [tasks, memberRows, progress, mapNorm, keyIdSet, keyIconMap])
+  }, [taskById, memberRows, progress, mapNorm, keyIdSet, keyIconMap])
 
   const hasAnyItems = memberItems.some(m => m.items.length > 0)
   const hasCliffDescent = RED_REBEL_MAPS.has(mapNorm)
