@@ -355,3 +355,25 @@ curl -sL https://github.com/jayvickers902/tarkov-squad-planner/releases/latest/d
 - PowerShell here-strings do not work in the Bash tool; use a heredoc or `git commit -F`.
 - Do not pipe `git diff` through a script that re-encodes it — an em dash came back as `â€”` in a
   commit that way, and again inside a status string Codex wrote. Filter patches as bytes.
+
+## 6. Known, deliberately not fixed
+
+### 6.1 A stale PKCE code verifier in Windows Credential Manager
+
+The companion routes Supabase auth storage through the native keyring
+([companion/src/auth.js](companion/src/auth.js) over the `credential_get`/`credential_set`/
+`credential_delete` commands), so an abandoned sign-in leaves its PKCE verifier behind. Observed
+2026-09-04, one stale entry:
+
+```
+sb-<ref>-auth-token-flow-<hash>-code-verifier.net.dudgy.tarkov-squad-planner-companion
+```
+
+It is inert — a verifier is useless without the matching authorization code, and the code is
+single-use and short-lived. Worth knowing, though: the key carries a per-flow hash rather than a
+fixed name, so these do not overwrite each other and an abandoned flow adds one each time. One entry
+after months of use is not a leak worth code, but if the count ever climbs, the cleanup belongs in
+the exchange path rather than in a script.
+
+Inspect with `cmdkey /list`. Do not delete `sb-<ref>-auth-token` or the `tsp-chunk-*` entries beside
+it — those are the live session, and removing them signs the companion out.
