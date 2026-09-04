@@ -4,6 +4,10 @@
 //
 // `text` is the bright hue: it paints the rails and bar segments as well as the
 // chip label. `bg`/`border` are only used by the chip itself.
+
+/** @typedef {{ bg: string, border: string, text: string }} MemberColor */
+
+/** @type {readonly MemberColor[]} */
 export const MEMBER_COLORS = [
   { bg: '#132532', border: '#245d7d', text: '#7ec2f4' },
   { bg: '#241531', border: '#6a2a90', text: '#cd86f2' },
@@ -13,6 +17,13 @@ export const MEMBER_COLORS = [
   { bg: '#1a2a2e', border: '#1e6a7a', text: '#5ad8e8' },
 ]
 
+/**
+ * Members not present in `allMembers` fall back to the first colour.
+ *
+ * @param {string | null | undefined} name
+ * @param {readonly (string | null | undefined)[]} [allMembers]
+ * @returns {MemberColor}
+ */
 export function memberColor(name, allMembers = []) {
   const idx = allMembers.indexOf(name)
   return MEMBER_COLORS[Math.max(0, idx) % MEMBER_COLORS.length]

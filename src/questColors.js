@@ -9,6 +9,10 @@ const QUEST_RAIL_COLORS = [
   '#9c6fb8',
 ]
 
+/**
+ * @param {unknown} value
+ * @returns {number}
+ */
 function hashId(value) {
   const text = String(value ?? '')
   let hash = 0
@@ -18,6 +22,10 @@ function hashId(value) {
   return Math.abs(hash)
 }
 
+/**
+ * @param {string | null | undefined} questId
+ * @returns {string}
+ */
 export function questRailColor(questId) {
   if (!questId) return QUEST_RAIL_COLORS[0]
   return QUEST_RAIL_COLORS[hashId(questId) % QUEST_RAIL_COLORS.length]

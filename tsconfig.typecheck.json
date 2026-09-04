@@ -12,6 +12,12 @@
   },
   "include": [
     "src/partySyncMetrics.js",
-    "scripts/check-bundle-budget.mjs"
+    "scripts/check-bundle-budget.mjs",
+
+    "src/raidEnd.js",
+    "src/memberColors.js",
+    "src/raidLive.js",
+    "src/gameMode.js",
+    "src/questColors.js"
   ]
 }
