@@ -74,11 +74,15 @@ later taps. `append_party_ping` upgrades taps only for the same caller, party, r
 a five-second server/client bound; the live migration is applied. Realtime consumes INSERT and
 UPDATE events, and active/replay lists replace the prior version instead of duplicating it.
 
-### 3.2 Verify the latency in a real raid
+### 3.2 Verify the latency in a real raid — completed
 
-The projection is **~8 s → ~1.5–2 s**, file to database. It is arithmetic over the 2026-09-02
-measurement, not a measurement — no one has timed the new path, because that needs a live raid, a
-rebuilt companion and Google OAuth. After taking a screenshot and seeing its ping, re-measure with:
+Measured on 2026-09-03 with the installed companion 0.3.1, production release 2026.16, Google OAuth,
+and a live Shoreline raid: **902 ms file to database**. The watcher found the screenshot in **743
+ms** and the publish/RPC leg took **159 ms**. This beats the projected **~1.5–2 s** and the old
+approximately eight-second path. The event was a two-tap ping; `server_at` remains the first insert
+time when that row is amended, so the measurement is the latency of the immediate HERE ping.
+
+Repeat after future latency changes with:
 
 ```bash
 ./supabase/probes/harness/measure-live-ping-latency.sh

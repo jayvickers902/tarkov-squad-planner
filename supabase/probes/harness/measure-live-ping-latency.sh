@@ -52,15 +52,28 @@ fi
 file_at_ms="${metadata[0]}"
 source_event_id="${metadata[1]}"
 
-sql="select map_norm, taps,
-  round(extract(epoch from (server_at - to_timestamp(${file_at_ms} / 1000.0))) * 1000)::bigint as file_to_db_ms,
-  (client_at - ${file_at_ms})::bigint as watcher_ms,
-  round(extract(epoch from (server_at - to_timestamp(client_at / 1000.0))) * 1000)::bigint as publish_rpc_ms,
-  to_char(server_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.MS') as server_utc
-from public.party_ping_events
-where source_event_id = '${source_event_id}'
-order by server_at desc
-limit 1;"
+sql="with matched as (
+  select map_norm, taps,
+    round(extract(epoch from (server_at - to_timestamp(${file_at_ms} / 1000.0))) * 1000)::bigint as file_to_db_ms,
+    (client_at - ${file_at_ms})::bigint as watcher_ms,
+    round(extract(epoch from (server_at - to_timestamp(client_at / 1000.0))) * 1000)::bigint as publish_rpc_ms,
+    to_char(server_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS.MS') as server_utc
+  from public.party_ping_events
+  where source_event_id = '${source_event_id}'
+  order by server_at desc
+  limit 1
+)
+select metric, value
+from matched
+cross join lateral (values
+  (1, 'map', map_norm::text),
+  (2, 'taps', taps::text),
+  (3, 'file_to_db_ms', file_to_db_ms::text),
+  (4, 'watcher_ms', watcher_ms::text),
+  (5, 'publish_rpc_ms', publish_rpc_ms::text),
+  (6, 'server_utc', server_utc)
+) as measurement(position, metric, value)
+order by position;"
 
 echo "Live ping latency (read-only, linked project)"
 echo "  Screenshot: $(basename "$screenshot")"
