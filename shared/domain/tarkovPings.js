@@ -12,10 +12,10 @@
 // clock at arrival: the screenshot filename is only minute-granular and cannot
 // order taps.
 
-import { FEATURED } from './constants'
-import { TARKOV_MAP_CONFIGS } from './tarkovMapConfigs'
-import { MAP_FLOORS } from './mapFloors'
-import { SYSTEM_DEFAULTS } from './settings'
+import { FEATURED } from './constants.js'
+import { TARKOV_MAP_CONFIGS } from './tarkovMapConfigs.js'
+import { MAP_FLOORS } from './mapFloors.js'
+import { SYSTEM_DEFAULTS } from './settings.js'
 import { MAX_TAPS as SHARED_MAX_TAPS, TAP_WINDOW_MS as SHARED_TAP_WINDOW_MS } from '../pingCadence.js'
 
 export const PING_MAX      = 24              // cap on the stored array

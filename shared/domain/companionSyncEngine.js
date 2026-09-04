@@ -11,17 +11,17 @@ import {
   isSeasonalEvent,
   parseEftLogAppend,
   parseEftLogFiles,
-} from './eftLogs'
+} from './eftLogs.js'
 import {
   classifyEftLogFileChange,
   getEftLogReadOffset,
   MAX_RELEVANT_FILE_BYTES,
   MAX_TOTAL_RELEVANT_BYTES,
-} from './eftLogDirectory'
+} from './eftLogDirectory.js'
 import {
   taskMetadataFor,
   toQuestLogEventPayload,
-} from './questLogState'
+} from './questLogState.js'
 import {
   createScreenshotPositionCandidate,
   dedupeEftScreenshotMetadata,
@@ -30,8 +30,8 @@ import {
   screenshotMetadataKey,
   screenshotPingSourceId,
   toEftScreenshotPosition,
-} from './eftScreenshots'
-import { MAX_TAPS, TAP_WINDOW_MS, normalizeMapName } from './tarkovPings'
+} from './eftScreenshots.js'
+import { MAX_TAPS, TAP_WINDOW_MS, normalizeMapName } from './tarkovPings.js'
 
 export const QUEST_LOG_SYNC_CHUNK_SIZE = 200
 export const QUEST_LOG_CHUNK_SIZE = QUEST_LOG_SYNC_CHUNK_SIZE

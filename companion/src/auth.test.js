@@ -22,6 +22,7 @@ describe('companion auth boundary', () => {
     await expect(storage.getItem('session')).resolves.toBe('value')
     await storage.setItem('session', 'next')
     await storage.removeItem('session')
+    await expect(storage.getItem(`bad${String.fromCodePoint(0)}`)).rejects.toMatchObject({ code: 'AUTH_STORAGE_INVALID_KEY' })
     expect(calls).toEqual([['get', 'session'], ['set', 'session', 'next'], ['delete', 'session']])
   })
 

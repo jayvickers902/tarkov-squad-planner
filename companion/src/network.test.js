@@ -78,5 +78,6 @@ describe('companion network boundary', () => {
     expect(() => sanitizeScanMetrics({ matched: 1.5 })).toThrow(NetworkBoundaryError)
     expect(() => sanitizeScanMetrics({ selection: 'profile-raw-id' })).toThrow(NetworkBoundaryError)
     expect(() => sanitizeScanMetrics({ scannerVersion: 'C:\\private\\scanner.exe' })).toThrow(NetworkBoundaryError)
+    expect(() => sanitizeScanMetrics({ scannerVersion: `0.2${String.fromCodePoint(0)}` })).toThrow(NetworkBoundaryError)
   })
 })

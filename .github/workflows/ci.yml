@@ -1,6 +1,10 @@
 name: CI
 
 on:
+  # `main` takes direct commits as well as pull requests, so the gate has to
+  # fire on push or it never runs for most of this repository's history.
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 

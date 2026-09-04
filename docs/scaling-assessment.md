@@ -113,22 +113,26 @@ For a continuously ready companion with the default 15-second fallback scan,
 the old behavior refreshed desktop context on every run (about 4 context RPCs
 per minute) and reported status on each connecting/connected transition plus
 the 30-second presence timer (about 10 status RPCs per minute in the steady
-state). The runtime now allows fallback runs to reuse the 30-second context
-cache and coalesces unchanged status behind a 30-second presence lease. The
-modeled steady state is therefore approximately 2 context RPCs/minute and 2
-status RPCs/minute — a 50% and 80% reduction respectively.
+ state). The runtime now allows fallback runs to reuse the 30-second context
+ cache and coalesces routine status changes behind a 30-second presence lease.
+ Error and offline transitions, recovery, and completion of a syncing run still
+ report immediately; unchanged steady-state status is refreshed by the lease
+ timer. Because each scheduled 15-second fallback completes a run, the modeled
+ steady state is approximately 2 context RPCs/minute and 4 status RPCs/minute —
+ a 50% and 60% reduction respectively.
 
 | Continuously ready companions | Old context calls/s | New context calls/s | Old status calls/s | New status calls/s |
 | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 66.7 | 33.3 | 166.7 | 33.3 |
-| 5,000 | 333.3 | 166.7 | 833.3 | 166.7 |
-| 10,000 | 666.7 | 333.3 | 1,666.7 | 333.3 |
+| 1,000 | 66.7 | 33.3 | 166.7 | 66.7 |
+| 5,000 | 333.3 | 166.7 | 833.3 | 333.3 |
+| 10,000 | 666.7 | 333.3 | 1,666.7 | 666.7 |
 
 These are modeled steady-state rates, not measured post-deploy traffic. Initial
-startup, explicit/manual syncs, filesystem events, errors, reconnects, and
-state transitions can add calls; those paths intentionally remain fresh and
-are covered by the companion runtime tests. Compare them with a bounded
-`pg_stat_statements` window after rollout.
+ startup, explicit/manual syncs, filesystem events, error/offline transitions,
+ recovery, completed runs, and lease expiry can add calls. Routine transient
+ watching/syncing changes are intentionally coalesced; the urgent paths are
+ covered by the companion runtime tests. Compare the model with a bounded
+ `pg_stat_statements` window after rollout.
 
 ## What the model measures
 

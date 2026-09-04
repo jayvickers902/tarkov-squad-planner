@@ -6,12 +6,14 @@ Tarkov Squad Planner is a React application for coordinating Escape from Tarkov 
 
 - `src/` — React/Vite web application
 - `companion/` — React/Vite UI and Rust/Tauri desktop runtime
-- `supabase/` — ordered database change scripts, Edge Functions, and policy probes
+- `supabase/` — ordered database change scripts and policy probes
 - `scripts/` — data prebaking, migration validation, and scaling analysis
 - `docs/` — current architecture and feature documentation
 - `docs/archive/` — historical handoffs; useful context, but not current authority
 
 Start with [the architecture and ownership guide](docs/architecture-ownership.md). Feature-specific references are in [quest-system.md](docs/quest-system.md), [map-and-raid.md](docs/map-and-raid.md), [eft-log-import.md](docs/eft-log-import.md), and [quest-shareability.md](docs/quest-shareability.md).
+
+For the state of the quality, scaling, and database work — what is verified, what is estimated, and what still needs a live database — read [developer-readiness.md](docs/developer-readiness.md). Open engineering items are tracked in [HANDOFF-outstanding-work.md](HANDOFF-outstanding-work.md).
 
 ## Prerequisites
 
@@ -39,13 +41,16 @@ The companion currently consumes a small amount of shared web-domain code. See t
 
 ## Required checks
 
-Run these before opening a pull request:
+Run these before opening a pull request. This list is the same set CI runs, in the same order — `check:bundle` reads the `dist/` that `build` produces, so keep it after `build`.
 
 ```powershell
 npm run validate:migrations
 npm run lint
+npm run typecheck
 npm test
 npm run build
+npm run check:bundle
+npm run test:e2e
 
 Push-Location companion
 npm run lint
@@ -60,7 +65,9 @@ cargo test --all-targets --all-features
 Pop-Location
 ```
 
-Pull requests run the same checks in GitHub Actions. See [CONTRIBUTING.md](CONTRIBUTING.md) for change and review expectations.
+The end-to-end suite needs a browser on first run: `npx playwright install chromium`. It starts its own preview server on `127.0.0.1:4173`.
+
+GitHub Actions runs these on push to `main` and on pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for change and review expectations.
 
 ## Database changes
 

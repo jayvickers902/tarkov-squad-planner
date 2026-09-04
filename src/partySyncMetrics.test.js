@@ -27,5 +27,3 @@ describe('party sync metrics', () => {
     expect(metrics.snapshot()).toEqual([])
   })
 })
-
-\n

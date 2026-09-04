@@ -18,6 +18,7 @@ const STATUS_LABELS = {
   connected: 'Connected',
   error: 'Needs attention',
 }
+const EMPTY_EVENTS = Object.freeze([])
 
 function formatSyncTime(value) {
   if (!value) return 'Never'
@@ -197,7 +198,7 @@ export default function App() {
   const status = normalizeStatus(rawStatus)
   const knownProfiles = status.knownProfiles || []
   const lastSuccessfulScan = status.lastSuccessfulScan || null
-  const successfulEvents = lastSuccessfulScan?.events || []
+  const successfulEvents = lastSuccessfulScan?.events || EMPTY_EVENTS
   const eventRows = useMemo(() => buildSuccessfulScanRows(successfulEvents, taskNames), [successfulEvents, taskNames])
 
   useEffect(() => {

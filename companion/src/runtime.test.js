@@ -15,7 +15,11 @@ function harness(overrides = {}) {
   const sync = vi.fn(async () => ({}))
   const screenshot = vi.fn(async () => ({}))
   const engine = overrides.engine || { questLogs: { sync }, screenshots: { sync: screenshot, flush: vi.fn(async () => {}) } }
-  const { native: _native, auth: _auth, network: _network, engine: _engine, ...runtimeOptions } = overrides
+  const runtimeOptions = { ...overrides }
+  delete runtimeOptions.native
+  delete runtimeOptions.auth
+  delete runtimeOptions.network
+  delete runtimeOptions.engine
   const runtime = createCompanionRuntime({
     native, auth, network, engine, enabled: true,
     eventDebounceMs: 20, fallbackIntervalMs: 100, retryBaseMs: 10, retryMaxMs: 25,
@@ -205,13 +209,88 @@ describe('companion runtime', () => {
     await vi.runAllTicks()
     reportSyncClientStatus.mockClear()
 
-    await runtime.requestSync('fallback')
     expect(reportSyncClientStatus).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(29_999)
     expect(reportSyncClientStatus).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1)
     expect(reportSyncClientStatus).toHaveBeenCalledOnce()
+    await runtime.dispose()
+  })
+
+  it('defers routine watching-to-syncing presence but reports completion immediately', async () => {
+    vi.useFakeTimers()
+    let release
+    const sync = vi.fn()
+      .mockResolvedValueOnce({})
+      .mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    const reportSyncClientStatus = vi.fn(async () => {})
+    const { runtime } = harness({
+      fallbackIntervalMs: 0,
+      network: { reportSyncClientStatus },
+      engine: { questLogs: { sync }, screenshots: {} },
+    })
+    await runtime.start()
+    reportSyncClientStatus.mockClear()
+
+    const running = runtime.syncNow()
+    await vi.waitFor(() => expect(sync).toHaveBeenCalledTimes(2))
+    expect(runtime.getStatus().state).toBe('connecting')
+    expect(reportSyncClientStatus).not.toHaveBeenCalled()
+
+    release({})
+    await running
+    await vi.runAllTicks()
+    expect(reportSyncClientStatus).toHaveBeenCalledOnce()
+    expect(reportSyncClientStatus).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({ service: 'logs', state: 'watching' }),
+    ]))
+    await runtime.dispose()
+  })
+
+  it('reports error, offline, and recovery presence transitions without waiting for the lease', async () => {
+    vi.useFakeTimers()
+    let onConnectivityChange
+    const reportSyncClientStatus = vi.fn(async () => {})
+    const sync = vi.fn(async () => ({}))
+    const { runtime } = harness({
+      fallbackIntervalMs: 0,
+      engine: { questLogs: { sync }, screenshots: {} },
+      network: {
+        reportSyncClientStatus,
+        onConnectivityChange: vi.fn(async callback => {
+          onConnectivityChange = callback
+          return () => {}
+        }),
+      },
+    })
+    await runtime.start()
+    await vi.runAllTicks()
+
+    reportSyncClientStatus.mockClear()
+    sync.mockRejectedValueOnce(new Error('temporary failure'))
+    await runtime.syncNow()
+    expect(reportSyncClientStatus).toHaveBeenCalledOnce()
+    expect(reportSyncClientStatus).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({ service: 'logs', state: 'error' }),
+    ]))
+    await vi.runAllTicks()
+
+    reportSyncClientStatus.mockClear()
+    onConnectivityChange(false)
+    expect(reportSyncClientStatus).toHaveBeenCalledOnce()
+    expect(reportSyncClientStatus).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({ service: 'logs', state: 'offline' }),
+    ]))
+    await vi.runAllTicks()
+
+    reportSyncClientStatus.mockClear()
+    onConnectivityChange(true)
+    await vi.runAllTicks()
+    expect(reportSyncClientStatus).toHaveBeenCalledOnce()
+    expect(reportSyncClientStatus).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({ service: 'logs', state: 'syncing' }),
+    ]))
     await runtime.dispose()
   })
 
@@ -265,7 +344,7 @@ describe('companion runtime', () => {
 
     await vi.advanceTimersByTimeAsync(100)
     expect(sync.mock.calls.length).toBeGreaterThan(syncsAfterResume)
-    expect(reportSyncClientStatus.mock.calls.length).toBe(reportsAfterResume)
+    expect(reportSyncClientStatus.mock.calls.length).toBeGreaterThan(reportsAfterResume)
     await runtime.dispose()
   })
 

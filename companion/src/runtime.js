@@ -311,7 +311,7 @@ export function createCompanionRuntime({
   let visibilityCleanup = null
   let presenceTimer = null
   let presenceLastSentAt = null
-  let presenceStateKey = ''
+  let presenceObservedStateKey = ''
   let presenceRequest = null
   let presenceQueued = false
   let selectionByMode = Object.create(null)
@@ -381,31 +381,36 @@ export function createCompanionRuntime({
     const logs = row('logs', Boolean(roots.logsRoot))
     return [logs, row('pings', Boolean(roots.screenshotsRoot), { state: pingState, detail: pingDetail })]
   }
-  function reportPresence() {
+  function reportPresence({ force = false } = {}) {
     const report = method(network, 'reportSyncClientStatus', 'reportSyncStatus')
     if (!report || !signedIn || disposed) return
     const rows = serviceStatusRows()
-    // last_sync_at changes on every successful run, but service state/config
-    // changes are the freshness boundary consumers actually need immediately.
-    // Keep a 30-second lease for unchanged state and coalesce updates while an
-    // RPC is in flight; this preserves reconnect/setup visibility without
-    // turning every scan status update into a database write.
+    // last_sync_at changes on every successful run. Routine transient state
+    // changes (for example watching <-> syncing) stay behind the 30-second
+    // lease, while error/offline, recovery, and a completed syncing -> watching
+    // run are freshness boundaries that report immediately. Coalesce updates
+    // while an RPC is in flight; this keeps the steady-state reduction without
+    // hiding an unhealthy or recovered companion for a full lease.
     const stateKey = JSON.stringify(rows.map(({ service, configured, state }) => ({ service, configured, state })))
     const currentTime = now()
-    const stateChanged = stateKey !== presenceStateKey
+    const observedStateChanged = stateKey !== presenceObservedStateKey
     const leaseExpired = presenceLastSentAt === null || currentTime - presenceLastSentAt >= 30_000
     let previousRows = []
-    try { previousRows = JSON.parse(presenceStateKey) } catch { /* first report */ }
+    try { previousRows = JSON.parse(presenceObservedStateKey) } catch { /* first report */ }
     const unhealthy = row => row?.state === 'error' || row?.state === 'offline'
     const completedRun = previousRows.some(row => row?.state === 'syncing')
       && rows.some(row => row?.state === 'watching')
-    const urgentStateChange = rows.some(unhealthy) || previousRows.some(unhealthy) || completedRun
-    if ((!stateChanged || !urgentStateChange) && !leaseExpired && presenceLastSentAt !== null) return
+    const urgentStateChange = observedStateChanged
+      && (rows.some(unhealthy) || previousRows.some(unhealthy) || completedRun)
+    // Keep the observed state even when a routine transition is deferred. A
+    // watching -> syncing transition may be deferred, but its subsequent
+    // syncing -> watching completion must still be recognized.
+    presenceObservedStateKey = stateKey
+    if (!force && !urgentStateChange && !leaseExpired) return
     if (presenceRequest) {
       presenceQueued = true
       return
     }
-    presenceStateKey = stateKey
     presenceLastSentAt = currentTime
     presenceRequest = Promise.resolve(report.call(network, rows))
       .catch(() => {})
@@ -413,7 +418,7 @@ export function createCompanionRuntime({
         presenceRequest = null
         if (presenceQueued) {
           presenceQueued = false
-          reportPresence()
+          reportPresence({ force: true })
         }
       })
   }
@@ -447,9 +452,18 @@ export function createCompanionRuntime({
   }
 
   async function stopWatch() {
-    if (watchCleanup) { try { watchCleanup() } catch {} watchCleanup = null }
+    if (watchCleanup) {
+      try { watchCleanup() } catch {
+        // Watch cleanup is best-effort; the native watcher is stopped below.
+      }
+      watchCleanup = null
+    }
     const stop = method(native, 'stopWatch', 'stopNativeWatch')
-    if (stop) { try { await stop() } catch {} }
+    if (stop) {
+      try { await stop() } catch {
+        // Native stop failures must not prevent local lifecycle cleanup.
+      }
+    }
   }
 
   function clearWorkTimers() {
@@ -802,7 +816,11 @@ export function createCompanionRuntime({
     const listen = registerWatchListener || eventListenerRegistration || firstFunction(native.registerWatchListener, native.onFilesystemEvent, native.listenFilesystem)
     if (listen) {
       const cleanup = await listen.call(listen === registerWatchListener ? undefined : native, onFilesystemEvent)
-      if (!started || disposed) { try { cleanup?.() } catch {} } else if (typeof cleanup === 'function') watchCleanup = cleanup
+      if (!started || disposed) {
+        try { cleanup?.() } catch {
+          // A late listener cleanup cannot affect an already-stopped runtime.
+        }
+      } else if (typeof cleanup === 'function') watchCleanup = cleanup
     }
   }
 
@@ -833,7 +851,9 @@ export function createCompanionRuntime({
   function subscribe(listener) {
     if (typeof listener !== 'function') return () => {}
     listeners.add(listener)
-    try { listener(getStatus()) } catch {}
+    try { listener(getStatus()) } catch {
+      // Subscribers are isolated so one UI listener cannot break the runtime.
+    }
     return () => listeners.delete(listener)
   }
   function getStatus() { return clone(status) }
@@ -845,13 +865,17 @@ export function createCompanionRuntime({
     signedIn = Boolean(user || value === true)
     authUserId = nextUserId || (value === true ? authUserId : null)
     if (!signedIn || changedUser) {
-      try { await createdEngine?.dispose?.() } catch {}
+      try { await createdEngine?.dispose?.() } catch {
+        // Disposing an old user engine is best-effort before resetting state.
+      }
       createdEngine = null
       checkpointStore = null
       context = null
       contextRefreshedAt = null
       selectionByMode = Object.create(null)
       forceNextScan = false
+      presenceLastSentAt = null
+      presenceObservedStateKey = ''
     }
     if (!signedIn) { await stopWatch(); clearTimers(); setStatus({ state: 'offline', detail: 'Sign in to enable sync', pendingCount: 0 }); return }
     if (started) await becomeReady()
@@ -886,7 +910,11 @@ export function createCompanionRuntime({
       } catch { signedIn = false }
     }
     const enabledGetter = method(native, 'getEnabled', 'isEnabled')
-    if (enabledGetter && initialEnabled === false) { try { enabled = Boolean(await enabledGetter()) } catch {} }
+    if (enabledGetter && initialEnabled === false) {
+      try { enabled = Boolean(await enabledGetter()) } catch {
+        // Keep the safe default when native autostart state is unavailable.
+      }
+    }
     try {
       await becomeReady()
     } catch {
@@ -938,7 +966,9 @@ export function createCompanionRuntime({
     fullRequestedWhilePing = false
     pendingFilesystemPayload = null
     await stopWatch()
-    try { await createdEngine?.dispose?.() } catch {}
+    try { await createdEngine?.dispose?.() } catch {
+      // Runtime shutdown continues even if a native-backed engine rejects.
+    }
     setStatus({ state: 'offline', detail: 'Companion sync is stopped', pendingCount: 0 })
   }
 
@@ -946,9 +976,15 @@ export function createCompanionRuntime({
     if (disposed) return
     await stop()
     disposed = true
-    try { authCleanup?.() } catch {} authCleanup = null
-    try { connectivityCleanup?.() } catch {} connectivityCleanup = null
-    try { visibilityCleanup?.() } catch {} visibilityCleanup = null
+    try { authCleanup?.() } catch {
+      // Auth listener cleanup is best-effort during final disposal.
+    } authCleanup = null
+    try { connectivityCleanup?.() } catch {
+      // Connectivity listener cleanup is best-effort during final disposal.
+    } connectivityCleanup = null
+    try { visibilityCleanup?.() } catch {
+      // Visibility listener cleanup is best-effort during final disposal.
+    } visibilityCleanup = null
     listeners.clear()
   }
 

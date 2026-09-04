@@ -1,4 +1,5 @@
 import { createClient as defaultCreateClient } from '@supabase/supabase-js'
+import { containsAsciiControlCharacter } from './textValidation.js'
 
 export const AUTH_CALLBACK_URL = 'tarkov-squad-planner://auth/callback'
 const AUTH_CALLBACK_PROTOCOL = 'tarkov-squad-planner:'
@@ -16,7 +17,7 @@ function authError(code) {
 }
 
 function assertStorageKey(key) {
-  if (typeof key !== 'string' || key.length === 0 || key.length > 256 || /[\u0000-\u001f\u007f]/.test(key)) {
+  if (typeof key !== 'string' || key.length === 0 || key.length > 256 || containsAsciiControlCharacter(key)) {
     throw authError('AUTH_STORAGE_INVALID_KEY')
   }
 }

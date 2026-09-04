@@ -1,5 +1,5 @@
-import { normalizeMembers, memberIds, memberNames, questDoneKey } from './partyMembers'
-import { FEATURED } from './constants'
+import { normalizeMembers, memberIds, memberNames, questDoneKey } from './partyMembers.js'
+import { FEATURED } from './constants.js'
 
 export const USER_COLORS = [
   '#e85d5d', '#5db8e8', '#5de87a', '#f5a623',

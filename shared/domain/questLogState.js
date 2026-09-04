@@ -1,5 +1,5 @@
-import { FEATURED } from './constants'
-import { inferredTaskMapNorm } from './tarkovObjectives'
+import { FEATURED } from './constants.js'
+import { inferredTaskMapNorm } from './tarkovObjectives.js'
 
 export const QUEST_STATES = ['active', 'failed', 'completed']
 export const QUEST_STATE_SOURCES = ['manual', 'log_import', 'live', 'system']

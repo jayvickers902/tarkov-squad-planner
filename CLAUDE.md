@@ -9,7 +9,11 @@ Escape from Tarkov raid-coordination tool. Live at **dudgy.net**.
 - **Hosting:** Vercel (SPA rewrite + CSP in `vercel.json`)
 - **Maps:** Leaflet (`react-leaflet` not used; raw Leaflet in `MapLeaflet.jsx`)
 
-No linter, no TypeScript. Vitest suite: 66 files, 577 tests, ~13s. Build warnings are acceptable.
+ESLint runs clean (`eslint.config.js`, zero warnings across 224 files) and is a CI gate. There is no
+TypeScript in the source, but `npm run typecheck` runs `tsc --strict --checkJs` over an opt-in list
+of two files in `tsconfig.typecheck.json` — widen that list rather than adding `.ts` files. Vitest
+suite: 84 files, 669 tests, ~22s. Companion: 14 files, 76 tests. Vite build warnings about chunk
+size are acceptable; the bundle budget is the real gate.
 
 ## Commands
 
@@ -18,8 +22,15 @@ npm run dev        # local dev server (Vite)
 npm run build      # production build to dist/ (~2s)
 npm test           # vitest run
 npm run test:watch # vitest watch
+npm run lint       # eslint — CI gate, must stay at zero warnings
+npm run typecheck  # tsc over tsconfig.typecheck.json's two opt-in files
+npm run check:bundle # size budgets against dist/ — run after build
+npm run test:e2e   # playwright smoke, 2 tests on the signed-out shell
 npm run prebake    # refresh src/data/prebaked/*.json from tarkov.dev — explicit only
 ```
+
+The full pre-review matrix, including the companion and Rust jobs, is in
+[README.md](README.md#required-checks). CI runs the same set on push to `main` and on pull requests.
 
 `prebake` rewrites the committed prebaked JSON and dumps large unrelated churn into the diff, so it
 is **not** wired into `npm run build`. Vercel runs it at deploy time via `buildCommand` in
@@ -37,6 +48,12 @@ matches the task, not all of them:
 | [docs/quest-system.md](docs/quest-system.md) | Quest Manager, import hub, row ordering, completion vs hiding |
 | [docs/quest-shareability.md](docs/quest-shareability.md) | Squad-shareable quests: inference, curated tier, community reports |
 | [docs/map-and-raid.md](docs/map-and-raid.md) | `FEATURED` allowlist, party view, raid brief, map page PLAN/LIVE, follow camera |
+| [docs/architecture-ownership.md](docs/architecture-ownership.md) | Which hook, component, domain module, or native adapter owns a change |
+| [docs/supabase-database-workflow.md](docs/supabase-database-workflow.md) | Authoritative for SQL, migrations, the destructive allowlist, and RLS probes |
+| [docs/developer-readiness.md](docs/developer-readiness.md) | Quality gates, scaling budgets, and the database validations still outstanding |
+| [docs/shared-domain-boundary.md](docs/shared-domain-boundary.md) | The `/shared` web/companion seam and what may not cross it |
+
+Open engineering work lives in [HANDOFF-outstanding-work.md](HANDOFF-outstanding-work.md).
 
 ## Project structure
 

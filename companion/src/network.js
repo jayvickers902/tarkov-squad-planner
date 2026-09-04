@@ -1,3 +1,5 @@
+import { containsAsciiControlCharacter } from './textValidation.js'
+
 const CONTEXT_GAME_MODES = new Set(['regular', 'pve', 'pvp-season'])
 const RECONCILE_GAME_MODES = new Set(['regular', 'pve', 'pvp-season'])
 const MAPS = new Set(['customs', 'woods', 'interchange', 'shoreline', 'factory', 'lighthouse', 'streets-of-tarkov', 'reserve', 'ground-zero', 'the-lab'])
@@ -33,7 +35,7 @@ function finiteNumber(value) { return typeof value === 'number' && Number.isFini
 function boundedText(value, max, pattern = null) {
   if (typeof value !== 'string') return null
   const text = value.trim()
-  if (!text || text.length > max || /[\u0000-\u001f\u007f]/.test(text) || (pattern && !pattern.test(text))) return null
+  if (!text || text.length > max || containsAsciiControlCharacter(text) || (pattern && !pattern.test(text))) return null
   return text
 }
 
@@ -135,7 +137,7 @@ export function sanitizePartyPing(value) {
 
 function safeId(value) {
   if (value == null) return null
-  return typeof value === 'string' && value.length <= 128 && !/[\u0000-\u001f\u007f]/.test(value) ? value : null
+  return typeof value === 'string' && value.length <= 128 && !containsAsciiControlCharacter(value) ? value : null
 }
 
 export function sanitizeSyncStatuses(value) {

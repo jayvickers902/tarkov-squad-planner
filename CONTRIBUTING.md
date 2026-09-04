@@ -14,7 +14,7 @@ Keep changes narrow enough to review. Large responsibility centers should be dec
 4. Run the relevant focused tests while iterating.
 5. Before review, run the full verification matrix documented in [README.md](README.md#required-checks).
 
-Warnings introduced by a change should be fixed. Existing lint warnings are tracked legacy debt and must not be converted into ignored rules without an explicit rationale.
+The lint backlog is cleared: `npx eslint . --max-warnings 0` currently exits 0. Keep it there — fix warnings a change introduces rather than silencing the rule, and do not convert a rule to `off` without an explicit rationale in the pull request.
 
 ## Database safety
 

@@ -5,8 +5,8 @@
 // filename to parse and, separately, use bounded metadata to dedupe watcher
 // notifications. Position validation remains owned by parsePlayerPosition.
 
-import { FEATURED } from './constants'
-import { parsePlayerPosition, normalizeMapName } from './tarkovPings'
+import { FEATURED } from './constants.js'
+import { parsePlayerPosition, normalizeMapName } from './tarkovPings.js'
 
 export const MAX_SCREENSHOT_METADATA = 4096
 export const MAX_SCREENSHOT_FILENAME_LENGTH = 512

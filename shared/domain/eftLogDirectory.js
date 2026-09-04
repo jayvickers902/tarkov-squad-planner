@@ -1,4 +1,4 @@
-import { isRelevantEftLogFile } from './eftLogs'
+import { isRelevantEftLogFile } from './eftLogs.js'
 
 export const MAX_RELEVANT_FILE_BYTES = 32 * 1024 * 1024
 export const MAX_TOTAL_RELEVANT_BYTES = 256 * 1024 * 1024
