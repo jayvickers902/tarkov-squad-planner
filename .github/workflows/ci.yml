@@ -70,11 +70,40 @@ jobs:
   companion-rust:
     name: Companion Rust checks
     runs-on: windows-latest
+    env:
+      # A runner starts from an empty target directory every time, so
+      # incremental artifacts are never reused across runs. They are pure cache
+      # weight, and locally they are the largest single thing under
+      # target/debug.
+      CARGO_INCREMENTAL: 0
     defaults:
       run:
         working-directory: companion/src-tauri
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      # Cargo fingerprints include the compiler version, so a toolchain bump has
+      # to move the key or the job restores a cache it will rebuild anyway.
+      - name: Record the toolchain version
+        id: rust
+        run: |
+          $version = (rustc -V) -replace '[^\w.]', '-'
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            companion/src-tauri/target
+          key: cargo-${{ runner.os }}-${{ steps.rust.outputs.version }}-${{ hashFiles('companion/src-tauri/Cargo.lock') }}
+          # A lockfile change usually moves a handful of crates, so an older
+          # target directory still saves most of the compile.
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ steps.rust.outputs.version }}-
       # tauri::generate_context!() embeds companion/dist at compile time, so
       # every cargo step below needs the frontend built first. dist/ is
       # gitignored, so a fresh runner has to build it here — companion-web's
@@ -90,9 +119,6 @@ jobs:
       - name: Build companion frontend
         working-directory: companion
         run: npm run build
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --all-targets --all-features
