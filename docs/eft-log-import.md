@@ -72,3 +72,32 @@ outright.
 The REST dataset supports `regular`, `pve`, and `pvp-season`. The active game mode is a resolved
 setting rather than a module constant. Prebaked JSON is only a valid floor for the mode recorded in
 its stamp, and another mode must wait for its REST response.
+
+## `Matched` and `Applied` count different things
+
+The companion's sync panel shows both, and on a full scan `Matched` is always the larger number.
+That gap is arithmetic, not lost data.
+
+`matchedEvents` is `payload.length` in [shared/domain/companionSyncEngine.js](../shared/domain/companionSyncEngine.js)
+— every parsed, sanitized quest event sent to `reconcile_user_quest_log_events`, across the whole
+retained log history. `appliedEvents` is `inserted + updated` from that RPC's summary: rows actually
+written to `user_quests`.
+
+The two can never match, because the RPC collapses events into rows. It takes
+`distinct on (task_id, event_key)`, ranks the survivors per `task_id` by
+`occurred_at desc, event_key desc`, and keeps only `task_rank = 1`. A quest yields one row however
+many events describe it, and a quest that was started, advanced and handed in over several sessions
+contributes an event for each.
+
+Measured against a real 78 MiB `Logs` folder on 2026-09-04: 91 relevant files, 298 events seen,
+**284 matched**, covering **188 distinct quests**. The payload is chunked at
+`QUEST_LOG_SYNC_CHUNK_SIZE` (200) and the ranking happens inside each chunk, so a quest with events
+either side of a chunk boundary is written once per chunk — which is why an `Applied` of 216 can
+exceed the distinct-quest count. Replaying the same pipeline offline against an empty table predicts
+217; the live run recorded 216, consistent with one winner meeting an equal `state_at` already
+stored and failing the monotonic guard. The resulting state is the same either way, because both the
+guard and the ranking are monotonic in `(occurred_at, event_key)`.
+
+The RPC also returns `ignored` — the winners the guard rejected — but `safeScanMetrics` does not
+carry it, so the panel cannot show where the difference went. Surfacing it would answer the question
+the two visible numbers raise; nothing depends on it today.

@@ -48,8 +48,8 @@ The remaining tokens have different prefixes and suffixes.
 ### 2.2 Companion rebuilt and reinstalled
 
 Built the x64 NSIS and MSI bundles as version 0.3.1, installed the NSIS bundle successfully, and
-restarted the installed companion in the background. The standalone bundles were produced; updater
-artifact signing still needs the release private key if 0.3.1 is published through GitHub updates.
+restarted the installed companion in the background. Those hand-built bundles are unsigned, so they
+are installable but not updatable; the signed path is the tagged CI release described in 3.8.
 
 ### 2.3 EFT Logs pruned
 
@@ -280,6 +280,43 @@ Cost: about an hour. Root suite stayed 86 files / 708 tests.
   fires in future, fix the code rather than re-softening the rule.
 - Playwright covers the signed-out shell only (2 tests). Party, map, quest, and import flows have no
   end-to-end coverage.
+
+---
+
+### 3.8 Companion 0.3.2 is built but not published
+
+`companion/package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` all read `0.3.2`,
+and `main` is at `b9e1349` with CI green. Nothing is published: the newest tag and the newest
+GitHub release are both `companion-v0.3.0`, and the updater endpoint
+(`releases/latest/download/latest.json`) still serves `"version": "0.3.0"`. Verified 2026-09-04.
+
+Two consequences worth being precise about, because the earlier note in this file overstated one of
+them:
+
+- **Installed clients are not being offered a broken update.** Bumping the version in the repository
+  publishes nothing. A 0.3.0 install polls the endpoint, reads 0.3.0, and stays put. 0.3.1 was never
+  published either.
+- **The signing key is not missing.** `TAURI_SIGNING_PRIVATE_KEY` and
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are both configured as repository secrets (set 2026-08-31)
+  and wired into the build environment in
+  [.github/workflows/companion-release.yml](.github/workflows/companion-release.yml). Only the local
+  bundles built by hand on 2026-09-02 were unsigned; the CI path cannot produce an unsigned release,
+  because the staging step throws on a missing `.sig` and
+  [scripts/create-companion-manifest.mjs](scripts/create-companion-manifest.mjs) refuses a manifest
+  whose signature is absent or does not match the staged artifact.
+
+To ship it, push the tag — the workflow does the rest:
+
+```bash
+git tag companion-v0.3.2 && git push origin companion-v0.3.2
+```
+
+That builds x64 and x86, verifies each signature, generates and validates `latest.json`, and
+publishes the release. Confirm afterwards that the endpoint reports `0.3.2`:
+
+```bash
+curl -sL https://github.com/jayvickers902/tarkov-squad-planner/releases/latest/download/latest.json
+```
 
 ---
 
