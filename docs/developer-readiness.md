@@ -40,9 +40,19 @@ Two of those gates are narrower than their names suggest, and should be read as
 starting points rather than coverage:
 
 - **The type check is opt-in per file.** `tsconfig.typecheck.json` compiles
-  exactly `src/partySyncMetrics.js` and `scripts/check-bundle-budget.mjs` under
-  `strict` + `checkJs` — 2 files out of 231. Widening it means adding
-  files to that `include` list and fixing what surfaces.
+  **17 files out of 231** under `strict` + `checkJs`: `partySyncMetrics.js`,
+  `scripts/check-bundle-budget.mjs`, and fifteen pure helpers added in three
+  batches on 2026-09-04. Widening it means adding files to that `include` list
+  and fixing what surfaces — reliably implicit-any parameters and options
+  objects whose type is inferred from `= {}`, fixed by annotating in JSDoc.
+
+  It earns its keep beyond the annotations: `squadFocus.js` held a `@returns`
+  that was never valid TypeScript, so it failed to parse and mis-inferred the
+  function's return type. A JSDoc type nobody compiles is a comment that can be
+  wrong. The limit on going further is not effort but one unmade decision — the
+  config declares `"types": ["node"]` and no `"dom"` lib, so any file
+  referencing `window` or `document` cannot be added until that changes, and
+  changing it affects every included file at once.
 - **The Playwright suite is two tests against the unauthenticated shell.** It
   renders the sign-in shell, walks the lazy changelog chunk, and checks a narrow
   viewport. Party, map, quest, and log-import flows have no end-to-end coverage.

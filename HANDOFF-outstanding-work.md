@@ -1,6 +1,6 @@
 # Handoff — outstanding work
 
-**Updated:** 2026-09-03 · **Branch:** `main`
+**Updated:** 2026-09-04 · **Branch:** `main`
 
 Read [CLAUDE.md](CLAUDE.md) first, then the deep reference that matches the task —
 [docs/map-and-raid.md](docs/map-and-raid.md), [docs/eft-log-import.md](docs/eft-log-import.md),
@@ -241,8 +241,38 @@ Cost: about an hour. Root suite stayed 86 files / 708 tests.
 
 ### 3.7 Optional gate widening, now cheap
 
-- `tsconfig.typecheck.json` includes **2 files**. Adding files to that `include` list is the whole
-  mechanism for widening type coverage; do it in small batches and fix what surfaces.
+- **Type-check widening — three batches landed 2026-09-04, still open.**
+  `tsconfig.typecheck.json` includes **17 files**, up from 2. Fifteen pure helpers were added five
+  at a time, each batch its own commit so a bad one can be dropped alone: `raidEnd`, `memberColors`,
+  `raidLive`, `gameMode`, `questColors` (`b975bd9`); `mapBanners`, `questImportRoutes`, `welcome`,
+  `strokeBounds`, `roomViewModel` (`b55a79e`); `objectivePinLayout`, `questDiagnostic`,
+  `questVisibility`, `operationalTasks`, `squadFocus` (`d0d719a`).
+
+  About 70 errors surfaced across the three, and nearly all were the same two shapes: implicit-any
+  parameters, and destructured options objects whose type is inferred from `= {}` so every callback
+  property reads as missing. All were fixed by annotating in JSDoc, never by loosening the compiler.
+
+  Two findings worth keeping:
+
+  - `squadFocus` carried a `@returns { points, anchor, bounds, spreadM, dropped }` that was never
+    valid TypeScript — the braces parse as a type. `tsc` reported TS1005 and then mis-inferred
+    `squadFrame`'s return type, cascading into two more errors. The prose was right; nothing had
+    ever read the annotation. **This is the argument for the item:** a JSDoc type nobody checks
+    rots silently.
+  - `operationalTasks` was the only code change in the three batches. `at` and `time` derive from
+    the same input by the same pure function, so `at !== null` already implied `time !== null`, but
+    only to a reader; the guard says both now. Provably behaviour-preserving.
+
+  Everything else is comments, so no emitted code changed and no test changed: 86 files / 708 tests
+  throughout. Cost: about 20 minutes per batch including the full matrix, well under the hour
+  budgeted.
+
+  **What is left.** 17 of 231 files, so this is a beachhead rather than coverage. The remaining
+  import-free pure helpers are the same shape and the same cost. The next thing needed is a
+  decision, not a batch: `chunkLoadRecovery`, `cameraMode` and everything under `src/components/`
+  reference `window` and `document`, and the config declares `"types": ["node"]` with no `"dom"`
+  lib, so DOM globals do not resolve. Adding `"dom"` affects every included file at once, which is
+  why it was left alone rather than folded into a batch.
 - **ESLint ratchet — completed.** `no-unused-vars`, `no-empty`, `no-control-regex`,
   `no-useless-escape`, `require-yield` and `react-hooks/exhaustive-deps` are `error` in
   `eslint.config.js`. `npx eslint . --max-warnings 0` exited 0 before and after, so nothing had to

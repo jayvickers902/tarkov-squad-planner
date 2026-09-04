@@ -350,7 +350,7 @@
     <h1>Outstanding work queue</h1>
     <p class="standfirst">
       Two levels: the program in <code>docs/developer-readiness.md</code>, and the live queue in
-      <code>HANDOFF-outstanding-work.md</code>. Verified against <code>f72f469</code>,
+      <code>HANDOFF-outstanding-work.md</code>. Verified against <code>d0d719a</code>,
       2026&#8209;09&#8209;04.
     </p>
 
@@ -364,10 +364,10 @@
       </div>
       <div class="tally">
         <span class="k">Current queue &middot; units</span>
-        <span class="n"><b>10 of 12</b><span>closed &middot; 1 to verify &middot; 1 open</span></span>
-        <span class="meter" role="img" aria-label="Ten of twelve queue units closed, one awaiting live verification, one open">
-          <i class="done" style="width:83.3%"></i>
-          <i class="check" style="width:8.3%"></i>
+        <span class="n"><b>9 of 12</b><span>closed &middot; 2 in flight &middot; 1 open</span></span>
+        <span class="meter" role="img" aria-label="Nine of twelve queue units closed, two in flight, one open">
+          <i class="done" style="width:75.0%"></i>
+          <i class="check" style="width:16.7%"></i>
         </span>
       </div>
     </div>
@@ -491,12 +491,12 @@
   </section>
 
   <section>
-    <h2>Gates as of 5054152</h2>
+    <h2>Gates as of d0d719a</h2>
     <div class="gates">
       <div class="gate pass"><span class="k">Vitest root</span><span class="v">86 files, 708 tests</span></div>
       <div class="gate pass"><span class="k">Vitest companion</span><span class="v">14 files, 76 tests</span></div>
       <div class="gate pass"><span class="k">ESLint</span><span class="v">0 warn, 231 files, 6 rules ratcheted</span></div>
-      <div class="gate pass"><span class="k">Typecheck</span><span class="v">2 opt-in files</span></div>
+      <div class="gate pass"><span class="k">Typecheck</span><span class="v">17 opt-in files</span></div>
       <div class="gate pass"><span class="k">Playwright</span><span class="v">2 / 2 signed-out</span></div>
       <div class="gate pass"><span class="k">Bundle</span><span class="v">779.3 KiB PASS</span></div>
     </div>
@@ -599,12 +599,12 @@
         <p>843.5 KiB WARN → 779.3 KiB PASS, and loot is no longer the largest anything. <code>loot.json</code> became ten <code>loot/&lt;map&gt;.json</code> files behind <code>loadPrebakedLoot(mapNorm)</code>, so only the map in view is fetched — 128.4 KiB at worst. Inside each file, <code>points[].items</code> holds ids resolved against the per-map dictionary rather than repeating name and price across 7,859 references to 66 distinct items; verified lossless. <code>prebake.mjs</code> emits the new shape, so the deploy-time refresh stays consistent. Closes workstream D. About an hour.</p>
       </article>
 
-      <article class="item">
+      <article class="item check">
         <i class="stripe"></i>
         <div class="id">3.7a</div>
-        <h3>Widen <code>tsconfig.typecheck.json</code></h3>
-        <div class="est">~1 h / batch</div>
-        <p>Exactly two files in the repo are type-checked today. Adding to that <code>include</code> list is the entire mechanism — do it in batches of about five and fix what surfaces. Full coverage of 231 files is several sessions, not one.</p>
+        <h3>Widen <code>tsconfig.typecheck.json</code> — three batches in</h3>
+        <div class="est">3 &times; ~20 min</div>
+        <p><b>2 &rarr; 17 files</b>, fifteen pure helpers added five at a time, one commit per batch so a bad batch can be dropped on its own. About 70 errors surfaced, almost all of them implicit-any parameters and options objects typed from <code>= {}</code>; every one was annotated rather than silenced. The catch worth having: <code>squadFocus</code> carried a <code>@returns</code> that was never valid TypeScript — the braces parse as a type — so it failed to parse and mis-inferred the function's return. Nothing had ever read it. Exactly one code change in three batches, in <code>operationalTasks</code>, narrowing a guard that was already true. <b>Still open:</b> 17 of 231 is a beachhead. The next move is a decision rather than a batch — anything touching <code>window</code> needs a <code>&quot;dom&quot;</code> lib, and that affects every included file at once.</p>
       </article>
 
       <article class="item done">
@@ -629,18 +629,22 @@
   <section>
     <h2>Next up</h2>
     <div class="next">
-      <h3>3.7a, then 3.7c, then G</h3>
+      <h3>More 3.7a, then 3.7c, then G</h3>
       <p>
-        3.7b and 3.6 are done, which closes workstream D and leaves the queue with one open
-        engineering item and one live click owed on 3.4. Widening
-        <code>tsconfig.typecheck.json</code> is the cheap next move — batches of about five files,
-        fixing what surfaces. Leave 3.7c until you want to spend a session on the auth harness
-        rather than on a feature, and treat G as a planning conversation before it is a coding one.
-        F stays blocked on credentials and a working Docker, not on effort.
+        3.6 and 3.7b closed workstream D and fenced the lint gate. 3.7a is three batches in and
+        still the cheapest work on the board: the same five-at-a-time rhythm on the remaining
+        import-free pure helpers, at about twenty minutes a batch including the full matrix. One
+        decision is owed before it can go much further — everything touching <code>window</code> or
+        <code>document</code> needs a <code>&quot;dom&quot;</code> lib in the config, which affects
+        every included file at once, so it wants a deliberate look rather than being folded into a
+        batch. Leave 3.7c until you want to spend a session on the auth harness rather than on a
+        feature, and treat G as a planning conversation before it is a coding one. F stays blocked
+        on credentials and a working Docker, not on effort. 3.4 still owes one live click.
       </p>
       <ol>
-        <li>Add about five files to <code>include</code> in <code>tsconfig.typecheck.json</code>.</li>
+        <li>Add about five more files to <code>include</code> in <code>tsconfig.typecheck.json</code>.</li>
         <li>Run <code>npm run typecheck</code> and fix what surfaces — widen, do not loosen.</li>
+        <li>Decide the <code>&quot;dom&quot;</code> lib question before reaching for anything with browser globals.</li>
         <li>Run the full matrix; CI fires on the push to <code>main</code>.</li>
         <li>Commit by explicit path — three agents share this checkout.</li>
       </ol>
