@@ -13,10 +13,32 @@ tests · all six bundle budgets PASS · largest async raw `tasks-*.js` at 779.3 
 Note that `docs/developer-readiness.md` records 86/708 and an entry budget of 560,000 B; both are
 stale. Step 9 fixes them.
 
-**Status as of 2026-09-04:** Steps 1 through 9 are done and committed. **Step 10 is the only one
-left.** Gates on the finished tree: `npm run lint` clean across 237 files · `npm run typecheck`
-clean at 19 files · `npm test` at **89 files / 731 tests** · `npm run test:e2e` 3/3 · all six bundle
-budgets PASS · largest async raw `tasks-*.js` at **677.1 KiB (18.4% headroom, up from 6.1%)**.
+**Status as of 2026-09-04: all ten steps are done and committed** — `7187d99` `5d12a8b` `765222b`
+`78872f9` `211cd7d` `6adb889` `37353ce` `ccc5345` `22ff5c2` `0122fdd`. Nothing is pushed.
+
+Gates on the finished tree: `npm run validate:migrations` pass · `npm run lint` clean across 237
+files · `npm run typecheck` clean at 19 files · `npm test` at **90 files / 747 tests** (from 87/712)
+· `npm run test:e2e` 3/3 · all six bundle budgets PASS · largest async raw `tasks-*.js` at **677.1
+KiB, 18.4% headroom, up from 779.3 KiB and 6.1%**.
+
+See each step's **Status** line below for what actually shipped, including where it differed from
+the plan — Step 5 in particular rejected a sub-step this plan had asked for, with reasoning worth
+reading before anyone re-attempts it.
+
+## Two things this run found that are not in the ten steps
+
+Both were discovered while doing other work, both are verified, and neither is fixed:
+
+- **`AdminKeyManager.jsx` has no internal admin check.** No `isAdmin` prop, no `is_admin` lookup.
+  The only gate is `isAdmin && …` at the two `App.jsx` mount sites. This is not a hole — RLS and the
+  SECURITY DEFINER RPCs are the boundary, and `10_34` closed the self-grant — but a new call site
+  that forgets the guard renders every write control, and the writes then fail confusingly at
+  Postgres rather than being hidden. Defence in depth, not a vulnerability.
+- **Colour sanitizing in the map builders was asymmetric, and is now closed** (`0122fdd`). Recorded
+  here because the *shape* of it is worth remembering: the text label went through `safeColor` while
+  the marker dot on the adjacent line interpolated the same variable raw. Nothing was exploitable,
+  because every caller passes a hardcoded palette hex. A sanitizer applied to one of two adjacent
+  uses of one variable is the kind of gap that reads as deliberate until someone checks.
 
 See each step's **Status** line below for what actually shipped, including where it differed from
 the plan — Step 5 in particular rejected a sub-step this plan had asked for, with reasoning worth
@@ -386,8 +408,9 @@ current ones, not the 87/712 baseline this plan was drafted against.
 - `CLAUDE.md` — added a `shared/` block (`shared/domain/` plus the three root facades) to *Project
   structure*; marked every shimmed helper with a `†` back to its `shared/domain/` implementation;
   corrected ESLint scope to **237 files**, typecheck to **19 files** (DOM lib recorded as shipped),
-  and the vitest count to **89 files / 731 tests** (written as 726 during the pass, while Step 7's
-  concurrent file swap was still in flight, and corrected to the settled figure afterwards).
+  and the vitest count (written as 726 during the pass, while Step 7's concurrent file swap was
+  still in flight; corrected to 731 when that landed, and again to **90 files / 747 tests** after
+  Step 10 added its own test file — the hazard of writing a live number into a document).
 - `docs/developer-readiness.md` — corrected the entry budget to **465,000 B warn / 495,000 B fail**
   raw and **137,000 B warn / 146,000 B fail** gzip (`scripts/check-bundle-budget.mjs:23`; the other
   four budget rows were verified correct and left alone); recorded the `"dom"`-lib decision as made,
@@ -410,8 +433,16 @@ current ones, not the 87/712 baseline this plan was drafted against.
 
 ### Step 10 — Extract MapLeaflet's presentation builders · **Sonnet**
 
-**Status: not started.** `src/components/mapMarkerHtml.js` does not exist yet and `MapLeaflet.jsx` is
-still 2,577 lines as of this pass.
+**Status: shipped in `0122fdd`.** Sixteen builders moved verbatim into
+`src/components/mapMarkerHtml.js`; `MapLeaflet.jsx` went 2,577 → **2,267** lines. The plan's
+"~2,100" target was arithmetic that did not hold: the 470-line estimate spanned lines 89–505, but
+that range contains `bindTacticalTooltip` and `LayerToggleRow`, which the plan's own DO-NOT-MOVE
+list excludes — about 96 lines that were never going to leave.
+
+Two deviations worth knowing. `thumb` and `MAP_LABELS` stayed module-private rather than exported,
+because only the moved builders read them. And eleven raw colour interpolations were wrapped in
+`safeColor` — the one deliberate break from a verbatim move, described in the commit and in the
+section at the top of this file.
 
 `MapLeaflet.jsx` is 2,573 lines: 40 props, 26 `useState`, 12 refs, 23 `useEffect` — four of them
 over 100 lines. Lines 34–505 are pure DOM-string builders that touch no React and no map instance:
