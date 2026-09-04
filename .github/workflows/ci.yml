@@ -25,14 +25,14 @@ jobs:
       VITE_SUPABASE_URL: https://smoke.invalid
       VITE_SUPABASE_ANON_KEY: sb_publishable_smoke
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Cache Playwright Chromium
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
@@ -56,8 +56,8 @@ jobs:
       run:
         working-directory: companion
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -74,7 +74,22 @@ jobs:
       run:
         working-directory: companion/src-tauri
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      # tauri::generate_context!() embeds companion/dist at compile time, so
+      # every cargo step below needs the frontend built first. dist/ is
+      # gitignored, so a fresh runner has to build it here — companion-web's
+      # copy lives in a different job and never reaches this one.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: companion/package-lock.json
+      - name: Install companion dependencies
+        working-directory: companion
+        run: npm ci
+      - name: Build companion frontend
+        working-directory: companion
+        run: npm run build
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
