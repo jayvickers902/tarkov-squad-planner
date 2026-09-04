@@ -101,6 +101,44 @@ check "append_drawing validates stroke geometry" "true" \
    join pg_namespace n on n.oid=p.pronamespace
    where n.nspname='public' and p.proname='append_drawing';"
 
+# 10_37. A map change does not increment raid_id, so events from the previous
+# map stay eligible unless select_map_party deletes them. The delete alone is
+# not enough: without both routines locking the same party row, an old-map
+# append already in flight lands after it.
+check "select_map_party clears ping events under a party-row lock" "true" \
+  "select (prosrc like '%delete from public.party_ping_events%'
+           and prosrc like '%for update%') as v from pg_proc p
+   join pg_namespace n on n.oid=p.pronamespace
+   where n.nspname='public' and p.proname='select_map_party';"
+
+check "append_party_ping locks the party row and rejects a stale map" "true" \
+  "select (prosrc like '%for update of p%'
+           and prosrc like '%map has changed%') as v from pg_proc p
+   join pg_namespace n on n.oid=p.pronamespace
+   where n.nspname='public' and p.proname='append_party_ping';"
+
+# A null proacl is EXECUTE TO PUBLIC by default, and aclexplode(null) returns no
+# rows -- so the null case must be named, or a wiped ACL reads as clean here.
+check "no anon or PUBLIC execute on the map and ping routines" "" \
+  "select p.proname||':'||case when p.proacl is null then 'DEFAULT-PUBLIC'
+     when a.grantee=0 then 'PUBLIC' else a.grantee::regrole::text end as v
+   from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+   left join lateral aclexplode(p.proacl) a on a.privilege_type='EXECUTE'
+   where n.nspname='public' and p.proname in ('select_map_party','append_party_ping')
+     and (p.proacl is null or a.grantee=0 or a.grantee::regrole::text='anon')
+   order by 1;"
+
+# The mirror of the check above: a blanket revoke satisfies it while breaking
+# every map change and ping in the app.
+check "the map and ping routines stay executable by authenticated" \
+  "append_party_ping,select_map_party" \
+  "select distinct p.proname as v
+   from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+   cross join lateral aclexplode(p.proacl) a
+   where n.nspname='public' and p.proname in ('select_map_party','append_party_ping')
+     and a.privilege_type='EXECUTE' and a.grantee::regrole::text='authenticated'
+   order by 1;"
+
 echo
 if [ "$fails" -eq 0 ]; then
   echo "All invariants hold against the live catalog."

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Run all five probes against the local harness and print their verdict rows.
+# Run all six probes against the local harness and print their verdict rows.
 #
 #   ./run-probes.sh [port]
 #

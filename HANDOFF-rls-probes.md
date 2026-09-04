@@ -46,16 +46,38 @@ live invariant checker is fully green. Both payload constraints report
 
 ## 2. Next steps
 
-The collaboration-bound and map-change ping tasks are complete. After any
-future database deploy, run the read-only live checker. The unrelated known
-SL2 FORCE-RLS finding remains deliberately out of scope.
+The collaboration-bound and map-change ping tasks are complete and applied. The
+unrelated known SL2 FORCE-RLS finding remains deliberately out of scope.
 
-The live `10_37` verification returned:
+**After any future database deploy, run the read-only live checker.** It is now
+the single mechanised gate on production catalog state:
 
-- `select_map_party`: deletes old events;
-- `append_party_ping`: locks the party row and checks the current map;
-- both functions: `authenticated` and `service_role` execute, no `anon` or
-  `PUBLIC` execute.
+```bash
+./supabase/probes/harness/check-live-invariants.sh
+```
+
+The `10_37` verification below was originally done by hand. It is now four
+checks inside that script, so it re-runs on every deploy rather than depending
+on somebody remembering the queries:
+
+| Invariant | Asserted by |
+|---|---|
+| `select_map_party` deletes old events under a party-row lock | `prosrc` carries the delete **and** `for update` |
+| `append_party_ping` locks the row and rejects a stale map | `prosrc` carries `for update of p` **and** `map has changed` |
+| No `anon` or `PUBLIC` execute on either routine | `aclexplode`, with the null-ACL default named explicitly |
+| Both routines stay executable by `authenticated` | the mirror check — a blanket revoke passes the row above while breaking the app |
+
+The null-ACL case matters: a wiped `proacl` means `EXECUTE TO PUBLIC` by
+default, and `aclexplode(null)` returns no rows, so an ACL check that only
+explodes the array reads a wide-open routine as clean.
+
+The checker is 13 invariants and returned 13 PASS / 0 FAIL against live on
+2026-09-03. Each new predicate was confirmed to discriminate rather than pass
+vacuously: the body markers return `false` for the routine that lacks them, and
+the ACL predicate returns real `PUBLIC`/`anon` rows when its `proname` filter is
+widened (`quest_share_objectives_ok` and `reject_game_mode_change`, both benign
+— a CHECK helper and a trigger function — and both correctly outside the scoped
+list).
 
 ## 3. Map-change ping leak — confirmed and fixed in `0958af0`
 
@@ -202,9 +224,30 @@ catalog capture and must not outlive the session or enter the repository:
 The session's implementation is committed in `0958af0`. No implementation
 from this session remains uncommitted; this file is its cold-start record.
 
-Other sessions still own uncommitted changes in `companion/`, `shared/domain/`,
-`.github/workflows/ci.yml`, `CLAUDE.md`, `CONTRIBUTING.md`, `README.md`,
-`docs/scaling-assessment.md`, and `src/partySyncMetrics.test.js`, plus untracked
-companion/shared-boundary files. Leave them alone and never use `git add -A`.
+The other sessions' work that this file previously listed as uncommitted —
+`companion/`, `shared/domain/`, `.github/workflows/ci.yml`, `CLAUDE.md`,
+`CONTRIBUTING.md`, `README.md`, `docs/scaling-assessment.md` and
+`src/partySyncMetrics.test.js` — landed in `985d5ce`. The tree was clean at the
+start of the follow-up session below. Still never use `git add -A`; commit by
+explicit path.
 
 The throwaway cluster and its live catalog capture were stopped and deleted.
+
+## 9. Follow-up session, 2026-09-03
+
+No production SQL was written or applied. The work was verification and the
+mechanisation of it:
+
+- Ran `check-live-invariants.sh` against live: the nine pre-existing invariants
+  all held, confirming §1's APPLIED table rather than trusting it.
+- Read the live bodies and ACLs of `select_map_party` and `append_party_ping`
+  and confirmed they match `10_37` exactly, including no `anon`/`PUBLIC`
+  execute.
+- Added the four `10_37` checks described in §2 to `check-live-invariants.sh`,
+  taking it from 9 to 13, and negative-tested each new predicate.
+- Retired the stale open-hole framing in
+  [HANDOFF-outstanding-work.md](HANDOFF-outstanding-work.md) §3.5, which still
+  described `merge_progress` and the `is_admin` self-grant as live production
+  holes after `10_33`/`10_34`/`10_35` had already closed them, and corrected
+  `supabase/probes/harness/README.md`, which still said `10_36` was unapplied
+  and that the harness runs five probes rather than six.

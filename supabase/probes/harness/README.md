@@ -54,8 +54,8 @@ hand:
 |---|---|
 | `capture-live-catalog.sh` | Read-only catalog capture against the linked project |
 | `rebuild.sh` | Replays a capture into the local cluster |
-| `run-probes.sh` | Runs all five probes and summarises the verdicts |
-| `check-live-invariants.sh` | Read-only assertion of the security invariants against LIVE |
+| `run-probes.sh` | Runs all six probes and summarises the verdicts |
+| `check-live-invariants.sh` | Read-only assertion of the 13 security invariants against LIVE |
 | `00_bootstrap.sql` | Roles, `auth` schema, the `auth.uid()` stub, the realtime publication |
 | `02_seed.sql` | Three fixture identities and one party |
 | `03_publication.sql` | Realtime publication membership, mirrored from live |
@@ -77,29 +77,36 @@ capture was taken before or after the repair migrations were applied to
 production -- `capture-live-catalog.sh` reads live, so a capture taken today
 gives the right-hand column:
 
-| Probe | Before 10_33/10_34/10_35 | After (current live) |
+| Probe | Before the repair migrations | After (current live) |
 |---|---|---|
 | `party_members_rls_probe` | 6 PASS / 0 FAIL | 6 PASS / 0 FAIL |
 | `sl2_baseline_rls_probe` | 12 PASS / 1 FAIL | 12 PASS / 1 FAIL |
 | `sync_client_status_rls_probe` | 20 PASS / 0 FAIL | 20 PASS / 0 FAIL |
 | `party_rpc_rls_probe` | 14 PASS / 5 FAIL (3, 14, 16, 17, 18) | **19 PASS / 0 FAIL** |
-| `party_ping_map_change_probe` | 3 PASS / 3 FAIL (4, 5, 6) | **6 PASS / 0 FAIL after `10_37`** |
+| `party_ping_map_change_probe` | 3 PASS / 3 FAIL (4, 5, 6) | **6 PASS / 0 FAIL** |
 | `profiles_column_scope_probe` | 11 PASS / 4 FAIL (4, 5, 9, 14) | **15 PASS / 0 FAIL** |
 
 `sl2` check 13 is the known FORCE-RLS finding. It is unrelated to any of these
 migrations and stays failing by design.
 
-`10_36_restore_collab_payload_bounds.sql` is written but **not applied to
-production** -- it waits on the client deploy carrying `src/strokeBounds.js`.
-Applying it to the harness changes no pre-existing probe verdict; the probes
-do not cover drawing or marker geometry. Prove that one with
-`check-live-invariants.sh` and the behavioural checks described in
-[HANDOFF-rls-probes.md](../../../HANDOFF-rls-probes.md).
+`10_33` through `10_38` are all **applied to production** as of 2026-09-03, so a
+capture taken today already contains them and the recipe's step 3 replay is a
+no-op that re-creates identical bodies. It is kept in the recipe because it is
+how you reproduce a *pre-repair* verdict: capture, roll the routine back to the
+old body by hand, run the probes, then apply the migration and run them again.
+The left-hand column above is what that produces.
 
-`party_ping_map_change_probe` is the exception because it covers the separate
-`10_37` behavior change. Against a fresh live capture it reproduces all three
-failures. Apply `10_36` first because `10_37` preserves that migration's
-`select_map_party` bounds, then apply `10_37`; all six checks pass.
+`10_36_restore_collab_payload_bounds.sql` is the one migration no probe covers
+-- they do not exercise drawing or marker geometry. Prove that one with
+`check-live-invariants.sh`, whose `collaboration payload bounds constraints
+exist` and `append_drawing validates stroke geometry` checks assert it directly
+against live, plus the behavioural checks described in
+[HANDOFF-rls-probes.md](../../../HANDOFF-rls-probes.md). `10_38` validates its
+two constraints; both report `convalidated=true` in production.
+
+When applying by hand, apply `10_36` before `10_37` -- `10_37` rewrites
+`select_map_party` and preserves that migration's payload bounds, so the reverse
+order silently drops them.
 
 ## Fidelity checks
 

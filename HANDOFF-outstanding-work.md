@@ -101,80 +101,82 @@ The header button, the `C` key, the disabled states and the modifier guard are c
 the reader's newest ping and flying to it lives in `MapLeaflet`, which is expensive to mount, and is
 covered by nothing. Worth one live click after the deploy.
 
-### 3.5 The three RLS probes — written 2026-09-03, and they found three real holes
+### 3.5 The RLS probes — every hole they found is now closed in production
 
-> **Superseded in part by [HANDOFF-rls-probes.md](HANDOFF-rls-probes.md).** That file carries the
-> current state: two repair migrations (`10_33`, `10_34`), the probe corrections that changed the
-> counts below, and a third hole — a column-level `UPDATE` grant on `public.parties` that lets any
-> member bypass `merge_progress` entirely. Read it before acting on this section.
+> **Current state lives in [HANDOFF-rls-probes.md](HANDOFF-rls-probes.md).** The three holes this
+> section originally reported were repaired by `10_33`, `10_34` and `10_35`, and a fourth — old-map
+> ping events surviving a map change — by `10_37`. All are applied to production and verified
+> against the live catalog. Nothing in 3.5 is open work. It is kept because the probes and the
+> running instructions in 3.5.3 remain the tool for the next SQL change.
 
-All three are now in `supabase/probes/`, alongside the existing `party_members_rls_probe.sql` and
-`sl2_baseline_rls_probe.sql`:
+Six probes now live in `supabase/probes/`, run through
+[`harness/run-probes.sh`](supabase/probes/harness/run-probes.sh) against a throwaway cluster
+rebuilt from a read-only capture of the live catalog:
 
-| Probe | Covers | Result |
+| Probe | Covers | Against current live |
 |---|---|---|
-| `sync_client_status_rls_probe.sql` | `report_sync_client_status`, `get_sync_client_status`, `get_desktop_sync_context` | 20/20 PASS |
-| `party_rpc_rls_probe.sql` | `create_party`, `join_party_secure`, `merge_progress` | 14 PASS / 5 FAIL |
-| `profiles_column_scope_probe.sql` | `10_25` column scope, `is_admin` self-grant | 11 PASS / 4 FAIL |
+| `sync_client_status_rls_probe.sql` | `report_sync_client_status`, `get_sync_client_status`, `get_desktop_sync_context` | 20 PASS / 0 FAIL |
+| `party_rpc_rls_probe.sql` | `create_party`, `join_party_secure`, `merge_progress` | 19 PASS / 0 FAIL |
+| `profiles_column_scope_probe.sql` | `10_25` column scope, `is_admin` self-grant | 15 PASS / 0 FAIL |
+| `party_members_rls_probe.sql` | `party_members` row scope | 6 PASS / 0 FAIL |
+| `party_ping_map_change_probe.sql` | Map-change ping isolation (`10_37`) | 6 PASS / 0 FAIL |
+| `sl2_baseline_rls_probe.sql` | SL2 baselines | 12 PASS / 1 known FAIL |
 
-Each was written against the live catalog and then **executed** against a throwaway local Postgres
-seeded with the real grants, policies, ownership and routine bodies — not merely written and
-eyeballed. Each failing assertion was afterwards confirmed by a read-only query against the linked
-project, so the failures below are production facts, not harness artefacts.
+The `sl2` check 13 FORCE-RLS finding is unrelated to these migrations and stays failing by design —
+see [[sl2_baselines_force_rls]].
 
-Two notes for whoever picks these up. The RPC the old handoff called `join_party` does not exist;
-the live join path is `join_party_secure`. And every one of these routines is `SECURITY DEFINER`
-owned by `postgres`, which carries `rolbypassrls` — so no policy fires inside any of them, and the
-probes assert against each routine's own `auth.uid()` filtering instead. See
-[[sl2_baselines_force_rls]] territory: this is the same trap, one layer up.
+Two notes that still apply to anyone extending them. The RPC the old handoff called `join_party`
+does not exist; the live join path is `join_party_secure`. And every one of these routines is
+`SECURITY DEFINER` owned by `postgres`, which carries `rolbypassrls` — so no policy fires inside any
+of them, and the probes assert against each routine's own `auth.uid()` filtering instead.
 
-#### 3.5.1 `merge_progress` does not enforce invariant 2 — **highest value**
+#### 3.5.1 `merge_progress` invariant 2 — closed by `10_33`
 
-CLAUDE.md invariant 2 says progress keys are self-only, enforced at the database. It is not. The
-live body is the one from `10_08_atomic_writes.sql`, which merges `p_changes` into `parties.progress`
-after a membership check and nothing else. The key/value/size/reserved-key validation lives in
-`10_10_security_hardening.sql`, **which was never applied to production**.
-`10_31_restore_party_write_rpcs.sql` was written to repair exactly that gap, and its header says so,
-but it restored only `set_party_settings`, `set_party_spawn`, `set_party_quest_order` and
-`sweep_party_ephemeral`. It did not restore `merge_progress` or `merge_starred`.
+CLAUDE.md invariant 2 says progress keys are self-only, enforced at the database. For a long window
+it was not: the live body was `10_08`'s, which merged `p_changes` after a membership check and
+nothing else, because the validation in `10_10_security_hardening.sql` was never applied to
+production. A member could tick a key suffixed with another member's uid and the write landed.
 
-Proven in the harness: user B, a normal member, ticked a key suffixed with user A's uid and the
-write landed. Also unenforced today: the reserved `__raid_start__` key, non-boolean values, the
-100-key cap and the 32 KiB payload cap.
+The load-bearing half was not the function at all. `authenticated` held column-level `UPDATE` on
+eleven columns of `public.parties`, so a client could bypass `merge_progress` entirely — invisible
+to `information_schema.table_privileges`, which is why it hid for two sessions.
 
-Nothing in the UI offers a cross-member tick — `MyTasksPanel` and `RaidRail` render teammates' rows
-read-only — so this is not a live data-integrity problem today. It is an invariant held by client
-convention alone, which is precisely what the invariant says it is not. The fix is a migration
-restoring the `10_10` bodies of `merge_progress` and `merge_starred`; re-run
-`party_rpc_rls_probe.sql` locally afterwards and checks 14, 16 and 17 should flip to PASS.
+`10_33_restore_progress_scope.sql` restored the `10_10` bodies of `merge_progress` and
+`merge_starred` and revoked the direct-write grant. Live now asserts both halves; see the first two
+checks in `check-live-invariants.sh`.
 
-#### 3.5.2 Any signed-in user can grant themselves `is_admin`
+#### 3.5.2 `is_admin` self-grant and the TRUNCATE sweep — closed by `10_34` and `10_35`
 
-`10_25_profiles_column_scope.sql` revoked table-wide `SELECT` on `public.profiles` and re-granted it
-as `select (id, callsign)`, which is applied and works — administrator enumeration is closed.
-It scoped `SELECT` only. `INSERT` and `UPDATE` still carry all four columns, and the
-`Profiles own update` policy checks only `auth.uid() = id`, so the owner of a row may set any column
-on it. Confirmed live: `authenticated` holds `UPDATE` on `is_admin`.
+`10_25_profiles_column_scope.sql` scoped `SELECT` on `public.profiles` to `(id, callsign)` and
+stopped there. `INSERT` and `UPDATE` still carried all four columns and the `Profiles own update`
+policy checks only `auth.uid() = id`, so any signed-in user could set `is_admin` on their own row
+and thereby rewrite the curated `map_keys`, `map_loot` and `quest_share_overrides` data. Row scope
+was never in question; the hole was column scope on one's own row.
 
-Row scope is sound — a user cannot touch anyone else's profile. The hole is column scope on one's
-own row. `is_admin` gates the write policies on `map_keys`, `map_loot` and `quest_share_overrides`,
-so a self-granted admin can rewrite curated reference data. It confers no access to another user's
-party, quest or sync data.
+Separately `profiles`, `parties`, `party_members` and `user_settings` all granted `TRUNCATE` to
+`anon` and `authenticated`, and **RLS never filters `TRUNCATE`** — a grant no policy stops.
 
-Separately, `profiles` grants `TRUNCATE` to both `anon` and `authenticated`, and **RLS never filters
-`TRUNCATE`**. The same over-broad grant is on `parties`, `party_members` and `user_settings`. Worth
-sweeping in the same migration.
-
-The suggested repair is written out at the bottom of `profiles_column_scope_probe.sql`. Verify it
-against the live catalog before turning it into a migration.
+`10_34_profiles_write_scope.sql` scoped the profile writes and made the first TRUNCATE repair;
+`10_35_revoke_truncate_trigger.sql` swept `TRUNCATE` and `TRIGGER` across the whole `public` schema.
 
 #### 3.5.3 Running them
 
 Every one of these probes writes, switches roles and takes locks, so per
 [docs/supabase-database-workflow.md](docs/supabase-database-workflow.md) they are **local-only** —
 the `begin`/`rollback` wrapper is not an exemption. The local cluster must reproduce the real
-ownership and `BYPASSRLS` configuration or a denial assertion proves nothing. Only the read-only
-catalog assertions belong against the linked project.
+ownership and `BYPASSRLS` configuration or a denial assertion proves nothing. The rebuild recipe is
+in [supabase/probes/harness/README.md](supabase/probes/harness/README.md).
+
+Only read-only catalog assertions belong against the linked project, and they have a single
+entry point:
+
+```bash
+./supabase/probes/harness/check-live-invariants.sh
+```
+
+Thirteen invariants, read-only, exit 0 when they all hold. **Run it after any deploy that touches
+SQL**, and before trusting a green `securityContract.test.js` — that test reads migration files, and
+it was green for the entire time invariant 2 was unenforced in production.
 
 ### 3.6 The `loot` chunk is past its bundle warn line
 
