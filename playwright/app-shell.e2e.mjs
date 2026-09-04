@@ -19,6 +19,7 @@ test('renders the unauthenticated shell and navigates through the lazy changelog
   await expect(page.getByRole('heading', { name: 'SQUAD PLANNER' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'JOIN YOUR SQUAD' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'CONTINUE WITH GOOGLE' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'CONTINUE WITH DISCORD' })).toBeEnabled()
   await expect(page.getByRole('link', { name: 'CHANGELOG' })).toBeVisible()
 
   await page.getByRole('link', { name: 'CHANGELOG' }).click()
@@ -33,6 +34,7 @@ test('keeps the auth shell usable at a narrow responsive viewport', async ({ pag
 
   await expect(page.getByRole('heading', { name: 'JOIN YOUR SQUAD' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'CONTINUE WITH GOOGLE' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'CONTINUE WITH DISCORD' })).toBeEnabled()
 
   const dimensions = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,

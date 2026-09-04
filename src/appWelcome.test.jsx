@@ -61,7 +61,7 @@ function setAuth(overrides = {}) {
   authState.current = {
     user: USER, profile: PROFILE, profileError: '', loading: false,
     error: '', setError: vi.fn(), logout: vi.fn(),
-    loginWithGoogle: vi.fn(), createProfile: vi.fn(), isNewProfile: false,
+    loginWithProvider: vi.fn(), createProfile: vi.fn(), isNewProfile: false,
     ...overrides,
   }
 }

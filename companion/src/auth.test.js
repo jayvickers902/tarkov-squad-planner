@@ -62,6 +62,36 @@ describe('companion auth boundary', () => {
     expect(openExternal).toHaveBeenCalledWith('https://accounts.example.test/oauth')
   })
 
+  it('starts Discord OAuth when that provider is chosen', async () => {
+    const auth = fakeAuth()
+    const openExternal = vi.fn(async () => {})
+    const service = createAuthClient({
+      supabaseUrl: 'https://project.supabase.co', anonKey: 'anon', openExternal,
+      storage: createSecureStorage({ credentialGet: async () => null, credentialSet: async () => {}, credentialDelete: async () => {} }),
+      createClient: () => ({ auth }),
+    })
+    await service.signIn('discord')
+    expect(auth.signInWithOAuth).toHaveBeenCalledWith({ provider: 'discord', options: { redirectTo: AUTH_CALLBACK_URL, skipBrowserRedirect: true } })
+    expect(openExternal).toHaveBeenCalledWith('https://accounts.example.test/oauth')
+  })
+
+  it('refuses a provider outside the shared list without reaching Supabase', async () => {
+    const auth = fakeAuth()
+    const openExternal = vi.fn(async () => {})
+    const service = createAuthClient({
+      supabaseUrl: 'https://project.supabase.co', anonKey: 'anon', openExternal,
+      storage: createSecureStorage({ credentialGet: async () => null, credentialSet: async () => {}, credentialDelete: async () => {} }),
+      createClient: () => ({ auth }),
+    })
+    // Steam is the live example: Supabase cannot mint a session for it, so the
+    // companion must not open a browser window that can only dead-end.
+    const failure = service.signIn('steam')
+    await expect(failure).rejects.toBeInstanceOf(AuthBoundaryError)
+    await expect(failure).rejects.toMatchObject({ code: 'AUTH_SIGN_IN_FAILED' })
+    expect(auth.signInWithOAuth).not.toHaveBeenCalled()
+    expect(openExternal).not.toHaveBeenCalled()
+  })
+
   it('wraps provider failures in stable errors', async () => {
     const auth = fakeAuth()
     auth.signOut.mockRejectedValueOnce(new Error('secret provider detail'))

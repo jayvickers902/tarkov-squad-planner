@@ -49,7 +49,7 @@ export default function App() {
   const {
     user, profile, profileError: authProfileError, loading: authLoading,
     error: authError, setError: setAuthError,
-    logout, loginWithGoogle, createProfile, isNewProfile,
+    logout, loginWithProvider, createProfile, isNewProfile,
   } = useAuth()
 
   const { settings: userSettings, loading: settingsLoading, setSetting: setUserSetting } = useSettings(user?.id, profile?.callsign)
@@ -348,7 +348,7 @@ export default function App() {
   if (!user || !profile) {
     return (
       <AuthScreen
-        onGoogleLogin={loginWithGoogle}
+        onOAuthLogin={loginWithProvider}
         onCreateProfile={createProfile}
         needsCallsign={!!user && !profile}
         error={authError}

@@ -87,7 +87,12 @@ function SetupProgress({ setup, status, configured, busy, onSignIn, onSignOut, o
             <div className="setup-step-title"><strong>Sign in</strong><span>{statusLabel(accountState)}</span></div>
             <p>{setup.authenticated ? 'Your Dudgy.net account is connected.' : 'Connect your planner in the system browser. Credentials stay in Windows Credential Manager.'}</p>
           </div>
-          {!setup.authenticated && <button className="primary-button setup-action" onClick={onSignIn} disabled={busy || !configured}>Sign in</button>}
+          {!setup.authenticated && (
+            <div className="setup-actions">
+              <button className="primary-button setup-action" onClick={() => onSignIn('google')} disabled={busy || !configured}>Sign in with Google</button>
+              <button className="secondary-button setup-action" onClick={() => onSignIn('discord')} disabled={busy || !configured}>Sign in with Discord</button>
+            </div>
+          )}
           {setup.authenticated && setup.incomplete && <button className="secondary-button setup-action" onClick={onSignOut} disabled={busy}>Sign out</button>}
         </li>
 
@@ -322,7 +327,7 @@ export default function App() {
         status={status}
         configured={view.configured}
         busy={busy}
-        onSignIn={() => run(() => service.signIn(), 'Secure sign-in could not be started.')}
+        onSignIn={provider => run(() => service.signIn(provider), 'Secure sign-in could not be started.')}
         onSignOut={() => run(() => service.signOut(), 'Sign-out could not be completed.')}
         onChooseLogs={() => run(() => service.configureLogsRoot(), 'The Logs folder could not be configured.')}
         onSync={refresh}

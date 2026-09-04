@@ -1078,7 +1078,11 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 
 .auth-card { padding: 22px; display: flex; flex-direction: column; gap: 12px; }
 .auth-card h3 { font-size: 22px; color: var(--goldtx); }
-.auth-google-primary {
+/* Sign-in providers. Google keeps the gold primary treatment - every account
+   that exists today came in through it - and the others sit under it in their
+   own brand colour so the stack does not read as equal-weight choices. */
+.auth-providers { display: flex; flex-direction: column; gap: 10px; }
+.auth-provider {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1087,14 +1091,22 @@ select:disabled { opacity: .6; cursor: not-allowed; }
   padding: 15px 24px;
   border: none;
   border-radius: 4px;
-  background: linear-gradient(180deg, #d8b85c, #bf9c3e);
-  color: var(--bg);
   font-size: 16px;
   font-weight: 700;
   letter-spacing: .08em;
+}
+.auth-provider-google {
+  background: linear-gradient(180deg, #d8b85c, #bf9c3e);
+  color: var(--bg);
   box-shadow: 0 0 0 1px rgba(232,201,106,.45), 0 8px 26px rgba(201,168,76,.2);
 }
-.auth-google-primary:hover:not(:disabled) { background: linear-gradient(180deg, #e6c76a, #cba948); }
+.auth-provider-google:hover:not(:disabled) { background: linear-gradient(180deg, #e6c76a, #cba948); }
+.auth-provider-discord {
+  background: #5865f2;
+  color: #fff;
+  box-shadow: 0 0 0 1px rgba(88,101,242,.55);
+}
+.auth-provider-discord:hover:not(:disabled) { background: #6b76f4; }
 /* The dot is hollow because the callsign is the *next* step, not a done one. */
 .auth-step { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); letter-spacing: .06em; color: var(--txf); }
 .auth-step-dot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--golddim); }

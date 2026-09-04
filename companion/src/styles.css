@@ -61,6 +61,8 @@ footer { margin-top: auto; padding-top: 26px; color: #657780; text-align: center
 .setup-step.is-complete .setup-step-title span { color: #75ca8a; }
 .setup-step-copy p { margin-top: 3px; font-size: 11px; }
 .setup-action { min-width: 112px; }
+.setup-actions { display: grid; gap: 6px; }
+.setup-actions .setup-action { width: 100%; }
 .deferred-tools { padding: 0; border-radius: 13px; color: #aebcc1; }
 .deferred-tools summary { min-height: 44px; padding: 14px 19px; cursor: pointer; color: #b9c5c9; font-size: 12px; font-weight: 700; }
 .deferred-tools[open] summary { border-bottom: 1px solid #ffffff0d; }
@@ -76,6 +78,7 @@ footer { margin-top: auto; padding-top: 26px; color: #657780; text-align: center
   .setup-heading { gap: 10px; }
   .setup-step { grid-template-columns: 28px minmax(0, 1fr); }
   .setup-action { grid-column: 2; width: 100%; }
+  .setup-actions { grid-column: 2; }
   .folder-row { align-items: flex-start; flex-direction: column; }
   .folder-row .secondary-button { width: 100%; }
   .update-card { align-items: stretch; flex-direction: column; }

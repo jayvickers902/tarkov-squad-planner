@@ -1,5 +1,6 @@
 import { createClient as defaultCreateClient } from '@supabase/supabase-js'
 import { containsAsciiControlCharacter } from './textValidation.js'
+import { AUTH_PROVIDERS } from '../../shared/authProviders.js'
 
 export const AUTH_CALLBACK_URL = 'tarkov-squad-planner://auth/callback'
 const AUTH_CALLBACK_PROTOCOL = 'tarkov-squad-planner:'
@@ -190,10 +191,11 @@ export function createAuthClient({
   const api = {
     client,
     auth: client.auth,
-    async signIn() {
+    async signIn(provider = 'google') {
+      if (!AUTH_PROVIDERS.includes(provider)) throw authError('AUTH_SIGN_IN_FAILED')
       try {
         const result = await client.auth.signInWithOAuth({
-          provider: 'google',
+          provider,
           options: { redirectTo, skipBrowserRedirect: true },
         })
         if (result?.error || !result?.data?.url) throw result?.error || new Error('no oauth url')

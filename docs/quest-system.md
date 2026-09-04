@@ -18,7 +18,7 @@ localStorage key `tsp.quest_import_restore.v1`, carries the character mode, and 
 hours; it is refused after a mode switch.
 
 Sync status keeps website and desktop sources distinct and reports last heartbeat separately from
-the last successful folder check. The desktop companion pairs by signing in with the same Google
+the last successful folder check. The desktop companion pairs by signing in with the same
 account used on the site and keeps quests and screenshot pings in sync while the site is closed.
 
 ## Row ordering

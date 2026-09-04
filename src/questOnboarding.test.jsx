@@ -123,7 +123,7 @@ describe('DesktopAppCard', () => {
     expect(screen.getByRole('heading', { name: 'SYNC WITHOUT THE TAB OPEN' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'DOWNLOAD .EXE · 64-BIT' })).toHaveAttribute('href', expect.stringMatching(/x64-setup\.exe$/))
     expect(screen.getByRole('link', { name: 'DOWNLOAD .MSI · 64-BIT' })).toHaveAttribute('href', expect.stringMatching(/x64\.msi$/))
-    expect(screen.getByText(/same Google account/i)).toBeInTheDocument()
+    expect(screen.getByText(/same account you use here/i)).toBeInTheDocument()
   })
 
   it('shows the compact connected state without a download link', () => {

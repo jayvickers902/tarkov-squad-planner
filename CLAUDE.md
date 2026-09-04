@@ -19,6 +19,7 @@ build warnings about chunk size are acceptable; the bundle budget is the real ga
 ## Commands
 
 ```bash
+npm run gate       # the whole required-checks matrix in ONE process — use this, not 13 commands
 npm run dev        # local dev server (Vite)
 npm run build      # production build to dist/ (~2s)
 npm test           # vitest run
@@ -32,6 +33,9 @@ npm run prebake    # refresh src/data/prebaked/*.json from tarkov.dev — explic
 
 The full pre-review matrix, including the companion and Rust jobs, is in
 [README.md](README.md#required-checks). CI runs the same set on push to `main` and on pull requests.
+`npm run gate` runs that entire matrix in a single process and prints one pass/fail table, with
+output only from the steps that failed — prefer it over running the commands individually.
+`--fast` skips the slow tail (build, e2e, cargo); `--web` skips the companion and Rust jobs.
 
 `prebake` rewrites the committed prebaked JSON and dumps large unrelated churn into the diff, so it
 is **not** wired into `npm run build`. Vercel runs it at deploy time via `buildCommand` in
@@ -112,6 +116,7 @@ src/data/
 companion/             # Tauri desktop companion (own package.json, excluded from vitest)
 shared/                # web/companion seam — no React, Tauri, Supabase, window or document
   domain/              # framework-free implementations behind every † shim above (14 files, flat)
+  authProviders.js        # facade: the OAuth providers both sign-in screens offer
   companionSyncEngine.js  # facade: the sync API the companion and web both import
   pingCadence.js          # facade: tap window and max tap count
   taskCatalog.js          # facade: sanitized task IDs and display names, injectable loader
@@ -134,9 +139,18 @@ applied.
 
 ## Auth
 
-Google OAuth is the only sign-in path. After the first sign-in the user chooses a callsign stored in
-`profiles`; authorization is keyed by the authenticated user UUID. Admin access comes from
-`profiles.is_admin`, never a hardcoded user ID.
+Google and Discord OAuth are the sign-in paths. Both are native Supabase providers, so the whole
+flow is a redirect with no server of ours in the middle. The list lives in `AUTH_PROVIDERS`
+(`shared/authProviders.js`) — shared with the companion so the two sign-in screens cannot drift —
+with the button copy beside it in `PROVIDERS` (`AuthScreen.jsx`). A provider Supabase does not
+implement cannot go on that list: Steam in particular speaks OpenID 2.0, which Supabase Auth has
+no support for, so it would need a backend of ours holding the service-role key to mint the
+session.
+
+After the first sign-in the user chooses a callsign stored in `profiles`; authorization is keyed by
+the authenticated user UUID. Admin access comes from `profiles.is_admin`, never a hardcoded user ID.
+Supabase merges two providers into one account only when both present the same verified email, so a
+user who switches providers can land on a second account with its own callsign and quest list.
 
 ## External APIs
 

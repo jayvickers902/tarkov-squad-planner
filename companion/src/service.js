@@ -20,7 +20,7 @@ const UNCONFIGURED_STATUS = Object.freeze({
 function safeNotice(code) {
   if (code === 'signed-in') return 'Signed in securely. Background sync is starting.'
   if (code === 'signed-out') return 'Signed out. Background sync has stopped.'
-  if (code === 'callback-rejected') return 'Google sign-in was cancelled or rejected. Try again.'
+  if (code === 'callback-rejected') return 'Sign-in was cancelled or rejected. Try again.'
   if (code === 'callback-invalid') return 'The sign-in callback was invalid or incomplete. Start a new sign-in attempt.'
   if (code === 'callback-storage') return 'Windows could not save the secure session. Install the latest companion build and try again.'
   if (code === 'callback-failed') return 'The secure sign-in link could not be completed. Try again.'
@@ -161,10 +161,10 @@ export function createCompanionService({
     return startPromise
   }
 
-  async function signIn() {
+  async function signIn(provider) {
     await start()
     if (!auth) return false
-    await auth.signIn()
+    await auth.signIn(provider)
     return true
   }
 

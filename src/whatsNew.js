@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.18'
+export const RELEASE_VERSION = '2026.19'
 
 export const SETUP_STEPS = [
   {
@@ -28,6 +28,18 @@ export const FIRST_LIVE_NOTES_VERSION = '2026.09'
 // Newest first — WelcomeModal shows RELEASES[0] and nothing else, so a new
 // release goes on top of this array and RELEASE_VERSION moves with it.
 export const RELEASES = [
+  {
+    version: '2026.19',
+    date: '2026-09-04',
+    title: 'SIGN IN WITH DISCORD',
+    items: [
+      {
+        tag: 'NEW',
+        title: 'DISCORD SIGN-IN',
+        body: 'Discord now sits beside Google on the sign-in screen. Use whichever account you already have, then keep using that one - signing in with the other provider can land you on a separate account with its own callsign and quest list.',
+      },
+    ],
+  },
   {
     version: '2026.18',
     date: '2026-09-04',

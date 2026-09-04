@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabase'
+import { AUTH_PROVIDERS } from '../shared/authProviders.js'
 
 const PROFILE_SCHEMA_MESSAGE = 'Database schema is out of date. Apply Supabase migrations 10_01 through 10_10, then reload.'
 
@@ -67,17 +68,21 @@ export function useAuth() {
     }
   }, [])
 
-  async function loginWithGoogle() {
+  async function loginWithProvider(provider) {
     setError('')
+    if (!AUTH_PROVIDERS.includes(provider)) {
+      setError('That sign-in option is not available')
+      return false
+    }
     const { error: err } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
+      provider,
       options: { redirectTo: window.location.origin },
     })
     if (err) { setError(err.message); return false }
     return true
   }
 
-  // Called after Google sign-in when the user has no profile yet.
+  // Called after OAuth sign-in when the user has no profile yet.
   async function createProfile(callsign) {
     if (createInFlight.current) return false
     createInFlight.current = true
@@ -135,7 +140,7 @@ export function useAuth() {
     error,
     setError,
     logout,
-    loginWithGoogle,
+    loginWithProvider,
     createProfile,
   }
 }

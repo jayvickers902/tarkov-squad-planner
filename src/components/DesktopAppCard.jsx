@@ -76,7 +76,7 @@ export default function DesktopAppCard({ companion, showDownloads = false }) {
       <p>The desktop app keeps your quests and position pings synced in the background. It is the recommended setup for Windows.</p>
       <ol>
         <li>Download either the .exe installer (simplest) or the .msi installer.</li>
-        <li>Install it and sign in with the same Google account you use here.</li>
+        <li>Install it and sign in with the same account you use here.</li>
         <li>Choose your EFT folders once; the app handles future checks.</li>
       </ol>
       <DesktopDownloadActions />
