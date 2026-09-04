@@ -10,6 +10,7 @@
     "build": "vite build",
     "build:client": "vite build",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
+    "gate": "node scripts/gate.mjs",
     "loadtest:party": "node scripts/party-load-harness.mjs",
     "lint": "eslint .",
     "preview": "vite preview",

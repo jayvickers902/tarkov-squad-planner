@@ -43,6 +43,11 @@ The companion currently consumes a small amount of shared web-domain code. See t
 
 Run these before opening a pull request. This list is the same set CI runs, in the same order — `check:bundle` reads the `dist/` that `build` produces, so keep it after `build`.
 
+`npm run gate` runs the whole list below in one process and prints a single pass/fail summary,
+echoing output only for the steps that failed. Add `--fast` to skip the slow tail (build, e2e,
+cargo) or `--web` to skip the companion and Rust jobs. The individual commands remain the
+source of truth and are listed here in the order the gate runs them:
+
 ```powershell
 npm run validate:migrations
 npm run lint
