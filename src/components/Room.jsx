@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react'
+import { useState, useRef, useMemo, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useMaps, useTasks } from '../useTarkov'
 import { useIsMobile } from '../useIsMobile'
 import TodoList from './TodoList'
@@ -107,6 +107,11 @@ function hasRaidWork(progress) {
 // also covers the id we are still holding.
 const RAID_BRIEF_WINDOW_MS = 15 * 60 * 1000
 
+// The confirm button says what confirming does, and that depends on why the
+// brief opened. A leader is about to start; a member the raid already started
+// for is about to walk into it; the other two are reading a checklist.
+const BRIEF_CONFIRM_LABELS = { announced: 'READY', manual: 'DONE' }
+
 function briefAckKey(party) {
   return `tsp.raid-brief.${party?.id || party?.code || 'local'}`
 }
@@ -126,7 +131,7 @@ function compactMapName(map) {
   return map.normalizedName === 'streets-of-tarkov' ? 'Streets' : map.name
 }
 
-export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, activeQuestCount = 0, onLeave, onSelectMap, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onClearPings, onMyQuests, onAdmin, onSubmitProgress, userObjProgress, userSettings = {}, onSetUserSetting, onRaidError, gameMode = 'regular', onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onRefreshQuests, onStartRaid, raidSession, onOpenRaid, onCloseRaid, onOpenChangelog }) {
+export default function Room({ party, partyError = '', friendsError = '', raidView = false, myUserId, myName, isAdmin, hasRouteOverlay = false, questsLoading, activeQuestCount = 0, onLeave, onSelectMap, onToggleStar, skippedQuestIds, onAddStroke, onClearMyStrokes, onAddMarker, onClearMyMarkers, onClearPings, onMyQuests, onAdmin, onSubmitProgress, userObjProgress, userSettings = {}, onSetUserSetting, onRaidError, gameMode = 'regular', onlineMemberIds = [], presenceReady = false, onSetRaidSettings, onSweepEphemeral, friends = [], pendingIn = [], pendingOut = [], onSendRequest, onAcceptRequest, onRemoveRequest, onRemoveFriend, onRefreshFriends, onRefresh, onRefreshQuests, onStartRaid, onAnnounceRaidBrief, raidBrief = null, raidSession, onOpenRaid, onCloseRaid, onOpenChangelog }) {
   const isMobile = useIsMobile()
   const questLogs = useEftLogSync({ optional: true })
   const [tab, setTab]           = useState('todo')
@@ -138,7 +143,6 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   const [addError, setAddError] = useState('')
   const [addBusy, setAddBusy]   = useState(false)
   const [confirmUnfriend, setConfirmUnfriend] = useState(null)
-  const [startRaidPending, setStartRaidPending] = useState(false)
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [overflowOpen, setOverflowOpen] = useState(false)
@@ -212,21 +216,41 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   const raidId = Number.isFinite(Number(party.raid_id)) ? Number(party.raid_id) : 0
   const briefKey = briefAckKey(party)
   const [ackedRaid, setAckedRaid] = useState(() => readBriefAck(briefKey))
-  const [openBriefRaid, setOpenBriefRaid] = useState(null)
+  // Why the brief is open decides what closing it means, so the reason travels
+  // with it rather than being re-derived at the footer:
+  //   pending   - this leader pressed START RAID and has not confirmed yet
+  //   announced - the leader's press reached us over the party channel
+  //   started   - a new raid_id landed
+  //   manual    - somebody opened the checklist themselves
+  const [brief, setBrief] = useState(null)
 
   useEffect(() => { setAckedRaid(readBriefAck(briefKey)) }, [briefKey])
 
-  // Every member opens the brief on the raid the leader just started. The
+  // "Unless the member already has it open": a second announcement must not
+  // reset the reader's scroll position or rewrite what closing it will do.
+  const openBrief = useCallback((reason, forRaidId = null) => {
+    setBrief(current => current || { reason, raidId: forRaidId })
+  }, [])
+
+  // The leader's press, relayed over the party channel. It lands before
+  // start_party_raid runs -- and lands even when the leader ends up backing out
+  // -- so this is what makes START RAID brief the squad and not just the leader.
+  useEffect(() => {
+    if (!raidBrief || !party.map_id) return
+    openBrief('announced', Number.isFinite(Number(raidBrief.raidId)) ? Number(raidBrief.raidId) : raidId)
+  }, [raidBrief, party.map_id, raidId, openBrief])
+
+  // A raid that actually started briefs everyone who has not acked it. The
   // freshness window keeps a party's long-dead last raid from briefing whoever
   // walks in months later, and the ack keeps a reload from re-briefing.
   useEffect(() => {
     if (!party.map_id || raidStart === null) return
     if (ackedRaid !== null && raidId <= ackedRaid) return
     if (Date.now() - raidStart > RAID_BRIEF_WINDOW_MS) return
-    setOpenBriefRaid(raidId)
-  }, [party.map_id, raidId, raidStart, ackedRaid])
+    openBrief('started', raidId)
+  }, [party.map_id, raidId, raidStart, ackedRaid, openBrief])
 
-  const showRaidModal = startRaidPending || openBriefRaid !== null
+  const showRaidModal = brief !== null
 
   // Work a map change would destroy — select_map_party resets exactly these four.
   // __raid_start__ is bookkeeping the modal writes, not something anyone would mourn,
@@ -239,25 +263,48 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
 
   function ackBrief(id) {
     setAckedRaid(id)
-    setOpenBriefRaid(null)
     try { localStorage.setItem(briefKey, String(id)) } catch { /* Storage may be unavailable. */ }
   }
 
-  function handleRaidModalClose() {
-    if (startRaidPending) {
-      setStartRaidPending(false)
+  // Both exits ack the same raid; only confirming starts or enters one. A
+  // pending brief is the one exception: backing out of it must leave the raid
+  // unstarted and unacked, because pressing START RAID again has to re-brief.
+  function settleBrief(confirmed) {
+    const reason = brief?.reason || null
+    // The raid the brief was opened against, not the live one. A member who is
+    // still reading when the leader's confirm lands would otherwise ack one raid
+    // too far and go unbriefed on the next one.
+    const briefRaidId = brief?.raidId ?? raidId
+    setBrief(null)
+    if (reason === 'pending') {
+      if (!confirmed) return
       // start_party_raid increments raid_id, so ack the raid we are asking for.
-      ackBrief(raidId + 1)
+      ackBrief(briefRaidId + 1)
       onStartRaid()
+    } else if (reason === 'announced') {
+      // The leader is about to increment raid_id past the value they announced.
+      // Ack that raid now, or the confirm we are waiting on re-briefs a member
+      // who has only just read this.
+      ackBrief(briefRaidId + 1)
+    } else if (reason === 'started') {
+      ackBrief(briefRaidId)
     } else {
-      ackBrief(openBriefRaid ?? raidId)
+      // 'manual' acks nothing and goes nowhere: opening the checklist by hand
+      // is neither a briefing nor a raid.
+      return
     }
-    onOpenRaid()
+    if (confirmed) onOpenRaid()
   }
 
-  function handleRaidModalCancel() {
-    if (startRaidPending) setStartRaidPending(false)
-    else ackBrief(openBriefRaid ?? raidId)
+  function handleRaidModalClose() { settleBrief(true) }
+
+  function handleRaidModalCancel() { settleBrief(false) }
+
+  // Announcing is best effort and not awaited: the leader's own brief opens now
+  // either way, and the raid_id pop still covers whoever the broadcast missed.
+  function handleStartRaidPress() {
+    openBrief('pending', raidId)
+    void onAnnounceRaidBrief?.()
   }
 
   async function handleSendRequest() {
@@ -390,6 +437,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
             onlineMemberIds={onlineMemberIds}
             presenceReady={presenceReady}
             onSubmitProgress={onSubmitProgress}
+            confirmLabel={BRIEF_CONFIRM_LABELS[brief?.reason]}
             onClose={handleRaidModalClose}
             onCancel={handleRaidModalCancel}
           />
@@ -416,7 +464,8 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
             userObjProgress={userObjProgress}
             userSettings={userSettings}
             onSetSetting={onSetUserSetting}
-            onStartRaid={() => setStartRaidPending(true)}
+            onStartRaid={handleStartRaidPress}
+            onOpenChecklist={() => openBrief('manual')}
             raidSession={raidSession}
             onRaidError={onRaidError}
             onClose={onCloseRaid}
@@ -439,6 +488,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
           onlineMemberIds={onlineMemberIds}
           presenceReady={presenceReady}
           onSubmitProgress={onSubmitProgress}
+          confirmLabel={BRIEF_CONFIRM_LABELS[brief?.reason]}
           onClose={handleRaidModalClose}
           onCancel={handleRaidModalCancel}
         />
@@ -549,15 +599,27 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
               />
             </div>
 
-            {isLeader && party.map_id && (
-              <button type="button" className="room-start-raid" onClick={() => setStartRaidPending(true)}>
+            {party.map_id && (isLeader ? (
+              <button type="button" className="room-start-raid" onClick={handleStartRaidPress}>
                 <Icon name="play" size="lg" />
                 <span className="room-start-raid-copy">
                   <span className="room-start-raid-title">START RAID</span>
                   <span className="mono room-start-raid-count">{members.length} IN SQUAD</span>
                 </span>
               </button>
-            )}
+            ) : (
+              // The leader's announcement is a live broadcast, so a member who
+              // was reloading, asleep or offline when it went out has no way
+              // back to the brief. This is that way back, and it is where they
+              // are already looking for it.
+              <button type="button" className="room-start-raid is-checklist" onClick={() => openBrief('manual')}>
+                <Icon name="checklist" size="lg" />
+                <span className="room-start-raid-copy">
+                  <span className="room-start-raid-title">PRE-RAID CHECK-LIST</span>
+                  <span className="mono room-start-raid-count">{members.length} IN SQUAD</span>
+                </span>
+              </button>
+            ))}
           </div>
         </div>
 

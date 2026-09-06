@@ -238,6 +238,16 @@ function isPartyFullMessage(message) {
   return /party is full|full \(max/i.test(message || '')
 }
 
+// The leader's START RAID press has to reach the squad before the raid itself
+// does. start_party_raid only runs when the leader confirms the brief, and a
+// leader who backs out never writes anything at all, so keying the squad's
+// brief on raid_id alone left members on the party page while the leader read
+// the checklist alone. This announcement is deliberately ephemeral: it says
+// "the leader is prepping right now", which is worthless to anyone who was not
+// connected at the time, and whoever misses it opens the same brief from the
+// PRE-RAID CHECK-LIST button. The durable raid_id pop still covers the confirm.
+export const RAID_BRIEF_EVENT = 'raid-brief'
+
 export function useParty(userId, userSettings = {}, {
   callsign = '',
   savedQuests = [],
@@ -255,6 +265,7 @@ export function useParty(userId, userSettings = {}, {
   const [partyCode, setPartyCode] = useState(null)
   const [onlineMemberIds, setOnlineMemberIds] = useState([])
   const [presenceReady, setPresenceReady] = useState(false)
+  const [raidBrief, setRaidBrief] = useState(null)
 
   const partyRef = useRef(null)
   const partyIdRef = useRef(null)
@@ -267,6 +278,10 @@ export function useParty(userId, userSettings = {}, {
   const pendingFieldsRef = useRef(new Set())
   const onlineMemberIdsRef = useRef([])
   const presenceReadyRef = useRef(false)
+  const partyChannelRef = useRef(null)
+  // Announcements carry a sequence rather than only a timestamp so a second
+  // press produces a distinct value even inside the same millisecond.
+  const raidBriefSeqRef = useRef(0)
   const autoRejoinAttemptedRef = useRef(null)
   const autoRejoinBlockedRef = useRef(false)
   const syncMetricCallbackRef = useRef(onSyncMetric)
@@ -329,6 +344,7 @@ export function useParty(userId, userSettings = {}, {
     setParty(null)
     setPartyCode(null)
     setMyName('')
+    setRaidBrief(null)
     if (clearHint) saveLastPartyCode(null)
   }
 
@@ -428,10 +444,25 @@ export function useParty(userId, userSettings = {}, {
     }
 
     const channel = supabase
-      .channel(`party-${partyId}`, { config: { presence: { key: userIdRef.current || code } } })
+      .channel(`party-${partyId}`, {
+        config: { presence: { key: userIdRef.current || code }, broadcast: { self: false } },
+      })
       .on('presence', { event: 'sync' }, () => updatePresence(channel))
       .on('presence', { event: 'join' }, () => updatePresence(channel))
       .on('presence', { event: 'leave' }, () => updatePresence(channel))
+      .on('broadcast', { event: RAID_BRIEF_EVENT }, message => {
+        const payload = message?.payload || {}
+        // self:false already excludes the sender; the id check also covers the
+        // same account watching the party from a second tab.
+        if (payload.user_id && payload.user_id === userIdRef.current) return
+        const announcedRaidId = Number(payload.raid_id)
+        setRaidBrief({
+          seq: ++raidBriefSeqRef.current,
+          raidId: Number.isFinite(announcedRaidId) ? announcedRaidId : Number(partyRef.current?.raid_id) || 0,
+          from: payload.user_id || null,
+          at: Date.now(),
+        })
+      })
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'parties', filter: `id=eq.${partyId}`,
       }, payload => {
@@ -478,6 +509,7 @@ export function useParty(userId, userSettings = {}, {
           // Presence is best-effort; party state remains usable.
         }
       })
+    partyChannelRef.current = channel
 
     // Keep the optional child-table subscription isolated from the presence and
     // party-row channel. During rollout an older project may not have the table
@@ -564,6 +596,8 @@ export function useParty(userId, userSettings = {}, {
       onlineMemberIdsRef.current = []
       setPresenceReady(false)
       setOnlineMemberIds([])
+      setRaidBrief(null)
+      partyChannelRef.current = null
       supabase.removeChannel(channel)
       supabase.removeChannel(pingChannel)
     }
@@ -1132,6 +1166,27 @@ export function useParty(userId, userSettings = {}, {
     runAtomicPartyWrite('start_party_raid', { p_code: codeRef.current }, Object.keys(changes))
   }, [runAtomicPartyWrite])
 
+  // Best effort by design and never awaited by the caller: the leader's own
+  // brief must open on the press, and a squadmate the announcement misses still
+  // has the checklist button and the raid_id pop behind it.
+  const announceRaidBrief = useCallback(async () => {
+    const channel = partyChannelRef.current
+    const current = partyRef.current
+    if (!channel || !current) return 'unavailable'
+    try {
+      return await channel.send({
+        type: 'broadcast',
+        event: RAID_BRIEF_EVENT,
+        payload: {
+          user_id: userIdRef.current || null,
+          raid_id: Number(current.raid_id) || 0,
+        },
+      })
+    } catch {
+      return 'error'
+    }
+  }, [])
+
   const sweepEphemeral = useCallback(changes => {
     const current = partyRef.current
     if (!current || current.leader_id !== userIdRef.current || !changes) return
@@ -1199,6 +1254,7 @@ export function useParty(userId, userSettings = {}, {
     autoRejoinSettled,
     onlineMemberIds,
     presenceReady,
+    raidBrief,
     createParty,
     joinParty,
     forceJoinParty,
@@ -1223,6 +1279,7 @@ export function useParty(userId, userSettings = {}, {
     syncSavedQuests,
     refreshParty,
     startRaid,
+    announceRaidBrief,
     setRaidSettings,
     sweepEphemeral,
   }

@@ -273,6 +273,17 @@ button:disabled { cursor: not-allowed; opacity: .58; }
   box-shadow: 0 0 0 1px rgba(232,201,106,.45), 0 8px 26px rgba(201,168,76,.22);
 }
 .room-start-raid:hover { background: linear-gradient(180deg, #e6c76a, #cba948); }
+/* The member's way back into the brief. Same slot and same shape as the
+   leader's button, deliberately not the same weight: it opens a checklist, it
+   does not start anything. */
+.room-start-raid.is-checklist {
+  background: rgba(201,168,76,.08);
+  border: 1px solid rgba(201,168,76,.34);
+  color: var(--goldtx);
+  box-shadow: none;
+}
+.room-start-raid.is-checklist:hover { background: rgba(201,168,76,.16); border-color: var(--gold); }
+.room-start-raid.is-checklist .room-start-raid-title { font-size: 14px; }
 .room-start-raid-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .room-start-raid-title { font-size: 17px; letter-spacing: .1em; line-height: 1; }
 .room-start-raid-count { font-size: var(--fs-xs); letter-spacing: .1em; line-height: 1; opacity: .72; }

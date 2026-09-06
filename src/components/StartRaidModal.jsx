@@ -215,7 +215,7 @@ function BriefBoss({ boss }) {
   )
 }
 
-export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlineMemberIds = [], presenceReady = false, onSubmitProgress, onClose, onCancel = onClose }) {
+export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlineMemberIds = [], presenceReady = false, onSubmitProgress, confirmLabel = "OK — LET'S GO", onClose, onCancel = onClose }) {
   const dialogRef = useDialogFocus(true, onCancel)
   const [times, setTimes] = useState(getTarkovTimes)
   const mapNorm = party.map_norm
@@ -458,7 +458,7 @@ export default function StartRaidModal({ party, myUserId, tasks, gameMode, onlin
             {itemsLeft === 0 ? 'EVERYTHING PACKED — SQUAD IS READY' : `${itemsLeft} ITEM${itemsLeft === 1 ? '' : 'S'} NOT PACKED ACROSS THE SQUAD — YOU CAN STILL LOAD IN`}
           </span>
           <button type="button" className="start-raid-back" onClick={onCancel}>BACK</button>
-          <button type="button" data-autofocus className="start-raid-go" onClick={onClose}>OK — LET'S GO</button>
+          <button type="button" data-autofocus className="start-raid-go" onClick={onClose}>{confirmLabel}</button>
         </footer>
       </div>
     </div>

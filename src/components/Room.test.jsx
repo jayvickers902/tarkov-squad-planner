@@ -18,9 +18,10 @@ vi.mock('../EftLogSyncContext', () => ({
 }))
 vi.mock('../useCompanionSyncStatus', () => ({ useCompanionSyncStatus: () => null }))
 vi.mock('./StartRaidModal', () => ({
-  default: ({ onClose }) => (
+  default: ({ confirmLabel = "OK — LET'S GO", onClose, onCancel }) => (
     <div role="dialog" aria-label="Start raid brief">
-      <button type="button" onClick={onClose}>OK — LET'S GO</button>
+      <button type="button" onClick={onClose}>{confirmLabel}</button>
+      <button type="button" onClick={onCancel}>BACK</button>
     </div>
   ),
 }))
@@ -124,6 +125,7 @@ function renderRoom(overrides = {}) {
     onRefresh: vi.fn(),
     onRefreshQuests: vi.fn().mockResolvedValue([]),
     onStartRaid: vi.fn(),
+    onAnnounceRaidBrief: vi.fn(),
     onOpenRaid: vi.fn(),
     onCloseRaid: vi.fn(),
     ...overrides.props,
@@ -193,6 +195,104 @@ describe('Room banner header', () => {
     cleanup()
     renderRoom({ props: { myUserId: 'user-2', myName: 'BOOTS' }, party: started })
     expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+  })
+
+  it('announces the brief to the squad the moment the leader presses START RAID', () => {
+    const { props } = renderRoom()
+
+    fireEvent.click(screen.getByRole('button', { name: /START RAID/ }))
+
+    // The announcement is what reaches the squad. start_party_raid still waits
+    // for the confirm, so backing out must leave the raid unstarted.
+    expect(props.onAnnounceRaidBrief).toHaveBeenCalledOnce()
+    expect(props.onStartRaid).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'BACK' }))
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+    expect(props.onStartRaid).not.toHaveBeenCalled()
+
+    // Pressing it again has to re-announce, because backing out acked nothing.
+    fireEvent.click(screen.getByRole('button', { name: /START RAID/ }))
+    expect(props.onAnnounceRaidBrief).toHaveBeenCalledTimes(2)
+  })
+
+  it('briefs a member on the leader press, before start_party_raid has run', () => {
+    const { props, rerender } = renderRoom({ props: { myUserId: 'user-2', myName: 'BOOTS' } })
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+
+    rerender(<Room {...props} raidBrief={{ seq: 1, raidId: 0, at: Date.now() }} />)
+    expect(screen.getByRole('dialog', { name: 'Start raid brief' })).toBeInTheDocument()
+    // Nothing has started yet, so the confirm says so.
+    expect(screen.getByRole('button', { name: 'READY' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'READY' }))
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+
+    // The leader's confirm lands a moment later. A member who has just read the
+    // brief must not be handed it a second time.
+    rerender(<Room {...props} party={makeParty({ raid_id: 1, progress: { __raid_start__: Date.now() } })} />)
+    expect(screen.queryByRole('dialog', { name: 'Start raid brief' })).not.toBeInTheDocument()
+  })
+
+  it('acks the announced raid, not the one that landed while the member read it', () => {
+    const { props, rerender } = renderRoom({
+      props: { myUserId: 'user-2', myName: 'BOOTS' },
+      party: { raid_id: 3 },
+    })
+    rerender(<Room {...props} party={makeParty({ raid_id: 3 })} raidBrief={{ seq: 1, raidId: 3, at: Date.now() }} />)
+    expect(screen.getByRole('dialog', { name: 'Start raid brief' })).toBeInTheDocument()
+
+    // The leader confirms while the member is still reading. Closing now must
+    // ack raid 4 -- the announced one -- and not raid 5, which has not happened.
+    rerender(
+      <Room
+        {...props}
+        party={makeParty({ raid_id: 4, progress: { __raid_start__: Date.now() } })}
+        raidBrief={{ seq: 1, raidId: 3, at: Date.now() }}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'READY' }))
+    expect(localStorage.getItem(`tsp.raid-brief.${props.party.id || props.party.code}`)).toBe('4')
+
+    // So the raid after it still briefs them.
+    rerender(<Room {...props} party={makeParty({ raid_id: 5, progress: { __raid_start__: Date.now() } })} />)
+    expect(screen.getByRole('dialog', { name: 'Start raid brief' })).toBeInTheDocument()
+  })
+
+  it('leaves a brief that is already open alone when another announcement lands', () => {
+    const { props, rerender } = renderRoom({
+      props: { myUserId: 'user-2', myName: 'BOOTS' },
+      party: { raid_id: 1, progress: { __raid_start__: Date.now() } },
+    })
+    // Opened by the raid itself, so the confirm is the load-in one.
+    expect(screen.getByRole('button', { name: "OK — LET'S GO" })).toBeInTheDocument()
+
+    rerender(
+      <Room
+        {...props}
+        party={makeParty({ raid_id: 1, progress: { __raid_start__: Date.now() } })}
+        raidBrief={{ seq: 1, raidId: 1, at: Date.now() }}
+      />,
+    )
+    expect(screen.getAllByRole('dialog', { name: 'Start raid brief' })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: "OK — LET'S GO" })).toBeInTheDocument()
+  })
+
+  it('gives a member the checklist button the leader gets START RAID in', () => {
+    const { props } = renderRoom({ props: { myUserId: 'user-2', myName: 'BOOTS' } })
+    expect(screen.queryByRole('button', { name: /START RAID/ })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /PRE-RAID CHECK-LIST/ }))
+    expect(screen.getByRole('dialog', { name: 'Start raid brief' })).toBeInTheDocument()
+
+    // Reading the checklist by hand is not a briefing: it acks nothing, starts
+    // nothing and goes nowhere, so a real raid still briefs them afterwards.
+    fireEvent.click(screen.getByRole('button', { name: 'DONE' }))
+    expect(props.onOpenRaid).not.toHaveBeenCalled()
+    expect(localStorage.getItem(`tsp.raid-brief.${props.party.id || props.party.code}`)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /PRE-RAID CHECK-LIST/ }))
+    expect(screen.getByRole('dialog', { name: 'Start raid brief' })).toBeInTheDocument()
   })
 
   it('does not brief anyone on a raid that ended long ago', () => {

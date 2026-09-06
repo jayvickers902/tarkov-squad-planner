@@ -93,6 +93,7 @@ export default function App() {
     addPing, clearPings,
     leaveParty, setError: setPartyError,
     syncSavedQuests, refreshParty, startRaid,
+    announceRaidBrief, raidBrief,
     onlineMemberIds, presenceReady,
     setRaidSettings, sweepEphemeral,
   } = useParty(user?.id, userSettings, {
@@ -465,6 +466,8 @@ export default function App() {
           onRefreshQuests={refreshUserQuests}
           onOpenChangelog={openChangelog}
           onStartRaid={startRaid}
+          onAnnounceRaidBrief={announceRaidBrief}
+          raidBrief={raidBrief}
           raidSession={raidSession}
           onRaidError={setPartyError}
           onOpenRaid={() => navigate({ screen: 'raid', code: party.code })}

@@ -148,6 +148,7 @@ export default function RaidView({
   onSetSetting,
   onRaidError,
   onStartRaid,
+  onOpenChecklist,
   onClose,
 }) {
   const isMobile = useIsMobile()
@@ -566,7 +567,11 @@ export default function RaidView({
       }
     : isLeader && party.map_id
       ? { label: `START RAID · ${memberRows.length} IN SQUAD`, tone: 'gold', onClick: onStartRaid }
-      : { label: 'WAITING FOR THE LEADER TO START', tone: 'quiet', disabled: true }
+      // A member waiting on the leader is exactly who wants the checklist, and
+      // "WAITING FOR THE LEADER TO START" gave them a dead control to look at.
+      : party.map_id && onOpenChecklist
+        ? { label: 'PRE-RAID CHECK-LIST', tone: 'quiet', onClick: onOpenChecklist }
+        : { label: 'WAITING FOR THE LEADER TO START', tone: 'quiet', disabled: true }
 
   return (
     <div ref={rootRef} className="map-raid" data-state={live ? 'live' : 'plan'}>

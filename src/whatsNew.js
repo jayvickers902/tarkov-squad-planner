@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.19'
+export const RELEASE_VERSION = '2026.20'
 
 export const SETUP_STEPS = [
   {
@@ -28,6 +28,23 @@ export const FIRST_LIVE_NOTES_VERSION = '2026.09'
 // Newest first — WelcomeModal shows RELEASES[0] and nothing else, so a new
 // release goes on top of this array and RELEASE_VERSION moves with it.
 export const RELEASES = [
+  {
+    version: '2026.20',
+    date: '2026-09-06',
+    title: 'THE RAID BRIEF REACHES THE SQUAD',
+    items: [
+      {
+        tag: 'FIXED',
+        title: 'START RAID BRIEFS EVERYONE',
+        body: 'Pressing START RAID now opens the pre-raid brief for the whole squad the moment it is pressed, instead of only for the leader. It used to wait for the leader to finish reading and confirm - and if the leader backed out instead, nobody else ever saw it.',
+      },
+      {
+        tag: 'NEW',
+        title: 'PRE-RAID CHECK-LIST',
+        body: 'Everyone who is not the party leader now has a PRE-RAID CHECK-LIST button where the leader has START RAID, on the party banner and on the map page. Open the brief whenever you want - if you were reloading or away when the leader called it, that is how you get it back.',
+      },
+    ],
+  },
   {
     version: '2026.19',
     date: '2026-09-04',

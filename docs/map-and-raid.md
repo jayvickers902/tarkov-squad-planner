@@ -81,14 +81,42 @@ hue everywhere.
 `StartRaidModal` is a squad briefing, not the leader's private checklist. Pressing START RAID opens
 it for **every** member, and its prep ticks are shared.
 
-The pop is keyed on `party.raid_id`, never on `__raid_start__`. `start_party_raid` stamps the
-timestamp from the server clock while the optimistic write in `useParty` uses the client's, so the
-two never agree — keying on the stamp meant the leader who had just confirmed got briefed again the
-moment the real value landed. `raid_id` increments by exactly one on both paths, so it is the only
-"which raid is this" the squad agrees on. `Room` acks it as a high-water mark in `localStorage`
-under `tsp.raid-brief.<party>`, which is what stops a reload re-briefing, and only briefs an
-unacked raid whose stamp is under `RAID_BRIEF_WINDOW_MS` (15 min) old so a party's long-dead last
-raid does not brief whoever walks in months later.
+Two independent things open it, because one of them alone was not enough.
+
+**The leader's press**, relayed as a `raid-brief` broadcast on the existing `party-<id>` channel
+(`RAID_BRIEF_EVENT`, `useParty.js`). `start_party_raid` does not run until the leader confirms, and
+a leader who backs out with BACK, ×, Escape or a backdrop click never writes anything at all — so
+for as long as the brief was keyed on the write, the squad got nothing while the leader read the
+checklist, and got nothing at all if the leader changed their mind. The broadcast is deliberately
+ephemeral: it means "the leader is prepping right now", which is worthless to anyone who was not
+connected at the time, and it carries no state a reader could act on later.
+
+**A raid that actually started**, keyed on `party.raid_id` and never on `__raid_start__`.
+`start_party_raid` stamps the timestamp from the server clock while the optimistic write in
+`useParty` uses the client's, so the two never agree — keying on the stamp meant the leader who had
+just confirmed got briefed again the moment the real value landed. `raid_id` increments by exactly
+one on both paths, so it is the only "which raid is this" the squad agrees on. `Room` acks it as a
+high-water mark in `localStorage` under `tsp.raid-brief.<party>`, which is what stops a reload
+re-briefing, and only briefs an unacked raid whose stamp is under `RAID_BRIEF_WINDOW_MS` (15 min)
+old so a party's long-dead last raid does not brief whoever walks in months later.
+
+`Room` holds one `brief` object rather than two booleans, because **why** it opened decides what
+closing it does: `pending` (this leader pressed START RAID) acks `raid_id + 1` and calls
+`onStartRaid` on confirm and acks nothing on cancel, so pressing the button again re-announces;
+`announced` (the leader's press reached us) acks the announced `raid_id + 1` on either exit, so the
+confirm the member is waiting on cannot re-brief them seconds later. Both of those ack the raid the
+brief was **opened** against, not the live one: a member still reading when the leader's confirm
+lands would otherwise ack one raid too far and go unbriefed on the next. `started` acks the raid
+that opened it;
+`manual` acks nothing, starts nothing and navigates nowhere. An announcement never replaces a brief
+that is already open — a second press must not reset the reader's scroll position or rewrite what
+their confirm button will do.
+
+Because the announcement is a live broadcast, a member who was reloading, backgrounded or offline
+when it went out has no way back to it. **PRE-RAID CHECK-LIST** is that way back: it sits in the
+leader's START RAID slot on the party banner for everyone who is not the leader, and replaces the
+dead `WAITING FOR THE LEADER TO START` CTA on the map page's PLAN state. It opens the same brief
+with `reason: 'manual'`.
 
 Prep ticks live in party progress under `__prep__:<itemId>:<ACTION>::<uid>`, so they need no
 migration — `merge_progress` already accepts any boolean key ending in the caller's uid, and the
@@ -109,7 +137,8 @@ The map is **one destination with two states**, not a MAP tab and a separate rai
 `RaidView.jsx` renders it at `route.screen === 'raid'`; Room's tab strip has no map tab, and the
 banner's `MAP` button and the nav's `MAP` / `MAP · LIVE` entry both lead here.
 
-- **PLAN** — no active raid session. Spawns, routes, prep checks, squad readiness, START RAID.
+- **PLAN** — no active raid session. Spawns, routes, prep checks, squad readiness, and START RAID
+  for the leader or PRE-RAID CHECK-LIST for everyone else.
 - **LIVE** — an active raid session (with the legacy stamp as fallback). Live pings, follow camera,
   distance-sorted objectives.
 

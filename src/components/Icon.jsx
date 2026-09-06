@@ -11,6 +11,14 @@ const ICON_PATHS = {
       <path d="M9 12h11" />
     </>
   ),
+  checklist: (
+    <>
+      <path d="m3 6 2 2 3-3" />
+      <path d="m3 13 2 2 3-3" />
+      <path d="m3 20 2 2 3-3" />
+      <path d="M12 7h9M12 14h9M12 21h9" strokeLinecap="round" />
+    </>
+  ),
   more: <path d="M5 12h.01M12 12h.01M19 12h.01" strokeLinecap="round" />,
   play: <path d="m8 5 11 7-11 7V5Z" />,
   settings: (
