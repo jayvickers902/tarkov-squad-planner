@@ -1,6 +1,6 @@
 # Handoff — outstanding work
 
-**Updated:** 2026-09-04 · **Branch:** `main`
+**Updated:** 2026-09-07 · **Branch:** `main`
 
 Read [CLAUDE.md](CLAUDE.md) first, then the deep reference that matches the task —
 [docs/map-and-raid.md](docs/map-and-raid.md), [docs/eft-log-import.md](docs/eft-log-import.md),
@@ -33,8 +33,8 @@ RPC, immediate browser/companion publishing, companion 0.3.1, and release 2026.1
 | `2bd705c` | Raid view's quest column condenses; wiki link per quest |
 | `10bcfdc` | `CENTRE ON ME`, and OVERVIEW no longer retires FOLLOW for good |
 
-Root suite **86 files / 708 tests** (~12s), companion **14 / 76**, lint and typecheck clean,
-Playwright 2/2, web and companion builds clean. Verified 2026-09-03.
+Root suite **90 files / 753 tests** (~13s), companion **14 / 76**, lint and typecheck clean,
+Playwright 3/3, web and companion builds clean. Verified 2026-09-07 with the full 13-check gate.
 
 ---
 
@@ -48,8 +48,8 @@ The remaining tokens have different prefixes and suffixes.
 ### 2.2 Companion rebuilt and reinstalled
 
 Built the x64 NSIS and MSI bundles as version 0.3.1, installed the NSIS bundle successfully, and
-restarted the installed companion in the background. Those hand-built bundles are unsigned, so they
-are installable but not updatable; the signed path is the tagged CI release described in 3.8.
+restarted the installed companion in the background. Those hand-built bundles were unsigned, so
+they are installable but not updatable; the signed 0.3.2 path is now published as described in 3.8.
 
 ### 2.3 EFT Logs pruned
 
@@ -267,35 +267,33 @@ Cost: about an hour. Root suite stayed 86 files / 708 tests.
   throughout. Cost: about 20 minutes per batch including the full matrix, well under the hour
   budgeted.
 
-  **What is left.** 17 of 231 files, so this is a beachhead rather than coverage. The remaining
-  import-free pure helpers are the same shape and the same cost. The next thing needed is a
-  decision, not a batch: `chunkLoadRecovery`, `cameraMode` and everything under `src/components/`
-  reference `window` and `document`, and the config declares `"types": ["node"]` with no `"dom"`
-  lib, so DOM globals do not resolve. Adding `"dom"` affects every included file at once, which is
-  why it was left alone rather than folded into a batch.
+  **What is left.** 19 of 237 files, so this is a beachhead rather than coverage. The DOM decision
+  is closed: `cameraMode` and `chunkLoadRecovery` were added after `lib` gained `DOM` and
+  `DOM.Iterable`. Further widening remains ordinary annotation batches; components and other
+  browser-heavy files are still deliberately out of scope.
 - **ESLint ratchet — completed.** `no-unused-vars`, `no-empty`, `no-control-regex`,
   `no-useless-escape`, `require-yield` and `react-hooks/exhaustive-deps` are `error` in
   `eslint.config.js`. `npx eslint . --max-warnings 0` exited 0 before and after, so nothing had to
   be fixed: the change is a regression guard, not a cleanup. Cost: one config edit. If one of these
   fires in future, fix the code rather than re-softening the rule.
-- Playwright covers the signed-out shell only (2 tests). Party, map, quest, and import flows have no
+- Playwright covers the signed-out shell only (3 tests). Party, map, quest, and import flows have no
   end-to-end coverage.
 
 ---
 
-### 3.8 Companion 0.3.2 is built but not published
+### 3.8 Companion 0.3.2 is published
 
 `companion/package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` all read `0.3.2`,
-and `main` is at `b9e1349` with CI green. Nothing is published: the newest tag and the newest
-GitHub release are both `companion-v0.3.0`, and the updater endpoint
-(`releases/latest/download/latest.json`) still serves `"version": "0.3.0"`. Verified 2026-09-04.
+and tag `companion-v0.3.2` points at the signed release commit. GitHub workflow run `33904922708`
+completed successfully on 2026-09-04. The release contains `latest.json`, signed x64 and x86 NSIS
+installers, and the corresponding MSI bundles; the updater endpoint now serves `"version": "0.3.2"`.
 
 Two consequences worth being precise about, because the earlier note in this file overstated one of
 them:
 
-- **Installed clients are not being offered a broken update.** Bumping the version in the repository
-  publishes nothing. A 0.3.0 install polls the endpoint, reads 0.3.0, and stays put. 0.3.1 was never
-  published either.
+- **Installed clients were not offered a broken update while the release was absent.** A 0.3.0
+  install polled the endpoint, read 0.3.0, and stayed put. 0.3.1 was never published; clients can
+  now receive the signed 0.3.2 update from the live endpoint.
 - **The signing key is not missing.** `TAURI_SIGNING_PRIVATE_KEY` and
   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are both configured as repository secrets (set 2026-08-31)
   and wired into the build environment in
@@ -305,14 +303,8 @@ them:
   [scripts/create-companion-manifest.mjs](scripts/create-companion-manifest.mjs) refuses a manifest
   whose signature is absent or does not match the staged artifact.
 
-To ship it, push the tag — the workflow does the rest:
-
-```bash
-git tag companion-v0.3.2 && git push origin companion-v0.3.2
-```
-
-That builds x64 and x86, verifies each signature, generates and validates `latest.json`, and
-publishes the release. Confirm afterwards that the endpoint reports `0.3.2`:
+The tag was pushed and the workflow built x64 and x86, verified each signature, generated and
+validated `latest.json`, and published the release. Confirmed against the live endpoint:
 
 ```bash
 curl -sL https://github.com/jayvickers902/tarkov-squad-planner/releases/latest/download/latest.json
