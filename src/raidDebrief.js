@@ -5,10 +5,12 @@
 // instead of waiting for the next tick, and reports what that check found
 // rather than leaving the reader to guess why the quest is still listed.
 
+/** @param {any} controller */
 export function debriefCheckConfigured(controller) {
   return Boolean(controller?.persistentSupported && controller?.rememberedFolderName)
 }
 
+/** @param {any} controller */
 export function shouldRunDebriefCheck(controller) {
   if (!debriefCheckConfigured(controller)) return false
   if (typeof controller.checkNow !== 'function') return false
@@ -23,6 +25,7 @@ export const DEBRIEF_CHECKING = { state: 'checking', tone: 'idle', label: 'CHECK
 // `changed: false` for an untouched folder, and an `events` array only when the
 // scan was allowed to apply. Without auto-sync there is a preview and no events,
 // which is a review waiting in Quest Manager, not a finished sync.
+/** @param {any} result */
 export function debriefOutcome(result) {
   if (!result || typeof result !== 'object') {
     return { state: 'failed', tone: 'warning', label: 'CHECK DID NOT FINISH', completed: 0 }
@@ -33,7 +36,7 @@ export function debriefOutcome(result) {
   if (!Array.isArray(result.events)) {
     return { state: 'review', tone: 'warning', label: 'REVIEW IN QUEST MANAGER', completed: 0 }
   }
-  const completed = result.events.filter(event => event?.state === 'completed').length
+  const completed = result.events.filter(/** @param {any} event */ event => event?.state === 'completed').length
   if (completed > 0) {
     return { state: 'applied', tone: 'live', label: `${completed} COMPLETED`, completed }
   }
@@ -44,6 +47,10 @@ export function debriefOutcome(result) {
   return { state: 'clean', tone: 'idle', label: 'NO QUEST CHANGES', completed: 0 }
 }
 
+/**
+ * @param {any} outcome
+ * @param {string | null} [controllerError]
+ */
 export function debriefTitle(outcome, controllerError = null) {
   if (!outcome) return ''
   if (outcome.state === 'checking') return 'Checking the remembered EFT log folder for quests you finished this raid.'

@@ -1,11 +1,13 @@
+/** @param {unknown} value */
 export function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, character => ({
+  const entities = /** @type {Record<string, string>} */ ({
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',
     '"': '&quot;',
     "'": '&#39;',
-  }[character]))
+  })
+  return String(value ?? '').replace(/[&<>"']/g, character => entities[character] ?? character)
 }
 
 const BLOCKED_SVG_ELEMENTS = new Set([
@@ -14,6 +16,7 @@ const BLOCKED_SVG_ELEMENTS = new Set([
   'animatetransform',
 ])
 
+/** @param {string} value */
 function unsafeCss(value) {
   const withoutLocalFragments = value.replace(/url\s*\(\s*(['"]?)#[a-zA-Z0-9_.:-]+\1\s*\)/g, '')
   return /(?:url\s*\(|expression\s*\(|@import|javascript\s*:|data\s*:)/i.test(withoutLocalFragments)
@@ -25,6 +28,7 @@ const SAFE_SVG_CSS_PROPERTIES = new Set([
   'stroke-width', 'visibility',
 ])
 
+/** @param {Element} element */
 function sanitizeStyleElement(element) {
   const rules = []
   for (const match of element.textContent.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
@@ -50,6 +54,10 @@ function sanitizeStyleElement(element) {
 
 // Converts remote map SVG into an inert DOM subtree without ever assigning the
 // fetched markup to innerHTML. Only local fragment references survive.
+/**
+ * @param {unknown} markup
+ * @param {Document} [targetDocument]
+ */
 export function parseSanitizedSvg(markup, targetDocument = document) {
   const parsed = new DOMParser().parseFromString(String(markup ?? ''), 'image/svg+xml')
   if (parsed.querySelector('parsererror') || parsed.documentElement?.localName !== 'svg') {
@@ -85,6 +93,7 @@ export function parseSanitizedSvg(markup, targetDocument = document) {
 // tarkov.dev assets host. `escapeHtml` already blocks attribute breakout, but an
 // image whose src is not an http(s) URL has no business rendering at all, so the
 // scheme is checked rather than trusted.
+/** @param {unknown} value */
 export function safeImageUrl(value) {
   if (typeof value !== 'string' || !value) return null
   try {
@@ -98,6 +107,10 @@ export function safeImageUrl(value) {
   }
 }
 
+/**
+ * @param {unknown} value
+ * @param {string} [fallback]
+ */
 export function safeColor(value, fallback = '#9aaa98') {
   return typeof value === 'string' && /^#[0-9a-fA-F]{3}$|^#[0-9a-fA-F]{6}$/.test(value)
     ? value

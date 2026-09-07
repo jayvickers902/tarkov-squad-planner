@@ -26,11 +26,36 @@ and that destructive statements are recorded in
 `supabase/destructive-migrations.txt`. It also reports (without failing) known
 schema-snapshot drift. `--strict-snapshot` turns those snapshot warnings into
 errors and `--strict-layout` turns the missing/empty CLI migration directory
-into an error. Both should become required CI checks after a clean baseline is
-built.
+into an error. Timestamped CLI migrations must also have unique version
+prefixes; duplicate versions fail validation because the Supabase migration
+ledger cannot distinguish them reliably. Both strict checks should become
+required CI checks after a clean baseline is built.
 
 The validator only reads repository files. It does not require a Supabase URL,
 database password, service-role key, network access, or Docker.
+
+After an authorized operator has produced and reviewed the external catalog
+capture, the repository can assemble a review-only candidate baseline without
+contacting a database:
+
+```powershell
+node scripts/prepare-supabase-baseline.mjs `
+  --capture-dir C:\path\outside\repo\linked-capture `
+  --output-dir C:\path\outside\repo\baseline-candidate `
+  --version 20260907153000
+```
+
+The command requires the four SQL files emitted by
+`capture-live-catalog.sh`, refuses repository-local input/output, rejects
+credential-like or destructive SQL, refuses to overwrite existing artifacts,
+and writes a timestamped SQL candidate plus a `.review.md` record. The
+candidate deliberately carries a non-deployable header: the capture helper
+does not include every baseline class, so extensions, triggers, publications,
+jobs, ownership/default privileges, and other Supabase-managed objects still
+need reconciliation and local reset rehearsal. Within the captured classes it
+orders base tables before routines, then constraints/RLS, policies, and ACLs;
+this avoids both table-reference and CHECK-helper ordering failures without
+inventing any DDL.
 
 ## Disposable local database
 
@@ -129,6 +154,14 @@ the repository and review it before changing any migration:
 ```powershell
 supabase db dump --linked --schema public --file .\artifacts\linked-public-schema.sql
 ```
+
+When a complete `db dump` is unavailable, the committed
+`supabase/probes/harness/capture-live-catalog.sh` helper remains the sanctioned
+read-only fallback for the behavioral harness. It writes only the four
+reviewable SQL captures to its output directory; transient CLI JSON envelopes
+stay in a private temporary directory and are removed when the command exits.
+Keep the output directory outside the repository because those SQL files still
+describe the live catalog.
 
 As of 2026-09-03, the linked remote catalog has also been verified with a
 read-only `psql` probe using the transient connection environment emitted by

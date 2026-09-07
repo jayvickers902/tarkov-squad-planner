@@ -17,6 +17,7 @@ const LOCATION_MAP = Object.freeze({
 
 const FEATURED_SET = new Set(FEATURED)
 
+/** @param {unknown} value */
 function boundedLocationId(value) {
   return typeof value === 'string' ? value.trim().slice(0, 80) : ''
 }
@@ -25,8 +26,10 @@ function boundedLocationId(value) {
  * Convert an EFT raid-settings location id to the app's featured-map name.
  * Unsupported and unknown ids intentionally resolve to null.
  */
+/** @param {unknown} value */
 export function eftLocationToFeatured(value) {
-  const mapped = LOCATION_MAP[boundedLocationId(value)]
+  const locationId = boundedLocationId(value)
+  const mapped = /** @type {Record<string, string>} */ (LOCATION_MAP)[locationId]
   return mapped && FEATURED_SET.has(mapped) ? mapped : null
 }
 

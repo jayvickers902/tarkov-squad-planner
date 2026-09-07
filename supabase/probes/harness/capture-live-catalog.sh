@@ -26,15 +26,18 @@ mkdir -p "$OUT"
 # `pwd -W` hands back the C:/... form; the fallback covers a real POSIX shell.
 OUTW="$(cd "$OUT" && { pwd -W 2>/dev/null || pwd; })"
 SQLDIR="$(mktemp -d)"
+SQLDIRW="$(cd "$SQLDIR" && { pwd -W 2>/dev/null || pwd; })"
 trap 'rm -rf "$SQLDIR"' EXIT
 
 emit() {
   # emit <name> <sql-file>: run the query, pull the single text column out of
-  # the JSON envelope, write <name>.sql.
-  supabase db query "$(cat "$2")" --linked 2>/dev/null > "$OUT/$1.json"
+  # the JSON envelope, write <name>.sql. Keep the transient envelope in the
+  # private temp directory so the capture output contains only reviewable SQL.
+  local envelope="$SQLDIR/$1.json"
+  supabase db query "$(cat "$2")" --linked 2>/dev/null > "$envelope"
   python -c "
 import json
-t = open(r'$OUTW/$1.json', encoding='utf-8').read()
+t = open(r'$SQLDIRW/$1.json', encoding='utf-8').read()
 d = json.loads(t[t.index('{'):])
 s = (d['rows'][0]['d'] or '').replace(chr(13), '')
 open(r'$OUTW/$1.sql', 'w', encoding='utf-8', newline='\n').write(s)

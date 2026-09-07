@@ -11,7 +11,7 @@ Escape from Tarkov raid-coordination tool. Live at **dudgy.net**.
 
 ESLint runs clean (`eslint.config.js`, zero warnings across 237 files) and is a CI gate. There is no
 TypeScript in the source, but `npm run typecheck` runs `tsc --strict --checkJs` over an opt-in list
-of 19 files in `tsconfig.typecheck.json` — widen that list rather than adding `.ts` files. The config
+of 24 files in `tsconfig.typecheck.json` — widen that list rather than adding `.ts` files. The config
 declares `lib: ["ES2022", "DOM", "DOM.Iterable"]`, so `window`/`document` globals resolve for any
 file added to the list. Vitest suite: 90 files, 753 tests, ~13s. Companion: 14 files, 76 tests. Vite
 build warnings about chunk size are acceptable; the bundle budget is the real gate.
@@ -25,9 +25,9 @@ npm run build      # production build to dist/ (~2s)
 npm test           # vitest run
 npm run test:watch # vitest watch
 npm run lint       # eslint — CI gate, must stay at zero warnings
-npm run typecheck  # tsc over tsconfig.typecheck.json's 19 opt-in files
+npm run typecheck  # tsc over tsconfig.typecheck.json's 24 opt-in files
 npm run check:bundle # size budgets against dist/ — run after build
-npm run test:e2e   # playwright smoke, 3 tests on the signed-out shell
+npm run test:e2e   # Playwright smoke, 5 tests including mocked authenticated party/map/raid flows
 npm run prebake    # refresh src/data/prebaked/*.json from tarkov.dev — explicit only
 ```
 

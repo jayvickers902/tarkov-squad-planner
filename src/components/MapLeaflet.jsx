@@ -31,6 +31,13 @@ import { indexTasksById } from '../taskIndex'
 import { escapeHtml, parseSanitizedSvg, safeColor } from '../mapHtml'
 import { focusedPingIds as getFocusedPingIds, ownPingCard, pingCompanionCards } from '../mapPingPolicy'
 import {
+  hazardCountsFor,
+  namedLocksFor,
+  playerExtractsFor,
+  sortedLootItems as sortedLootItemsFor,
+  spawnIntelPingsFor,
+} from '../mapIntelViewModel'
+import {
   makeKeyIcon, mapLabel, formatRoubles, makeZoneLabelIcon, makeSwitchIcon, makeBtrIcon,
   makeLootIcon, elevationLine, makeZoneTooltip, makeQuestMarkerTooltip, makeObjectivePinTooltip,
   makeQuestIcon, makeSpawnIcon, makeObjIcon, makeIntelIcon, makePingIcon,
@@ -340,7 +347,7 @@ export default function MapLeaflet({
   // intact for other surfaces, but omit scav-only exits from this map and its
   // nearby-extract context.
   const playerExtracts = useMemo(
-    () => zoneExtracts.filter(extract => extract?.faction !== 'scav'),
+    () => playerExtractsFor(zoneExtracts),
     [zoneExtracts],
   )
   const { isChecked, toggle: toggleChecked, clear: clearChecked, checkedCount, foundToday } =
@@ -351,14 +358,7 @@ export default function MapLeaflet({
   // Prefer the durable raid log so an opening ping keeps its spawn triage for
   // the whole raid. Merge the live array too for the short realtime window
   // before a newly written event is reflected in the log.
-  const spawnIntelPings = useMemo(() => {
-    const byId = new Map()
-    for (const ping of [...(Array.isArray(pingLog) ? pingLog : []), ...pings]) {
-      const key = ping?.id || `${ping?.user_id || ping?.user}:${ping?.at}`
-      if (key && !byId.has(key)) byId.set(key, ping)
-    }
-    return [...byId.values()]
-  }, [pingLog, pings])
+  const spawnIntelPings = useMemo(() => spawnIntelPingsFor(pingLog, pings), [pingLog, pings])
 
   const pmcSpawnIntel = useMemo(
     () => classifyPmcSpawns(apiSpawns[mapNorm] || [], spawnIntelPings, raidKey, mapNorm),
@@ -374,24 +374,14 @@ export default function MapLeaflet({
   )
   const intelCounts = useMemo(() => countByKind(allIntel), [allIntel])
   const factionCounts = useMemo(() => countFactions(playerExtracts), [playerExtracts])
-  const hazardCounts = useMemo(() => hazards.reduce((counts, hazard) => {
-    const kind = HAZARD_STYLE[hazard?.hazardType] ? hazard.hazardType : 'other'
-    counts[kind] += 1
-    return counts
-  }, { minefield: 0, sniper: 0, other: 0 }), [hazards])
+  const hazardCounts = useMemo(() => hazardCountsFor(hazards, HAZARD_STYLE), [hazards])
   const keysById = useMemo(
     () => new Map(allKeys.filter(key => key?.id && key?.name).map(key => [key.id, key])),
     [allKeys],
   )
-  const namedLocks = useMemo(
-    () => locks.flatMap(lock => {
-      const keyItem = keysById.get(lock?.key)
-      return keyItem && lock?.position ? [{ ...lock, keyItem }] : []
-    }),
-    [keysById, locks],
-  )
+  const namedLocks = useMemo(() => namedLocksFor(locks, keysById), [keysById, locks])
   const sortedLootItems = useMemo(
-    () => [...lootItems].sort((a, b) => Number(b.value || 0) - Number(a.value || 0)),
+    () => sortedLootItemsFor(lootItems),
     [lootItems],
   )
   const selectedLootPoints = useMemo(

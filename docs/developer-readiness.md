@@ -40,10 +40,11 @@ Two of those gates are narrower than their names suggest, and should be read as
 starting points rather than coverage:
 
 - **The type check is opt-in per file.** `tsconfig.typecheck.json` compiles
-  **19 files out of 237** under `strict` + `checkJs`: `partySyncMetrics.js`,
-  `scripts/check-bundle-budget.mjs`, fifteen pure helpers added in three
-  batches on 2026-09-04, plus `cameraMode.js` and `chunkLoadRecovery.js` added
-  once the DOM lib landed. Widening it means adding files to that `include`
+  **24 files out of 237** under `strict` + `checkJs`: `partySyncMetrics.js`,
+  `scripts/check-bundle-budget.mjs`, twenty pure helpers added in four batches,
+  plus `cameraMode.js` and `chunkLoadRecovery.js` added once the DOM lib landed.
+  The fourth batch added `taskIndex.js`, `eftLocations.js`, `raidDebrief.js`,
+  `supabaseHealth.js`, and `mapHtml.js`. Widening it means adding files to that `include`
   list and fixing what surfaces — reliably implicit-any parameters and options
   objects whose type is inferred from `= {}`, fixed by annotating in JSDoc.
 
@@ -56,9 +57,13 @@ starting points rather than coverage:
   globals with zero residual errors. The remaining work is ordinary annotation
   batches — implicit-any parameters and untyped options objects — not a
   blocked decision.
-- **The Playwright suite is three tests against the unauthenticated shell.** It
-  renders the sign-in shell, walks the lazy changelog chunk, and checks a narrow
-  viewport. Party, map, quest, and log-import flows have no end-to-end coverage.
+- **The Playwright suite has five tests.** Three render the unauthenticated
+  shell, walk the lazy changelog chunk, and check a narrow viewport. The fourth
+  uses local Supabase fixtures to exercise authenticated lobby rendering, party
+  creation, map selection, and the resulting room state without credentials or
+  external writes. A fifth covers the leader's pre-raid brief, raid-start RPC,
+  raid route, and live-map entry. Quest, multi-client Realtime, and log-import
+  flows still have no end-to-end coverage.
 
 Root convenience commands are:
 
@@ -233,6 +238,13 @@ approved staging database. They were not replaced by local unit tests.
    historical files as applied by hand. The 2026-09-03 inspection could query
    the linked catalog, but Docker/password limitations prevented producing the
    complete dump; this remains an external blocker.
+
+   Once an authorized operator has a complete capture, `npm run
+   prepare:baseline` can assemble an external, timestamped candidate
+   migration plus a hash/review record. It refuses repository-local paths,
+   credential-like or destructive SQL, and existing output files. The result
+   is explicitly non-deployable until omitted catalog classes and a clean
+   local reset have been reconciled.
 
 2. **Run behavioral migration/RLS probes in disposable local or approved
    staging.** Rehearse destructive cutovers in a transaction and run the

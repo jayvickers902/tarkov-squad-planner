@@ -21,6 +21,14 @@ import { memberColor } from '../memberColors'
 import { mapBannerLayers, mapReferenceArt } from '../mapBanners'
 import { taskIsOnMap } from '../tarkovObjectives'
 import { deriveMapStats } from '../roomViewModel'
+import {
+  BRIEF_CONFIRM_LABELS,
+  announcedRaidId,
+  briefAckKey,
+  hasDestructivePlan,
+  settleRaidBrief as resolveRaidBrief,
+  shouldBriefStartedRaid,
+} from '../roomRaidBrief'
 import useDialogFocus from '../useDialogFocus'
 
 const RaidView = lazy(() => import('./RaidView'))
@@ -94,10 +102,6 @@ function RoomOverflow({
   )
 }
 
-function hasRaidWork(progress) {
-  return Object.keys(progress || {}).some(key => key !== '__raid_start__')
-}
-
 // The brief is keyed on raid_id, not on __raid_start__. start_party_raid stamps
 // the timestamp from the server clock while the optimistic write uses the
 // client's, so the two never agree and the leader who just launched would be
@@ -105,17 +109,6 @@ function hasRaidWork(progress) {
 // one on both paths, so it is the only stable "which raid is this" the squad
 // shares. The ack is a high-water mark so acking the raid we are about to start
 // also covers the id we are still holding.
-const RAID_BRIEF_WINDOW_MS = 15 * 60 * 1000
-
-// The confirm button says what confirming does, and that depends on why the
-// brief opened. A leader is about to start; a member the raid already started
-// for is about to walk into it; the other two are reading a checklist.
-const BRIEF_CONFIRM_LABELS = { announced: 'READY', manual: 'DONE' }
-
-function briefAckKey(party) {
-  return `tsp.raid-brief.${party?.id || party?.code || 'local'}`
-}
-
 function readBriefAck(key) {
   try {
     const raw = localStorage.getItem(key)
@@ -237,17 +230,14 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   // -- so this is what makes START RAID brief the squad and not just the leader.
   useEffect(() => {
     if (!raidBrief || !party.map_id) return
-    openBrief('announced', Number.isFinite(Number(raidBrief.raidId)) ? Number(raidBrief.raidId) : raidId)
+    openBrief('announced', announcedRaidId(raidBrief, raidId))
   }, [raidBrief, party.map_id, raidId, openBrief])
 
   // A raid that actually started briefs everyone who has not acked it. The
   // freshness window keeps a party's long-dead last raid from briefing whoever
   // walks in months later, and the ack keeps a reload from re-briefing.
   useEffect(() => {
-    if (!party.map_id || raidStart === null) return
-    if (ackedRaid !== null && raidId <= ackedRaid) return
-    if (Date.now() - raidStart > RAID_BRIEF_WINDOW_MS) return
-    openBrief('started', raidId)
+    if (shouldBriefStartedRaid({ mapId: party.map_id, raidStart, raidId, ackedRaid })) openBrief('started', raidId)
   }, [party.map_id, raidId, raidStart, ackedRaid, openBrief])
 
   const showRaidModal = brief !== null
@@ -255,10 +245,7 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
   // Work a map change would destroy — select_map_party resets exactly these four.
   // __raid_start__ is bookkeeping the modal writes, not something anyone would mourn,
   // so it does not count: otherwise every raid would arm the prompt for the next one.
-  const hasPlan = (party.drawings?.length || 0) > 0
-    || (party.markers?.length || 0) > 0
-    || Object.keys(party.starred || {}).length > 0
-    || hasRaidWork(party.progress)
+  const hasPlan = hasDestructivePlan(party)
 
 
   function ackBrief(id) {
@@ -275,25 +262,11 @@ export default function Room({ party, partyError = '', friendsError = '', raidVi
     // still reading when the leader's confirm lands would otherwise ack one raid
     // too far and go unbriefed on the next one.
     const briefRaidId = brief?.raidId ?? raidId
+    const outcome = resolveRaidBrief({ reason, confirmed, briefRaidId })
     setBrief(null)
-    if (reason === 'pending') {
-      if (!confirmed) return
-      // start_party_raid increments raid_id, so ack the raid we are asking for.
-      ackBrief(briefRaidId + 1)
-      onStartRaid()
-    } else if (reason === 'announced') {
-      // The leader is about to increment raid_id past the value they announced.
-      // Ack that raid now, or the confirm we are waiting on re-briefs a member
-      // who has only just read this.
-      ackBrief(briefRaidId + 1)
-    } else if (reason === 'started') {
-      ackBrief(briefRaidId)
-    } else {
-      // 'manual' acks nothing and goes nowhere: opening the checklist by hand
-      // is neither a briefing nor a raid.
-      return
-    }
-    if (confirmed) onOpenRaid()
+    if (outcome.ackRaidId !== null) ackBrief(outcome.ackRaidId)
+    if (outcome.startRaid) onStartRaid()
+    if (outcome.openRaid) onOpenRaid()
   }
 
   function handleRaidModalClose() { settleBrief(true) }

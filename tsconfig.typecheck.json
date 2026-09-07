@@ -34,6 +34,12 @@
     "src/squadFocus.js",
 
     "src/cameraMode.js",
-    "src/chunkLoadRecovery.js"
+    "src/chunkLoadRecovery.js",
+
+    "src/taskIndex.js",
+    "src/eftLocations.js",
+    "src/raidDebrief.js",
+    "src/supabaseHealth.js",
+    "src/mapHtml.js"
   ]
 }

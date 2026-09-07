@@ -239,14 +239,15 @@ objective fields the app actually reads.
 
 Cost: about an hour. Root suite stayed 86 files / 708 tests.
 
-### 3.7 Optional gate widening, now cheap
+### 3.7 Optional gate widening, now cheap — completed at the scoped batch boundary
 
-- **Type-check widening — three batches landed 2026-09-04, still open.**
-  `tsconfig.typecheck.json` includes **17 files**, up from 2. Fifteen pure helpers were added five
+- **Type-check widening — four batches complete.**
+  `tsconfig.typecheck.json` includes **24 files**, up from 2. Twenty pure helpers were added five
   at a time, each batch its own commit so a bad one can be dropped alone: `raidEnd`, `memberColors`,
   `raidLive`, `gameMode`, `questColors` (`b975bd9`); `mapBanners`, `questImportRoutes`, `welcome`,
   `strokeBounds`, `roomViewModel` (`b55a79e`); `objectivePinLayout`, `questDiagnostic`,
-  `questVisibility`, `operationalTasks`, `squadFocus` (`d0d719a`).
+  `questVisibility`, `operationalTasks`, `squadFocus` (`d0d719a`). The fourth batch adds
+  `taskIndex`, `eftLocations`, `raidDebrief`, `supabaseHealth`, and `mapHtml`.
 
   About 70 errors surfaced across the three, and nearly all were the same two shapes: implicit-any
   parameters, and destructured options objects whose type is inferred from `= {}` so every callback
@@ -267,17 +268,18 @@ Cost: about an hour. Root suite stayed 86 files / 708 tests.
   throughout. Cost: about 20 minutes per batch including the full matrix, well under the hour
   budgeted.
 
-  **What is left.** 19 of 237 files, so this is a beachhead rather than coverage. The DOM decision
+  **Scope boundary.** 24 of 237 files is a beachhead rather than whole-repository coverage. The DOM decision
   is closed: `cameraMode` and `chunkLoadRecovery` were added after `lib` gained `DOM` and
-  `DOM.Iterable`. Further widening remains ordinary annotation batches; components and other
-  browser-heavy files are still deliberately out of scope.
+  `DOM.Iterable`. Further widening remains an optional ratchet with no finite acceptance criterion;
+  it is not open release work. Components and other browser-heavy files remain deliberately out of scope.
 - **ESLint ratchet — completed.** `no-unused-vars`, `no-empty`, `no-control-regex`,
   `no-useless-escape`, `require-yield` and `react-hooks/exhaustive-deps` are `error` in
   `eslint.config.js`. `npx eslint . --max-warnings 0` exited 0 before and after, so nothing had to
   be fixed: the change is a regression guard, not a cleanup. Cost: one config edit. If one of these
   fires in future, fix the code rather than re-softening the rule.
-- Playwright covers the signed-out shell only (3 tests). Party, map, quest, and import flows have no
-  end-to-end coverage.
+- Playwright has five tests: three signed-out shell checks plus deterministic authenticated
+  party/map and leader raid-start flows using local Supabase fixtures. Quest, multi-client
+  Realtime, and import flows still have no end-to-end coverage.
 
 ---
 

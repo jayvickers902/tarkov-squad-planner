@@ -75,9 +75,20 @@ if (cliMigrationFiles.length === 0) {
   if (strictLayout) report(message)
   else warn(message)
 }
+const cliMigrationVersions = new Map()
 for (const name of cliMigrationFiles) {
-  if (!/^\d{14}_[a-z0-9][a-z0-9_-]*\.sql$/i.test(name)) {
+  const match = name.match(/^(\d{14})_[a-z0-9][a-z0-9_-]*\.sql$/i)
+  if (!match) {
     report(`CLI migration has non-standard timestamped filename: supabase/migrations/${name}`)
+    continue
+  }
+  const sameVersion = cliMigrationVersions.get(match[1]) ?? []
+  sameVersion.push(name)
+  cliMigrationVersions.set(match[1], sameVersion)
+}
+for (const [version, names] of cliMigrationVersions) {
+  if (names.length > 1) {
+    report(`CLI migrations reuse timestamp ${version}: ${names.join(', ')}`)
   }
 }
 
@@ -161,7 +172,8 @@ if (duplicateFunctions.length) {
   else warn(message)
 }
 
-console.log(`Supabase migration validation: ${migrationFiles.length} SQL files, ${migrationTables.size} migrated tables`)
+console.log(`Supabase migration validation: ${migrationFiles.length} historical SQL files, ${migrationTables.size} migrated tables`)
+console.log(`CLI baseline migrations: ${cliMigrationFiles.length} (${cliMigrationFiles.length ? 'present; local reset still requires review' : 'absent; repository is not reset-ready'})`)
 for (const warning of warnings) console.warn(`WARN: ${warning}`)
 for (const error of errors) console.error(`ERROR: ${error}`)
 if (errors.length) {
