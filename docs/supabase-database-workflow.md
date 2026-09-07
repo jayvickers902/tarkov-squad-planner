@@ -57,6 +57,23 @@ orders base tables before routines, then constraints/RLS, policies, and ACLs;
 this avoids both table-reference and CHECK-helper ordering failures without
 inventing any DDL.
 
+Before considering a candidate for local rehearsal, compare it with the
+repository inventory and the reviewed remote counts using the credential-free
+reconciliation report:
+
+```powershell
+node scripts/reconcile-supabase-baseline.mjs `
+  --candidate C:\path\outside\repo\baseline-candidate\20260907153000_catalog_baseline.sql `
+  --report C:\path\outside\repo\baseline-candidate\reconciliation.json
+```
+
+The command prints the same JSON report to stdout and exits non-zero while
+catalog counts drift or required classes are absent. Its expected counts are
+the 2026-09-03 read-only baseline (17 tables, 47 routines, 37 policies), so a
+future live count change becomes an explicit review item rather than silently
+passing. It does not establish migration history or replace local reset
+rehearsal.
+
 ## Disposable local database
 
 Install the Supabase CLI and Docker. This repository now includes a minimal

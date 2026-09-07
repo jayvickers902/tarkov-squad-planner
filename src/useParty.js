@@ -12,22 +12,15 @@ import {
 import { nextDelay, recordFailure, recordSuccess } from './supabaseHealth'
 import { createPartySyncMetrics } from './partySyncMetrics'
 import { normalizeStrokePoints, normalizeMarkerPoint } from './strokeBounds'
+import { reconcileActivePing, settleOptimisticPing, upsertPingLog } from './partyPingPolicy'
+
+export { settleOptimisticPing } from './partyPingPolicy'
 
 function saveLastPartyCode(code) {
   try {
     if (code) localStorage.setItem('lastPartyCode', code)
     else localStorage.removeItem('lastPartyCode')
   } catch { /* local storage is optional */ }
-}
-
-export function settleOptimisticPing(pings, storedPing, now = Date.now(), ttl) {
-  const current = Array.isArray(pings) ? pings : []
-  if (!storedPing || !current.some(existing => existing.id === storedPing.id)) return null
-  return prunePings([...current.filter(existing => existing.id !== storedPing.id), storedPing], now, ttl)
-}
-
-function upsertPingLog(log, ping) {
-  return appendLog((Array.isArray(log) ? log : []).filter(existing => existing.id !== ping.id), ping)
 }
 
 function normalizeParty(data, fallbackMembers = []) {
@@ -524,11 +517,7 @@ export function useParty(userId, userSettings = {}, {
       const ttl = Number(resolveSetting('ping_ttl_ms', {
         raid: current.settings || {}, unit: null, user: userSettingsRef.current,
       }))
-      const pings = prunePings(
-        [...(current.pings || []).filter(existing => existing.id !== ping.id), ping],
-        Date.now(),
-        Number.isFinite(ttl) ? ttl : undefined,
-      )
+      const pings = reconcileActivePing(current.pings, ping, Date.now(), Number.isFinite(ttl) ? ttl : undefined)
       applyParty({ ...current, pings, ping_log: upsertPingLog(current.ping_log, ping) })
     }
     const pingChannel = supabase
@@ -1085,11 +1074,7 @@ export function useParty(userId, userSettings = {}, {
     const ttl = Number(resolveSetting('ping_ttl_ms', {
       raid: current.settings || {}, unit: null, user: userSettingsRef.current,
     }))
-    const pings = prunePings(
-      [...(current.pings || []).filter(existing => existing.id !== enriched.id), enriched],
-      Date.now(),
-      Number.isFinite(ttl) ? ttl : undefined,
-    )
+    const pings = reconcileActivePing(current.pings, enriched, Date.now(), Number.isFinite(ttl) ? ttl : undefined)
     applyParty({ ...current, pings })
 
     const { data: stored, error: eventError } = await supabase.rpc('append_party_ping', {

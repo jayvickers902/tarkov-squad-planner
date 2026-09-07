@@ -27,7 +27,7 @@ npm run test:watch # vitest watch
 npm run lint       # eslint — CI gate, must stay at zero warnings
 npm run typecheck  # tsc over tsconfig.typecheck.json's 24 opt-in files
 npm run check:bundle # size budgets against dist/ — run after build
-npm run test:e2e   # Playwright smoke, 5 tests including mocked authenticated party/map/raid flows
+npm run test:e2e   # Playwright smoke, 6 tests including mocked authenticated party/map/raid/quest flows
 npm run prebake    # refresh src/data/prebaked/*.json from tarkov.dev — explicit only
 ```
 

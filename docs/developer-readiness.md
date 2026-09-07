@@ -57,13 +57,14 @@ starting points rather than coverage:
   globals with zero residual errors. The remaining work is ordinary annotation
   batches — implicit-any parameters and untyped options objects — not a
   blocked decision.
-- **The Playwright suite has five tests.** Three render the unauthenticated
+- **The Playwright suite has six tests.** Three render the unauthenticated
   shell, walk the lazy changelog chunk, and check a narrow viewport. The fourth
   uses local Supabase fixtures to exercise authenticated lobby rendering, party
   creation, map selection, and the resulting room state without credentials or
   external writes. A fifth covers the leader's pre-raid brief, raid-start RPC,
-  raid route, and live-map entry. Quest, multi-client Realtime, and log-import
-  flows still have no end-to-end coverage.
+  raid route, and live-map entry. A sixth opens Quest Manager with a seeded
+  quest and verifies its accessible important/starred transition. Multi-client
+  Realtime and log-import flows still have no end-to-end coverage.
 
 Root convenience commands are:
 
@@ -245,6 +246,11 @@ approved staging database. They were not replaced by local unit tests.
    credential-like or destructive SQL, and existing output files. The result
    is explicitly non-deployable until omitted catalog classes and a clean
    local reset have been reconciled.
+
+   Run `npm run reconcile:baseline -- --candidate <external-sql> --report
+   <external-json>` before local rehearsal. The report is machine-readable and
+   exits non-zero for drift from the reviewed 17-table/47-routine/37-policy
+   counts, incomplete migration-order coverage, or missing catalog classes.
 
 2. **Run behavioral migration/RLS probes in disposable local or approved
    staging.** Rehearse destructive cutovers in a transaction and run the

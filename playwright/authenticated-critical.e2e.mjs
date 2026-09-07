@@ -45,7 +45,7 @@ function partySnapshot({ map = null } = {}) {
   }
 }
 
-async function installAuthenticatedSupabaseMocks(page) {
+async function installAuthenticatedSupabaseMocks(page, { userQuests = [] } = {}) {
   const session = {
     access_token: 'local-playwright-access-token',
     token_type: 'bearer',
@@ -93,7 +93,7 @@ async function installAuthenticatedSupabaseMocks(page) {
     if (path === '/rest/v1/user_settings' && method === 'GET') {
       return response(route, { settings: { welcome: { news_version: '2026.20' } } })
     }
-    if (path === '/rest/v1/user_quests' && method === 'GET') return response(route, [])
+    if (path === '/rest/v1/user_quests' && method === 'GET') return response(route, userQuests)
     if (path === '/rest/v1/friendships' && method === 'GET') return response(route, [])
     if (path === '/rest/v1/party_members' && method === 'GET') return response(route, [])
 
@@ -167,4 +167,32 @@ test('leader reviews the raid brief and enters the live raid map with local serv
   await brief.getByRole('button', { name: "OK — LET'S GO" }).click()
   await expect(page).toHaveURL(/\/party\/ABC123\/raid$/)
   await expect(page.getByRole('button', { name: 'CENTRE ON ME' })).toBeVisible()
+})
+
+test('authenticated operator opens Quest Manager and stars a seeded quest locally', async ({ page }) => {
+  const quest = {
+    user_id: USER_ID,
+    game_mode: 'regular',
+    quest_id: '5c0d4d1f0000000000000001',
+    quest_name: 'Debut',
+    map_norm: 'customs',
+    important: false,
+    skipped: false,
+    state: 'active',
+    created_at: '2026-09-07T00:00:00.000Z',
+  }
+  await installAuthenticatedSupabaseMocks(page, { userQuests: [quest] })
+
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'READY UP, RANGER' })).toBeVisible()
+  await page.locator('button.lobby-secondary-gold').click()
+
+  await expect(page).toHaveURL(/\/quests$/)
+  await expect(page.getByRole('heading', { name: 'QUEST MANAGER' })).toBeVisible()
+  await expect(page.getByText('Debut', { exact: true })).toBeVisible()
+
+  const star = page.getByRole('button', { name: 'Mark Debut as important' })
+  await expect(star).toHaveAttribute('aria-pressed', 'false')
+  await star.click()
+  await expect(page.getByRole('button', { name: 'Remove important from Debut' })).toHaveAttribute('aria-pressed', 'true')
 })

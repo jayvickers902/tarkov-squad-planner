@@ -277,9 +277,9 @@ Cost: about an hour. Root suite stayed 86 files / 708 tests.
   `eslint.config.js`. `npx eslint . --max-warnings 0` exited 0 before and after, so nothing had to
   be fixed: the change is a regression guard, not a cleanup. Cost: one config edit. If one of these
   fires in future, fix the code rather than re-softening the rule.
-- Playwright has five tests: three signed-out shell checks plus deterministic authenticated
-  party/map and leader raid-start flows using local Supabase fixtures. Quest, multi-client
-  Realtime, and import flows still have no end-to-end coverage.
+- Playwright has six tests: three signed-out shell checks plus deterministic authenticated
+  party/map, leader raid-start, and seeded Quest Manager flows using local Supabase fixtures.
+  Multi-client Realtime and import flows still have no end-to-end coverage.
 
 ---
 
