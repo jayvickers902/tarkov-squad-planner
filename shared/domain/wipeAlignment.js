@@ -175,9 +175,13 @@ function nearestSessionEdge(candidateAt, sessions) {
       distance: Math.abs(candidate - to),
     })
   }
+  // `edge` is compared as a rank, not as a constant: returning -1 whenever the
+  // left side was a start made compare(a, b) and compare(b, a) both negative,
+  // which is not a valid ordering and left the sessionKey tiebreak unreachable.
+  const edgeRank = edge => (edge === 'start' ? 0 : 1)
   return edges.sort((left, right) => (
     left.distance - right.distance
-    || (left.edge === 'start' ? -1 : 1)
+    || edgeRank(left.edge) - edgeRank(right.edge)
     || left.sessionKey.localeCompare(right.sessionKey)
   ))[0] || null
 }
