@@ -120,4 +120,37 @@ describe('EftLogImport', () => {
     })))
     expect(onImportStart.mock.invocationCallOrder[0]).toBeLessThan(confirmImport.mock.invocationCallOrder.at(-1))
   })
+
+  it('previews and applies a boundary chosen from the newest target-mode session', async () => {
+    const secondTaskId = '507f1f77bcf86cd799439012'
+    const localConfirm = vi.fn().mockResolvedValue({ inserted: 1, updated: 0, ignored: 0 })
+    const setWipeBoundaryAt = vi.fn()
+    const localSync = {
+      ...sync,
+      confirmImport: localConfirm,
+      setWipeBoundaryAt,
+      preview: {
+        ...hookState.preview,
+        events: [
+          { eventKey: 'old', taskId, state: 'active', occurredAt: '2026-08-01T00:00:00Z', gameMode: 'regular', version: '0.16' },
+          { eventKey: 'new', taskId: secondTaskId, state: 'active', occurredAt: '2026-08-20T00:00:00Z', gameMode: 'regular', version: '0.16' },
+        ],
+        sessions: [
+          { sessionKey: 'old-session', eventCount: 1, dateFrom: '2026-08-01T00:00:00Z', dateTo: '2026-08-01T00:00:00Z', mode: 'regular' },
+          { sessionKey: 'new-session', eventCount: 1, dateFrom: '2026-08-20T00:00:00Z', dateTo: '2026-08-20T00:00:00Z', mode: 'regular' },
+        ],
+      },
+    }
+    render(<EftLogImport sync={localSync} allTasks={[{ id: taskId }, { id: secondTaskId }]} gameMode="regular" onApply={vi.fn()} defaultOpen />)
+
+    const sessions = screen.getAllByRole('radio')
+    expect(sessions).toHaveLength(2)
+    fireEvent.click(sessions[0])
+
+    expect(setWipeBoundaryAt).toHaveBeenCalledWith('2026-08-20T00:00:00.000Z')
+    expect(screen.getByText(/1 quest stay open/)).toBeInTheDocument()
+    expect(screen.getByText(/1 dropped\./)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'CONFIRM IMPORT' }))
+    await waitFor(() => expect(localConfirm).toHaveBeenCalledWith({ autoSync: false, remember: false }))
+  })
 })

@@ -1,4 +1,5 @@
 import { listen } from '@tauri-apps/api/event'
+import { normalizeWipePreview } from '../../shared/domain/wipeAlignment.js'
 
 /**
  * The shell talks to the future sync/log engine through this contract only.
@@ -98,6 +99,9 @@ export function normalizeStatus(value) {
       })),
   } : null
   const rawMetrics = candidate.scanMetrics && typeof candidate.scanMetrics === 'object' ? candidate.scanMetrics : null
+  const wipePreview = candidate.wipePreview && typeof candidate.wipePreview === 'object'
+    ? normalizeWipePreview(candidate.wipePreview, { declaredBoundaryAt: candidate.wipePreview.declaredWipeBoundaryAt })
+    : null
   return {
     state,
     detail: typeof candidate.detail === 'string' ? candidate.detail : DEFAULT_STATUS.detail,
@@ -107,6 +111,7 @@ export function normalizeStatus(value) {
     ...(knownProfiles ? { knownProfiles } : {}),
     ...(recentEvents ? { recentEvents } : {}),
     ...(lastSuccessfulScan ? { lastSuccessfulScan } : {}),
+    ...(wipePreview ? { wipePreview } : {}),
     ...(rawMetrics ? { scanMetrics: {
       filesScanned: Math.max(0, Math.floor(Number(rawMetrics.filesScanned) || 0)),
       filesParsed: Math.max(0, Math.floor(Number(rawMetrics.filesParsed) || 0)),

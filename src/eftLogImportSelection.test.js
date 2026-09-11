@@ -6,6 +6,7 @@ const selection = {
   profileKey: 'profile-a',
   unknownModeTargets: {},
   includePreWipeHistory: false,
+  wipeBoundaryAt: null,
 }
 
 function preview(overrides = {}) {
@@ -64,5 +65,17 @@ describe('EFT log import selection policy', () => {
       discoveredProfiles: [{ profileKey: 'profile-a' }],
       wipeBoundaryByProfile: { 'profile-a': '2026-08-01T00:00:00.000Z' },
     }, 'profile-a')).toBe('2026-08-01T00:00:00.000Z')
+  })
+
+  it('applies a reader-declared boundary after automatic detection', () => {
+    const result = selectImportEvents(preview({
+      wipeBoundaryAt: '2026-08-10T00:00:00.000Z',
+      matchedEvents: [
+        { taskId: 'old', version: '0.16', profileKey: 'profile-a', gameMode: 'regular', occurredAt: '2026-08-10T01:00:00.000Z' },
+        { taskId: 'keep', version: '0.16', profileKey: 'profile-a', gameMode: 'regular', occurredAt: '2026-08-20T01:00:00.000Z' },
+      ],
+    }), { ...selection, wipeBoundaryAt: '2026-08-15T00:00:00.000Z' }, 'regular', ['old', 'keep'])
+
+    expect(result.map(event => event.taskId)).toEqual(['keep'])
   })
 })

@@ -480,6 +480,31 @@ describe('companion runtime', () => {
     expect(runtime.getStatus().lastSuccessfulScan).toMatchObject({ eventsIncluded: 479, plannerChanges: 5 })
   })
 
+  it('exposes a bounded wipe alignment preview from a full quest scan', async () => {
+    const taskId = '59c9392986f7742f6923add2'
+    const sync = vi.fn(async () => ({
+      preview: {
+        events: [{ taskId, state: 'active', occurredAt: '2026-08-20T12:00:00Z', gameMode: 'regular' }],
+        sessions: [{
+          sessionKey: 'session-a', eventCount: 1,
+          dateFrom: '2026-08-20T12:00:00Z', dateTo: '2026-08-20T12:00:00Z', mode: 'regular',
+        }],
+        wipeBoundaryAt: null,
+        wipeBoundaryByProfile: {},
+      },
+      scanMetrics: { filesScanned: 2, eventsSeen: 1, matchedEvents: 1, profilesFound: 1, mode: 'regular' },
+    }))
+    const { runtime } = harness({ engine: { questLogs: { sync }, screenshots: {} } })
+
+    await runtime.start()
+
+    expect(runtime.getStatus().wipePreview).toMatchObject({
+      sessions: [expect.objectContaining({ sessionKey: 'session-a', eventCount: 1 })],
+      events: [expect.objectContaining({ taskId, gameMode: 'regular' })],
+    })
+    await runtime.dispose()
+  })
+
   it('stops watchers, timers, and listeners on disposal', async () => {
     vi.useFakeTimers()
     let eventListener

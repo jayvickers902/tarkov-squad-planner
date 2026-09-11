@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { gameModeLabel } from '../gameMode'
 import { assessQuestLogRegression, IMPORT_REGRESSION_SHARE, IMPORT_REGRESSION_TASKS } from '../questLogState'
 import { buildQuestLogDiagnostic } from '../questDiagnostic'
-import { isSeasonalEvent, wipeBoundaryFilter } from '../eftLogs'
+import { isSeasonalEvent, previewWipeBoundary, wipeBoundaryFilter } from '../eftLogs'
+import { previewWipeBoundaryAlignment, sessionsForWipeMode } from '../../shared/domain/wipeAlignment.js'
+import { selectImportEvents } from '../eftLogImportSelection'
 
 const STATE_LABELS = {
   active: 'STARTED',
@@ -20,6 +22,36 @@ function safeDateTime(value) {
   if (!value) return 'NOT CHECKED YET'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? 'NOT CHECKED YET' : date.toLocaleString()
+}
+
+function dateTimeLocalValue(value) {
+  const date = new Date(value || '')
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = number => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function dateTimeLocalToIso(value) {
+  const date = new Date(value || '')
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+function plural(count, singular, pluralForm = `${singular}s`) {
+  return count === 1 ? singular : pluralForm
+}
+
+function alignmentWarningText(warning, alignment) {
+  if (warning.code === 'before-corpus') {
+    return `This instant is before the first retained event. It is clamped to ${safeDateTime(alignment.corpus.earliestAt)} and drops no log quests.`
+  }
+  if (warning.code === 'after-corpus') {
+    return `This instant is after the last retained event. The cut-off is ${safeDateTime(alignment.boundaryAt)}; ${alignment.dropped} active log ${plural(alignment.dropped, 'quest')} ${alignment.dropped === 1 ? 'is' : 'are'} dropped.`
+  }
+  if (warning.code === 'mid-session') {
+    return `This instant lands inside session ${warning.sessionKey}. Snap to the nearest session edge so the boundary does not split one session.`
+  }
+  if (warning.code === 'zero-remaining') return 'No quests would remain open after this boundary.'
+  return ''
 }
 
 function profileModeLabel(profile) {
@@ -72,12 +104,13 @@ function latestByTask(events) {
 
 const NO_CHANGES_REASON = 'Your saved quests already match these logs. Nothing to import.'
 
-export function blockingReason({ logModeSupported, preview, versionScopeValid, profileRequired, changingCount } = {}) {
+export function blockingReason({ logModeSupported, preview, versionScopeValid, profileRequired, changingCount, boundaryChangeCount = 0, boundaryInputValid = true } = {}) {
   if (!logModeSupported) return 'Seasonal mode cannot be imported from logs yet. Switch to PVP or PVE to import.'
   if (!preview) return null
   if (profileRequired && !preview.selectedProfileKey) return 'Select which profile these logs belong to.'
   if (!versionScopeValid) return 'Select at least one wipe/version to import from.'
-  if (changingCount === 0) return NO_CHANGES_REASON
+  if (!boundaryInputValid) return 'Enter a valid prestige date and time.'
+  if (changingCount === 0 && boundaryChangeCount === 0) return NO_CHANGES_REASON
   return null
 }
 
@@ -128,6 +161,7 @@ export default function EftLogImport({ allTasks, gameMode, onApply, onGetQuestHi
     setProfileSelection,
     setUnknownModeTarget,
     setWipeScope = () => {},
+    setWipeBoundaryAt = () => {},
     confirmImport,
     forgetFolder,
     reset,
@@ -159,10 +193,14 @@ export default function EftLogImport({ allTasks, gameMode, onApply, onGetQuestHi
     const versions = new Set(preview.includedVersions || [])
     const profileRequired = (preview.discoveredProfiles || []).length > 1
     // The same filter the importer applies, rather than a second reading of it:
-    // this one keyed off preview.wipeBoundaryAt while the import keyed off the
-    // per-profile map, so with more than one character the count shown here and
-    // the events actually sent could disagree.
-    const afterWipe = wipeBoundaryFilter(preview, preview.selectedProfileKey, preview.includePreWipeHistory === true)
+    // this includes both the selected profile's detected boundary and the
+    // reader's declared instant, so the count shown here and events sent agree.
+    const afterWipe = wipeBoundaryFilter(
+      preview,
+      preview.selectedProfileKey,
+      preview.includePreWipeHistory === true,
+      preview.declaredWipeBoundaryAt || null,
+    )
     return (preview.events || []).filter(event => {
       if (!knownTaskIds.has(event?.taskId)) return false
       if (versions.size && !versions.has(String(event?.version || ''))) return false
@@ -195,7 +233,94 @@ export default function EftLogImport({ allTasks, gameMode, onApply, onGetQuestHi
     return [...rows.values()]
   }, [questHistory, userQuests])
   const regression = useMemo(() => assessQuestLogRegression(selectedEvents, existingRows), [existingRows, selectedEvents])
+  const alignmentEvents = useMemo(() => {
+    if (!preview) return []
+    const profileRequired = (preview.discoveredProfiles || []).length > 1
+    if (profileRequired && !preview.selectedProfileKey) return []
+    try {
+      return selectImportEvents(preview, {
+        includedVersions: preview.includedVersions || [],
+        profileKey: preview.selectedProfileKey || null,
+        unknownModeTargets: preview.unknownModeTargets || {},
+        includePreWipeHistory: true,
+        wipeBoundaryAt: null,
+      }, gameMode, knownTaskIds)
+    } catch {
+      return []
+    }
+  }, [gameMode, knownTaskIds, preview])
+  const wipeSessions = useMemo(() => sessionsForWipeMode(preview, gameMode, {
+    profileKey: preview?.selectedProfileKey || null,
+    events: alignmentEvents,
+  }), [alignmentEvents, gameMode, preview])
+  const detectedBoundaryAt = previewWipeBoundary(preview, preview?.selectedProfileKey || null)
+  const declaredBoundaryAt = preview?.declaredWipeBoundaryAt || null
+  const [boundaryDraft, setBoundaryDraft] = useState('')
+  const hasBoundaryDraft = boundaryDraft.length > 0
+  const boundaryDraftAt = hasBoundaryDraft ? dateTimeLocalToIso(boundaryDraft) : null
+  // Keep the raw field value for the warning. The persisted value is clamped,
+  // but replacing it here would hide the fact that the reader entered a time
+  // outside the retained corpus.
+  const boundaryCandidateAt = hasBoundaryDraft ? boundaryDraftAt : declaredBoundaryAt || detectedBoundaryAt || null
+  const boundaryAlignment = useMemo(() => previewWipeBoundaryAlignment({
+    events: alignmentEvents,
+    sessions: wipeSessions,
+    requestedAt: boundaryCandidateAt,
+    detectedBoundaryAt,
+    now: Date.now(),
+  }), [alignmentEvents, boundaryCandidateAt, detectedBoundaryAt, wipeSessions])
+  const boundaryInputValid = !hasBoundaryDraft || Boolean(boundaryDraftAt)
+  const boundaryEditRef = useRef(false)
+  useEffect(() => {
+    if (boundaryEditRef.current) {
+      boundaryEditRef.current = false
+      return
+    }
+    setBoundaryDraft(dateTimeLocalValue(preview?.declaredWipeBoundaryAt || preview?.wipeBoundaryAt))
+  }, [preview?.declaredWipeBoundaryAt, preview?.wipeBoundaryAt])
   useEffect(() => { setRegressionConfirmed(false) }, [selectedEvents])
+
+  function previewBoundaryAt(requestedAt, sessionKey = null) {
+    return previewWipeBoundaryAlignment({
+      events: alignmentEvents,
+      sessions: wipeSessions,
+      requestedAt,
+      sessionKey,
+      detectedBoundaryAt,
+      now: Date.now(),
+    })
+  }
+
+  function setDeclaredBoundary(value) {
+    const nextValue = value || null
+    if ((preview?.declaredWipeBoundaryAt || null) !== nextValue) boundaryEditRef.current = true
+    setWipeBoundaryAt(nextValue)
+  }
+
+  function applyBoundaryDraft(value, sessionKey = null) {
+    const requestedAt = sessionKey ? null : dateTimeLocalToIso(value)
+    const next = previewBoundaryAt(requestedAt, sessionKey)
+    if (next.boundaryAt) setDeclaredBoundary(next.boundaryAt)
+    else if (!sessionKey && !value) setDeclaredBoundary(null)
+    return next
+  }
+
+  function handleBoundaryDraftChange(event) {
+    const value = event.target.value
+    const requestedAt = dateTimeLocalToIso(value)
+    setBoundaryDraft(value)
+    setDeclaredBoundary(value && requestedAt ? previewBoundaryAt(requestedAt).boundaryAt : null)
+  }
+
+  function handleSessionBoundaryChange(event) {
+    const next = applyBoundaryDraft('', event.target.value || null)
+    if (next.boundaryAt) setBoundaryDraft(dateTimeLocalValue(next.boundaryAt))
+  }
+
+  function handleBoundarySnap() {
+    const next = boundaryAlignment.snapAt ? applyBoundaryDraft(dateTimeLocalValue(boundaryAlignment.snapAt)) : null
+    if (next?.boundaryAt) setBoundaryDraft(dateTimeLocalValue(next.boundaryAt))
+  }
 
   async function handleFiles(event, fromDirectory = true) {
     const files = Array.from(event.target.files || [])
@@ -327,11 +452,12 @@ export default function EftLogImport({ allTasks, gameMode, onApply, onGetQuestHi
   // A flat folder or a plain file selection detects no version at all. Only an
   // emptied selection out of real choices should block confirmation.
   const versionScopeValid = !preview?.availableVersions?.length || preview.includedVersions?.length > 0
-  const canConfirm = logModeSupported && preview && changingTasks.length > 0 && state !== 'applying' && state !== 'reading' && versionScopeValid
+  const boundaryCanPrune = boundaryAlignment.dropped > 0
+  const canConfirm = logModeSupported && preview && boundaryInputValid && (changingTasks.length > 0 || boundaryCanPrune) && state !== 'applying' && state !== 'reading' && versionScopeValid
     && (!regression.requiresConfirmation || regressionConfirmed)
   const profileChoices = Array.isArray(preview?.discoveredProfiles) ? preview.discoveredProfiles : []
   const profileRequired = profileChoices.length > 1
-  const blockedReason = blockingReason({ logModeSupported, preview, versionScopeValid, profileRequired, changingCount: changingTasks.length })
+  const blockedReason = blockingReason({ logModeSupported, preview, versionScopeValid, profileRequired, changingCount: changingTasks.length, boundaryChangeCount: boundaryAlignment.dropped, boundaryInputValid })
   const importSteps = deriveImportSteps(preview)
   const currentStep = importSteps.findIndex(step => step.state === 'current')
   const stepState = key => importSteps.find(step => step.key === key)?.state
@@ -507,6 +633,75 @@ export default function EftLogImport({ allTasks, gameMode, onApply, onGetQuestHi
               ))}
             </div>
           )}
+          <div className="eft-log-import-boundary" aria-labelledby="eft-log-import-boundary-title">
+            <div>
+              <div id="eft-log-import-boundary-title" className="mono eft-log-import-meta">WHEN DID YOU PRESTIGE?</div>
+              <p className="eft-log-import-boundary-copy">
+                Pick one of your {gameModeLabel(gameMode)} sessions, newest first. The boundary uses that session&apos;s first quest event.
+              </p>
+            </div>
+            {wipeSessions.length > 0 ? (
+              <div className="eft-log-import-session-list" role="radiogroup" aria-label={`${gameModeLabel(gameMode)} sessions`}>
+                {wipeSessions.map(session => {
+                  const selected = (preview.declaredWipeBoundaryAt || detectedBoundaryAt) === session.dateFrom
+                  return (
+                    <label className={`eft-log-import-session-choice${selected ? ' is-selected' : ''}`} key={session.sessionKey}>
+                      <input
+                        type="radio"
+                        name={`wipe-session-${gameMode}`}
+                        value={session.sessionKey}
+                        checked={selected}
+                        onChange={handleSessionBoundaryChange}
+                      />
+                      <span className="eft-log-import-session-copy">
+                        <span><time dateTime={session.dateFrom}>{safeDateTime(session.dateFrom)}</time>–<time dateTime={session.dateTo}>{safeDateTime(session.dateTo)}</time></span>
+                        <strong>{session.eventCount} {plural(session.eventCount, 'QUEST EVENT')}</strong>
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="eft-log-import-review-note">No {gameModeLabel(gameMode)} sessions with quest events are available in this preview.</p>
+            )}
+            <div className="eft-log-import-boundary-freeform">
+              <label className="mono eft-log-import-field" htmlFor="eft-log-import-boundary-input">OR ENTER A PRECISE TIME</label>
+              <input
+                id="eft-log-import-boundary-input"
+                className="eft-log-import-boundary-input"
+                type="datetime-local"
+                value={boundaryDraft}
+                onChange={handleBoundaryDraftChange}
+                aria-describedby="eft-log-import-boundary-help"
+              />
+              <span id="eft-log-import-boundary-help" className="mono eft-log-import-meta">Clamped to the first retained event and the current time.</span>
+            </div>
+            {boundaryDraft && !dateTimeLocalToIso(boundaryDraft) && (
+              <p className="eft-log-import-boundary-error" role="alert">Enter a valid date and time.</p>
+            )}
+            {boundaryCandidateAt ? (
+              <div className="eft-log-import-alignment" role="status" aria-live="polite">
+                <p><strong>{boundaryAlignment.stayOpen} {plural(boundaryAlignment.stayOpen, 'quest')} stay open</strong>, {boundaryAlignment.dropped} dropped.</p>
+                {boundaryAlignment.effectiveBoundaryAt !== boundaryAlignment.boundaryAt && (
+                  <p className="mono eft-log-import-meta">AUTOMATIC DETECTION IS LATER, SO THE EFFECTIVE CUT-OFF IS {safeDateTime(boundaryAlignment.effectiveBoundaryAt)}.</p>
+                )}
+              </div>
+            ) : (
+              <p className="mono eft-log-import-boundary-empty">Choose a session or enter a precise time to preview the effect before importing.</p>
+            )}
+            {boundaryAlignment.warnings.length > 0 && (
+              <div className="eft-log-import-alignment-warnings">
+                {boundaryAlignment.warnings.map(warning => (
+                  <div className={`eft-log-import-alignment-warning${warning.code === 'zero-remaining' ? ' is-danger' : ''}`} role={warning.code === 'zero-remaining' ? 'alert' : undefined} key={`${warning.code}:${warning.sessionKey || ''}`}>
+                    <span>{alignmentWarningText(warning, boundaryAlignment)}</span>
+                    {warning.code === 'mid-session' && boundaryAlignment.snapAt && (
+                      <button className="btn-ghost btn-sm" type="button" onClick={handleBoundarySnap}>SNAP TO {warning.edge === 'start' ? 'SESSION START' : 'SESSION END'}</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           {preview.wipeBoundaryAt && (
             <div className="eft-log-import-wipe-note">
               <p>A wipe boundary was detected on {safeDate(preview.wipeBoundaryAt)}. Events before that date are excluded by default.</p>

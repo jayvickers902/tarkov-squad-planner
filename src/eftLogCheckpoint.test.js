@@ -40,7 +40,7 @@ describe('EFT log checkpoint policy', () => {
     const result = checkpointFrom(
       files,
       { includedVersions: ['0.16'] },
-      { profileKey: 'profile-a', unknownModeTargets: { s: 'regular' }, includePreWipeHistory: false },
+      { profileKey: 'profile-a', unknownModeTargets: { s: 'regular' }, includePreWipeHistory: false, wipeBoundaryAt: '2026-08-15T00:00:00Z' },
       true,
       'regular',
       new Map([['session/notifications.log', 150]]),
@@ -54,6 +54,7 @@ describe('EFT log checkpoint policy', () => {
       profileKey: 'profile-a',
       unknownModeTargets: { s: 'regular' },
       includePreWipeHistory: false,
+      wipeBoundaryAt: '2026-08-15T00:00:00.000Z',
       gameMode: 'regular',
       autoSync: true,
       updatedAt: 1234,

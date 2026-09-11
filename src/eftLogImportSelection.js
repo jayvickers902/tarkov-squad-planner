@@ -23,7 +23,12 @@ export function selectImportEvents(preview, selection, targetMode, knownTaskIds 
   const sourceEvents = Array.isArray(preview.matchedEvents) ? preview.matchedEvents : preview.events
   const knownIds = knownTaskIds ? new Set(knownTaskIds) : null
   const seasonalSessions = new Set((preview.sessions || []).filter(session => session.hasSeasonalSignal).map(session => session.sessionKey))
-  const afterWipe = wipeBoundaryFilter(preview, selection.profileKey, selection.includePreWipeHistory === true)
+  const afterWipe = wipeBoundaryFilter(
+    preview,
+    selection.profileKey,
+    selection.includePreWipeHistory === true,
+    selection.wipeBoundaryAt || null,
+  )
   const candidates = sourceEvents.filter(event => {
     if (knownIds && !knownIds.has(event?.taskId)) return false
     if (selectedVersions.size && !selectedVersions.has(String(event?.version || ''))) return false

@@ -23,6 +23,7 @@ import {
   taskMetadataFor,
   toQuestLogEventPayload,
 } from './questLogState.js'
+import { laterBoundary } from './wipeAlignment.js'
 import {
   createScreenshotPositionCandidate,
   dedupeEftScreenshotMetadata,
@@ -300,14 +301,6 @@ function selectedProfileLabelForMode(checkpoint, mode) {
  */
 function declaredWipeBoundaryForMode(checkpoint, mode) {
   return checkpoint?.selectionsByMode?.[mode]?.wipeBoundaryAt || null
-}
-
-// The later of the two wins, rather than the stored one: wiping a second time
-// has to move the boundary forward, and preferring whatever was already in the
-// checkpoint would pin it to the first wipe forever.
-function laterBoundary(left, right) {
-  const values = [left, right].map(value => Date.parse(value || '')).filter(Number.isFinite)
-  return values.length ? new Date(Math.max(...values)).toISOString() : null
 }
 
 function selectedUnknownModeForMode(checkpoint, mode) {

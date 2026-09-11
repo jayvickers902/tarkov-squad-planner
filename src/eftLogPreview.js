@@ -87,6 +87,7 @@ export function normalisePreview(preview, sourceMetadata = [], knownTaskIds = []
     unknownModeTargets: value.unknownModeTargets && typeof value.unknownModeTargets === 'object' ? { ...value.unknownModeTargets } : {},
     includePreWipeHistory: value.includePreWipeHistory === true,
     wipeBoundaryAt: typeof value.wipeBoundaryAt === 'string' ? value.wipeBoundaryAt : null,
+    declaredWipeBoundaryAt: typeof value.declaredWipeBoundaryAt === 'string' ? value.declaredWipeBoundaryAt : null,
     wipeBoundaryByProfile: value.wipeBoundaryByProfile && typeof value.wipeBoundaryByProfile === 'object' ? { ...value.wipeBoundaryByProfile } : {},
     sessions: Array.isArray(value.sessions) ? value.sessions : [],
     modeConfidenceDistribution: value.modeConfidenceDistribution && typeof value.modeConfidenceDistribution === 'object' ? { ...value.modeConfidenceDistribution } : {},

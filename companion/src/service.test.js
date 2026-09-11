@@ -70,6 +70,19 @@ describe('integrated companion service', () => {
     })
   })
 
+  it('forwards the selected wipe instant and can refresh the alignment preview', async () => {
+    const { service, runtime } = harness()
+    runtime.wipeQuests = vi.fn(async () => {})
+    runtime.refreshWipePreview = vi.fn(async () => {})
+    await service.start()
+
+    await service.refreshWipePreview()
+    await service.wipeQuests('2026-08-20T12:00:00.000Z')
+
+    expect(runtime.refreshWipePreview).toHaveBeenCalledOnce()
+    expect(runtime.wipeQuests).toHaveBeenCalledWith('2026-08-20T12:00:00.000Z')
+  })
+
   it('configures each local root without replacing the other one', async () => {
     const { service, native, runtime } = harness()
     await service.start()

@@ -54,6 +54,9 @@ export function checkpointFrom(sourceMetadata, preview, selection, autoSync, gam
     profileKey: selection.profileKey,
     unknownModeTargets: selection.unknownModeTargets,
     includePreWipeHistory: selection.includePreWipeHistory === true,
+    ...(Number.isFinite(Date.parse(selection.wipeBoundaryAt || ''))
+      ? { wipeBoundaryAt: new Date(selection.wipeBoundaryAt).toISOString() }
+      : {}),
     gameMode,
     autoSync,
     updatedAt: now,

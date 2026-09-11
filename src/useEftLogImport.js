@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { isSeasonalEvent } from './eftLogs'
+import { isSeasonalEvent, wipeBoundaryFilter } from './eftLogs'
 import {
   classifyChangedEftLogMetadata,
   enumerateRelevantEftLogFiles,
@@ -24,6 +24,7 @@ import {
   isNotificationLogPath,
   notifierSeasonalMap,
 } from './eftLogCheckpoint'
+import { laterBoundary } from '../shared/domain/wipeAlignment.js'
 
 // Resumability is a convenience, not a precondition. A browser in private mode
 // or with site data blocked rejects every IndexedDB write, and letting that
@@ -210,7 +211,7 @@ export function useEftLogImport({
   const observerFlushAfterScanRef = useRef(false)
   const observerFlushRef = useRef(() => {})
   const pendingTextRef = useRef(new Map())
-  const selectionRef = useRef({ includedVersions: [], profileKey: null, unknownModeTargets: {}, includePreWipeHistory: false })
+  const selectionRef = useRef({ includedVersions: [], profileKey: null, unknownModeTargets: {}, includePreWipeHistory: false, wipeBoundaryAt: null })
   const documentRef = useRef(documentObject)
   const pollRef = useRef(() => null)
   documentRef.current = documentObject
@@ -241,12 +242,14 @@ export function useEftLogImport({
 
   // Run once per completed import rather than per chunk: the prune reads the
   // resulting rows, so it is only meaningful after the last event has landed.
-  // A partial (incremental) parse never carries a boundary, so this no-ops for
-  // the tail scans and only does work on a full read.
+  // Incremental tail scans do not rebuild the corpus, so this is called only
+  // on the full-read path where detection and a declared boundary are sound.
   const pruneAfterImport = useCallback(async (scanPreview, scanSelection, mode) => {
     if (typeof onPruneRef.current !== 'function') return null
-    if (scanSelection?.includePreWipeHistory === true) return null
-    const boundaryAt = previewWipeBoundary(scanPreview, scanSelection?.profileKey || null)
+    const detectedBoundaryAt = scanSelection?.includePreWipeHistory === true
+      ? null
+      : previewWipeBoundary(scanPreview, scanSelection?.profileKey || null)
+    const boundaryAt = laterBoundary(detectedBoundaryAt, scanSelection?.wipeBoundaryAt)
     if (!boundaryAt) return null
     try {
       return await onPruneRef.current(mode, boundaryAt)
@@ -332,7 +335,13 @@ export function useEftLogImport({
     parseInWorker([], parseOptions, 'append', appendFiles)
   ), [parseInWorker])
 
-  const readAndParse = useCallback(async (files, sourceMetadata, parseOptions = {}, expectedGeneration = generationRef.current) => {
+  const readAndParse = useCallback(async (
+    files,
+    sourceMetadata,
+    parseOptions = {},
+    expectedGeneration = generationRef.current,
+    selectionDefaults = null,
+  ) => {
     // One pass is enough: the parser always returns the complete event corpus
     // and treats the version set as preview metadata, so the user can widen the
     // selection later without a rescan. Re-parsing with every available version
@@ -342,18 +351,31 @@ export function useEftLogImport({
     if (generationRef.current !== expectedGeneration) throw staleError()
     const nextPreview = normalisePreview(result, sourceMetadata, taskIdsFor(allTasksRef.current))
     const profiles = nextPreview.discoveredProfiles
-    selectionRef.current = {
-      includedVersions: nextPreview.includedVersions,
-      profileKey: profiles.length === 1 ? safeProfileKey(profiles[0]) : null,
-      unknownModeTargets: {},
-      includePreWipeHistory: false,
+    const profileKey = selectionDefaults?.profileKey
+      ? currentProfileKeyForCheckpoint(nextPreview, selectionDefaults.profileKey)
+      : profiles.length === 1 ? safeProfileKey(profiles[0]) : null
+    const nextSelection = {
+      includedVersions: selectionDefaults?.includedVersions?.length
+        ? selectionDefaults.includedVersions
+        : nextPreview.includedVersions,
+      profileKey,
+      unknownModeTargets: selectionDefaults?.unknownModeTargets || {},
+      includePreWipeHistory: selectionDefaults?.includePreWipeHistory === true,
+      wipeBoundaryAt: selectionDefaults?.wipeBoundaryAt || null,
     }
+    const previewWithSelection = {
+      ...nextPreview,
+      selectedProfileKey: profileKey,
+      wipeBoundaryAt: previewWipeBoundary(nextPreview, profileKey),
+      declaredWipeBoundaryAt: nextSelection.wipeBoundaryAt,
+    }
+    selectionRef.current = nextSelection
     if (mountedRef.current) {
-      setPreview(nextPreview)
+      setPreview(previewWithSelection)
       setError(null)
       setState('preview')
     }
-    return nextPreview
+    return previewWithSelection
   }, [parseInWorker])
 
   const parseSelectedFiles = useCallback(async (selectedFiles, parseOptions = {}) => {
@@ -415,6 +437,7 @@ export function useEftLogImport({
         profileKey: checkpointRef.current?.profileKey || null,
         unknownModeTargets: checkpointRef.current?.unknownModeTargets || {},
         includePreWipeHistory: checkpointRef.current?.includePreWipeHistory === true,
+        wipeBoundaryAt: checkpointRef.current?.wipeBoundaryAt || null,
       }
       const mode = checkpointRef.current?.gameMode || targetModeRef.current
 
@@ -481,6 +504,7 @@ export function useEftLogImport({
           const resultEvents = Array.isArray(resultPreview.matchedEvents)
             ? resultPreview.matchedEvents
             : (resultPreview.events || []).filter(event => knownTaskIds.has(event?.taskId))
+          const afterWipe = wipeBoundaryFilter(resultPreview, selection.profileKey, selection.includePreWipeHistory === true, selection.wipeBoundaryAt)
           for (const sourceEvent of resultEvents) {
             // An append carries notification lines with no gateway context of
             // their own, so most events here are unclassified and fall through
@@ -498,6 +522,7 @@ export function useEftLogImport({
             if (mode !== event.gameMode) continue
             if (selection.profileKey && selection.profileKey !== event.profileKey) continue
             if (selectedVersions.size && !selectedVersions.has(String(event.version || ''))) continue
+            if (!afterWipe(event)) continue
             const taskMetadata = taskMetadataFor(allTasksRef.current).get(event.taskId)
             events.push(taskMetadata ? {
               ...event,
@@ -548,13 +573,14 @@ export function useEftLogImport({
       // appeared context file reaches this full-read path below.
       const files = await readEnumeratedEftLogFiles(entries, { maxFileBytes, maxTotalBytes })
       if (generationRef.current !== scanGeneration) throw staleError()
-      const nextPreview = await readAndParse(files, metadata, { changedPaths, recovery }, scanGeneration)
+      const nextPreview = await readAndParse(files, metadata, { changedPaths, recovery }, scanGeneration, selection)
       if (!autoApply) return { changed: true, metadata, preview: nextPreview }
       const nextSelection = {
         includedVersions: checkpointRef.current?.includedVersions || nextPreview.includedVersions,
         profileKey: currentProfileKeyForCheckpoint(nextPreview, checkpointRef.current?.profileKey),
         unknownModeTargets: checkpointRef.current?.unknownModeTargets || {},
         includePreWipeHistory: checkpointRef.current?.includePreWipeHistory === true,
+        wipeBoundaryAt: checkpointRef.current?.wipeBoundaryAt || null,
       }
       if (mode !== targetModeRef.current) return { changed: false, metadata, preview: nextPreview }
       const events = selectImportEvents(nextPreview, nextSelection, mode, taskIdsFor(allTasksRef.current), taskMetadataFor(allTasksRef.current))
@@ -899,6 +925,13 @@ export function useEftLogImport({
     setPreview(current => current ? { ...current, includePreWipeHistory: widened } : current)
   }, [])
 
+  const setWipeBoundaryAt = useCallback(boundaryAt => {
+    const parsed = Date.parse(boundaryAt || '')
+    const normalized = Number.isFinite(parsed) ? new Date(parsed).toISOString() : null
+    selectionRef.current = { ...selectionRef.current, wipeBoundaryAt: normalized }
+    setPreview(current => current ? { ...current, declaredWipeBoundaryAt: normalized } : current)
+  }, [])
+
   // The job engine reports failure by returning a paused job rather than
   // throwing, so that a partial import keeps its checkpoint. confirmImport's
   // callers still expect a throw, so translate here -- and leave the paused job
@@ -1083,7 +1116,7 @@ export function useEftLogImport({
     generationRef.current += 1
     terminateWorker()
     stopWatching()
-    selectionRef.current = { includedVersions: [], profileKey: null, unknownModeTargets: {}, includePreWipeHistory: false }
+    selectionRef.current = { includedVersions: [], profileKey: null, unknownModeTargets: {}, includePreWipeHistory: false, wipeBoundaryAt: null }
     if (mountedRef.current) {
       setPreview(null)
       setError(null)
@@ -1099,7 +1132,7 @@ export function useEftLogImport({
     const effectGeneration = ++generationRef.current
     lifecycleRef.current.terminateWorker()
     lifecycleRef.current.stopWatching()
-    selectionRef.current = { includedVersions: [], profileKey: null, unknownModeTargets: {}, includePreWipeHistory: false }
+    selectionRef.current = { includedVersions: [], profileKey: null, unknownModeTargets: {}, includePreWipeHistory: false, wipeBoundaryAt: null }
     setPreview(null)
     setError(null)
     if (!persistentSupported) return () => {
@@ -1164,6 +1197,7 @@ export function useEftLogImport({
     setProfileSelection,
     setUnknownModeTarget,
     setWipeScope,
+    setWipeBoundaryAt,
     confirmImport,
     forgetFolder,
     reset,

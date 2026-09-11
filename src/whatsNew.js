@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.21'
+export const RELEASE_VERSION = '2026.22'
 
 export const SETUP_STEPS = [
   {
@@ -28,6 +28,23 @@ export const FIRST_LIVE_NOTES_VERSION = '2026.09'
 // Newest first — WelcomeModal shows RELEASES[0] and nothing else, so a new
 // release goes on top of this array and RELEASE_VERSION moves with it.
 export const RELEASES = [
+  {
+    version: '2026.22',
+    date: '2026-09-11',
+    title: 'DECLARE YOUR PRESTIGE, KEEP THE RIGHT QUESTS',
+    items: [
+      {
+        tag: 'NEW',
+        title: 'CHOOSE YOUR PRESTIGE FROM YOUR OWN LOGS',
+        body: 'Tell the planner when you prestiged by choosing one of your recent sessions, newest first, or entering a precise time. The choice is checked against the retained log corpus before it is applied.',
+      },
+      {
+        tag: 'IMPROVED',
+        title: 'SEE THE CUT-OFF BEFORE APPLYING',
+        body: 'The import panel and Windows companion preview how many quests stay open and how many are dropped, clamp times outside the logs, and warn when a time splits a session or leaves no quests open.',
+      },
+    ],
+  },
   {
     version: '2026.21',
     date: '2026-09-11',

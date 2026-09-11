@@ -1309,6 +1309,34 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .eft-log-import-session { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border: 1px solid var(--brd); border-radius: 3px; color: var(--txm); }
 .eft-log-import-session select { min-width: 110px; padding: 4px 6px; border: 1px solid var(--brd2); border-radius: 3px; background: var(--sur3); color: var(--tx); font-family: 'Share Tech Mono', monospace; font-size: var(--fs-xs); }
 .eft-log-import-regression { border-color: var(--red); }
+.eft-log-import-boundary { display: flex; flex-direction: column; gap: 9px; padding: 11px 10px; border: 1px solid var(--golddim); border-left: 3px solid var(--gold); border-radius: 4px; background: rgba(201,168,76,.05); }
+.eft-log-import-boundary-copy { margin-top: 4px; color: var(--txm); font-size: var(--fs-sm); line-height: 1.5; }
+.eft-log-import-session-list { display: flex; flex-direction: column; gap: 6px; max-height: 250px; overflow-y: auto; }
+.eft-log-import-session-choice { display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 6px 8px; border: 1px solid var(--brd); border-radius: 3px; color: var(--txm); cursor: pointer; }
+.eft-log-import-session-choice:hover { border-color: var(--brd2); background: var(--sur2); }
+.eft-log-import-session-choice.is-selected { border-color: var(--gold); background: rgba(201,168,76,.1); color: var(--tx); }
+.eft-log-import-session-choice input { flex: 0 0 auto; accent-color: var(--gold); }
+.eft-log-import-session-copy { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; width: 100%; min-width: 0; flex-wrap: wrap; }
+.eft-log-import-session-copy span { min-width: 0; overflow-wrap: anywhere; }
+.eft-log-import-session-copy strong { flex: 0 0 auto; color: var(--goldtx); font-size: var(--fs-xs); letter-spacing: .05em; }
+.eft-log-import-boundary-freeform { display: grid; grid-template-columns: max-content minmax(180px, 1fr); align-items: center; gap: 7px 10px; }
+.eft-log-import-boundary-freeform .eft-log-import-meta { grid-column: 2; }
+.eft-log-import-boundary-input { min-width: 0; padding: 6px 8px; border: 1px solid var(--brd2); border-radius: 3px; background: var(--sur3); color: var(--tx); font: inherit; font-family: 'Share Tech Mono', monospace; font-size: var(--fs-xs); color-scheme: dark; }
+.eft-log-import-boundary-error { margin: 0; color: var(--red); font-size: var(--fs-sm); }
+.eft-log-import-boundary-empty { margin: 0; color: var(--txd); font-size: var(--fs-sm); line-height: 1.5; }
+.eft-log-import-alignment { display: flex; flex-direction: column; gap: 3px; padding: 8px 9px; border: 1px solid rgba(102,183,120,.35); border-radius: 3px; background: rgba(102,183,120,.06); }
+.eft-log-import-alignment p { margin: 0; color: var(--tx); font-size: var(--fs-sm); line-height: 1.5; }
+.eft-log-import-alignment strong { color: var(--grn); }
+.eft-log-import-alignment-warnings { display: flex; flex-direction: column; gap: 6px; }
+.eft-log-import-alignment-warning { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 8px 9px; border: 1px solid var(--golddim); border-radius: 3px; background: rgba(201,168,76,.07); color: var(--goldtx); font-size: var(--fs-sm); line-height: 1.5; }
+.eft-log-import-alignment-warning.is-danger { border-color: rgba(224,107,107,.55); background: rgba(224,107,107,.08); color: var(--red); }
+.eft-log-import-alignment-warning .btn-ghost { flex: 0 0 auto; }
+@media (max-width: 560px) {
+  .eft-log-import-boundary-freeform { grid-template-columns: 1fr; }
+  .eft-log-import-boundary-freeform .eft-log-import-meta { grid-column: 1; }
+  .eft-log-import-alignment-warning { align-items: flex-start; flex-direction: column; }
+  .eft-log-import-alignment-warning .btn-ghost { width: 100%; }
+}
 
 .party-mode-picker { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--brd); border-radius: 4px; background: var(--sur); }
 .party-mode-picker-label { color: var(--txm); font-size: var(--fs-xs); }

@@ -1,4 +1,5 @@
 import { detectQuestWipeBoundary } from './questWipe.js'
+import { laterBoundary } from './wipeAlignment.js'
 
 const NOTIFICATION_FILE_RE = /^(?:notifications|push-notifications)(?:[_-]\d+)?\.log$/i
 const CONTEXT_FILE_RE = /^(?:backend|application)(?:[_-]\d+)?\.log$/i
@@ -1601,10 +1602,12 @@ export function wipeBoundaryFilter(preview, profileKey, includePreWipeHistory = 
   // A boundary the reader declared outranks detection in both directions. They
   // know they wiped; the detector only ever guesses, and for a wipe sitting at
   // the edge of the retained logs it can have no evidence to guess from at all.
-  const declared = Date.parse(declaredBoundaryAt || '')
-  const candidates = [detected, declared].filter(Number.isFinite)
-  if (!candidates.length) return () => true
-  const boundary = Math.max(...candidates)
+  const boundaryAt = laterBoundary(
+    Number.isFinite(detected) ? new Date(detected).toISOString() : null,
+    declaredBoundaryAt,
+  )
+  if (!boundaryAt) return () => true
+  const boundary = Date.parse(boundaryAt)
   return event => {
     const occurredAt = Date.parse(event?.occurredAt || '')
     return Number.isFinite(occurredAt) && occurredAt >= boundary

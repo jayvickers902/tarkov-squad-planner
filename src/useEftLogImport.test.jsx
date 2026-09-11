@@ -292,6 +292,25 @@ describe('useEftLogImport', () => {
     expect(onApply.mock.calls[1][1].map(event => event.event_key)).toEqual(['b-new'])
   })
 
+  it('passes a declared boundary to stale-row pruning after the import applies', async () => {
+    const onApply = vi.fn(async (_mode, events) => ({ inserted: events.length, updated: 0, ignored: 0 }))
+    const onPrune = vi.fn(async () => ({ removed: 2 }))
+    const { result } = renderHook(() => useEftLogImport({
+      allTasks: [{ id: taskId }],
+      gameMode: 'regular',
+      environment: universalEnvironment(),
+      workerFactory: workerFactoryWith(preview()),
+      onApply,
+      onPrune,
+    }))
+
+    await act(async () => { await result.current.parseSelectedFiles([logFile()]) })
+    act(() => result.current.setWipeBoundaryAt('2026-08-24T00:00:00.000Z'))
+    await act(async () => { await result.current.confirmImport() })
+
+    expect(onPrune).toHaveBeenCalledWith('regular', '2026-08-24T00:00:00.000Z')
+  })
+
   it('does not allow clearing the last included version', async () => {
     const { result } = renderHook(() => useEftLogImport({
       allTasks: [{ id: taskId }],

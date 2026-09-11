@@ -3,6 +3,7 @@ import { DEFAULT_STATUS, normalizeStatus } from './adapter.js'
 import { getCompanionService } from './service.js'
 import { quitCompanion, readAutostart, setAutostart } from './tauri.js'
 import { buildSuccessfulScanRows, loadTaskNames } from './scanReport.js'
+import { normalizeWipeMode, previewWipeBoundaryAlignment, sessionsForWipeMode } from '../../shared/domain/wipeAlignment.js'
 import {
   checkForUpdate,
   downloadAndInstall,
@@ -188,6 +189,179 @@ function UpdateCard({ installedVersion, state, onAction }) {
   )
 }
 
+function dateTimeLocalValue(value) {
+  const date = new Date(value || '')
+  if (Number.isNaN(date.valueOf())) return ''
+  const pad = number => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function dateTimeLocalToIso(value) {
+  const date = new Date(value || '')
+  return Number.isNaN(date.valueOf()) ? null : date.toISOString()
+}
+
+function countLabel(count, singular, plural = `${singular}s`) {
+  return count === 1 ? singular : plural
+}
+
+function wipeWarningText(warning, alignment) {
+  if (warning.code === 'before-corpus') {
+    return `This instant is before the first retained event. It is clamped to ${formatSyncTime(alignment.corpus.earliestAt)} and drops no log quests.`
+  }
+  if (warning.code === 'after-corpus') {
+    return `This instant is after the last retained event. The cut-off is ${formatSyncTime(alignment.boundaryAt)}; ${alignment.dropped} active log ${countLabel(alignment.dropped, 'quest')} ${alignment.dropped === 1 ? 'is' : 'are'} dropped.`
+  }
+  if (warning.code === 'mid-session') {
+    return `This instant lands inside session ${warning.sessionKey}. Snap to the nearest session edge so one session is not split.`
+  }
+  if (warning.code === 'zero-remaining') return 'No quests would remain open after this boundary.'
+  return ''
+}
+
+function WipeBoundaryControl({ preview, mode, busy, onRefresh, onApply }) {
+  const normalizedMode = normalizeWipeMode(mode) || 'regular'
+  const sourceEvents = Array.isArray(preview?.events) ? preview.events : EMPTY_EVENTS
+  const sessions = useMemo(() => sessionsForWipeMode(preview, normalizedMode, {
+    profileKey: preview?.selectedProfileKey || null,
+    events: sourceEvents,
+  }), [normalizedMode, preview, sourceEvents])
+  const events = useMemo(() => {
+    const sessionModes = new Map(sessions.map(session => [session.sessionKey, session.mode]))
+    return sourceEvents.filter(event => {
+      if (preview?.selectedProfileKey && event?.profileKey && event.profileKey !== preview.selectedProfileKey) return false
+      const eventMode = event?.gameMode || preview?.unknownModeTargets?.[event?.sessionKey] || sessionModes.get(event?.sessionKey)
+      return eventMode === normalizedMode
+    })
+  }, [normalizedMode, preview, sessions, sourceEvents])
+  const detectedBoundaryAt = preview?.wipeBoundaryAt || null
+  const declaredBoundaryAt = preview?.declaredWipeBoundaryAt || null
+  const [boundaryDraft, setBoundaryDraft] = useState('')
+  const [selectedSessionKey, setSelectedSessionKey] = useState(null)
+  const [armed, setArmed] = useState(false)
+
+  useEffect(() => {
+    const current = declaredBoundaryAt || detectedBoundaryAt
+    setBoundaryDraft(dateTimeLocalValue(current))
+    setSelectedSessionKey(sessions.find(session => session.dateFrom === current)?.sessionKey || null)
+    setArmed(false)
+  }, [declaredBoundaryAt, detectedBoundaryAt, sessions])
+
+  const hasDraft = boundaryDraft.length > 0
+  const requestedAt = hasDraft ? dateTimeLocalToIso(boundaryDraft) : (declaredBoundaryAt || detectedBoundaryAt)
+  const alignment = useMemo(() => previewWipeBoundaryAlignment({
+    events,
+    sessions,
+    requestedAt,
+    sessionKey: selectedSessionKey,
+    detectedBoundaryAt,
+    now: Date.now(),
+  }), [detectedBoundaryAt, events, requestedAt, selectedSessionKey, sessions])
+  const validDraft = !hasDraft || Boolean(dateTimeLocalToIso(boundaryDraft))
+  const canApply = Boolean(preview && validDraft && alignment.boundaryAt)
+
+  function handleSessionChange(event) {
+    const sessionKey = event.target.value || null
+    const session = sessions.find(candidate => candidate.sessionKey === sessionKey)
+    setSelectedSessionKey(sessionKey)
+    if (session) setBoundaryDraft(dateTimeLocalValue(session.dateFrom))
+  }
+
+  function handleBoundaryChange(event) {
+    setSelectedSessionKey(null)
+    setBoundaryDraft(event.target.value)
+  }
+
+  function handleSnap() {
+    if (!alignment.snapAt) return
+    setSelectedSessionKey(null)
+    setBoundaryDraft(dateTimeLocalValue(alignment.snapAt))
+  }
+
+  function handleConfirm() {
+    if (!canApply) return
+    setArmed(false)
+    onApply(alignment.boundaryAt)
+  }
+
+  return (
+    <div className="wipe-boundary-control" aria-labelledby="wipe-boundary-title">
+      <div>
+        <p className="eyebrow" id="wipe-boundary-title">WHEN DID YOU PRESTIGE?</p>
+        <p>Choose one of your {formatMode(normalizedMode)} sessions, newest first. The cut-off uses that session&apos;s first quest event.</p>
+      </div>
+      {!preview ? (
+        <div className="wipe-boundary-empty">
+          <p>Load the retained log sessions to align this reset with your history.</p>
+          <button className="secondary-button" onClick={onRefresh} disabled={busy}>Load log sessions</button>
+        </div>
+      ) : (
+        <>
+          {sessions.length > 0 ? (
+            <div className="wipe-session-list" role="radiogroup" aria-label={`${formatMode(normalizedMode)} sessions`}>
+              {sessions.map(session => (
+                <label className={`wipe-session-choice${selectedSessionKey === session.sessionKey ? ' is-selected' : ''}`} key={session.sessionKey}>
+                  <input
+                    type="radio"
+                    name={`wipe-session-${normalizedMode}`}
+                    value={session.sessionKey}
+                    checked={selectedSessionKey === session.sessionKey}
+                    onChange={handleSessionChange}
+                  />
+                  <span>
+                    <span><time dateTime={session.dateFrom}>{formatSyncTime(session.dateFrom)}</time> — <time dateTime={session.dateTo}>{formatSyncTime(session.dateTo)}</time></span>
+                    <strong>{session.eventCount} {countLabel(session.eventCount, 'quest event')}</strong>
+                  </span>
+                </label>
+              ))}
+            </div>
+          ) : <p className="wipe-boundary-empty-copy">No {formatMode(normalizedMode)} sessions with quest events are available in this scan.</p>}
+          <div className="wipe-boundary-freeform">
+            <label htmlFor="wipe-boundary-input">Or enter a precise time</label>
+            <input
+              id="wipe-boundary-input"
+              className="wipe-boundary-input"
+              type="datetime-local"
+              value={boundaryDraft}
+              onChange={handleBoundaryChange}
+              aria-describedby="wipe-boundary-help"
+            />
+            <span id="wipe-boundary-help">Clamped to the first retained event and the current time.</span>
+          </div>
+          {!validDraft && <p className="wipe-boundary-error" role="alert">Enter a valid date and time.</p>}
+          {requestedAt && alignment.boundaryAt ? (
+            <div className="wipe-alignment" role="status" aria-live="polite">
+              <strong>{alignment.stayOpen} {countLabel(alignment.stayOpen, 'quest')} stay open</strong>
+              <span>{alignment.dropped} dropped.</span>
+              {alignment.effectiveBoundaryAt !== alignment.boundaryAt && <small>Automatic detection is later, so the effective cut-off is {formatSyncTime(alignment.effectiveBoundaryAt)}.</small>}
+            </div>
+          ) : <p className="wipe-boundary-empty-copy">Choose a session or enter a precise time to preview the effect before wiping.</p>}
+          {alignment.warnings.length > 0 && (
+            <div className="wipe-warnings">
+              {alignment.warnings.map(warning => (
+                <div className={`wipe-warning${warning.code === 'zero-remaining' ? ' is-danger' : ''}`} role={warning.code === 'zero-remaining' ? 'alert' : undefined} key={`${warning.code}:${warning.sessionKey || ''}`}>
+                  <span>{wipeWarningText(warning, alignment)}</span>
+                  {warning.code === 'mid-session' && alignment.snapAt && <button className="secondary-button" onClick={handleSnap}>Snap to {warning.edge === 'start' ? 'session start' : 'session end'}</button>}
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="wipe-boundary-actions">
+            {armed ? (
+              <div className="choice-buttons">
+                <button className="primary-button" onClick={handleConfirm} disabled={busy || !canApply}>Yes, wipe them</button>
+                <button className="secondary-button" onClick={() => setArmed(false)} disabled={busy}>Cancel</button>
+              </div>
+            ) : (
+              <button className="secondary-button" onClick={() => setArmed(true)} disabled={busy || !canApply}>Wipe quests</button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   const [service] = useState(() => getCompanionService())
   const [view, setView] = useState(() => service.getSnapshot())
@@ -204,6 +378,8 @@ export default function App() {
   const knownProfiles = status.knownProfiles || []
   const lastSuccessfulScan = status.lastSuccessfulScan || null
   const successfulEvents = lastSuccessfulScan?.events || EMPTY_EVENTS
+  const wipePreview = status.wipePreview || null
+  const wipeMode = normalizeWipeMode(status.scanMetrics?.mode || status.activeProfile?.mode || 'regular') || 'regular'
   const eventRows = useMemo(() => buildSuccessfulScanRows(successfulEvents, taskNames), [successfulEvents, taskNames])
 
   useEffect(() => {
@@ -227,10 +403,6 @@ export default function App() {
     void getInstalledVersion().then(version => { if (active) setInstalledVersion(version) })
     return () => { active = false }
   }, [])
-
-  // Two-step rather than a single click: this deletes rows, and a mis-click on
-  // a settings screen should not be able to do that silently.
-  const [wipeArmed, setWipeArmed] = useState(false)
 
   const run = useCallback(async (operation, fallback) => {
     setBusy(true)
@@ -422,30 +594,22 @@ export default function App() {
       )}
 
       {!setup.incomplete && view.authenticated && roots.logsRoot && (
-        <section className="settings-card rescan-card">
+        <section className="settings-card rescan-card wipe-card">
           <div>
             <p className="eyebrow">AFTER A WIPE OR PRESTIGE</p>
             <h2>Wipe quests</h2>
             <p>
-              Clears every quest the log sync imported for this character and stops your previous
-              life coming back. Only quests you start from now on are imported. Quests you added by
-              hand on the website are kept.
+              Declare when the reset happened so quests from your previous life do not come back.
+              Only log-imported rows are affected; quests you added by hand on the website are kept.
             </p>
           </div>
-          {wipeArmed ? (
-            <div className="choice-buttons">
-              <button
-                className="secondary-button"
-                onClick={() => { setWipeArmed(false); run(() => service.wipeQuests(), 'The quests could not be wiped.') }}
-                disabled={busy}
-              >
-                Yes, wipe them
-              </button>
-              <button className="secondary-button" onClick={() => setWipeArmed(false)} disabled={busy}>Cancel</button>
-            </div>
-          ) : (
-            <button className="secondary-button" onClick={() => setWipeArmed(true)} disabled={busy}>Wipe quests</button>
-          )}
+          <WipeBoundaryControl
+            preview={wipePreview}
+            mode={wipeMode}
+            busy={busy}
+            onRefresh={() => run(() => service.refreshWipePreview(), 'The log sessions could not be loaded.')}
+            onApply={boundaryAt => run(() => service.wipeQuests(boundaryAt), 'The quests could not be wiped.')}
+          />
         </section>
       )}
 

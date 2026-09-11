@@ -5,6 +5,8 @@
  * engine.  The engine is supplied by createEngine so the Tauri/Vite bundle can
  * choose how to load the engine (and tests can use a very small fake engine).
  */
+import { previewWipeBoundary } from '../../shared/domain/eftLogs.js'
+import { normalizeWipePreview } from '../../shared/domain/wipeAlignment.js'
 
 export const DEFAULT_RUNTIME_OPTIONS = Object.freeze({
   eventDebounceMs: 300,
@@ -59,6 +61,9 @@ function method(target, ...names) {
 
 function safeStatus(status) {
   const state = STATES.has(status?.state) ? status.state : 'offline'
+  const wipePreview = status?.wipePreview && typeof status.wipePreview === 'object'
+    ? normalizeWipePreview(status.wipePreview, { declaredBoundaryAt: status.wipePreview.declaredWipeBoundaryAt })
+    : null
   return Object.freeze({
     state,
     detail: safeText(status?.detail, ''),
@@ -112,6 +117,7 @@ function safeStatus(status) {
     ...(safeSuccessfulScan(status?.lastSuccessfulScan)
       ? { lastSuccessfulScan: safeSuccessfulScan(status.lastSuccessfulScan) }
       : {}),
+    ...(wipePreview ? { wipePreview } : {}),
     ...(status?.scanMetrics && typeof status.scanMetrics === 'object' ? {
       scanMetrics: {
         filesScanned: Math.max(0, Math.floor(Number(status.scanMetrics.filesScanned) || 0)),
@@ -128,6 +134,21 @@ function safeStatus(status) {
       },
     } : {}),
   })
+}
+
+function wipePreviewForResult(result, mode, selectedProfileKey, modeSelection = {}) {
+  if (!result?.preview || typeof result.preview !== 'object') return null
+  const checkpointSelection = result?.checkpoint?.selectionsByMode?.[mode]
+  const declaredBoundaryAt = checkpointSelection?.wipeBoundaryAt
+    || (result?.checkpoint?.gameMode === mode ? result?.checkpoint?.wipeBoundaryAt : null)
+    || modeSelection?.wipeBoundaryAt
+    || null
+  const profileKey = selectedProfileKey || result.preview.selectedProfileKey || null
+  return normalizeWipePreview({
+    ...result.preview,
+    selectedProfileKey: profileKey,
+    wipeBoundaryAt: previewWipeBoundary(result.preview, profileKey),
+  }, { declaredBoundaryAt })
 }
 
 function errorDetail(error) {
@@ -615,7 +636,17 @@ export function createCompanionRuntime({
           recommended: Boolean(profile?.recommended),
         }))
         : []
-      setStatus({ state: 'error', detail: required === 'profile' ? 'Choose the character that matches your current EFT mode' : 'Choose Regular, PvP Seasonal, or PvE for events without a clear mode', selectionRequired: required, selectionOptions: options, scanMetrics: result?.scanMetrics, pingOutcome, pendingCount: 0 })
+      const wipePreview = wipePreviewForResult(result, mode, null, modeSelection)
+      setStatus({
+        state: 'error',
+        detail: required === 'profile' ? 'Choose the character that matches your current EFT mode' : 'Choose Regular, PvP Seasonal, or PvE for events without a clear mode',
+        selectionRequired: required,
+        selectionOptions: options,
+        scanMetrics: result?.scanMetrics,
+        ...(wipePreview ? { wipePreview } : {}),
+        pingOutcome,
+        pendingCount: 0,
+      })
       return false
     }
     if (!active()) return false
@@ -643,6 +674,7 @@ export function createCompanionRuntime({
     const lastSuccessfulScan = result?.lastSuccessfulScan
       || result?.checkpoint?.lastSuccessfulScansByMode?.[mode]
       || status.lastSuccessfulScan
+    const wipePreview = wipePreviewForResult(result, mode, selectedKey, modeSelection)
     const zeroFiles = questModeSupported && roots.logsRoot && result?.scanMetrics && metrics.filesScanned === 0
     const zeroEvents = questModeSupported && roots.logsRoot && metrics.filesScanned > 0 && metrics.eventsSeen === 0
     const zeroMatch = questModeSupported && roots.logsRoot && metrics.eventsSeen > 0 && metrics.matchedEvents === 0
@@ -683,6 +715,7 @@ export function createCompanionRuntime({
       })),
       recentEvents,
       lastSuccessfulScan,
+      ...(wipePreview ? { wipePreview } : {}),
       scanMetrics: metrics,
       pingOutcome,
     })
@@ -1022,6 +1055,14 @@ export function createCompanionRuntime({
     return requestSync('force', { force: true })
   }
 
+  // The regular watcher can finish on an incremental pass, which has no full
+  // preview to display. Give the declaration card an explicit, read-only way
+  // to refresh the session list without changing quest rows.
+  async function refreshWipePreview() {
+    forceNextScan = true
+    return requestSync('wipe-preview', { force: true })
+  }
+
   // "I wiped or prestiged." Deleting the rows alone would be pointless -- the
   // next scan reads the same logs and puts every one of them straight back --
   // so the same click records the boundary that stops them coming back. Only
@@ -1052,6 +1093,7 @@ export function createCompanionRuntime({
     synchronize: () => requestSync('manual'),
     fullRescan,
     rescan: fullRescan,
+    refreshWipePreview,
     wipeQuests,
     changeProfile,
     changeCharacter: changeProfile,

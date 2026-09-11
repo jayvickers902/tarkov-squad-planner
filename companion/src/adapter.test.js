@@ -35,4 +35,24 @@ describe('companion adapter status boundary', () => {
     expect(JSON.stringify(status)).not.toContain('private')
     expect(JSON.stringify(status)).not.toContain('profileId')
   })
+
+  it('keeps wipe alignment data local and strips unapproved preview fields', () => {
+    const taskId = '59c9392986f7742f6923add2'
+    const status = normalizeStatus({
+      state: 'connected',
+      wipePreview: {
+        events: [{ taskId, state: 'active', occurredAt: '2026-08-20T12:00:00Z', gameMode: 'regular', profileId: 'private' }],
+        sessions: [{ sessionKey: 'session-a', eventCount: 1, dateFrom: '2026-08-20T12:00:00Z', dateTo: '2026-08-20T12:01:00Z', mode: 'regular' }],
+        declaredWipeBoundaryAt: '2026-08-20T12:00:00Z',
+      },
+    })
+
+    expect(status.wipePreview).toMatchObject({
+      events: [{ taskId, state: 'active', gameMode: 'regular' }],
+      sessions: [{ sessionKey: 'session-a', eventCount: 1 }],
+      declaredWipeBoundaryAt: '2026-08-20T12:00:00.000Z',
+    })
+    expect(JSON.stringify(status)).not.toContain('private')
+    expect(JSON.stringify(status)).not.toContain('profileId')
+  })
 })
