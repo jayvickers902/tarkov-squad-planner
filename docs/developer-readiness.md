@@ -1,6 +1,6 @@
 # Developer readiness handoff
 
-Status: implementation and review handoff, 2026-09-03.
+Status: implementation and review handoff, 2026-09-11.
 
 This document is the short operational entry point for the quality, scaling,
 architecture, and security work completed in this program. It separates facts
@@ -57,14 +57,22 @@ starting points rather than coverage:
   globals with zero residual errors. The remaining work is ordinary annotation
   batches — implicit-any parameters and untyped options objects — not a
   blocked decision.
-- **The Playwright suite has six tests.** Three render the unauthenticated
+- **The Playwright suite has nine tests.** Three render the unauthenticated
   shell, walk the lazy changelog chunk, and check a narrow viewport. The fourth
   uses local Supabase fixtures to exercise authenticated lobby rendering, party
   creation, map selection, and the resulting room state without credentials or
   external writes. A fifth covers the leader's pre-raid brief, raid-start RPC,
   raid route, and live-map entry. A sixth opens Quest Manager with a seeded
-  quest and verifies its accessible important/starred transition. Multi-client
-  Realtime and log-import flows still have no end-to-end coverage.
+  quest and verifies its accessible important/starred transition. A seventh
+  uses two browser contexts and a local Phoenix-style broker to verify that a
+  member receives the leader's map change through the app's actual Realtime
+  subscription path. An eighth disconnects that member transport, proves a map
+  update was missed, and verifies convergence through the app's visibility
+  recovery read. A ninth opens the Quest import hub, feeds the real checked-in
+  regular EFT log fixture through the browser directory picker, verifies the
+  worker/parser review counts, and confirms the reconcile decision against an
+  offline RPC fixture. Timer-driven reconnect, member-row, ping-channel, and
+  log-history/undo flows still have no end-to-end coverage.
 
 Root convenience commands are:
 
@@ -107,6 +115,11 @@ work moves native-agnostic companion logic behind `/shared` while retaining
 compatibility facades for existing web imports. React hook dependency cleanup
 covered stable derived values, stale closures, map-layer cleanup against the
 correct map instance, and stable sync context values.
+
+The prebaked loader now preserves each generated dataset's `gameMode` stamp.
+Mode-scoped hooks use that stamp before seeding their local floor; the import
+end-to-end path caught the dropped metadata that otherwise left the parser with
+no known task IDs and reported a false zero-change preview.
 
 Accessibility coverage includes dialog focus trapping/restoration, keyboard
 activation, accessible names, pressed state for map controls, friend-removal
@@ -234,7 +247,7 @@ approved staging database. They were not replaced by local unit tests.
    supabase migration list --local
    ```
 
-   Review extensions, publications, scheduled jobs, tables, functions, and
+   Review extensions, triggers, publications, scheduled jobs, tables, functions, and
    policies against the ordered SQL inventory. Do not apply the dump or mark
    historical files as applied by hand. The 2026-09-03 inspection could query
    the linked catalog, but Docker/password limitations prevented producing the
@@ -245,12 +258,20 @@ approved staging database. They were not replaced by local unit tests.
    migration plus a hash/review record. It refuses repository-local paths,
    credential-like or destructive SQL, and existing output files. The result
    is explicitly non-deployable until omitted catalog classes and a clean
-   local reset have been reconciled.
+   local reset have been reconciled. The candidate includes catalog-derived
+   extensions and non-internal public triggers when those optional capture
+   files are present, ordered after their table/function dependencies.
 
    Run `npm run reconcile:baseline -- --candidate <external-sql> --report
-   <external-json>` before local rehearsal. The report is machine-readable and
-   exits non-zero for drift from the reviewed 17-table/47-routine/37-policy
-   counts, incomplete migration-order coverage, or missing catalog classes.
+   <external-json> --manifest <external-manifest>` before local rehearsal.
+   The capture manifest now records extensions, triggers, publications,
+   ownership/default privileges, scheduled-job and migration-ledger
+   availability, and storage/auth object availability. Extension and
+   non-internal public-trigger captures are replayable catalog-derived SQL;
+   the manifest remains evidence only. The report remains non-zero until the
+   remaining classes are represented in the reviewed baseline. The report is machine-readable and
+   also exits non-zero for drift from the reviewed 17-table/47-routine/37-policy
+   counts or incomplete migration-order coverage.
 
 2. **Run behavioral migration/RLS probes in disposable local or approved
    staging.** Rehearse destructive cutovers in a transaction and run the
@@ -321,8 +342,10 @@ npm run validate:migrations
   `react-hooks/exhaustive-deps` — are `error` in `eslint.config.js`, so a
   regression fails the gate instead of accumulating.
 - App composition, party synchronization, Room, MapLeaflet, and EFT import
-  remain responsibility centers. Route future work through the ownership guide
-  and add characterization tests before broad refactors.
+  remain responsibility centers. The local folder import preview and reconcile
+  decision are covered; timer-driven reconnect, member-row, ping-channel, and
+  import history/undo still need characterization coverage. Route future work
+  through the ownership guide before broad refactors.
 
 ## Handoff checklist
 

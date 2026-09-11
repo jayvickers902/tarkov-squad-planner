@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.20'
+export const RELEASE_VERSION = '2026.21'
 
 export const SETUP_STEPS = [
   {
@@ -28,6 +28,33 @@ export const FIRST_LIVE_NOTES_VERSION = '2026.09'
 // Newest first — WelcomeModal shows RELEASES[0] and nothing else, so a new
 // release goes on top of this array and RELEASE_VERSION moves with it.
 export const RELEASES = [
+  {
+    version: '2026.21',
+    date: '2026-09-11',
+    title: 'A PRESTIGE NO LONGER LEAVES 80 QUESTS OPEN',
+    items: [
+      {
+        tag: 'FIXED',
+        title: 'PRESTIGE AND WIPE DETECTION',
+        body: 'A fresh prestige could import with dozens of quests already open - every quest started in the previous life of that character, with nothing left in the logs that could ever close it. Wipes are now recognised from quests being started again, not only from quests going from handed-in back to open, so the reset at the very start of your logs is found instead of missed.',
+      },
+      {
+        tag: 'FIXED',
+        title: 'YOUR LIST IS REPAIRED AUTOMATICALLY',
+        body: 'If an earlier import already left pre-wipe quests open, the next log check clears them out for you. Quests you added by hand are never touched, and neither is anything you have completed.',
+      },
+      {
+        tag: 'FIXED',
+        title: 'A DETECTED WIPE NO LONGER LOSES QUESTS',
+        body: 'When a wipe was detected, the cut-off was placed at the last few quests you had picked back up rather than at the wipe itself, so most of what you had re-accepted was dropped. Working back up the quest tree over several days is now read as one wipe.',
+      },
+      {
+        tag: 'FIXED',
+        title: 'THE DESKTOP APP AGREES WITH THE WEBSITE',
+        body: 'Background desktop sync applied no wipe cut-off at all, so the same logs produced a different quest list depending on whether they were read by the desktop app or the website. Both now apply the same one.',
+      },
+    ],
+  },
   {
     version: '2026.20',
     date: '2026-09-06',

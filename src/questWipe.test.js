@@ -41,4 +41,39 @@ describe('quest wipe detection', () => {
     ]
     expect(detectQuestWipeBoundary(events, ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'])).toBe('2026-08-11T01:00:00.000Z')
   })
+  it('treats a second start of the same task as a wipe candidate', () => {
+    // The completions of a wipe or a prestige sit on the far side of the
+    // boundary and usually outside log retention, so completed -> active can
+    // never fire for the one case the filter exists for. Re-accepting a
+    // non-repeatable quest is the same evidence without that blind spot.
+    const events = ['q1', 'q2', 'q3'].flatMap((id, index) => [
+      task(id, 'active', '2026-08-01T00:00:00Z'),
+      task(id, 'active', `2026-08-20T0${index + 1}:00:00Z`),
+    ])
+    expect(detectQuestWipeBoundary(events, ['q1', 'q2', 'q3'])).toBe('2026-08-20T01:00:00.000Z')
+  })
+
+  it('dates a wipe to its first restart when the player works back up over days', () => {
+    // Each restart is within a day of the previous one, so they are one wipe.
+    // Scoring windows independently dated this to the last corroborated trio
+    // and discarded every quest re-accepted before it.
+    const events = ['q1', 'q2', 'q3', 'q4', 'q5'].flatMap((id, index) => [
+      task(id, 'completed', '2026-08-01T00:00:00Z'),
+      task(id, 'active', `2026-09-0${index + 1}T00:00:00Z`),
+    ])
+    const boundary = detectQuestWipeBoundary(events, ['q1', 'q2', 'q3', 'q4', 'q5'])
+    expect(boundary).toBe('2026-09-01T00:00:00.000Z')
+    const kept = events.filter(event => event.state === 'active' && event.occurredAt >= boundary)
+    expect(kept).toHaveLength(5)
+  })
+
+  it('does not call isolated restarts a wipe', () => {
+    // A real 3-week corpus carries a couple of these -- repeatable skill
+    // quests -- weeks apart. Corroboration is what keeps them out.
+    const events = [
+      task('q1', 'active', '2026-08-01T00:00:00Z'), task('q1', 'active', '2026-08-08T00:00:00Z'),
+      task('q2', 'active', '2026-08-02T00:00:00Z'), task('q2', 'active', '2026-08-30T00:00:00Z'),
+    ]
+    expect(detectQuestWipeBoundary(events, ['q1', 'q2'])).toBeNull()
+  })
 })

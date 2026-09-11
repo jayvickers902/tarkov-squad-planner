@@ -45,14 +45,14 @@ Tear down with
 
 ## What is committed and what is not
 
-`capture-live-catalog.sh` writes four `.sql` files that are a production
-catalog capture. They stay outside the repository, per the schema drift
+`capture-live-catalog.sh` writes six `.sql` files and one
+`06_catalog_manifest.json` production catalog capture. They stay outside the repository, per the schema drift
 procedure in the workflow doc. Committed here are only the pieces written by
 hand:
 
 | File | Purpose |
 |---|---|
-| `capture-live-catalog.sh` | Read-only catalog capture against the linked project |
+| `capture-live-catalog.sh` | Read-only catalog capture and catalog-class manifest against the linked project |
 | `rebuild.sh` | Replays a capture into the local cluster |
 | `run-probes.sh` | Runs all six probes and summarises the verdicts |
 | `check-live-invariants.sh` | Read-only assertion of the 13 security invariants against LIVE |

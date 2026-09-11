@@ -21,6 +21,7 @@ const expectedCatalog = {
   policies: 37,
 }
 const requiredCaptures = ['01_tables.sql', '01b_functions.sql', '04_policies.sql', '05_grants.sql']
+const optionalCaptures = ['02_extensions.sql', '06_triggers.sql']
 const requiredCatalogClasses = [
   'extensions',
   'triggers',
@@ -46,6 +47,7 @@ const args = process.argv.slice(2)
 const captureArg = valueAfter(args, '--capture-dir')
 const candidateArg = valueAfter(args, '--candidate')
 const reportArg = valueAfter(args, '--report')
+const manifestArg = valueAfter(args, '--manifest')
 if ((!captureArg && !candidateArg) || (captureArg && candidateArg)) {
   usage()
   process.exit()
@@ -146,12 +148,32 @@ const routineSignatures = (statements) => unique(statements
     .map(([, name, args]) => `${name}(${args.replace(/\s+/g, ' ').trim()})`)))
 const policyIdentifiers = (statements) => unique(statements
   .filter((statement) => /^create\s+policy\b/i.test(statement))
-  .flatMap((statement) => [...statement.matchAll(/\bcreate\s+policy\s+["`]?([^\s"`]+)["`]?\s+on\s+public\.([a-z0-9_]+)/gi)]
-    .map(([, name, table]) => `${name}@${table}`)))
+  .flatMap((statement) => [...statement.matchAll(/\bcreate\s+policy\s+(?:"([^"]+)"|`([^`]+)`|([^\s]+))\s+on\s+public\.([a-z0-9_]+)/gi)]
+    .map(([, doubleQuoted, backtickQuoted, bare, table]) => `${doubleQuoted ?? backtickQuoted ?? bare}@${table}`)))
 
 const sourceFiles = []
 let sourceText
 let sourceKind = 'candidate'
+let manifestRecord = null
+let manifestPath = ''
+const loadManifest = async (path) => {
+  if (!(await exists(path))) throw new Error(`catalog manifest does not exist: ${path}`)
+  const text = await readFile(path, 'utf8')
+  if (/(?:postgres(?:ql)?:\/\/|sbp_[a-z0-9]+|password\s*[=:])/i.test(text)) {
+    throw new Error(`catalog manifest contains credential-like text: ${path}`)
+  }
+  let parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    throw new Error(`catalog manifest is not valid JSON: ${path}`)
+  }
+  if (parsed?.schema_version !== 1 || !parsed?.counts || !parsed?.classes) {
+    throw new Error(`catalog manifest has unsupported shape: ${path}`)
+  }
+  sourceFiles.push({ path, sha256: sha256(text), bytes: Buffer.byteLength(text) })
+  return parsed
+}
 if (candidateArg) {
   const candidatePath = resolve(candidateArg)
   assertExternal(candidatePath, 'candidate')
@@ -172,7 +194,22 @@ if (candidateArg) {
     sourceFiles.push({ path, sha256: sha256(text), bytes: Buffer.byteLength(text) })
     parts.push(`-- SOURCE: ${name}\n${text}`)
   }
+  for (const name of optionalCaptures) {
+    const path = resolve(captureDir, name)
+    if (!(await exists(path))) continue
+    const text = await readFile(path, 'utf8')
+    if (!text.trim()) throw new Error(`capture is empty: ${path}`)
+    sourceFiles.push({ path, sha256: sha256(text), bytes: Buffer.byteLength(text) })
+    parts.push(`-- SOURCE: ${name}\n${text}`)
+  }
   sourceText = parts.join('\n')
+  manifestPath = resolve(captureDir, '06_catalog_manifest.json')
+  if (await exists(manifestPath)) manifestRecord = await loadManifest(manifestPath)
+}
+if (manifestArg) {
+  manifestPath = resolve(manifestArg)
+  assertExternal(manifestPath, 'catalog manifest')
+  manifestRecord = await loadManifest(manifestPath)
 }
 
 const credentialLike = /(?:postgres(?:ql)?:\/\/|sbp_[a-z0-9]+|(?:service[_-]?role|db)[_-]?password\s*[=:])/i
@@ -200,12 +237,21 @@ const observedClasses = {
   storage_auth_objects: statements.some((statement) => /^create\s+(?:schema|table|function|view)\s+(?:if\s+not\s+exists\s+)?(?:storage|auth)(?:\.|\s|;)/i.test(statement)),
   migration_history: statements.some((statement) => /^(?:create|alter)\s+(?:schema|table)\s+supabase_migrations\b|^insert\s+into\s+supabase_migrations\./i.test(statement)),
 }
+// Manifest classes are live-catalog evidence, not replayable DDL. Keep them
+// separate so adding a read-only inventory cannot make a candidate appear
+// reset-ready.
+const catalogEvidence = manifestRecord
+  ? Object.fromEntries(requiredCatalogClasses.map((className) => {
+    const value = manifestRecord.classes[className]
+    return [className, Boolean(value && (value.available ?? value.present))]
+  }))
+  : null
 for (const className of requiredCatalogClasses) {
   if (!observedClasses[className]) blockers.push({ id: `missing-catalog-class:${className}`, message: `capture does not include ${className}` })
 }
 
 for (const [kind, expected] of Object.entries(expectedCatalog)) {
-  const actual = inventory[kind].length
+  const actual = Number.isInteger(manifestRecord?.counts?.[kind]) ? manifestRecord.counts[kind] : inventory[kind].length
   if (actual !== expected) {
     blockers.push({ id: `catalog-count:${kind}`, message: `${kind}: expected ${expected}, observed ${actual}` })
   }
@@ -239,7 +285,7 @@ if (missingSnapshotTables.length) blockers.push({ id: 'snapshot-tables-missing',
 const report = {
   schemaVersion: 1,
   status: blockers.length ? 'BLOCKED' : 'REVIEW_REQUIRED',
-  source: { kind: sourceKind, files: sourceFiles },
+  source: { kind: sourceKind, files: sourceFiles, manifest: manifestPath || null },
   repository: {
     historicalSqlFiles: rootSqlFiles.length,
     migrationOrderEntries: migrationOrder.length,
@@ -247,9 +293,15 @@ const report = {
   },
   expectedCatalog,
   observed: {
-    counts: { tables: inventory.tables.length, routines: inventory.routines.length, policies: inventory.policies.length, grants: inventory.grants },
+    counts: {
+      tables: Number.isInteger(manifestRecord?.counts?.tables) ? manifestRecord.counts.tables : inventory.tables.length,
+      routines: Number.isInteger(manifestRecord?.counts?.routines) ? manifestRecord.counts.routines : inventory.routines.length,
+      policies: Number.isInteger(manifestRecord?.counts?.policies) ? manifestRecord.counts.policies : inventory.policies.length,
+      grants: inventory.grants,
+    },
     names: inventory,
     catalogClasses: observedClasses,
+    catalogEvidence,
   },
   blockers,
   warnings,

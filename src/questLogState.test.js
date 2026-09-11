@@ -6,6 +6,7 @@ import {
   assessQuestLogRegression,
   shouldApplyQuestLogEvent,
   sortQuestLogEvents,
+  stalePreWipeQuestIds,
 } from './questLogState'
 
 const event = (taskId, state, occurredAt, eventKey = `${taskId}-${state}-${occurredAt}`) => ({ taskId, state, occurredAt, eventKey })
@@ -82,5 +83,28 @@ describe('quest log state reduction', () => {
       existing,
     )
     expect(result).toMatchObject({ activeToCompleted: 4, changedRows: 4, totalRows: 10, requiresConfirmation: true })
+  })
+})
+
+describe('pre-wipe row pruning', () => {
+  const row = (quest_id, overrides = {}) => ({
+    quest_id, state: 'active', state_source: 'log_import', state_at: '2026-08-01T00:00:00Z', ...overrides,
+  })
+  const boundary = '2026-09-01T00:00:00Z'
+
+  it('strands only log-imported active rows from before the boundary', () => {
+    expect(stalePreWipeQuestIds([
+      row('pre'),
+      row('post', { state_at: '2026-09-05T00:00:00Z' }),
+      row('manual', { state_source: 'manual' }),
+      row('completed', { state: 'completed' }),
+      row('unstamped', { state_at: null }),
+    ], boundary)).toEqual(['pre'])
+  })
+
+  it('removes nothing without a boundary', () => {
+    // Detection reporting nothing must never be read as "everything is stale".
+    expect(stalePreWipeQuestIds([row('pre')], null)).toEqual([])
+    expect(stalePreWipeQuestIds([row('pre')], 'not a date')).toEqual([])
   })
 })

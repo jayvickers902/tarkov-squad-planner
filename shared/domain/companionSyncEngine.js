@@ -11,6 +11,7 @@ import {
   isSeasonalEvent,
   parseEftLogAppend,
   parseEftLogFiles,
+  wipeBoundaryFilter,
 } from './eftLogs.js'
 import {
   classifyEftLogFileChange,
@@ -41,11 +42,17 @@ export const SCREENSHOT_FRESHNESS_MS = 2 * 60 * 1000
 export const MAX_SCREENSHOT_CATCHUP_MS = SCREENSHOT_FRESHNESS_MS
 export const SCREENSHOT_PINGS_PER_MINUTE = 20
 export const PING_RATE_LIMIT_PER_MINUTE = SCREENSHOT_PINGS_PER_MINUTE
-// 0.3.0 changes how identity is derived: squadmate account ids are no longer
+// 0.3.0 changed how identity is derived: squadmate account ids are no longer
 // collected as characters, and one `Logs` directory resolves to one account.
 // Every stored profile key predates that and names nothing this scanner can
 // produce, so the bump is what forces the full rescan that replaces them.
-export const QUEST_LOG_SCANNER_VERSION = '0.3.0'
+//
+// 0.4.0 applies a wipe boundary, which this scanner previously did not at all.
+// An incremental scan only ever sees the bytes appended since the last check,
+// far too small a window to detect a wipe, so without the bump a reader whose
+// list was built before the boundary existed would keep their pre-wipe quests
+// open forever: nothing in the tail can close them.
+export const QUEST_LOG_SCANNER_VERSION = '0.4.0'
 
 const VALID_MODES = new Set(['regular', 'pve', 'pvp-season'])
 const MAX_SAFE_ID = 128
@@ -462,8 +469,15 @@ function selectedEvents(preview, { mode, checkpoint, taskIds, taskMetadata = nul
   if (profileCandidates(preview).length > 1
     && !profileKey) return []
   const source = Array.isArray(preview?.matchedEvents) ? preview.matchedEvents : (preview?.events || [])
+  // Pre-wipe history is dropped here for the same reason the browser importer
+  // drops it: a quest started before a wipe or a prestige is not open now, and
+  // with no terminal event on the near side of the boundary nothing would ever
+  // close it again. Without this the recommended import route turned a fresh
+  // prestige's whole previous life into permanently open quests.
+  const afterWipe = wipeBoundaryFilter(preview, profileKey, checkpoint?.includePreWipeHistory === true)
   return source.filter(event => {
     if (known && !known.has(String(event?.taskId || ''))) return false
+    if (!afterWipe(event)) return false
     // Permanent and PvE sync must never adopt an event positively placed on a
     // seasonal notifier. Seasonal sync is a supported destination here, so it
     // intentionally keeps the same event.

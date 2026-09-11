@@ -1569,6 +1569,42 @@ export function resolveWipeBoundary(boundaries, profiles = [], selectedProfileKe
   return map[list[0]?.profileKey] || null
 }
 
+/**
+ * The wipe boundary that applies to a whole preview for the profile being
+ * imported.
+ *
+ * Both import paths have to answer this identically. The companion answered it
+ * nowhere at all, so the route the import hub actually recommends imported
+ * pre-wipe history in full while the browser importer filtered it -- the same
+ * logs produced two different quest lists depending on how they were read.
+ */
+export function previewWipeBoundary(preview, profileKey) {
+  const boundaries = preview?.wipeBoundaryByProfile
+  if (boundaries && Object.keys(boundaries).length) {
+    return resolveWipeBoundary(boundaries, preview?.discoveredProfiles, profileKey)
+  }
+  return preview?.wipeBoundaryAt || null
+}
+
+/**
+ * Predicate dropping events from before the boundary.
+ *
+ * A preview with no detected boundary keeps everything. That is the only safe
+ * default -- the detector reports nothing rather than guessing a date -- but it
+ * is also why detection failing silently costs the reader their whole quest
+ * list, so the two callers must not each re-derive it.
+ */
+export function wipeBoundaryFilter(preview, profileKey, includePreWipeHistory = false) {
+  const boundary = includePreWipeHistory === true
+    ? Number.NaN
+    : Date.parse(previewWipeBoundary(preview, profileKey) || '')
+  if (!Number.isFinite(boundary)) return () => true
+  return event => {
+    const occurredAt = Date.parse(event?.occurredAt || '')
+    return Number.isFinite(occurredAt) && occurredAt >= boundary
+  }
+}
+
 function collectProfileIdsFromText(text, session) {
   String(text || '').split(/\r?\n/).forEach(line => addProfileGroup(session, collectTextProfileIds(line)))
 }

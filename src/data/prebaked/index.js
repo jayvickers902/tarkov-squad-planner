@@ -42,7 +42,7 @@ const LOOT_LOADERS = {
 
 const cache = new Map()
 
-// Resolves to { data, generatedAt, counts } or null. Never rejects.
+// Resolves to { data, gameMode, generatedAt, counts } or null. Never rejects.
 export function loadPrebaked(name) {
   if (!cache.has(name)) {
     const loader = LOADERS[name]
@@ -51,7 +51,12 @@ export function loadPrebaked(name) {
       : loader().then(module => {
           const payload = module?.default ?? module
           if (!payload?.data) return null
-          return { data: payload.data, generatedAt: payload.generatedAt, counts: payload.counts }
+          return {
+            data: payload.data,
+            gameMode: payload.gameMode,
+            generatedAt: payload.generatedAt,
+            counts: payload.counts,
+          }
         }).catch(error => {
           console.warn(`prebaked ${name} unavailable`, error)
           return null

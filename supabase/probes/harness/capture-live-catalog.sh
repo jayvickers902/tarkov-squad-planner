@@ -9,10 +9,10 @@
 # exist nowhere else. It issues no write, no `set role`, no begin-wrapped
 # fixture, and it persists no credential.
 #
-# The four .sql files it writes are a production catalog capture. Keep them
-# OUTSIDE the repository -- that is why the output directory defaults to a temp
-# path, and why only this script plus the hand-written bootstrap and seed are
-# committed.
+# The six .sql files plus one JSON catalog manifest it writes are a production
+# catalog capture. Keep them OUTSIDE the repository -- that is why the output
+# directory defaults to a temp path, and why only this script plus the
+# hand-written bootstrap and seed are committed.
 #
 #   ./capture-live-catalog.sh [output-directory]
 #
@@ -31,19 +31,51 @@ trap 'rm -rf "$SQLDIR"' EXIT
 
 emit() {
   # emit <name> <sql-file>: run the query, pull the single text column out of
-  # the JSON envelope, write <name>.sql. Keep the transient envelope in the
-  # private temp directory so the capture output contains only reviewable SQL.
-  local envelope="$SQLDIR/$1.json"
-  supabase db query "$(cat "$2")" --linked 2>/dev/null > "$envelope"
+  # the JSON envelope, write the requested output file. Keep the transient
+  # envelope in the private temp directory so the capture output contains only
+  # reviewable artifacts.
+  local name="$1" query="$2" output="${3:-$1.sql}" envelope="$SQLDIR/$1.json"
+  supabase db query "$(cat "$query")" --linked 2>/dev/null > "$envelope"
   python -c "
 import json
 t = open(r'$SQLDIRW/$1.json', encoding='utf-8').read()
 d = json.loads(t[t.index('{'):])
 s = (d['rows'][0]['d'] or '').replace(chr(13), '')
-open(r'$OUTW/$1.sql', 'w', encoding='utf-8', newline='\n').write(s)
-print('  $1.sql', len(s), 'bytes')
+open(r'$OUTW/$output', 'w', encoding='utf-8', newline='\n').write(s)
+print('  $output', len(s), 'bytes')
 "
 }
+
+# --- extensions: installed extension DDL -------------------------------------
+cat > "$SQLDIR/extensions.sql" <<'PGEOF'
+select string_agg(
+  'create extension if not exists '||quote_ident(e.extname)||
+  ' with schema '||quote_ident(n.nspname)||
+  ' version '||quote_literal(e.extversion)||';', E'\n'
+  order by e.extname) as d
+from pg_extension e
+join pg_namespace n on n.oid=e.extnamespace;
+PGEOF
+
+# --- triggers: non-internal public trigger DDL ------------------------------
+# pg_get_triggerdef preserves the catalog's event timing, columns/condition,
+# target table, and trigger function. Qualify the trigger function explicitly;
+# pg_get_triggerdef may omit that schema when public is on search_path. Internal
+# triggers are owned by PostgreSQL or an extension and must not be replayed as
+# application objects.
+cat > "$SQLDIR/triggers.sql" <<'PGEOF'
+select string_agg(
+  replace(pg_get_triggerdef(t.oid, false),
+    'EXECUTE FUNCTION '||quote_ident(p.proname)||'(',
+    'EXECUTE FUNCTION '||quote_ident(pn.nspname)||'.'||quote_ident(p.proname)||'(')||';', E'\n'
+  order by n.nspname, c.relname, t.tgname) as d
+from pg_trigger t
+join pg_class c on c.oid=t.tgrelid
+join pg_namespace n on n.oid=c.relnamespace
+join pg_proc p on p.oid=t.tgfoid
+join pg_namespace pn on pn.oid=p.pronamespace
+where n.nspname='public' and not t.tgisinternal;
+PGEOF
 
 # --- tables: DDL, constraints, RLS enable/force -----------------------------
 # attidentity is essential. pg_attrdef carries no default for an identity
@@ -158,14 +190,45 @@ with tg as (
 select coalesce((select d from tg),'')||E'\n'||coalesce((select d from cg),'') as d;
 PGEOF
 
+# --- catalog manifest: classes omitted by the replayable SQL capture --------
+# This is inventory, not invented DDL. It records whether the linked catalog
+# exposes extensions, triggers, publications, ownership/default privileges, the
+# cron relation, and the CLI migration ledger. Missing optional relations are
+# represented as unavailable rather than queried dynamically.
+cat > "$SQLDIR/manifest.sql" <<'PGEOF'
+select jsonb_build_object(
+  'schema_version', 1,
+  'counts', jsonb_build_object(
+    'tables', (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r'),
+    'routines', (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind in ('f','p')),
+    'policies', (select count(*) from pg_policies where schemaname='public')
+  ),
+  'classes', jsonb_build_object(
+    'extensions', jsonb_build_object('available', true, 'count', (select count(*) from pg_extension), 'names', coalesce((select jsonb_agg(extname order by extname) from pg_extension), '[]'::jsonb)),
+    'triggers', jsonb_build_object('available', true, 'count', (select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal), 'names', coalesce((select jsonb_agg(t.tgname order by t.tgname) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal), '[]'::jsonb)),
+    'publications', jsonb_build_object('available', true, 'count', (select count(*) from pg_publication), 'names', coalesce((select jsonb_agg(pubname order by pubname) from pg_publication), '[]'::jsonb), 'public_table_memberships', (select count(*) from pg_publication_rel pr join pg_class c on c.oid=pr.prrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public')),
+    'ownership', jsonb_build_object('available', true, 'public_table_count', (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relowner is not null), 'public_table_owners', coalesce((select jsonb_agg(jsonb_build_object('schema', n.nspname, 'name', c.relname, 'owner', r.rolname) order by c.relname) from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_roles r on r.oid=c.relowner where n.nspname='public' and c.relkind='r'), '[]'::jsonb)),
+    'default_privileges', jsonb_build_object('available', true, 'count', (select count(*) from pg_default_acl), 'entries', coalesce((select jsonb_agg(jsonb_build_object('schema', n.nspname, 'owner', r.rolname, 'object_type', d.defaclobjtype, 'acl', d.defaclacl) order by n.nspname, r.rolname, d.defaclobjtype) from pg_default_acl d join pg_namespace n on n.oid=d.defaclnamespace join pg_roles r on r.oid=d.defaclrole), '[]'::jsonb)),
+    'scheduled_jobs', jsonb_build_object('available', to_regclass('cron.job') is not null, 'relation', to_regclass('cron.job')::text),
+    'migration_history', jsonb_build_object('available', to_regclass('supabase_migrations.schema_migrations') is not null, 'relation', to_regclass('supabase_migrations.schema_migrations')::text),
+    'storage_auth_objects', jsonb_build_object('available', to_regclass('storage.objects') is not null or to_regclass('auth.users') is not null, 'storage_objects', to_regclass('storage.objects')::text, 'auth_users', to_regclass('auth.users')::text)
+  )
+)::text as d;
+PGEOF
+
 echo "Capturing the live public catalog (read-only)..."
+emit 02_extensions "$SQLDIR/extensions.sql"
 emit 01_tables    "$SQLDIR/tables.sql"
 emit 01b_functions "$SQLDIR/functions.sql"
+emit 06_triggers "$SQLDIR/triggers.sql"
 emit 04_policies  "$SQLDIR/policies.sql"
 emit 05_grants    "$SQLDIR/grants.sql"
+emit 06_catalog_manifest "$SQLDIR/manifest.sql" 06_catalog_manifest.json
 
 echo
 echo "Captured to $OUT."
 echo "Against the 2026-09-03 catalog this reproduces:"
 echo "  17 tables, 81 constraints, 37 policies, 47 routines."
+echo "  The JSON manifest also records extensions, triggers, publications, ownership/default privileges,"
+echo "  scheduled-job/migration-ledger availability, and storage/auth object availability."
 echo "Keep that directory outside the repository."

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { gameModeLabel } from '../gameMode'
 import { assessQuestLogRegression, IMPORT_REGRESSION_SHARE, IMPORT_REGRESSION_TASKS } from '../questLogState'
 import { buildQuestLogDiagnostic } from '../questDiagnostic'
-import { isSeasonalEvent } from '../eftLogs'
+import { isSeasonalEvent, wipeBoundaryFilter } from '../eftLogs'
 
 const STATE_LABELS = {
   active: 'STARTED',
@@ -158,15 +158,16 @@ export default function EftLogImport({ allTasks, gameMode, onApply, onGetQuestHi
     if (!preview) return []
     const versions = new Set(preview.includedVersions || [])
     const profileRequired = (preview.discoveredProfiles || []).length > 1
+    // The same filter the importer applies, rather than a second reading of it:
+    // this one keyed off preview.wipeBoundaryAt while the import keyed off the
+    // per-profile map, so with more than one character the count shown here and
+    // the events actually sent could disagree.
+    const afterWipe = wipeBoundaryFilter(preview, preview.selectedProfileKey, preview.includePreWipeHistory === true)
     return (preview.events || []).filter(event => {
       if (!knownTaskIds.has(event?.taskId)) return false
       if (versions.size && !versions.has(String(event?.version || ''))) return false
       if (profileRequired && event?.profileKey !== preview.selectedProfileKey && !(event?.legacyProfileKeys || []).includes(preview.selectedProfileKey)) return false
-      if (!preview.includePreWipeHistory && preview.wipeBoundaryAt) {
-        const eventTime = Date.parse(event?.occurredAt || '')
-        const boundary = Date.parse(preview.wipeBoundaryAt)
-        if (!Number.isFinite(eventTime) || eventTime < boundary) return false
-      }
+      if (!afterWipe(event)) return false
       return true
     })
   }, [knownTaskIds, preview])
@@ -247,8 +248,12 @@ export default function EftLogImport({ allTasks, gameMode, onApply, onGetQuestHi
         if (affectedSet.has(taskId) && Object.hasOwn(summary, event?.state ?? '')) summary[event.state] += 1
         return summary
       }, { active: 0, failed: 0, completed: 0 })
+      const pruned = Number(result?.pruned)
       setApplyMessage(`APPLIED ${applied} QUEST STATE${applied === 1 ? '' : 'S'}.`
-        + (Number.isFinite(ignored) && ignored > 0 ? ` ${ignored} ALREADY UP TO DATE.` : ''))
+        + (Number.isFinite(ignored) && ignored > 0 ? ` ${ignored} ALREADY UP TO DATE.` : '')
+        + (Number.isFinite(pruned) && pruned > 0
+          ? ` ${pruned} PRE-WIPE QUEST${pruned === 1 ? '' : 'S'} CLOSED.`
+          : ''))
       setApplySucceeded(true)
       onImportComplete?.({
         source: shouldRemember ? 'browser-sync' : 'logs',

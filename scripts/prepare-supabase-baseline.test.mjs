@@ -13,7 +13,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const script = resolve(root, 'scripts/prepare-supabase-baseline.mjs')
 const captureFiles = {
   '01_tables.sql': `create table public.alpha (id integer);\nalter table public.alpha add constraint alpha_id_check check (id > 0);\nalter table public.alpha enable row level security;\n`,
-  '01b_functions.sql': `create or replace function public.alpha_reader() returns integer language sql as $$ select count(*) from public.alpha; $$;\ngrant execute on function public.alpha_reader() to authenticated;\n`,
+  '01b_functions.sql': `create or replace function public.alpha_reader() returns trigger language plpgsql as $$ begin return new; end; $$;\ngrant execute on function public.alpha_reader() to authenticated;\n`,
+  '02_extensions.sql': 'create extension if not exists "quoted-ext" with schema public version \'1.0\';\n',
+  '06_triggers.sql': 'create trigger "quoted trigger" before insert on public.alpha for each row execute function public.alpha_reader();\n',
   '04_policies.sql': 'create policy alpha_read on public.alpha for select to authenticated using (true);\n',
   '05_grants.sql': '-- drop table public.not_real;\ngrant select on table public.alpha to authenticated;\ngrant truncate on table public.alpha to service_role;\n',
 }
@@ -48,8 +50,11 @@ describe('prepare-supabase-baseline', () => {
     const result = await invoke('--capture-dir', capture, '--output-dir', output, '--version', '20260907153000')
     expect(result.code).toBe(0)
     const sql = await readFile(join(output, '20260907153000_catalog_baseline.sql'), 'utf8')
+    expect(sql.indexOf('create extension if not exists "quoted-ext"')).toBeLessThan(sql.indexOf('create table public.alpha'))
     expect(sql.indexOf('create table public.alpha')).toBeLessThan(sql.indexOf('create or replace function'))
     expect(sql.indexOf('create or replace function')).toBeLessThan(sql.indexOf('alter table public.alpha add constraint'))
+    expect(sql.indexOf('alter table public.alpha add constraint')).toBeLessThan(sql.indexOf('create trigger "quoted trigger"'))
+    expect(sql.indexOf('create trigger "quoted trigger"')).toBeLessThan(sql.indexOf('create policy'))
     expect(sql.indexOf('alter table public.alpha enable row level security')).toBeLessThan(sql.indexOf('create policy'))
     expect(sql.indexOf('create policy')).toBeLessThan(sql.indexOf('grant execute'))
     expect(sql.indexOf('grant execute')).toBeLessThan(sql.indexOf('grant select'))

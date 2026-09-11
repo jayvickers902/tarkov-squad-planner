@@ -12,7 +12,13 @@ const MAX_CHECKPOINT_FILENAME_LENGTH = 512
 const MAX_CHECKPOINT_OFFSET = 32 * 1024 * 1024
 const MAX_CHECKPOINT_FILE_BYTES = 32 * 1024 * 1024
 const MAX_CHECKPOINT_TIMESTAMP = 8640000000000000
-const CHECKPOINT_VERSION = 2
+// Bumped to 3 so every remembered folder does one more full read. Incremental
+// scans only ever see the bytes appended since the last check, which is far too
+// small a window to detect a wipe, so a reader whose quest list was built
+// before restart-based detection existed would otherwise keep their pre-wipe
+// quests open forever: nothing in the tail can close them. The full read
+// re-derives the boundary and prunes what it stranded.
+const CHECKPOINT_VERSION = 3
 
 const VALID_MODES = new Set(['regular', 'pve'])
 

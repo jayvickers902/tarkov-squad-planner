@@ -76,6 +76,7 @@ export default function App() {
     saveObjectiveProgress,
     repairQuestRows,
     reconcileLogEvents,
+    pruneStaleQuestRows,
     getQuestHistory,
     refresh: refreshUserQuests,
   } = useUserQuests(user?.id, questGameMode)
@@ -649,6 +650,7 @@ export default function App() {
         myName={myName}
         gameMode={gameMode}
         onApply={reconcileLogEvents}
+        onPrune={pruneStaleQuestRows}
         onRepairRows={repairQuestRows}
         questsLoading={questsLoading || questGameMode !== gameMode}
         onAddPing={party ? addPing : null}

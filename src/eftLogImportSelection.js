@@ -1,4 +1,9 @@
-import { resolveWipeBoundary, isSeasonalEvent } from './eftLogs'
+import { isSeasonalEvent, previewWipeBoundary, wipeBoundaryFilter } from './eftLogs'
+
+// Re-exported so the hook and the import panel keep importing it from the
+// selection module. The implementation moved to shared/domain so the companion
+// can apply the same boundary; see wipeBoundaryFilter there.
+export { previewWipeBoundary }
 
 // Import selection is deliberately kept separate from the hook. It is pure
 // policy: no React state, browser capabilities, workers, or persistence are
@@ -11,14 +16,6 @@ export function safeProfileKey(profile) {
   return profile?.profileKey ?? profile?.key ?? profile?.id ?? null
 }
 
-export function previewWipeBoundary(preview, profileKey) {
-  const boundaries = preview?.wipeBoundaryByProfile
-  if (boundaries && Object.keys(boundaries).length) {
-    return resolveWipeBoundary(boundaries, preview?.discoveredProfiles, profileKey)
-  }
-  return preview?.wipeBoundaryAt || null
-}
-
 export function selectImportEvents(preview, selection, targetMode, knownTaskIds = null, taskMetadata = null) {
   const selectedVersions = new Set(selection.includedVersions)
   const profileRequired = preview.discoveredProfiles.length > 1
@@ -26,16 +23,13 @@ export function selectImportEvents(preview, selection, targetMode, knownTaskIds 
   const sourceEvents = Array.isArray(preview.matchedEvents) ? preview.matchedEvents : preview.events
   const knownIds = knownTaskIds ? new Set(knownTaskIds) : null
   const seasonalSessions = new Set((preview.sessions || []).filter(session => session.hasSeasonalSignal).map(session => session.sessionKey))
-  const boundary = selection.includePreWipeHistory ? null : Date.parse(previewWipeBoundary(preview, selection.profileKey) || '')
+  const afterWipe = wipeBoundaryFilter(preview, selection.profileKey, selection.includePreWipeHistory === true)
   const candidates = sourceEvents.filter(event => {
     if (knownIds && !knownIds.has(event?.taskId)) return false
     if (selectedVersions.size && !selectedVersions.has(String(event?.version || ''))) return false
     if (profileRequired && safeProfileKey(event) !== selection.profileKey && event?.profileKey !== selection.profileKey
       && !(event?.legacyProfileKeys || []).includes(selection.profileKey)) return false
-    if (Number.isFinite(boundary)) {
-      const occurredAt = Date.parse(event?.occurredAt || '')
-      if (!Number.isFinite(occurredAt) || occurredAt < boundary) return false
-    }
+    if (!afterWipe(event)) return false
     return true
   })
   return candidates

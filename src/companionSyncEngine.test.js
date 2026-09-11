@@ -541,3 +541,43 @@ describe('native-agnostic companion sync engine', () => {
     expect(send).toHaveBeenCalledTimes(20)
   })
 })
+describe('companion wipe boundary', () => {
+  const NEWLINE = String.fromCharCode(10)
+  const ids = ['507f1f77bcf86cd7994390a1', '507f1f77bcf86cd7994390a2', '507f1f77bcf86cd7994390a3']
+  const start = (id, dt, eventId) => JSON.stringify({
+    type: 'ChatMessageReceived',
+    eventId,
+    message: { type: 10, eventId, templateId: `${id} quest`, dt },
+  })
+
+  it('drops pre-wipe events the browser importer would have dropped', async () => {
+    // The companion is the route the import hub recommends, and it applied no
+    // boundary at all: the same logs produced a different quest list depending
+    // on how they were read. A fresh prestige's whole previous life arrived as
+    // permanently open quests.
+    const before = ids.map((id, index) => start(id, 1700000000, `before-${index}`)).join(NEWLINE)
+    const after = ids.map((id, index) => start(id, 1700086400, `after-${index}`)).join(NEWLINE)
+    const apply = vi.fn(async (_mode, events) => ({ inserted: events.length }))
+    const controller = createQuestLogSyncController({
+      filesystem: {
+        async listEftLogs() {
+          return [
+            file('Logs/0.16.9/before/notifications.log', before),
+            file('Logs/0.16.9/before/backend.log', '{"sessionMode":"PVP","profileId":"one-character"}'),
+            file('Logs/0.16.9/after/notifications.log', after),
+            file('Logs/0.16.9/after/backend.log', '{"sessionMode":"PVP","profileId":"one-character"}'),
+          ]
+        },
+      },
+      checkpointStore: store(), network: { applyQuestLogEvents: apply },
+      taskIds: ids, gameMode: 'regular',
+    })
+
+    await controller.sync()
+
+    expect(apply).toHaveBeenCalledOnce()
+    const sent = apply.mock.calls[0][1]
+    expect(sent).toHaveLength(ids.length)
+    expect(sent.every(event => event.occurred_at === '2023-11-15T22:13:20.000Z')).toBe(true)
+  })
+})

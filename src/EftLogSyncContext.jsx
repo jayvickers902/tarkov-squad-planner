@@ -15,6 +15,7 @@ export function EftLogSyncProvider({
   myName,
   gameMode,
   onApply,
+  onPrune,
   onRepairRows,
   questsLoading = false,
   onAddPing,
@@ -26,7 +27,7 @@ export function EftLogSyncProvider({
   // This is intentionally scoped to the authenticated provider: signed-out
   // users must not start task loading or touch the filesystem sync hook.
   const { tasks: allTasks } = useTasks(null, gameMode)
-  const controller = useEftLogImport({ allTasks, gameMode, userId, onApply })
+  const controller = useEftLogImport({ allTasks, gameMode, userId, onApply, onPrune })
   const {
     supported: controllerSupported,
     persistentSupported: controllerPersistentSupported,

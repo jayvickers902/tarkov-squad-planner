@@ -204,6 +204,36 @@ export function toQuestLogEventPayload(events = []) {
   })
 }
 
+/**
+ * Active rows that a detected wipe boundary has stranded.
+ *
+ * Reconciliation only ever writes what the logs contain, so an active row whose
+ * last log event predates a wipe has nothing left that can close it: the quest
+ * was reset by the wipe and its completion will never be written, in this
+ * import or any later one. Those rows stay open forever. That is how a fresh
+ * prestige presented its entire previous life as open quests, and why filtering
+ * the events alone does not repair a list that was already imported.
+ *
+ * Only log-sourced active rows qualify. A manually added quest is the reader's
+ * own statement about their character and is never inferred away, and terminal
+ * rows are the monotonic guards that stop an older "started" event resurrecting
+ * a quest that has already been handed in.
+ */
+export function stalePreWipeQuestIds(rows = [], boundaryAt = null) {
+  const boundary = Date.parse(boundaryAt || '')
+  if (!Number.isFinite(boundary)) return []
+  return (Array.isArray(rows) ? rows : [])
+    .filter(row => row?.state === 'active' && row?.state_source === 'log_import')
+    .filter(row => {
+      const stateAt = Date.parse(row?.state_at || '')
+      // A log-imported row with no usable stamp cannot be placed either side of
+      // the boundary, so it is left alone rather than guessed away.
+      return Number.isFinite(stateAt) && stateAt < boundary
+    })
+    .map(row => row.quest_id)
+    .filter(Boolean)
+}
+
 export function activeQuestRows(rows = []) {
   return (Array.isArray(rows) ? rows : []).filter(row => !row?.state || row.state === 'active')
 }

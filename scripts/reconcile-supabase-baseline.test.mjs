@@ -84,6 +84,65 @@ $$;
     expect(report.observed.counts).toMatchObject({ tables: 1, routines: 1 })
   })
 
+  it('recognizes catalog-derived extensions and triggers while remaining blocked on omitted classes', async () => {
+    const { dir } = await makeCapture()
+    const candidate = join(dir, 'candidate.sql')
+    await writeFile(candidate, `create extension if not exists "quoted-ext" with schema public version '1.0';
+create table public.alpha (id integer);
+create or replace function public.alpha_reader() returns trigger language plpgsql as $$ begin return new; end; $$;
+create trigger "quoted trigger" before insert on public.alpha for each row execute function public.alpha_reader();
+`)
+    const result = await invoke('--candidate', candidate)
+    expect(result.code).toBe(1)
+    const report = JSON.parse(result.stdout)
+    expect(report.observed.catalogClasses.extensions).toBe(true)
+    expect(report.observed.catalogClasses.triggers).toBe(true)
+    expect(report.blockers.some(({ id }) => id === 'missing-catalog-class:extensions')).toBe(false)
+    expect(report.blockers.some(({ id }) => id === 'missing-catalog-class:triggers')).toBe(false)
+    expect(report.blockers.some(({ id }) => id === 'missing-catalog-class:publications')).toBe(true)
+  })
+
+  it('loads optional extension and trigger captures without clearing unrelated blockers', async () => {
+    const { capture } = await makeCapture()
+    await writeFile(join(capture, '02_extensions.sql'), 'create extension if not exists "quoted-ext";\n')
+    await writeFile(join(capture, '06_triggers.sql'), 'create trigger "quoted trigger" before insert on public.alpha for each row execute function public.alpha_reader();\n')
+    const result = await invoke('--capture-dir', capture)
+    expect(result.code).toBe(1)
+    const report = JSON.parse(result.stdout)
+    expect(report.observed.catalogClasses.extensions).toBe(true)
+    expect(report.observed.catalogClasses.triggers).toBe(true)
+    expect(report.blockers.some(({ id }) => id === 'missing-catalog-class:extensions')).toBe(false)
+    expect(report.blockers.some(({ id }) => id === 'missing-catalog-class:triggers')).toBe(false)
+    expect(report.blockers.some(({ id }) => id === 'missing-catalog-class:publications')).toBe(true)
+  })
+
+  it('uses the external catalog manifest for classes and reviewed counts', async () => {
+    const { capture } = await makeCapture()
+    await writeFile(join(capture, '06_catalog_manifest.json'), JSON.stringify({
+      schema_version: 1,
+      counts: { tables: 17, routines: 47, policies: 37 },
+      classes: {
+        extensions: { available: true },
+        triggers: { available: true },
+        publications: { available: true },
+        scheduled_jobs: { available: true },
+        ownership: { available: true },
+        default_privileges: { available: true },
+        storage_auth_objects: { available: true },
+        migration_history: { available: true },
+      },
+    }))
+    const result = await invoke('--capture-dir', capture)
+    expect(result.code).toBe(1)
+    const report = JSON.parse(result.stdout)
+    expect(report.status).toBe('BLOCKED')
+    expect(report.observed.counts).toMatchObject({ tables: 17, routines: 47, policies: 37 })
+    expect(report.observed.catalogClasses.extensions).toBe(false)
+    expect(report.observed.catalogEvidence.extensions).toBe(true)
+    expect(report.blockers.some(({ id }) => id === 'missing-catalog-class:extensions')).toBe(true)
+    expect(report.blockers.some(({ id }) => id.startsWith('catalog-count:'))).toBe(false)
+  })
+
   it('refuses repository-local candidates and report overwrites', async () => {
     const { capture, dir } = await makeCapture()
     const candidate = join(dir, 'candidate.sql')

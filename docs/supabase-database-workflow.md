@@ -42,20 +42,21 @@ contacting a database:
 node scripts/prepare-supabase-baseline.mjs `
   --capture-dir C:\path\outside\repo\linked-capture `
   --output-dir C:\path\outside\repo\baseline-candidate `
-  --version 20260907153000
+  --version 20260907153000 `
+  --manifest C:\path\outside\repo\linked-capture\06_catalog_manifest.json
 ```
 
-The command requires the four SQL files emitted by
-`capture-live-catalog.sh`, refuses repository-local input/output, rejects
+The command requires the four core SQL files emitted by
+`capture-live-catalog.sh` and can attach its catalog manifest, refuses repository-local input/output, rejects
 credential-like or destructive SQL, refuses to overwrite existing artifacts,
 and writes a timestamped SQL candidate plus a `.review.md` record. The
-candidate deliberately carries a non-deployable header: the capture helper
-does not include every baseline class, so extensions, triggers, publications,
-jobs, ownership/default privileges, and other Supabase-managed objects still
-need reconciliation and local reset rehearsal. Within the captured classes it
-orders base tables before routines, then constraints/RLS, policies, and ACLs;
-this avoids both table-reference and CHECK-helper ordering failures without
-inventing any DDL.
+candidate optionally includes the catalog-derived extension and non-internal
+public-trigger captures when those files are present. It still deliberately
+carries a non-deployable header: publications, jobs, ownership/default
+privileges, and other Supabase-managed objects need reconciliation and local
+reset rehearsal. Within the captured classes it orders extensions, base tables,
+routines, constraints/RLS, triggers, policies, and ACLs; this avoids both
+table-reference and CHECK-helper ordering failures without inventing any DDL.
 
 Before considering a candidate for local rehearsal, compare it with the
 repository inventory and the reviewed remote counts using the credential-free
@@ -64,6 +65,7 @@ reconciliation report:
 ```powershell
 node scripts/reconcile-supabase-baseline.mjs `
   --candidate C:\path\outside\repo\baseline-candidate\20260907153000_catalog_baseline.sql `
+  --manifest C:\path\outside\repo\linked-capture\06_catalog_manifest.json `
   --report C:\path\outside\repo\baseline-candidate\reconciliation.json
 ```
 
@@ -174,9 +176,15 @@ supabase db dump --linked --schema public --file .\artifacts\linked-public-schem
 
 When a complete `db dump` is unavailable, the committed
 `supabase/probes/harness/capture-live-catalog.sh` helper remains the sanctioned
-read-only fallback for the behavioral harness. It writes only the four
-reviewable SQL captures to its output directory; transient CLI JSON envelopes
-stay in a private temporary directory and are removed when the command exits.
+read-only fallback for the behavioral harness. It writes six reviewable SQL
+captures plus `06_catalog_manifest.json`, which records extensions, triggers,
+publications, ownership/default privileges, scheduled-job and migration-ledger
+availability, and storage/auth object availability. Transient CLI JSON
+envelopes stay in a private temporary directory and are removed when the
+command exits. Extension and non-internal public-trigger SQL is replayable
+catalog output; the manifest remains catalog evidence, not replayable DDL.
+Reconciliation remains blocked until every remaining required class is
+represented in the reviewed baseline or explicitly handled by the reset plan.
 Keep the output directory outside the repository because those SQL files still
 describe the live catalog.
 

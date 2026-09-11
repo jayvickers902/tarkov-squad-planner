@@ -16,6 +16,14 @@ import { CHECKPOINT_VERSION, createEftLogHandleStore, isIndexedDbSupported } fro
 import { createQuestLogImportJob, loadPendingJob, QUEST_LOG_IMPORT_CHUNK_SIZE } from './questLogImportJob'
 import { taskMetadataFor } from './questLogState'
 import { previewWipeBoundary, safeProfileKey, selectImportEvents, VALID_MODES } from './eftLogImportSelection'
+import { normalisePreview } from './eftLogPreview'
+import {
+  checkpointFrom,
+  currentProfileKeyForCheckpoint,
+  isContextLogPath,
+  isNotificationLogPath,
+  notifierSeasonalMap,
+} from './eftLogCheckpoint'
 
 // Resumability is a convenience, not a precondition. A browser in private mode
 // or with site data blocked rejects every IndexedDB write, and letting that
@@ -42,7 +50,6 @@ function createResilientJobStore(store, memory) {
   }
 }
 
-const MAX_PREVIEW_DETAIL_ROWS = 100
 const STALE_REQUEST = 'A newer EFT log scan replaced this one.'
 
 function environmentValue(environment, name) {
@@ -73,101 +80,6 @@ function taskIdsFor(allTasks) {
   return Array.from(allTasks || [])
     .map(task => typeof task === 'string' ? task : task?.id)
     .filter(Boolean)
-}
-
-function versionParts(version) {
-  return String(version || '').split(/[._-]/).map(part => Number.parseInt(part, 10)).map(value => Number.isFinite(value) ? value : -1)
-}
-
-function newestVersion(versions) {
-  return [...versions].sort((left, right) => {
-    const a = versionParts(left)
-    const b = versionParts(right)
-    for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
-      const difference = (b[index] ?? -1) - (a[index] ?? -1)
-      if (difference) return difference
-    }
-    return String(right).localeCompare(String(left))
-  })[0]
-}
-
-function currentProfileKeyForCheckpoint(preview, storedKey) {
-  if (!storedKey) return null
-  const profile = (preview?.discoveredProfiles || []).find(candidate => (
-    safeProfileKey(candidate) === storedKey || (candidate?.legacyProfileKeys || []).includes(storedKey)
-  ))
-  return safeProfileKey(profile) || storedKey
-}
-
-function normaliseMalformedRecords(value) {
-  if (!Array.isArray(value)) return []
-  return value.slice(0, MAX_PREVIEW_DETAIL_ROWS).flatMap(record => {
-    if (!record || typeof record !== 'object') return []
-    const file = String(record.file || '').trim()
-    const reason = String(record.reason || '').trim()
-    if (!file || !reason) return []
-    const line = Number.isInteger(record.line) && record.line > 0 ? record.line : null
-    return [{ file, line, reason }]
-  })
-}
-
-function normaliseUnmatchedTaskDetails(value, taskIds) {
-  const details = Array.isArray(value) ? value : []
-  const byId = new Map(details.map(detail => [detail?.taskId, detail]))
-  return taskIds.map(taskId => {
-    const detail = byId.get(taskId)
-    return {
-      taskId,
-      occurrences: Number.isInteger(detail?.occurrences) && detail.occurrences > 0 ? detail.occurrences : null,
-      states: Array.isArray(detail?.states) ? detail.states.map(String).filter(Boolean) : [],
-      versions: Array.isArray(detail?.versions) ? detail.versions.map(String).filter(Boolean) : [],
-      lastSeen: typeof detail?.lastSeen === 'string' ? detail.lastSeen : null,
-    }
-  })
-}
-
-function normalisePreview(preview, sourceMetadata = [], knownTaskIds = []) {
-  const value = preview && typeof preview === 'object' ? preview : {}
-  const availableVersions = [...new Set((value.availableVersions || []).map(String).filter(Boolean))]
-  const includedVersions = (value.includedVersions || []).map(String).filter(version => availableVersions.includes(version))
-  const profiles = Array.isArray(value.discoveredProfiles) ? value.discoveredProfiles : []
-  const selectedVersions = includedVersions.length
-    ? includedVersions
-    : (availableVersions.length ? [newestVersion(availableVersions)] : [])
-  const allEvents = Array.isArray(value.events) ? value.events : []
-  const knownIds = new Set(knownTaskIds)
-  const matchedEvents = Array.isArray(value.matchedEvents)
-    ? value.matchedEvents
-    : allEvents.filter(event => knownIds.has(event?.taskId))
-  const unmatchedTaskIds = Array.isArray(value.unmatchedTaskIds)
-    ? value.unmatchedTaskIds.map(String).filter(Boolean)
-    : []
-  return {
-    filesScanned: Number.isFinite(value.filesScanned) ? value.filesScanned : sourceMetadata.length,
-    filesParsed: Number.isFinite(value.filesParsed) ? value.filesParsed : 0,
-    eventsSeen: Number.isFinite(value.eventsSeen) ? value.eventsSeen : 0,
-    parseErrors: Number.isFinite(value.parseErrors) ? value.parseErrors : 0,
-    availableVersions,
-    includedVersions: selectedVersions,
-    discoveredProfiles: profiles,
-    events: allEvents,
-    matchedEvents,
-    unmatchedTaskIds,
-    unmatchedTaskDetails: normaliseUnmatchedTaskDetails(value.unmatchedTaskDetails, unmatchedTaskIds),
-    malformedRecords: normaliseMalformedRecords(value.malformedRecords),
-    ambiguousModeEvents: Number.isFinite(value.ambiguousModeEvents) ? value.ambiguousModeEvents : 0,
-    notifierSeasonalByFile: value.notifierSeasonalByFile && typeof value.notifierSeasonalByFile === 'object'
-      ? value.notifierSeasonalByFile
-      : {},
-    selectedProfileKey: value.selectedProfileKey || null,
-    unknownModeTargets: value.unknownModeTargets && typeof value.unknownModeTargets === 'object' ? { ...value.unknownModeTargets } : {},
-    includePreWipeHistory: value.includePreWipeHistory === true,
-    wipeBoundaryAt: typeof value.wipeBoundaryAt === 'string' ? value.wipeBoundaryAt : null,
-    wipeBoundaryByProfile: value.wipeBoundaryByProfile && typeof value.wipeBoundaryByProfile === 'object' ? { ...value.wipeBoundaryByProfile } : {},
-    sessions: Array.isArray(value.sessions) ? value.sessions : [],
-    modeConfidenceDistribution: value.modeConfidenceDistribution && typeof value.modeConfidenceDistribution === 'object' ? { ...value.modeConfidenceDistribution } : {},
-    sourceMetadata,
-  }
 }
 
 function permissionError() {
@@ -219,65 +131,6 @@ function observerError(value) {
   return null
 }
 
-function eftLogTypeName(path) {
-  const filename = String(path || '').replace(/\\/g, '/').split('/').pop() || ''
-  const space = filename.lastIndexOf(' ')
-  return space === -1 ? filename : filename.slice(space + 1)
-}
-
-function isNotificationLogPath(path) {
-  return /^(?:notifications|push-notifications)(?:[_-]\d+)?\.log$/i.test(eftLogTypeName(path))
-}
-
-function isContextLogPath(path) {
-  return /^(?:backend|application)(?:[_-]\d+)?\.log$/i.test(eftLogTypeName(path))
-}
-
-/**
- * The per-file notifier verdicts a full parse produced, keyed the way the
- * checkpoint's file list is. A full scan consumes each notification log up to
- * its current size, so the notifier line that named the active character is
- * usually already behind the next append's read offset; without seeding from
- * here, the first append after every full scan starts blind.
- */
-function notifierSeasonalMap(preview) {
-  const source = preview?.notifierSeasonalByFile
-  if (!source || typeof source !== 'object') return null
-  return new Map(Object.entries(source).filter(([, seasonal]) => typeof seasonal === 'boolean'))
-}
-
-function checkpointFrom(sourceMetadata, preview, selection, autoSync, gameMode, parsedOffsets = null, notifierSeasonal = null) {
-  return {
-    version: CHECKPOINT_VERSION,
-    files: sourceMetadata.map(file => ({
-      relativeFilename: file.relativeFilename,
-      size: file.size || 0,
-      lastModified: file.lastModified || 0,
-      ...(isNotificationLogPath(file.relativeFilename)
-        ? {
-          parsedOffset: parsedOffsets?.get(file.relativeFilename) ?? (file.size || 0),
-          // Whether the notifier this log was last connected to belonged to a
-          // seasonal character. A boolean, never the host and never the identity
-          // id in its URL, so nothing stored here is more revealing than the byte
-          // offset beside it. The next append seeds from it: an append carrying
-          // no notifier line of its own would otherwise fall back to the target
-          // mode and write a seasonal quest onto the permanent character.
-          ...(typeof notifierSeasonal?.get(file.relativeFilename) === 'boolean'
-            ? { notifierSeasonal: notifierSeasonal.get(file.relativeFilename) }
-            : {}),
-        }
-        : {}),
-    })),
-    includedVersions: preview.includedVersions,
-    profileKey: selection.profileKey,
-    unknownModeTargets: selection.unknownModeTargets,
-    includePreWipeHistory: selection.includePreWipeHistory === true,
-    gameMode,
-    autoSync,
-    updatedAt: Date.now(),
-  }
-}
-
 function handlePermission(handle) {
   if (typeof handle?.queryPermission !== 'function') return Promise.resolve('granted')
   return Promise.resolve().then(() => handle.queryPermission({ mode: 'read' })).then(permission => {
@@ -293,6 +146,7 @@ export function useEftLogImport({
   allTasks,
   gameMode = 'regular',
   onApply,
+  onPrune,
   environment,
   workerFactory,
   observerFactory,
@@ -378,10 +232,31 @@ export function useEftLogImport({
   }
   const allTasksRef = useRef(allTasks)
   const onApplyRef = useRef(onApply)
+  const onPruneRef = useRef(onPrune)
   const targetModeRef = useRef(targetMode)
   allTasksRef.current = allTasks
   onApplyRef.current = onApply
+  onPruneRef.current = onPrune
   targetModeRef.current = targetMode
+
+  // Run once per completed import rather than per chunk: the prune reads the
+  // resulting rows, so it is only meaningful after the last event has landed.
+  // A partial (incremental) parse never carries a boundary, so this no-ops for
+  // the tail scans and only does work on a full read.
+  const pruneAfterImport = useCallback(async (scanPreview, scanSelection, mode) => {
+    if (typeof onPruneRef.current !== 'function') return null
+    if (scanSelection?.includePreWipeHistory === true) return null
+    const boundaryAt = previewWipeBoundary(scanPreview, scanSelection?.profileKey || null)
+    if (!boundaryAt) return null
+    try {
+      return await onPruneRef.current(mode, boundaryAt)
+    } catch {
+      // A failed prune must never fail an import that already succeeded. The
+      // rows it would have removed are still stale, and the next full scan
+      // reaches the same conclusion.
+      return null
+    }
+  }, [])
 
   const stopWatching = useCallback(() => {
     watchingRef.current = false
@@ -695,6 +570,10 @@ export function useEftLogImport({
           throw applyError
         }
       }
+      // Unconditional: a rescan that finds a boundary but no new events is
+      // precisely the case of a list imported before the boundary was
+      // detectable, and that list is the one that needs repairing.
+      await pruneAfterImport(nextPreview, nextSelection, mode)
       if (generationRef.current !== scanGeneration) throw staleError()
       const nextOffsets = new Map(metadata.filter(file => isNotificationLogPath(file.relativeFilename)).map(file => [file.relativeFilename, file.size || 0]))
       const nextNotifierSeasonal = new Map(previous
@@ -715,7 +594,7 @@ export function useEftLogImport({
     return promise.finally(() => {
       if (scanInFlightRef.current === promise) scanInFlightRef.current = null
     })
-  }, [key, maxFileBytes, maxTotalBytes, parseAppendsInWorker, readAndParse, store])
+  }, [key, maxFileBytes, maxTotalBytes, parseAppendsInWorker, pruneAfterImport, readAndParse, store])
 
   const runFolderCheck = useCallback((handle, autoApply, scanOptions = {}) => {
     if (!handle || pollInFlightRef.current) return pollInFlightRef.current || null
@@ -1083,6 +962,7 @@ export function useEftLogImport({
         store: jobStore,
       }))
       if (result?.error) throw result.error
+      const prune = await pruneAfterImport(preview, selectionRef.current, mode)
       // Watching needs an actual directory handle. Treating the REMEMBER
       // checkbox alone as sufficient left the panel stuck on APPLYING after a
       // successful universal-picker import, because startWatching bailed.
@@ -1105,13 +985,15 @@ export function useEftLogImport({
       if (!resumeWatch || !startWatching(false)) {
         if (mountedRef.current) setState('idle')
       }
-      return result
+      // Reported rather than done quietly: the prune deletes rows the reader
+      // can see, so the panel has to be able to say how many and why.
+      return prune?.removed ? { ...result, pruned: prune.removed } : result
     } catch (caughtError) {
       const nextError = sanitisedError(caughtError, 'The EFT quest update could not be applied.')
       if (mountedRef.current) { setError(nextError.message); setState('error') }
       throw nextError
     }
-  }, [jobStore, key, persistentSupported, preview, runImportJob, startWatching, store])
+  }, [jobStore, key, persistentSupported, preview, pruneAfterImport, runImportJob, startWatching, store])
 
   // A job that outlived its tab is discoverable on the next mount, which is what
   // makes "come back later and see where it got to" work. The apply function is

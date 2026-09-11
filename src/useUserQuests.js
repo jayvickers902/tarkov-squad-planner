@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from './supabase'
 import { normalizeGameMode } from './gameMode'
 import { FEATURED } from './constants'
-import { activeQuestRows, manualQuestStatePatch, toQuestLogEventPayload } from './questLogState'
+import { activeQuestRows, manualQuestStatePatch, stalePreWipeQuestIds, toQuestLogEventPayload } from './questLogState'
 import { inferredTaskMapNorm } from './tarkovObjectives'
 
 const LOG_IMPORT_MODES = new Set(['regular', 'pve'])
@@ -488,11 +488,56 @@ export function useUserQuests(userId, gameMode = 'regular') {
     return Array.isArray(result.data) ? result.data : []
   }, [userId, mode])
 
+  // Drop active rows a wipe boundary has stranded.
+  //
+  // Filtering the imported events stops a wipe producing stale open quests, but
+  // it cannot undo one that has already been imported: reconciliation writes
+  // what the logs contain and never removes anything, so rows written before
+  // the boundary was detectable survive every later import untouched. Repairing
+  // them is the whole point -- otherwise the reader's only remedy is to clear
+  // the list by hand and retype the quests they actually hold.
+  const pruneStaleQuestRows = useCallback(async (targetGameMode, boundaryAt) => {
+    const empty = { removed: 0, questIds: [] }
+    if (!userId) return empty
+    const targetMode = normalizeGameMode(targetGameMode)
+    if (!LOG_IMPORT_MODES.has(targetMode)) return empty
+    if (!Number.isFinite(Date.parse(boundaryAt || ''))) return empty
+
+    const existing = await supabase.from('user_quests')
+      .select('quest_id, state, state_at, state_source')
+      .eq('user_id', userId).eq('game_mode', targetMode).eq('state', 'active')
+    throwIfError(existing.error)
+    const questIds = stalePreWipeQuestIds(existing.data, boundaryAt)
+    if (!questIds.length) return empty
+
+    // Chunked so the delete filter never outgrows a request URL, and scoped to
+    // 'active' a second time so a row that turned terminal between the read and
+    // the delete keeps its guard.
+    for (let offset = 0; offset < questIds.length; offset += QUEST_PRUNE_CHUNK_SIZE) {
+      const { error } = await supabase.from('user_quests').delete()
+        .eq('user_id', userId).eq('game_mode', targetMode).eq('state', 'active')
+        .in('quest_id', questIds.slice(offset, offset + QUEST_PRUNE_CHUNK_SIZE))
+      throwIfError(error)
+    }
+
+    if (activeModeRef.current === targetMode) {
+      const refreshed = await loadMode(userId, targetMode)
+      if (activeModeRef.current === targetMode) setQuests(refreshed)
+    }
+    return { removed: questIds.length, questIds }
+  }, [userId, loadMode])
+
   const reconcileLogEvents = useCallback(async (targetGameMode, events, options = {}) => {
     if (!userId) throw new Error('You must be signed in to import quest logs')
     const targetMode = normalizeGameMode(targetGameMode)
     if (!LOG_IMPORT_MODES.has(targetMode)) throw new Error('Quest log import supports Regular and PvE only')
-    if (!Array.isArray(events) || events.length === 0) return { inserted: 0, updated: 0, ignored: 0, affected_task_ids: [] }
+    // A boundary is worth acting on even when the scan carried no new events:
+    // that is exactly the shape of a re-import by someone whose stale rows were
+    // written before the wipe became detectable.
+    if (!Array.isArray(events) || events.length === 0) {
+      const { removed } = await pruneStaleQuestRows(targetMode, options?.wipeBoundaryAt)
+      return { inserted: 0, updated: 0, ignored: 0, affected_task_ids: [], pruned: removed }
+    }
 
     const safeEvents = toQuestLogEventPayload(events)
     const results = []
@@ -528,12 +573,17 @@ export function useUserQuests(userId, gameMode = 'regular') {
       affected_task_ids: [...new Set([...total.affected_task_ids, ...(Array.isArray(item.affected_task_ids) ? item.affected_task_ids : [])])].slice(0, 1000),
     }), { inserted: 0, updated: 0, ignored: 0, affected_task_ids: [] })
 
+    // After the events are in, not before: the prune reads the resulting rows,
+    // so an event that legitimately re-opens a quest on the near side of the
+    // boundary has already moved its stamp forward and survives.
+    const { removed } = await pruneStaleQuestRows(targetMode, options?.wipeBoundaryAt)
+
     if (activeModeRef.current === targetMode) {
       const refreshed = await loadMode(userId, targetMode)
       if (activeModeRef.current === targetMode) setQuests(refreshed)
     }
-    return summary
-  }, [userId, loadMode])
+    return { ...summary, pruned: removed }
+  }, [userId, loadMode, pruneStaleQuestRows])
 
   // Get quests relevant to a map (map-specific + any-map)
   const questsForMap = useCallback((mapNorm) => {
@@ -557,6 +607,7 @@ export function useUserQuests(userId, gameMode = 'regular') {
     saveObjectiveProgress,
     repairQuestRows,
     reconcileLogEvents,
+    pruneStaleQuestRows,
     getQuestHistory,
     refresh,
   }

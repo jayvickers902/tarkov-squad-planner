@@ -42,7 +42,40 @@ a wipe, and a boundary drawn across both silently drops the earlier character's 
 account's characters are its mode facets, pooling them dates a wipe to the day the reader last
 switched characters. Only the boundary for the mode being imported is disclosed.
 
-Pure detection lives in `src/questWipe.js` (corroborated completed-to-active boundary detection).
+Pure detection lives in `src/questWipe.js`. A boundary is a **restart** that at least
+`WIPE_MIN_TASKS` (3) distinct known tasks corroborate: a task going `active` when the corpus
+already shows it `active` or `completed`.
+
+Completed-to-active alone was the original rule and it has a blind spot that cost a reader their
+whole quest list. At a wipe or a prestige the matching completions are on the far side of the
+boundary and usually outside log retention, so the one case the filter exists for — the reset
+sitting at the very start of the retained logs — produced no candidates at all, no boundary, and
+therefore no filter. Every quest started in the character's previous life imported as permanently
+open, because nothing on the near side of the boundary can ever close it. Counting a second start
+of a non-repeatable task is the same evidence without that blind spot. Measured against a real
+three-week corpus (124 files, 331 events): 184 of 185 started tasks carry exactly one start, and
+the single repeat is a repeatable skill quest, so restarts corroborate rather than add noise. The
+client does not re-push quest starts on a later login — every quest `templateId` in that corpus is
+unique — so a backlog replay cannot manufacture a boundary.
+
+Candidates are **chained** into runs while each sits within `WIPE_WINDOW_HOURS` of the previous
+one, and the boundary is the *first* candidate of the last qualifying run. Re-accepting a wiped
+quest tree takes days, so scoring each window independently dated the boundary to the last
+corroborated trio and discarded everything re-accepted before it — a wipe dripping over three days
+kept 3 of 10 quests.
+
+Detection is a default, not a verdict: INCLUDE FULL HISTORY overrides it, and no boundary means no
+filter. `wipeBoundaryFilter` in `shared/domain/eftLogs.js` is the single implementation, applied by
+the browser importer, the import panel's preview count, and the companion alike — the companion
+previously applied none, so the recommended route and the website disagreed about the same logs.
+
+Filtering events only helps the *next* import. Reconciliation never removes rows, so a list already
+built before a boundary was detectable keeps its stale open quests forever. `stalePreWipeQuestIds`
+(`shared/domain/questLogState.js`) names the rows a boundary stranded — log-sourced, still active,
+last stamped before the boundary — and the import deletes them. Manually added quests and terminal
+rows are never touched; the latter are the monotonic guards that stop an older start resurrecting a
+quest already handed in. `CHECKPOINT_VERSION` was bumped to 3 so every remembered folder does one
+more full read, because an incremental scan sees far too small a window to detect a wipe.
 
 ## Mode facets
 

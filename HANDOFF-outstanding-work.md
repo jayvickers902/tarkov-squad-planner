@@ -1,6 +1,6 @@
 # Handoff — outstanding work
 
-**Updated:** 2026-09-07 · **Branch:** `main`
+**Updated:** 2026-09-11 · **Branch:** `main`
 
 Read [CLAUDE.md](CLAUDE.md) first, then the deep reference that matches the task —
 [docs/map-and-raid.md](docs/map-and-raid.md), [docs/eft-log-import.md](docs/eft-log-import.md),
@@ -33,7 +33,7 @@ RPC, immediate browser/companion publishing, companion 0.3.1, and release 2026.1
 | `2bd705c` | Raid view's quest column condenses; wiki link per quest |
 | `10bcfdc` | `CENTRE ON ME`, and OVERVIEW no longer retires FOLLOW for good |
 
-Root suite **90 files / 753 tests** (~13s), companion **14 / 76**, lint and typecheck clean,
+Root suite **98 files / 790 tests** (~17s), companion **14 / 76**, lint and typecheck clean,
 Playwright 3/3, web and companion builds clean. Verified 2026-09-07 with the full 13-check gate.
 
 ---
@@ -277,9 +277,13 @@ Cost: about an hour. Root suite stayed 86 files / 708 tests.
   `eslint.config.js`. `npx eslint . --max-warnings 0` exited 0 before and after, so nothing had to
   be fixed: the change is a regression guard, not a cleanup. Cost: one config edit. If one of these
   fires in future, fix the code rather than re-softening the rule.
-- Playwright has six tests: three signed-out shell checks plus deterministic authenticated
-  party/map, leader raid-start, and seeded Quest Manager flows using local Supabase fixtures.
-  Multi-client Realtime and import flows still have no end-to-end coverage.
+- Playwright has nine tests: three signed-out shell checks plus deterministic authenticated
+  party/map, leader raid-start, seeded Quest Manager, and two-client map convergence flows using
+  local Supabase/Realtime fixtures. Visibility-triggered repair after a missed update is also
+  covered. The Quest import hub now feeds the checked-in regular log fixture through the real
+  browser directory picker, verifies the worker/parser review counts, and confirms the reconcile
+  decision against an offline RPC fixture. Timer-driven reconnect, member-row, ping-channel, and
+  import history/undo flows still have no end-to-end coverage.
 
 ---
 

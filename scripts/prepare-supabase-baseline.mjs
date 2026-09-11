@@ -23,6 +23,11 @@ const requiredCaptures = [
   ['04_policies.sql', 'policies'],
   ['05_grants.sql', 'table and column grants'],
 ]
+const optionalCaptures = [
+  ['02_extensions.sql', 'installed extensions'],
+  ['06_triggers.sql', 'non-internal public triggers'],
+]
+const optionalCaptureNames = new Set(optionalCaptures.map(([name]) => name))
 
 const splitSqlStatements = (sql) => {
   const statements = []
@@ -177,7 +182,7 @@ const splitFunctionCapture = (text, path) => {
 }
 
 const usage = () => {
-  console.error('Usage: node scripts/prepare-supabase-baseline.mjs --capture-dir <external-dir> --output-dir <external-dir> --version <14-digit-timestamp>')
+  console.error('Usage: node scripts/prepare-supabase-baseline.mjs --capture-dir <external-dir> --output-dir <external-dir> --version <14-digit-timestamp> [--manifest <external-json>]')
   process.exitCode = 2
 }
 
@@ -190,6 +195,7 @@ const args = process.argv.slice(2)
 const captureArg = valueAfter(args, '--capture-dir')
 const outputArg = valueAfter(args, '--output-dir')
 const version = valueAfter(args, '--version')
+const manifestArg = valueAfter(args, '--manifest')
 if (!captureArg || !outputArg || !/^\d{14}$/.test(version)) {
   usage()
   process.exit()
@@ -218,9 +224,34 @@ const fileExists = async (path) => {
 const source = []
 let tableCaptureParts = null
 let functionCaptureParts = null
-for (const [name, role] of requiredCaptures) {
+let extensionCapture = null
+let triggerCapture = null
+let manifestRecord = null
+let manifestHash = ''
+if (manifestArg) {
+  const manifestPath = resolve(manifestArg)
+  if (isInsideRoot(manifestPath)) throw new Error('catalog manifest must be outside the repository')
+  if (!(await fileExists(manifestPath))) throw new Error(`catalog manifest does not exist: ${manifestPath}`)
+  const manifestText = await readFile(manifestPath, 'utf8')
+  if (/(?:postgres(?:ql)?:\/\/|sbp_[a-z0-9]+|password\s*[=:])/i.test(manifestText)) {
+    throw new Error(`catalog manifest contains credential-like text: ${manifestPath}`)
+  }
+  try {
+    manifestRecord = JSON.parse(manifestText)
+  } catch {
+    throw new Error(`catalog manifest is not valid JSON: ${manifestPath}`)
+  }
+  if (manifestRecord?.schema_version !== 1 || !manifestRecord?.counts || !manifestRecord?.classes) {
+    throw new Error(`catalog manifest has unsupported shape: ${manifestPath}`)
+  }
+  manifestHash = createHash('sha256').update(manifestText).digest('hex')
+}
+for (const [name, role] of [...requiredCaptures, ...optionalCaptures]) {
   const path = resolve(captureDir, name)
-  if (!(await fileExists(path))) throw new Error(`missing reviewed capture: ${path}`)
+  if (!(await fileExists(path))) {
+    if (optionalCaptureNames.has(name)) continue
+    throw new Error(`missing reviewed capture: ${path}`)
+  }
   const text = await readFile(path, 'utf8')
   if (!text.trim()) throw new Error(`reviewed capture is empty: ${path}`)
   if (/(?:postgres(?:ql)?:\/\/|sbp_[a-z0-9]+|password\s*[=:])/i.test(text)) {
@@ -231,6 +262,8 @@ for (const [name, role] of requiredCaptures) {
   }
   if (name === '01_tables.sql') tableCaptureParts = reorderTableCapture(text, path)
   if (name === '01b_functions.sql') functionCaptureParts = splitFunctionCapture(text, path)
+  if (name === '02_extensions.sql') extensionCapture = { name, role, text }
+  if (name === '06_triggers.sql') triggerCapture = { name, role, text }
   source.push({ name, role, text, sha256: createHash('sha256').update(text).digest('hex') })
 }
 
@@ -245,8 +278,8 @@ if (await fileExists(candidatePath) || await fileExists(reviewPath)) {
 
 const header = `-- REVIEW-ONLY Supabase baseline candidate; do not apply, push, or reset with this file.
 -- Generated from a read-only linked catalog capture by scripts/prepare-supabase-baseline.mjs.
--- This is not a complete dump: reconcile extensions, triggers, publications, jobs,
--- ownership/default privileges, storage/auth objects, and migration history first.
+-- This is not a complete dump: reconcile publications, jobs, ownership/default
+-- privileges, storage/auth objects, and migration history first.
 -- Rehearse the candidate on a disposable local PostgreSQL 17-compatible cluster.
 
 `
@@ -256,10 +289,14 @@ const header = `-- REVIEW-ONLY Supabase baseline candidate; do not apply, push, 
 const functions = source.find(({ name }) => name === '01b_functions.sql')
 const policies = source.find(({ name }) => name === '04_policies.sql')
 const grants = source.find(({ name }) => name === '05_grants.sql')
+const capturedSection = ({ name, text }, label = '') =>
+  `-- BEGIN CAPTURE: ${name}${label ? ` (${label})` : ''}\n${text.trim()}\n-- END CAPTURE: ${name}${label ? ` (${label})` : ''}`
 const candidateSections = [
+  ...(extensionCapture ? [capturedSection(extensionCapture)] : []),
   `-- BEGIN CAPTURE: 01_tables.sql (base table definitions)\n${tableCaptureParts.tableDefinitions}\n-- END CAPTURE: 01_tables.sql (base table definitions)`,
   `-- BEGIN CAPTURE: ${functions.name} (function definitions)\n${functionCaptureParts.definitions}\n-- END CAPTURE: ${functions.name} (function definitions)`,
   `-- BEGIN CAPTURE: 01_tables.sql (constraints and RLS flags)\n${tableCaptureParts.dependentDefinitions}\n-- END CAPTURE: 01_tables.sql (constraints and RLS flags)`,
+  ...(triggerCapture ? [capturedSection(triggerCapture)] : []),
   `-- BEGIN CAPTURE: ${policies.name}\n${policies.text.trim()}\n-- END CAPTURE: ${policies.name}`,
   `-- BEGIN CAPTURE: ${functions.name} (function ACLs)\n${functionCaptureParts.acl}\n-- END CAPTURE: ${functions.name} (function ACLs)`,
   `-- BEGIN CAPTURE: ${grants.name}\n${grants.text.trim()}\n-- END CAPTURE: ${grants.name}`,
@@ -275,12 +312,14 @@ Generated at ${new Date().toISOString()} from the external capture directory
 ## Included catalog classes
 
 ${source.map(({ name, role, sha256 }) => `- \`${name}\` — ${role}; SHA-256 \`${sha256}\``).join('\n')}
+${manifestRecord ? `- External catalog manifest (evidence only; not replayable DDL) — SHA-256 \`${manifestHash}\`` : '- No external catalog manifest supplied; class reconciliation remains blocked.'}
 
 ## Required before promotion
 
-- Reconcile extensions, triggers, publications, scheduled jobs, ownership and
-  default privileges, storage/auth objects, and the migration ledger against a
-  reviewed complete dump.
+- Verify the catalog-derived extension and non-internal public trigger captures,
+  then reconcile publications, scheduled jobs, ownership and default
+  privileges, storage/auth objects, and the migration ledger against a reviewed
+  complete dump.
 - Rehearse this candidate from a clean disposable PostgreSQL 17-compatible
   database and compare tables, constraints, routines, policies, grants, and
   Realtime membership with the source catalog.
