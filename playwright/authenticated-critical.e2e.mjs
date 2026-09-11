@@ -1,11 +1,25 @@
 import { expect, test } from '@playwright/test'
 import { resolve } from 'node:path'
+import { loadEnv } from 'vite'
 // Read from the app rather than pinned: a hardcoded version made every release
 // fail six authenticated tests, because the unseen What is New modal then sat
 // over the whole UI and swallowed every click.
 import { RELEASE_VERSION } from '../src/whatsNew.js'
 
-const SUPABASE_ORIGIN = 'https://vggbwjboeryxddmxmcjn.supabase.co'
+// Resolved exactly the way `vite build` resolved it for the bundle under test,
+// rather than pinned. Pinned, these mocks only matched on a machine whose .env
+// happened to name that project: CI builds with VITE_SUPABASE_URL pointing at
+// smoke.invalid, so every authenticated request went to a host nothing routed,
+// the app never signed in, and all six authenticated tests failed on their
+// first assertion while passing locally.
+const SUPABASE_ORIGIN = new URL(
+  loadEnv('production', process.cwd(), 'VITE_').VITE_SUPABASE_URL || 'https://smoke.invalid',
+).origin
+// supabase-js derives its auth storage key from the project ref in that URL, so
+// this has to follow the origin rather than name a project of its own: seeded
+// against the wrong key the session is simply ignored and the app renders the
+// sign-in screen.
+const SUPABASE_AUTH_STORAGE_KEY = `sb-${new URL(SUPABASE_ORIGIN).hostname.split('.')[0]}-auth-token`
 const USER_ID = '11111111-1111-4111-8111-111111111111'
 const PARTY_ID = '22222222-2222-4222-8222-222222222222'
 const PARTY_CODE = 'ABC123'
@@ -162,7 +176,7 @@ async function installAuthenticatedSupabaseMocks(page, { userQuests = [], userId
     // normal prebaked/live loaders remain out of scope for this service test.
     localStorage.setItem(mapsKey, JSON.stringify({ v: 1, savedAt: Date.now(), data: maps }))
   }, {
-    storageKey: 'sb-vggbwjboeryxddmxmcjn-auth-token',
+    storageKey: SUPABASE_AUTH_STORAGE_KEY,
     storedSession: session,
     mapsKey: 'tsp.cache.maps.regular',
     maps: [{ id: '56f40101d2720b2a4d8b45d6', name: 'Customs', normalizedName: 'customs' }],
