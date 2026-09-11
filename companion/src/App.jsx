@@ -228,6 +228,10 @@ export default function App() {
     return () => { active = false }
   }, [])
 
+  // Two-step rather than a single click: this deletes rows, and a mis-click on
+  // a settings screen should not be able to do that silently.
+  const [wipeArmed, setWipeArmed] = useState(false)
+
   const run = useCallback(async (operation, fallback) => {
     setBusy(true)
     setActionNotice('')
@@ -414,6 +418,34 @@ export default function App() {
             <p>Use this after changing characters or if a previous selection imported zero events. It rereads your relevant logs.</p>
           </div>
           <button className="secondary-button" onClick={() => run(() => service.fullRescan(), 'The full rescan could not be started.')} disabled={busy}>Full rescan</button>
+        </section>
+      )}
+
+      {!setup.incomplete && view.authenticated && roots.logsRoot && (
+        <section className="settings-card rescan-card">
+          <div>
+            <p className="eyebrow">AFTER A WIPE OR PRESTIGE</p>
+            <h2>Wipe quests</h2>
+            <p>
+              Clears every quest the log sync imported for this character and stops your previous
+              life coming back. Only quests you start from now on are imported. Quests you added by
+              hand on the website are kept.
+            </p>
+          </div>
+          {wipeArmed ? (
+            <div className="choice-buttons">
+              <button
+                className="secondary-button"
+                onClick={() => { setWipeArmed(false); run(() => service.wipeQuests(), 'The quests could not be wiped.') }}
+                disabled={busy}
+              >
+                Yes, wipe them
+              </button>
+              <button className="secondary-button" onClick={() => setWipeArmed(false)} disabled={busy}>Cancel</button>
+            </div>
+          ) : (
+            <button className="secondary-button" onClick={() => setWipeArmed(true)} disabled={busy}>Wipe quests</button>
+          )}
         </section>
       )}
 

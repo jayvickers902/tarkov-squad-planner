@@ -580,4 +580,33 @@ describe('companion wipe boundary', () => {
     expect(sent).toHaveLength(ids.length)
     expect(sent.every(event => event.occurred_at === '2023-11-15T22:13:20.000Z')).toBe(true)
   })
+  it('honours a wipe the reader declared, with no detectable boundary at all', async () => {
+    // The case detection cannot serve: a prestige at the edge of the retained
+    // logs re-accepts quests that were never started inside them, so there is
+    // nothing to corroborate and no boundary to infer. The reader saying they
+    // wiped is the only evidence that exists.
+    const before = ids.map((id, index) => start(id, 1700000000, `before-${index}`)).join(NEWLINE)
+    const apply = vi.fn(async (_mode, events) => ({ inserted: events.length }))
+    const checkpoints = store()
+    const controller = createQuestLogSyncController({
+      filesystem: {
+        async listEftLogs() {
+          return [
+            file('Logs/0.16.9/before/notifications.log', before),
+            file('Logs/0.16.9/before/backend.log', '{"sessionMode":"PVP","profileId":"one-character"}'),
+          ]
+        },
+      },
+      checkpointStore: checkpoints, network: { applyQuestLogEvents: apply },
+      taskIds: ids, gameMode: 'regular',
+      parser: { wipeBoundaryAt: '2023-11-15T00:00:00.000Z' },
+    })
+
+    await controller.sync({ parser: { wipeBoundaryAt: '2023-11-15T00:00:00.000Z' } })
+
+    expect(apply).not.toHaveBeenCalled()
+    // Durable: runtime state is rebuilt on every launch, so a boundary that
+    // lived only there would import the whole pre-wipe history back tomorrow.
+    expect(checkpoints.value.selectionsByMode.regular.wipeBoundaryAt).toBe('2023-11-15T00:00:00.000Z')
+  })
 })

@@ -246,6 +246,8 @@ function checkpointForLogs(input = {}) {
       ...(value?.profileLabel ? { profileLabel: String(value.profileLabel).slice(0, 160) } : {}),
       ...(value?.unknownModeTarget && VALID_MODES.has(value.unknownModeTarget) ? { unknownModeTarget: value.unknownModeTarget } : {}),
       ...(SELECTION_STATES.has(value?.selectionState) ? { selectionState: value.selectionState } : {}),
+      ...(Number.isFinite(Date.parse(value?.wipeBoundaryAt || ''))
+        ? { wipeBoundaryAt: new Date(value.wipeBoundaryAt).toISOString() } : {}),
     }])) : null
   const scanMetricsByMode = input.scanMetricsByMode && typeof input.scanMetricsByMode === 'object'
     ? Object.fromEntries(Object.entries(input.scanMetricsByMode)
@@ -285,6 +287,27 @@ function selectedProfileLabelForMode(checkpoint, mode) {
   return checkpoint?.selectionsByMode?.[mode]?.profileLabel
     || (checkpoint?.gameMode === mode ? checkpoint?.profileLabel : null)
     || null
+}
+
+/**
+ * The boundary the reader declared for this character by saying they wiped.
+ *
+ * Detection infers a wipe from quests being started again, which needs the
+ * evidence to be inside the retained logs. A prestige that sits at the edge of
+ * them leaves none, so this is the reader's own statement and it is durable:
+ * it lives in the checkpoint, not in runtime state, or the next launch would
+ * import the whole pre-wipe history straight back.
+ */
+function declaredWipeBoundaryForMode(checkpoint, mode) {
+  return checkpoint?.selectionsByMode?.[mode]?.wipeBoundaryAt || null
+}
+
+// The later of the two wins, rather than the stored one: wiping a second time
+// has to move the boundary forward, and preferring whatever was already in the
+// checkpoint would pin it to the first wipe forever.
+function laterBoundary(left, right) {
+  const values = [left, right].map(value => Date.parse(value || '')).filter(Number.isFinite)
+  return values.length ? new Date(Math.max(...values)).toISOString() : null
 }
 
 function selectedUnknownModeForMode(checkpoint, mode) {
@@ -474,7 +497,12 @@ function selectedEvents(preview, { mode, checkpoint, taskIds, taskMetadata = nul
   // with no terminal event on the near side of the boundary nothing would ever
   // close it again. Without this the recommended import route turned a fresh
   // prestige's whole previous life into permanently open quests.
-  const afterWipe = wipeBoundaryFilter(preview, profileKey, checkpoint?.includePreWipeHistory === true)
+  const afterWipe = wipeBoundaryFilter(
+    preview,
+    profileKey,
+    checkpoint?.includePreWipeHistory === true,
+    laterBoundary(declaredWipeBoundaryForMode(checkpoint, mode), parser?.wipeBoundaryAt),
+  )
   return source.filter(event => {
     if (known && !known.has(String(event?.taskId || ''))) return false
     if (!afterWipe(event)) return false
@@ -798,6 +826,8 @@ export function createQuestLogSyncController({
               : {}),
             ...(selectedUnknownModeForMode(checkpoint, mode) || parser?.unknownModeTarget ? { unknownModeTarget: selectedUnknownModeForMode(checkpoint, mode) || parser?.unknownModeTarget } : {}),
             ...(selectionState ? { selectionState } : {}),
+            ...(laterBoundary(declaredWipeBoundaryForMode(checkpoint, mode), parser?.wipeBoundaryAt)
+              ? { wipeBoundaryAt: laterBoundary(declaredWipeBoundaryForMode(checkpoint, mode), parser?.wipeBoundaryAt) } : {}),
           },
         },
         scanMetricsByMode: {

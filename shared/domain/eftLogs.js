@@ -1594,11 +1594,17 @@ export function previewWipeBoundary(preview, profileKey) {
  * is also why detection failing silently costs the reader their whole quest
  * list, so the two callers must not each re-derive it.
  */
-export function wipeBoundaryFilter(preview, profileKey, includePreWipeHistory = false) {
-  const boundary = includePreWipeHistory === true
+export function wipeBoundaryFilter(preview, profileKey, includePreWipeHistory = false, declaredBoundaryAt = null) {
+  const detected = includePreWipeHistory === true
     ? Number.NaN
     : Date.parse(previewWipeBoundary(preview, profileKey) || '')
-  if (!Number.isFinite(boundary)) return () => true
+  // A boundary the reader declared outranks detection in both directions. They
+  // know they wiped; the detector only ever guesses, and for a wipe sitting at
+  // the edge of the retained logs it can have no evidence to guess from at all.
+  const declared = Date.parse(declaredBoundaryAt || '')
+  const candidates = [detected, declared].filter(Number.isFinite)
+  if (!candidates.length) return () => true
+  const boundary = Math.max(...candidates)
   return event => {
     const occurredAt = Date.parse(event?.occurredAt || '')
     return Number.isFinite(occurredAt) && occurredAt >= boundary

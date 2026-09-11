@@ -210,6 +210,7 @@ export function createCompanionService({
     signOut,
     syncNow: () => runtime?.syncNow?.(),
     fullRescan: () => runtime?.fullRescan?.(),
+    wipeQuests: () => runtime?.wipeQuests?.(),
     rescan: () => runtime?.fullRescan?.(),
     changeProfile: () => runtime?.changeProfile?.(),
     changeCharacter: () => runtime?.changeProfile?.(),

@@ -1022,6 +1022,21 @@ export function createCompanionRuntime({
     return requestSync('force', { force: true })
   }
 
+  // "I wiped or prestiged." Deleting the rows alone would be pointless -- the
+  // next scan reads the same logs and puts every one of them straight back --
+  // so the same click records the boundary that stops them coming back. Only
+  // quests started from this moment on are imported afterwards.
+  async function wipeQuests(at = new Date().toISOString()) {
+    const mode = context?.gameMode || gameMode || 'regular'
+    const boundaryAt = Number.isFinite(Date.parse(at)) ? new Date(at).toISOString() : new Date().toISOString()
+    const resetImports = method(network, 'resetUserQuestLogImports', 'resetQuestLogImports')
+    if (resetImports) await resetImports(mode)
+    await resetQuestLogs(mode, { clearSelection: false })
+    selectionByMode[mode] = { ...(selectionByMode[mode] || {}), wipeBoundaryAt: boundaryAt }
+    forceNextScan = true
+    return requestSync('wipe', { force: true })
+  }
+
   async function changeProfile() {
     const mode = context?.gameMode || gameMode || 'regular'
     await resetQuestLogs(mode)
@@ -1037,6 +1052,7 @@ export function createCompanionRuntime({
     synchronize: () => requestSync('manual'),
     fullRescan,
     rescan: fullRescan,
+    wipeQuests,
     changeProfile,
     changeCharacter: changeProfile,
     rebuildImportedQuests: fullRescan,
