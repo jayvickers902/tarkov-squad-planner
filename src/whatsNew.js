@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.22'
+export const RELEASE_VERSION = '2026.23'
 
 export const SETUP_STEPS = [
   {
@@ -28,6 +28,18 @@ export const FIRST_LIVE_NOTES_VERSION = '2026.09'
 // Newest first — WelcomeModal shows RELEASES[0] and nothing else, so a new
 // release goes on top of this array and RELEASE_VERSION moves with it.
 export const RELEASES = [
+  {
+    version: '2026.23',
+    date: '2026-09-19',
+    title: 'QUEST DATA LOADS LIGHTER WITHOUT LOSING DETAIL',
+    items: [
+      {
+        tag: 'IMPROVED',
+        title: 'A SMALLER QUEST DOWNLOAD',
+        body: 'Quest map references now travel as compact names instead of repeated objects. The planner keeps every task, objective and map zone while loading substantially less quest data.',
+      },
+    ],
+  },
   {
     version: '2026.22',
     date: '2026-09-11',

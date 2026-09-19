@@ -16,7 +16,17 @@ stale. Step 9 fixes them.
 **Status as of 2026-09-04: all ten steps are done and committed** — `7187d99` `5d12a8b` `765222b`
 `78872f9` `211cd7d` `6adb889` `37353ce` `ccc5345` `22ff5c2` `0122fdd`. Nothing is pushed.
 
-Gates on the finished tree: `npm run validate:migrations` pass · `npm run lint` clean across 237
+**Wave 2 re-audit on 2026-09-19:** Step 2 remains fully landed in `211cd7d` (including release
+`2026.18`) and Step 8 remains fully landed in `37353ce`; neither needed another implementation
+change. Step 5 was only partial against the re-audit's stricter record-for-record losslessness
+requirement: `6adb889` had removed 58 duplicate zone records and had no committed full-catalog
+round-trip proof or release entry. The follow-up described under Step 5 restores those records,
+adds that proof, and ships release `2026.23`.
+
+Re-audit gates: typecheck clean · lint clean · **101 test files / 810 tests** · all six bundle
+budgets PASS · largest async raw `tasks-*.js` at **681.8 KiB** (17.9% headroom).
+
+Gates on the 2026-09-04 finished tree: `npm run validate:migrations` pass · `npm run lint` clean across 237
 files · `npm run typecheck` clean at 19 files · `npm test` at **90 files / 747 tests** (from 87/712)
 · `npm run test:e2e` 3/3 · all six bundle budgets PASS · largest async raw `tasks-*.js` at **677.1
 KiB, 18.4% headroom, up from 779.3 KiB and 6.1%**.
@@ -270,30 +280,33 @@ Toolbar buttons put icon glyphs inside the label (`✏ DRAW`, `◎ QUEST MARKER`
 
 ### Step 5 — Shrink the `tasks` chunk · **Opus**
 
-**Status: shipped in `6adb889`, with the rejected sub-step called out explicitly.** The plan's table
-combined "map refs → strings" with "drop `icebreaker`/`the-labyrinth` refs, dedupe 58 identical
-zones" into one 739.6 KiB / 13.3% row. The shipped change separates them: it does the name-string
-conversion *and* the byte-identical zone dedupe (both land together, since the dedupe falls out of
-the same `adaptObjective` rewrite), but **does not** drop the `icebreaker` / `the-labyrinth`
-references. That sub-step was evaluated and rejected — it is worth only 2.4 KiB and is not
+**Status: corrected after the wave 2 re-audit.** `6adb889` shipped the map-name conversion, rejected
+the unsafe `icebreaker` / `the-labyrinth` removal, and also removed 58 byte-identical zone records.
+That last part failed the re-audit's stricter requirement to round-trip every record exactly, so the
+follow-up restores all 58 records. `compactObjectiveMapReferences` is now the production transform
+used by `adaptObjective`, and `src/tarkovTaskShape.test.js` sends the complete pre-flattening catalog
+(517 tasks, 1,457 objectives and 2,123 map references) through it, expands every reference, and
+deep-compares every task with the old record. The proof fixture is committed and hermetic.
+
+The two excluded-map references still remain. Dropping them is worth only 2.4 KiB and is not
 behaviour-neutral: 18 objectives would lose their map scope entirely and fall through
 `objectiveIsOnMap`'s permissive branch onto featured lists, and `TASK_MAP_SCOPE_OVERRIDES` depends on
 a stale Labyrinth reference to suppress a wrong key on Offensive Reconnaissance.
 
-**Measured result:** `tasks.json` 853.1 → 742.0 KiB (not the plan's 739.6 KiB estimate, since the
-drop was excluded); the chunk 779.3 → 677.1 KiB; headroom 6.1% → 18.4%. All six budgets pass. Verified
-lossless against one upstream fetch through both adapters: 2,123 map references in, 2,065 out, every
-survivor resolving to the same normalized name, zero non-duplicate references removed.
+**Measured result:** `tasks.json` 853.1 → 747.4 KiB; `npm run check:bundle` reports the largest async
+raw chunk at **779.3 → 681.8 KiB**, with headroom improving from **6.1% → 17.9%**. All six budgets
+pass. The earlier lossy intermediate measured 742.0 KiB / 677.1 KiB; retaining every zone record
+costs 4.7 KiB in the built chunk while keeping the target near 680 KiB.
 
 **File list differed from the plan.** The plan named only `src/tarkovRest.js`,
 `src/components/QuestSearch.jsx`, `src/raidObjectives.js`, `src/data/prebaked/tasks.json`,
 `src/tarkovRest.test.js` and `src/whatsNew.js`. The change actually landed in
-`shared/domain/tarkovObjectives.js` (not `src/tarkovRest.js` — `adaptObjective` lives on the shared
-domain side of the shim boundary) and the test file touched was `src/tarkovObjectives.test.js`, not
-`src/tarkovRest.test.js`. No `src/whatsNew.js` release entry was part of this commit; this is a data
-and bundle-size change, not user-facing behaviour.
+`shared/domain/tarkovObjectives.js` and `src/tarkovObjectives.test.js` for the reader changes. The
+follow-up adds the full-catalog proof in `src/tarkovTaskShape.test.js`, its compressed legacy fixture,
+restores `src/data/prebaked/tasks.json`, and adds the required `src/whatsNew.js` release entry.
 
-`tasks-*.js` is 779.3 KiB against an 830.1 KiB warn — 6.1% headroom, and the next chunk to cross.
+Before Step 5, `tasks-*.js` was 779.3 KiB against an 830.1 KiB warn — 6.1% headroom, and the next
+chunk to cross.
 `docs/developer-readiness.md` says the `objectives` array "has no per-map axis to split on," which
 is true, but there is a cheaper axis: redundancy inside the shape. `objective.maps[]` and
 `zone.map` are `{id, normalizedName}` objects, and `normalizeMapName` in
@@ -313,13 +326,14 @@ render — invariant 1. **Do not touch the other variants** (`night-factory`, `g
 matching.
 
 **Files**
-- `src/tarkovRest.js` — add `mapName(id, mapsById)` returning the normalized string. Use it in
-  `objectiveZones` (lines 236, 245) and `adaptObjective` (line 254) **only**; leave the other four
-  `mapReference` callers alone. Change the `mapRefs` fallback dedupe at line 259 from `zone.map?.id`
-  to the name.
+- `src/tarkovRest.js` — `compactObjectiveMapReferences` converts objective map objects to normalized
+  names after the ordinary adapter has preserved all records; the other `mapReference` callers stay
+  unchanged.
 - `src/components/QuestSearch.jsx:9` and `src/raidObjectives.js:55` — read the string.
-- `src/data/prebaked/tasks.json` — regenerate.
-- `src/tarkovRest.test.js` — update shape expectations.
+- `src/data/prebaked/tasks.json` — compact map references with all 58 duplicate zone records retained.
+- `src/tarkovObjectives.test.js` — cover both reader shapes.
+- `src/tarkovTaskShape.test.js` and `src/test/fixtures/tasks-before-map-flattening.json.gz` — prove
+  full-catalog round-trip equality against the old shape.
 - `src/whatsNew.js` — release entry.
 
 **Why this is contained:** `adaptObjective` is the single path both `scripts/prebake.mjs` and the
@@ -327,14 +341,15 @@ live REST fetch run through, and `GRAPHQL_ENABLED` is `false`, so there is no se
 in sync.
 
 **Success criteria**
-- `npm run check:bundle` reports largest async raw at roughly **680 KiB**, all six budgets PASS.
+- `npm run check:bundle` reports largest async raw at **681.8 KiB**, all six budgets PASS.
 - Quest pins, the map-scoped quest list and `QuestSearch` filtering are unchanged for a spot-checked
   task on **Customs** and on **Ground Zero** (which carries the `-21` variant).
-- Prove losslessness: every surviving zone and map reference resolves to the same normalized name
-  it did before.
+- Prove losslessness: every task record round-trips through the new map-reference shape and is deeply
+  equal to the old record.
 
-**Run `npm run prebake` deliberately** and commit the regenerated JSON. It is not wired into
-`npm run build` because it dumps large unrelated churn into the diff.
+The 2026-09-19 re-audit was offline, so it did not run the networked `npm run prebake`. It restored
+zone multiplicity deterministically from the committed pre-flattening payload; future online
+prebakes use the same lossless adapter path automatically.
 
 ---
 

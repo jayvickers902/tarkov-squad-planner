@@ -147,15 +147,6 @@ function mapReference(id, mapsById) {
   return map ? { id: map.id, normalizedName: map.normalizedName } : null
 }
 
-// Objective `maps[]` and `zone.map` are read through `normalizeMapName` and
-// `mapRefName`, which both take a plain name, so the id is dead weight repeated
-// across ~2,100 references in the task payload. Task-level `map`, transits,
-// `neededKeys` and goon reports keep the object form — their consumers read the
-// id. See `mapRefName` in shared/domain/tarkovObjectives.js for the read side.
-function mapName(id, mapsById) {
-  return mapReference(id, mapsById)?.normalizedName ?? null
-}
-
 function itemReference(id, itemTranslations, itemMetadata = {}) {
   const itemId = typeof id === 'object' ? id?.id : id
   if (!itemId) return null
@@ -225,6 +216,27 @@ function normalizeIds(value) {
   return [value]
 }
 
+function compactMapReference(value) {
+  if (typeof value === 'string') return value || null
+  return value?.normalizedName ?? null
+}
+
+// Objective `maps[]` and `zone.map` are read through `normalizeMapName` and
+// `mapRefName`, which both take a plain name, so the id is dead weight repeated
+// across ~2,100 references in the task payload. Keep this as a standalone,
+// exported transform so the committed pre-flattening catalog can exercise the
+// exact production conversion record by record.
+export function compactObjectiveMapReferences(objective) {
+  return {
+    ...objective,
+    maps: (objective?.maps || []).map(compactMapReference),
+    zones: (objective?.zones || []).map(zone => ({
+      ...zone,
+      map: compactMapReference(zone?.map),
+    })),
+  }
+}
+
 function requiredKeyReferences(requiredKeys, itemTranslations) {
   if (!Array.isArray(requiredKeys)) return []
   const groups = requiredKeys.length && requiredKeys.every(group => !Array.isArray(group))
@@ -235,38 +247,23 @@ function requiredKeyReferences(requiredKeys, itemTranslations) {
     .filter(group => group.length)
 }
 
-// Upstream repeats byte-identical zone entries inside a single objective. They
-// already collapse at render (see objectivePinLayout.js) and duplicate entries
-// produce colliding pin ids, so the copies only cost payload.
 function objectiveZones(objective, mapsById) {
   const zones = []
-  const seen = new Set()
-  const push = zone => {
-    const { x, y, z } = zone.position || {}
-    const key = `${zone.id}|${zone.map}|${x},${y},${z}`
-    if (seen.has(key)) return
-    seen.add(key)
-    zones.push(zone)
-  }
-  // The fallback id counts every positioned zone, deduplicated or not, so the
-  // generated ids stay identical to the pre-dedupe payload.
-  let index = 0
   for (const zone of objective?.zones || []) {
     if (!zone?.position) continue
-    push({
-      id: zone.id || `${zone.map || 'zone'}-${index}`,
+    zones.push({
+      id: zone.id || `${zone.map || 'zone'}-${zones.length}`,
       position: zone.position,
-      map: mapName(zone.map, mapsById),
+      map: mapReference(zone.map, mapsById),
     })
-    index += 1
   }
   for (const location of objective?.possibleLocations || []) {
-    for (const [locationIndex, position] of (location.positions || []).entries()) {
+    for (const [index, position] of (location.positions || []).entries()) {
       if (!position) continue
-      push({
-        id: `${location.map || 'location'}-${locationIndex}`,
+      zones.push({
+        id: `${location.map || 'location'}-${index}`,
         position,
-        map: mapName(location.map, mapsById),
+        map: mapReference(location.map, mapsById),
       })
     }
   }
@@ -275,10 +272,10 @@ function objectiveZones(objective, mapsById) {
 
 function adaptObjective(objective, mapsById, taskTranslations, itemTranslations) {
   const maps = normalizeIds(objective?.maps)
-    .map(id => mapName(id, mapsById))
+    .map(id => mapReference(id, mapsById))
     .filter(Boolean)
   const zones = objectiveZones(objective, mapsById)
-  const mapRefs = maps.length ? maps : [...new Set(zones.map(zone => zone.map).filter(Boolean))]
+  const mapRefs = maps.length ? maps : [...new Map(zones.map(zone => [zone.map?.id, zone.map]).filter(([id]) => id)).values()]
   const itemId = objective?.item || objective?.questItem || objective?.items?.[0]
   const markerItemId = objective?.markerItem
   const adapted = {
@@ -297,7 +294,7 @@ function adaptObjective(objective, mapsById, taskTranslations, itemTranslations)
   if (objective?.count != null) adapted.count = objective.count
   if (objective?.foundInRaid != null) adapted.foundInRaid = objective.foundInRaid
   if (requiredKeys.length) adapted.requiredKeys = requiredKeys
-  return adapted
+  return compactObjectiveMapReferences(adapted)
 }
 
 // ─── Adapters ──────────────────────────────────────────────────────────────
