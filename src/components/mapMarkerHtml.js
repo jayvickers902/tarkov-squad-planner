@@ -1,10 +1,10 @@
-import L from 'leaflet'
-import { floorLabel, elevationLabel } from '../tarkovPings'
+import { ageLabel, floorLabel, elevationLabel } from '../tarkovPings'
 import { objectiveTypeLabel, objectiveSubjectItem } from '../tarkovObjectives'
+import { CLUSTER_RADIUS_M, kindOf } from '../tarkovIntel'
 import { escapeHtml, safeColor, safeImageUrl } from '../mapHtml'
 
 export function makeKeyIcon(priority) {
-  return L.divIcon({
+  return {
     className: '',
     iconSize: [22, 22],
     iconAnchor: [11, 11],
@@ -12,7 +12,7 @@ export function makeKeyIcon(priority) {
       <path stroke="black" stroke-width="1.2" stroke-linejoin="round"
         d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>
     </svg>`,
-  })
+  }
 }
 
 const MAP_LABELS = {
@@ -41,39 +41,39 @@ export function formatRoubles(value) {
 }
 
 export function makeZoneLabelIcon(text, color, badge = '') {
-  return L.divIcon({
+  return {
     className: '',
     iconSize: [1, 1],
     iconAnchor: [0, 0],
     html: `<div class="map-zone-label" style="--zone-color:${safeColor(color)}">${badge ? `<span class="map-zone-label-badge">${escapeHtml(badge)}</span>` : ''}${escapeHtml(text)}</div>`,
-  })
+  }
 }
 
 export function makeSwitchIcon() {
-  return L.divIcon({
+  return {
     className: '',
     iconSize: [20, 20],
     iconAnchor: [10, 10],
     html: '<div class="map-switch-marker">⚡</div>',
-  })
+  }
 }
 
 export function makeBtrIcon() {
-  return L.divIcon({
+  return {
     className: '',
     iconSize: [26, 18],
     iconAnchor: [13, 9],
     html: '<div class="map-btr-marker">BTR</div>',
-  })
+  }
 }
 
 export function makeLootIcon(dedicated) {
-  return L.divIcon({
+  return {
     className: '',
     iconSize: [16, 16],
     iconAnchor: [8, 8],
     html: `<div class="map-loot-marker${dedicated ? ' map-loot-marker-dedicated' : ''}"></div>`,
-  })
+  }
 }
 
 export function elevationLine(position, mapNorm) {
@@ -81,6 +81,80 @@ export function elevationLine(position, mapNorm) {
   const floor = floorLabel(position.y, mapNorm)
   const elevation = elevationLabel(position.y)
   return floor ? `${floor} · ${elevation}` : `ELEVATION ${elevation}`
+}
+
+export function makeCuratedKeyTooltip(keyName, priority) {
+  return `<div style="min-width:150px">
+        <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em">${escapeHtml(keyName)}</div>
+        ${priority ? '<div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;color:#9aaa98;font-size:10px">PRIORITY KEY</div>' : ''}
+      </div>`
+}
+
+export function makeLockTooltip(lock, mapNorm) {
+  const elevation = elevationLine(lock.position, mapNorm)
+  return `<div style="min-width:165px">
+        <div style="color:#6a9aaa;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.08em">KEY REQUIRED</div>
+        <div style="color:#d8ded8;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:14px;line-height:1.25;margin-top:3px">${escapeHtml(lock.keyItem.name)}</div>
+        <div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;display:flex;flex-direction:column;gap:3px;color:#9aaa98;font-size:10px">
+          <div>${escapeHtml(lock.lockType || 'lock').toUpperCase()}${lock.needsPower ? ' · POWER REQUIRED' : ''}</div>
+          ${elevation ? `<div>${escapeHtml(elevation)}</div>` : ''}
+        </div>
+      </div>`
+}
+
+export function makeSpawnTooltip(focused) {
+  return `<div><div style="color:${focused ? '#5de87a' : '#e8a030'};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${focused ? 'LIKELY PMC SPAWN' : 'PMC SPAWN'}</div></div>`
+}
+
+export function makePingTooltip(card) {
+  const pingUser = String(card.ping.user || 'Unknown')
+  const lines = [
+    card.floor ? `${card.floor} · ${card.elev}` : `ELEVATION ${card.elev}`,
+    card.motion ? `MOVING ${card.motion.dir} · ${card.motion.speed} m/s` : null,
+    card.fromMe ? `${card.fromMe.dist} m ${card.fromMe.dir} OF YOU` : null,
+    card.nearObj ? `${card.nearObj.dist} m FROM ${card.nearObj.questName.toUpperCase()}` : null,
+    card.nearKey ? `${card.nearKey.dist} m FROM ${card.nearKey.name.toUpperCase()}` : null,
+    card.nearArea ? `${card.nearArea.dist} m FROM ${card.nearArea.name.toUpperCase()}` : null,
+    card.nearExtract ? `${card.nearExtract.dist} m FROM ${card.nearExtract.name.toUpperCase()} EXTRACT` : null,
+    card.nearIntel
+      ? `NEAREST ${kindOf(card.nearIntel.point).short}: ${card.nearIntel.dist} m ${card.nearIntel.dir}`
+        + (card.nearIntel.more ? ` · ${card.nearIntel.more} MORE WITHIN ${CLUSTER_RADIUS_M} M` : '')
+      : null,
+    card.nearby?.length ? `NEARBY: ${card.nearby.map(teammate => `${teammate.user} ${teammate.dist} M ${teammate.dir}`).join(' · ')}` : null,
+  ].filter(Boolean)
+  return `
+        <div style="min-width:170px;max-width:280px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="color:${safeColor(card.color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${escapeHtml(pingUser.toUpperCase())}</span>
+            <span style="color:${safeColor(card.cadence.color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.08em">${escapeHtml(card.cadence.label)}</span>
+            <span style="color:#5c6b61;font-size:10px;margin-left:auto">${escapeHtml(ageLabel(card.age))} AGO</span>
+          </div>
+          <div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">
+            ${lines.map(line => `<div style="color:#9aaa98;font-size:11px">· ${escapeHtml(line)}</div>`).join('')}
+            ${card.nearObj ? `<div style="color:#5c6b61;font-size:10px;line-height:1.4">${escapeHtml(card.nearObj.desc)}</div>` : ''}
+          </div>
+        </div>`
+}
+
+export function makeIntelTooltip(point, kind, checked) {
+  const floor = point.y != null ? floorLabel(point.y, point.map) : null
+  const lines = [
+    point.items.join(' · '),
+    floor ? `${floor} · ${elevationLabel(point.y)}` : (point.y != null ? `ELEVATION ${elevationLabel(point.y)}` : null),
+    point.notes || null,
+    point.source === 'loot' ? 'HAND-PLACED' : null,
+  ].filter(Boolean)
+  return `
+        <div style="min-width:150px;max-width:250px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="color:${safeColor(checked ? '#5de87a' : kind.color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${escapeHtml(kind.short)}</span>
+            ${checked ? '<span style="color:#5de87a;font-size:10px">✓ CHECKED</span>' : ''}
+          </div>
+          <div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">
+            ${lines.map(line => `<div style="color:#9aaa98;font-size:11px">· ${escapeHtml(line)}</div>`).join('')}
+            <div style="color:#5c6b61;font-size:10px">click to ${checked ? 'un-check' : 'check off'}</div>
+          </div>
+        </div>`
 }
 
 export function makeZoneTooltip(title, color, lines) {
@@ -192,7 +266,7 @@ export function makeObjectivePinTooltip(pin) {
 }
 
 export function makeQuestIcon(color, initial) {
-  return L.divIcon({
+  return {
     className: '',
     iconSize: [18, 22],
     iconAnchor: [9, 22],
@@ -202,14 +276,14 @@ export function makeQuestIcon(color, initial) {
       <text x="9" y="12.5" text-anchor="middle" fill="rgba(0,0,0,0.8)"
         font-size="8" font-weight="bold" font-family="Share Tech Mono">${initial}</text>
     </svg>`,
-  })
+  }
 }
 
 export function makeSpawnIcon(focus = false) {
   const helmet = focus ? '#5de87a' : '#e8a030'
   const brim = focus ? '#2fae58' : '#c87820'
   const markerClass = focus ? 'pmc-spawn-icon pmc-spawn-icon-focus' : 'pmc-spawn-icon'
-  return L.divIcon({
+  return {
     className: '',
     iconSize: [18, 24],
     iconAnchor: [9, 24],
@@ -225,7 +299,7 @@ export function makeSpawnIcon(focus = false) {
       <!-- Body / vest -->
       <rect x="3.5" y="13" width="11" height="9" rx="1.5" fill="${helmet}"/>
     </svg></div>`,
-  })
+  }
 }
 
 // Auto-pin for API-sourced objective locations — diamond shape to distinguish from manual pins
@@ -244,7 +318,7 @@ export function makeObjIcon(pin, focusState = 'normal') {
       <text x="10" y="13.5" text-anchor="middle" fill="rgba(0,0,0,0.85)"
         font-size="7" font-weight="bold" font-family="Share Tech Mono">${escapeHtml(owner.initial)}</text>
     </svg>`).join('')
-  return L.divIcon({
+  return {
     className: '',
     iconSize: [width, 20],
     // A shifted anchor fans coincident squad pins around their shared, exact
@@ -252,7 +326,7 @@ export function makeObjIcon(pin, focusState = 'normal') {
     // artwork moves so one member cannot cover another.
     iconAnchor: [width / 2 - pin.offsetX, 10 - pin.offsetY],
     html: `<div class="${pinClass}" style="position:relative;width:${width}px">${diamonds}</div>`,
-  })
+  }
 }
 
 // Intel / document spawn. Three glyphs so the kind reads without a tooltip:
@@ -274,14 +348,14 @@ export function makeIntelIcon(kind, checked) {
     ? `<path d="M14.5 15.5 l2.5 2.5 l4.5 -5.5" fill="none" stroke="#5de87a" stroke-width="2.4"
          stroke-linecap="round" stroke-linejoin="round"/>`
     : ''
-  return L.divIcon({
+  return {
     className: '',
     iconSize: [22, 22],
     iconAnchor: [11, 11],
     html: `<svg width="22" height="22" viewBox="0 0 22 22" xmlns="http://www.w3.org/2000/svg" style="opacity:${checked ? 0.45 : 1}">
       ${glyph}${tick}
     </svg>`,
-  })
+  }
 }
 
 // Position ping — a view cone, not a bare dot: "here, watching that way".
@@ -299,7 +373,7 @@ export function makePingIcon(color, initial, angle, opacity, taps, focusState = 
     focusState === 'dim' ? 'map-ping-marker-dim' : '',
   ].filter(Boolean).join(' ')
   const displayOpacity = focusState === 'dim' ? Math.min(opacity, 0.42) : opacity
-  return L.divIcon({
+  return {
     className: '',
     iconSize: [44, 44],
     iconAnchor: [22, 22],
@@ -315,5 +389,5 @@ export function makePingIcon(color, initial, angle, opacity, taps, focusState = 
       ${dots}
       </svg>
     </div>`,
-  })
+  }
 }

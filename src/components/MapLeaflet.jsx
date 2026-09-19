@@ -2,9 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { TARKOV_MAP_CONFIGS } from '../data/tarkovMapConfigs'
-import {
-  pingAngle, staleness, ageLabel, floorLabel, elevationLabel, replayElapsed,
-} from '../tarkovPings'
+import { pingAngle, staleness, ageLabel, replayElapsed } from '../tarkovPings'
 import {
   curatedLootPoints, mergeIntelSources, kindOf, countByKind,
   CLUSTER_RADIUS_M, RING_RADII_M, ringPath, clusterCounts, bestCluster,
@@ -28,7 +26,7 @@ import { classifyPmcSpawns } from '../tarkovSpawns'
 import { framePositionSignature } from '../squadFocus'
 import { effectiveCameraMode, readCameraMode, writeCameraMode } from '../cameraMode'
 import { indexTasksById } from '../taskIndex'
-import { escapeHtml, parseSanitizedSvg, safeColor } from '../mapHtml'
+import { escapeHtml, parseSanitizedSvg } from '../mapHtml'
 import { focusedPingIds as getFocusedPingIds, ownPingCard, pingCompanionCards } from '../mapPingPolicy'
 import {
   hazardCountsFor,
@@ -41,6 +39,7 @@ import {
   makeKeyIcon, mapLabel, formatRoubles, makeZoneLabelIcon, makeSwitchIcon, makeBtrIcon,
   makeLootIcon, elevationLine, makeZoneTooltip, makeQuestMarkerTooltip, makeObjectivePinTooltip,
   makeQuestIcon, makeSpawnIcon, makeObjIcon, makeIntelIcon, makePingIcon,
+  makeCuratedKeyTooltip, makeLockTooltip, makeSpawnTooltip, makePingTooltip, makeIntelTooltip,
 } from './mapMarkerHtml'
 import useDialogFocus from '../useDialogFocus'
 
@@ -734,7 +733,7 @@ export default function MapLeaflet({
       const latlng = normToLatlng([m.x, m.y], bounds)
       const color = getUserColor(m.user, memberNames, m.user_id, memberIds)
       const markerUser = String(m.user || 'Unknown')
-      const icon = makeQuestIcon(color, escapeHtml(markerUser[0].toUpperCase()))
+      const icon = L.divIcon(makeQuestIcon(color, escapeHtml(markerUser[0].toUpperCase())))
       const task = taskById.get(m.questId)
       const objectives = task?.objectives?.filter(o => !o.optional) || []
       const tooltipHtml = makeQuestMarkerTooltip({
@@ -760,28 +759,17 @@ export default function MapLeaflet({
     const curated = Object.entries(mapKeys).map(([keyName, v]) => {
       if (v.loc_x == null || v.loc_y == null) return null
       const latlng = normToLatlng([v.loc_x, v.loc_y], bounds)
-      const km = L.marker(latlng, { icon: makeKeyIcon(v.priority), interactive: true, zIndexOffset: 100 })
-      bindTacticalTooltip(km, `<div style="min-width:150px">
-        <div style="color:#c9a84c;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em">${escapeHtml(keyName)}</div>
-        ${v.priority ? '<div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;color:#9aaa98;font-size:10px">PRIORITY KEY</div>' : ''}
-      </div>`, { offset: [0, -10] })
+      const km = L.marker(latlng, { icon: L.divIcon(makeKeyIcon(v.priority)), interactive: true, zIndexOffset: 100 })
+      bindTacticalTooltip(km, makeCuratedKeyTooltip(keyName, v.priority), { offset: [0, -10] })
       return km
     })
     const upstream = showKeyLocks ? namedLocks.map(lock => {
-      const elevation = elevationLine(lock.position, mapNorm)
       const km = L.marker(L.latLng(lock.position.z, lock.position.x), {
-        icon: makeKeyIcon(false),
+        icon: L.divIcon(makeKeyIcon(false)),
         interactive: true,
         zIndexOffset: 80,
       })
-      bindTacticalTooltip(km, `<div style="min-width:165px">
-        <div style="color:#6a9aaa;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.08em">KEY REQUIRED</div>
-        <div style="color:#d8ded8;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:14px;line-height:1.25;margin-top:3px">${escapeHtml(lock.keyItem.name)}</div>
-        <div style="border-top:1px solid #262b25;margin-top:5px;padding-top:5px;display:flex;flex-direction:column;gap:3px;color:#9aaa98;font-size:10px">
-          <div>${escapeHtml(lock.lockType || 'lock').toUpperCase()}${lock.needsPower ? ' · POWER REQUIRED' : ''}</div>
-          ${elevation ? `<div>${escapeHtml(elevation)}</div>` : ''}
-        </div>
-      </div>`, { offset: [0, -10] })
+      bindTacticalTooltip(km, makeLockTooltip(lock, mapNorm), { offset: [0, -10] })
       return km
     }) : []
     return [...curated, ...upstream]
@@ -839,7 +827,7 @@ export default function MapLeaflet({
 
       const labelPosition = centroid(extract.outline) || [extract.position.z, extract.position.x]
       const label = L.marker(labelPosition, {
-        icon: makeZoneLabelIcon(extract.name || 'UNKNOWN', style.color, extractSwitches.length ? '⚡' : ''),
+        icon: L.divIcon(makeZoneLabelIcon(extract.name || 'UNKNOWN', style.color, extractSwitches.length ? '⚡' : '')),
         interactive: true,
         zIndexOffset: 70,
       })
@@ -856,7 +844,7 @@ export default function MapLeaflet({
           .map(candidate => candidate.name)
           .filter(Boolean)
         const switchMarker = L.marker(L.latLng(switchRecord.position.z, switchRecord.position.x), {
-          icon: makeSwitchIcon(),
+          icon: L.divIcon(makeSwitchIcon()),
           interactive: true,
           zIndexOffset: 60,
         })
@@ -911,7 +899,7 @@ export default function MapLeaflet({
       }
       const labelPosition = centroid(transit.outline) || [transit.position.z, transit.position.x]
       const label = L.marker(labelPosition, {
-        icon: makeZoneLabelIcon(`→ ${destination}`, color),
+        icon: L.divIcon(makeZoneLabelIcon(`→ ${destination}`, color)),
         interactive: true,
         zIndexOffset: 65,
       })
@@ -925,7 +913,7 @@ export default function MapLeaflet({
     if (!showBtr) return []
     return btrStops.filter(stop => stop?.position).map(stop => {
       const marker = L.marker(L.latLng(stop.position.z, stop.position.x), {
-        icon: makeBtrIcon(),
+        icon: L.divIcon(makeBtrIcon()),
         interactive: true,
         zIndexOffset: 50,
       })
@@ -979,7 +967,7 @@ export default function MapLeaflet({
         elevationLine(point.position, mapNorm),
       ])
       const marker = L.marker(L.latLng(point.position.z, point.position.x), {
-        icon: makeLootIcon(dedicated),
+        icon: L.divIcon(makeLootIcon(dedicated)),
         interactive: true,
         zIndexOffset: 40,
       })
@@ -996,12 +984,9 @@ export default function MapLeaflet({
       if (pmcSpawnIntel.excluded.has(String(key))) return null
       const focused = pmcSpawnIntel.focused.has(String(key))
       const sm = L.marker(L.latLng(s.position.z, s.position.x), {
-        icon: makeSpawnIcon(focused), interactive: true, zIndexOffset: focused ? 90 : 50,
+        icon: L.divIcon(makeSpawnIcon(focused)), interactive: true, zIndexOffset: focused ? 90 : 50,
       })
-      bindTacticalTooltip(sm,
-        `<div><div style="color:${focused ? '#5de87a' : '#e8a030'};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${focused ? 'LIKELY PMC SPAWN' : 'PMC SPAWN'}</div></div>`,
-        { offset: [0, -10] }
-      )
+      bindTacticalTooltip(sm, makeSpawnTooltip(focused), { offset: [0, -10] })
       return sm
     })
   }, [showSpawns, mapNorm, apiSpawns, pmcSpawnIntel])
@@ -1016,7 +1001,7 @@ export default function MapLeaflet({
         : focusKey
         ? (pin.key === focusKey ? 'focus' : 'dim')
         : 'normal'
-      const icon = makeObjIcon(pin, focusState)
+      const icon = L.divIcon(makeObjIcon(pin, focusState))
       const tooltipHtml = makeObjectivePinTooltip(pin)
       const lm = L.marker(latlng, { icon, interactive: true, zIndexOffset: 200 })
       bindTacticalTooltip(lm, tooltipHtml, { offset: [0, -12] })
@@ -1212,40 +1197,15 @@ export default function MapLeaflet({
         ? (focusedPingIds.has(p.id) ? 'focus' : 'dim')
         : 'normal'
       const pingUser = String(p.user || 'Unknown')
-      const icon = makePingIcon(
+      const icon = L.divIcon(makePingIcon(
         card.color,
         escapeHtml(pingUser[0].toUpperCase()),
         angle,
         Math.max(decay.opacity, 0.35),
         p.taps,
         focusState,
-      )
-      const lines = [
-        card.floor ? `${card.floor} · ${card.elev}` : `ELEVATION ${card.elev}`,
-        card.motion ? `MOVING ${card.motion.dir} · ${card.motion.speed} m/s` : null,
-        card.fromMe ? `${card.fromMe.dist} m ${card.fromMe.dir} OF YOU` : null,
-        card.nearObj ? `${card.nearObj.dist} m FROM ${card.nearObj.questName.toUpperCase()}` : null,
-        card.nearKey ? `${card.nearKey.dist} m FROM ${card.nearKey.name.toUpperCase()}` : null,
-        card.nearArea ? `${card.nearArea.dist} m FROM ${card.nearArea.name.toUpperCase()}` : null,
-        card.nearExtract ? `${card.nearExtract.dist} m FROM ${card.nearExtract.name.toUpperCase()} EXTRACT` : null,
-        card.nearIntel
-          ? `NEAREST ${kindOf(card.nearIntel.point).short}: ${card.nearIntel.dist} m ${card.nearIntel.dir}`
-            + (card.nearIntel.more ? ` · ${card.nearIntel.more} MORE WITHIN ${CLUSTER_RADIUS_M} M` : '')
-          : null,
-        card.nearby?.length ? `NEARBY: ${card.nearby.map(teammate => `${teammate.user} ${teammate.dist} M ${teammate.dir}`).join(' · ')}` : null,
-      ].filter(Boolean)
-      const tooltipHtml = `
-        <div style="min-width:170px;max-width:280px">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-            <span style="color:${safeColor(card.color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${escapeHtml(pingUser.toUpperCase())}</span>
-            <span style="color:${safeColor(card.cadence.color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.08em">${escapeHtml(card.cadence.label)}</span>
-            <span style="color:#5c6b61;font-size:10px;margin-left:auto">${escapeHtml(ageLabel(card.age))} AGO</span>
-          </div>
-          <div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">
-            ${lines.map(l => `<div style="color:#9aaa98;font-size:11px">· ${escapeHtml(l)}</div>`).join('')}
-            ${card.nearObj ? `<div style="color:#5c6b61;font-size:10px;line-height:1.4">${escapeHtml(card.nearObj.desc)}</div>` : ''}
-          </div>
-        </div>`
+      ))
+      const tooltipHtml = makePingTooltip(card)
       // z then x — y is height, never placement.
       const lm = L.marker(L.latLng(p.z, p.x), {
         icon,
@@ -1367,27 +1327,10 @@ export default function MapLeaflet({
     return allIntel.map(point => {
       const kind = kindOf(point)
       const checked = isChecked(point.id)
-      const floor = point.y != null ? floorLabel(point.y, point.map) : null
-      const lines = [
-        point.items.join(' · '),
-        floor ? `${floor} · ${elevationLabel(point.y)}` : (point.y != null ? `ELEVATION ${elevationLabel(point.y)}` : null),
-        point.notes || null,
-        point.source === 'loot' ? 'HAND-PLACED' : null,
-      ].filter(Boolean)
-      const tooltipHtml = `
-        <div style="min-width:150px;max-width:250px">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-            <span style="color:${safeColor(checked ? '#5de87a' : kind.color)};font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.1em">${escapeHtml(kind.short)}</span>
-            ${checked ? `<span style="color:#5de87a;font-size:10px">✓ CHECKED</span>` : ''}
-          </div>
-          <div style="border-top:1px solid #262b25;padding-top:6px;display:flex;flex-direction:column;gap:3px">
-            ${lines.map(l => `<div style="color:#9aaa98;font-size:11px">· ${escapeHtml(l)}</div>`).join('')}
-            <div style="color:#5c6b61;font-size:10px">click to ${checked ? 'un-check' : 'check off'}</div>
-          </div>
-        </div>`
+      const tooltipHtml = makeIntelTooltip(point, kind, checked)
       // z then x, the same call PMC spawns and pings use — no calibration.
       const lm = L.marker(L.latLng(point.z, point.x), {
-        icon: makeIntelIcon(kind, checked),
+        icon: L.divIcon(makeIntelIcon(kind, checked)),
         interactive: true,
         zIndexOffset: 150,
       })

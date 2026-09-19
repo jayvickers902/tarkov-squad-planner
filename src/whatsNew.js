@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '2026.22'
+export const RELEASE_VERSION = '2026.23'
 
 export const SETUP_STEPS = [
   {
@@ -28,6 +28,18 @@ export const FIRST_LIVE_NOTES_VERSION = '2026.09'
 // Newest first — WelcomeModal shows RELEASES[0] and nothing else, so a new
 // release goes on top of this array and RELEASE_VERSION moves with it.
 export const RELEASES = [
+  {
+    version: '2026.23',
+    date: '2026-09-19',
+    title: 'MAP MARKERS, ONE TESTED PRESENTATION PATH',
+    items: [
+      {
+        tag: 'IMPROVED',
+        title: 'MAP MARKERS KEEP THEIR LOOK THROUGH FUTURE UPDATES',
+        body: 'Quest pins, keys, spawns, squad pings and intel now build their icons and tooltips through one isolated presentation module. The map looks and behaves the same, while its escaping and marker output can be tested without mounting the whole raid map.',
+      },
+    ],
+  },
   {
     version: '2026.22',
     date: '2026-09-11',

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   makeQuestMarkerTooltip, makeObjectivePinTooltip, makeZoneLabelIcon, makeZoneTooltip,
-  makeQuestIcon, makeObjIcon, makePingIcon,
+  makeQuestIcon, makeObjIcon, makePingIcon, makeCuratedKeyTooltip, makeLockTooltip,
+  makeSpawnTooltip, makePingTooltip, makeIntelTooltip,
 } from './mapMarkerHtml'
 
 // `memberName` traces back to a user-chosen callsign, `questName`/`traderName`
@@ -138,7 +139,7 @@ describe('icon builders — colour boundary', () => {
     ]
 
     for (const icon of icons) {
-      const html = typeof icon === 'string' ? icon : icon.options.html
+      const html = icon.html
       expect(html).not.toContain('<script>')
       expect(html).toContain('#9aaa98')
     }
@@ -210,15 +211,15 @@ describe('makeZoneLabelIcon / makeZoneTooltip — colour and text boundary', () 
   it('falls back to the safe colour for a hostile zone label colour', () => {
     const icon = makeZoneLabelIcon('Extract', 'javascript:alert(1)')
 
-    expect(icon.options.html).toContain('--zone-color:#9aaa98')
-    expect(icon.options.html).not.toContain('javascript:')
+    expect(icon.html).toContain('--zone-color:#9aaa98')
+    expect(icon.html).not.toContain('javascript:')
   })
 
   it('escapes a hostile zone label text and badge', () => {
     const icon = makeZoneLabelIcon(`Extract${SCRIPT_PAYLOAD}`, '#e8a030', `<b>${SCRIPT_PAYLOAD}</b>`)
 
-    expect(icon.options.html).not.toContain('<script>')
-    expect(icon.options.html).toContain('&lt;script&gt;')
+    expect(icon.html).not.toContain('<script>')
+    expect(icon.html).toContain('&lt;script&gt;')
   })
 
   it('falls back to the safe colour for a hostile zone tooltip title colour', () => {
@@ -233,5 +234,71 @@ describe('makeZoneLabelIcon / makeZoneTooltip — colour and text boundary', () 
     expect(html).not.toContain('<script>')
     expect(html).toContain('&lt;script&gt;')
     expect(html).toContain('&lt;/div&gt;')
+  })
+})
+
+describe('remaining map tooltip builders — escaping boundary', () => {
+  it('escapes curated and upstream key content', () => {
+    const curated = makeCuratedKeyTooltip(`Dorm key${SCRIPT_PAYLOAD}`, true)
+    const upstream = makeLockTooltip({
+      keyItem: { name: `Factory key${SCRIPT_PAYLOAD}` },
+      lockType: `door${DIV_BREAKOUT}`,
+      needsPower: true,
+      position: { y: 0 },
+    }, 'customs')
+
+    expect(curated).not.toContain('<script>')
+    expect(curated).toContain('&lt;script&gt;')
+    expect(curated).toContain('PRIORITY KEY')
+    expect(upstream).not.toContain('<script>')
+    expect(upstream).not.toContain('</div><div class="injected">')
+    expect(upstream.toLowerCase()).toContain('&lt;/div&gt;')
+    expect(upstream).toContain('POWER REQUIRED')
+  })
+
+  it('keeps both PMC spawn variants byte-stable', () => {
+    expect(makeSpawnTooltip(false)).toContain('color:#e8a030')
+    expect(makeSpawnTooltip(false)).toContain('>PMC SPAWN<')
+    expect(makeSpawnTooltip(true)).toContain('color:#5de87a')
+    expect(makeSpawnTooltip(true)).toContain('>LIKELY PMC SPAWN<')
+  })
+
+  it('escapes ping-card presentation fields and sanitizes both colours', () => {
+    const html = makePingTooltip({
+      ping: { user: `Raider${SCRIPT_PAYLOAD}` },
+      color: 'javascript:alert(1)',
+      cadence: { color: 'expression(alert(2))', label: `RECON${SCRIPT_PAYLOAD}` },
+      age: 0,
+      floor: null,
+      elev: '0 M',
+      nearObj: { dist: 12, questName: `Quest${SCRIPT_PAYLOAD}`, desc: `Desc${DIV_BREAKOUT}` },
+      nearby: [{ user: `Mate${SCRIPT_PAYLOAD}`, dist: 8, dir: 'N' }],
+    })
+
+    expect(html).not.toContain('<script>')
+    expect(html).not.toContain('javascript:')
+    expect(html).not.toContain('expression(')
+    expect(html).not.toContain('</div><div class="injected">')
+    expect(html).toContain('&lt;script&gt;')
+    expect(html).toContain('color:#9aaa98')
+  })
+
+  it('escapes intel presentation fields and sanitizes the kind colour', () => {
+    const html = makeIntelTooltip({
+      items: [`Folder${SCRIPT_PAYLOAD}`],
+      notes: `Note${DIV_BREAKOUT}`,
+      source: 'loot',
+      y: null,
+    }, {
+      short: `INTEL${SCRIPT_PAYLOAD}`,
+      color: 'javascript:alert(1)',
+    }, false)
+
+    expect(html).not.toContain('<script>')
+    expect(html).not.toContain('javascript:')
+    expect(html).not.toContain('</div><div class="injected">')
+    expect(html).toContain('&lt;script&gt;')
+    expect(html).toContain('color:#9aaa98')
+    expect(html).toContain('HAND-PLACED')
   })
 })

@@ -13,7 +13,7 @@ ESLint runs clean (`eslint.config.js`, zero warnings across 260 files) and is a 
 TypeScript in the source, but `npm run typecheck` runs `tsc --strict --checkJs` over an opt-in list
 of 24 files in `tsconfig.typecheck.json` — widen that list rather than adding `.ts` files. The config
 declares `lib: ["ES2022", "DOM", "DOM.Iterable"]`, so `window`/`document` globals resolve for any
-file added to the list. Vitest suite: 100 files, 809 tests. Companion: 14 files, 76 tests. Vite
+file added to the list. Vitest suite: 100 files, 813 tests. Companion: 14 files, 76 tests. Vite
 build warnings about chunk size are acceptable; the bundle budget is the real gate.
 
 ## Commands

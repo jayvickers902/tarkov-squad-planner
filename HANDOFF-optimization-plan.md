@@ -414,7 +414,8 @@ project-structure tree at all. An agent following the map to "the `FEATURED` lis
 **Status: landed originally in `22ff5c2`; re-reconciled on 2026-09-19.** The first pass accurately
 mapped the shared-domain move as it stood, but later feature work made its live counts and boundary
 description stale again. This pass derives current facts from the tree and fresh local gates:
-**260 linted files**, **24 typechecked files**, **100 test files / 809 tests**, all six bundle budgets
+**260 linted files**, **24 typechecked files**, and **100 test files / 809 tests** at the Step 9
+commit (**813 tests** after Step 10 added four cases), all six bundle budgets
 passing with `tasks` still largest at **677.1 KiB**, **15** flat `shared/domain` files, and ordered SQL
 through `10_38`.
 
@@ -443,9 +444,9 @@ through `10_38`.
 
 ### Step 10 — Extract MapLeaflet's presentation builders · **Sonnet**
 
-**Status against the 2026-09-19 brief: partial.** The extraction shipped in `0122fdd`: sixteen
-builders moved into
-`src/components/mapMarkerHtml.js`; `MapLeaflet.jsx` went 2,577 → **2,267** lines. The plan's
+**Status: landed in `0122fdd` and completed against the 2026-09-19 brief in this wave.** The first
+extraction moved sixteen builders into `src/components/mapMarkerHtml.js`; `MapLeaflet.jsx` went
+2,577 → **2,267** lines. The plan's
 "~2,100" target was arithmetic that did not hold: the 470-line estimate spanned lines 89–505, but
 that range contains `bindTacticalTooltip` and `LayerToggleRow`, which the plan's own DO-NOT-MOVE
 list excludes — about 96 lines that were never going to leave.
@@ -453,12 +454,17 @@ list excludes — about 96 lines that were never going to leave.
 Two deviations worth knowing. `thumb` and `MAP_LABELS` stayed module-private rather than exported,
 because only the moved builders read them. And eleven raw colour interpolations were wrapped in
 `safeColor` — the one deliberate break from a verbatim move, described in the commit and in the
-section at the top of this file. The extraction and sanitizer tests remain present on the current
-tree, but `0122fdd` did not touch `src/whatsNew.js`; this wave must complete the stricter release
-invariant in the same commit as its remaining presentation-builder extraction.
+section at the top of this file. This wave moved the five remaining inline key, lock, spawn, ping,
+and intel tooltip builders too, leaving `MapLeaflet.jsx` at **2,200** lines and the presentation
+module at **393**. Icon builders now return plain Leaflet option objects, so the module imports
+neither React nor Leaflet; `MapLeaflet` performs the unchanged `L.divIcon(...)` construction at the
+layer boundary. The sanitizer suite now has 20 cases, including the five added builders, and both
+render-level MapLeaflet suites pass untouched. Release **2026.23** was prepended and
+`RELEASE_VERSION` bumped in the same commit.
 
-`MapLeaflet.jsx` is 2,573 lines: 40 props, 26 `useState`, 12 refs, 23 `useEffect` — four of them
-over 100 lines. Lines 34–505 are pure DOM-string builders that touch no React and no map instance:
+At plan drafting, `MapLeaflet.jsx` was 2,573 lines: 40 props, 26 `useState`, 12 refs, 23
+`useEffect` — four of them over 100 lines. Its lines 34–505 included the pure DOM-string builders
+that touched no React and no map instance:
 the icon factories, `makeQuestMarkerTooltip`, `makeObjectivePinTooltip`, `makeZoneTooltip`,
 `formatRoubles`, `mapLabel`, `thumb`, `elevationLine`.
 
@@ -470,13 +476,31 @@ scope.** That is what makes the move mechanical.
 - `src/components/MapLeaflet.jsx` — import them; delete the originals.
 - `src/components/mapMarkerHtml.test.js` — new; cover escaping of a hostile quest name, colour and
   image URL through each builder (`escapeHtml`, `safeColor`, `safeImageUrl` from `src/mapHtml.js`).
-- `src/whatsNew.js` — release entry only if behaviour changes; a pure move needs none.
+- `src/whatsNew.js` — the original plan treated a pure move as release-note-free; the 2026-09-19
+  brief explicitly classifies Step 10 as user-visible, so release 2026.23 ships in the same commit.
 
 **Success criteria**
-- `MapLeaflet.jsx` drops below ~2,100 lines with no behaviour change.
+- **Outcome:** `MapLeaflet.jsx` is 2,200 lines with no behaviour change. The original ~2,100 estimate
+  included about 96 lines of explicitly excluded Leaflet binding and React control code; reaching it
+  would have violated this step's own boundary.
 - `MapLeaflet.centreOnMe.test.jsx` and the Step 7 a11y test pass **untouched**.
-- The new module imports neither React nor Leaflet, making it a candidate for
+- The presentation module imports neither React nor Leaflet, making it a candidate for
   `tsconfig.typecheck.json` afterwards.
+
+---
+
+## Closing accounting — 2026-09-19
+
+- **Landed:** Steps 1–10. Steps 7, 9, and 10 were re-audited against the current tree in this wave;
+  Step 7's render contract, Step 9's repository map, and Step 10's dependency-free presentation
+  boundary and release invariant are current.
+- **Deferred:** none of the ten steps. Step 5's Icebreaker/Labyrinth trim was evaluated and rejected
+  as behaviour-changing, not deferred. The large MapLeaflet layer effects and incremental
+  child-table sync remain explicitly outside this plan.
+- **Still owed to a human:** one live `CENTRE ON ME` click on the deployed map behind Google OAuth.
+  It remains flagged in `HANDOFF-outstanding-work.md`; no automated check here claims to replace it.
+- **Final local verification:** `npm run typecheck && npm run lint && npm test` passes at **100 test
+  files / 813 tests**.
 
 ---
 

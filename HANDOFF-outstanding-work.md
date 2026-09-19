@@ -33,7 +33,7 @@ RPC, immediate browser/companion publishing, companion 0.3.1, and release 2026.1
 | `2bd705c` | Raid view's quest column condenses; wiki link per quest |
 | `10bcfdc` | `CENTRE ON ME`, and OVERVIEW no longer retires FOLLOW for good |
 
-Root suite **100 files / 809 tests** and lint scope **260 files**, rechecked 2026-09-19. The
+Root suite **100 files / 813 tests** and lint scope **260 files**, rechecked 2026-09-19. The
 24-file opt-in typecheck is clean. Companion **14 / 76**, Playwright 9/9, and the web and companion
 builds were clean at the last full 13-check gate.
 
