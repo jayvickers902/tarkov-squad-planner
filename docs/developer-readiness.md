@@ -1,6 +1,6 @@
 # Developer readiness handoff
 
-Status: implementation and review handoff, 2026-09-11.
+Status: implementation and review handoff, 2026-09-19.
 
 This document is the short operational entry point for the quality, scaling,
 architecture, and security work completed in this program. It separates facts
@@ -40,7 +40,7 @@ Two of those gates are narrower than their names suggest, and should be read as
 starting points rather than coverage:
 
 - **The type check is opt-in per file.** `tsconfig.typecheck.json` compiles
-  **24 files out of 237** under `strict` + `checkJs`: `partySyncMetrics.js`,
+  **24 files out of 260 linted files** under `strict` + `checkJs`: `partySyncMetrics.js`,
   `scripts/check-bundle-budget.mjs`, twenty pure helpers added in four batches,
   plus `cameraMode.js` and `chunkLoadRecovery.js` added once the DOM lib landed.
   The fourth batch added `taskIndex.js`, `eftLocations.js`, `raidDebrief.js`,
@@ -165,7 +165,7 @@ prints, so the two can be compared directly.
 
 These are repository gates, not provider limits.
 
-**Every budget passes.** As of 2026-09-04 the largest async raw chunk is
+**Every budget passes.** Rechecked on 2026-09-19, the largest async raw chunk is
 `tasks` at 677.1 KiB against a 830.1 KiB warn and an 878.9 KiB fail — 18.4% of
 headroom. The `loot` chunk that held this line at 843.5 KiB (WARN) is gone: it
 is one file per map now, carrying item ids against a per-map dictionary instead
@@ -336,7 +336,7 @@ npm run validate:migrations
   free of React, Tauri, Supabase, `window`, and `document` dependencies.
 - The application still contains large data chunks, but all six bundle budgets
   pass; `tasks` is the one to watch. The lint backlog is cleared and fenced:
-  `npx eslint . --max-warnings 0` exits 0 across 237 files, and the six rules
+  `npx eslint . --max-warnings 0` exits 0 across 260 files, and the six rules
   that were softened for that backlog — `no-unused-vars`, `no-empty`,
   `no-control-regex`, `no-useless-escape`, `require-yield` and
   `react-hooks/exhaustive-deps` — are `error` in `eslint.config.js`, so a

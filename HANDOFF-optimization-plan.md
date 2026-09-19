@@ -13,8 +13,8 @@ tests · all six bundle budgets PASS · largest async raw `tasks-*.js` at 779.3 
 Note that `docs/developer-readiness.md` records 86/708 and an entry budget of 560,000 B; both are
 stale. Step 9 fixes them.
 
-**Status as of 2026-09-04: all ten steps are done and committed** — `7187d99` `5d12a8b` `765222b`
-`78872f9` `211cd7d` `6adb889` `37353ce` `ccc5345` `22ff5c2` `0122fdd`. Nothing is pushed.
+**Original-run status as of 2026-09-04: all ten steps were committed** — `7187d99` `5d12a8b`
+`765222b` `78872f9` `211cd7d` `6adb889` `37353ce` `ccc5345` `22ff5c2` `0122fdd`.
 
 Gates on the finished tree: `npm run validate:migrations` pass · `npm run lint` clean across 237
 files · `npm run typecheck` clean at 19 files · `npm test` at **90 files / 747 tests** (from 87/712)
@@ -24,6 +24,14 @@ KiB, 18.4% headroom, up from 779.3 KiB and 6.1%**.
 See each step's **Status** line below for what actually shipped, including where it differed from
 the plan — Step 5 in particular rejected a sub-step this plan had asked for, with reasoning worth
 reading before anyone re-attempts it.
+
+## 2026-09-19 audit before Waves 3 and 4
+
+| Step | Audit result | Tree evidence before this wave |
+|---|---|---|
+| 7 | **Landed** | `ccc5345` is an ancestor; the source-text test is absent; the render test uses the same eight hook stubs as `MapLeaflet.centreOnMe.test.jsx` and covers the Step 2 names/pressed states. |
+| 9 | **Partial** | `22ff5c2` is an ancestor and the `/shared` map exists, but current facts had drifted to 260 linted files, 24 typechecked files, 100 test files / 809 tests, 15 `shared/domain` files, and migrations through `10_38`. Ownership docs still described the companion importing through the web tree. |
+| 10 | **Partial** | `0122fdd` is an ancestor; `mapMarkerHtml.js` and its sanitizer tests exist and `MapLeaflet.jsx` is 2,257 lines, but that commit omitted the release bump and release entry required by this wave's brief. |
 
 ## Two things this run found that are not in the ten steps
 
@@ -403,28 +411,27 @@ CLAUDE.md calls itself the map, and the map has drifted from the `/shared` move.
 project-structure tree at all. An agent following the map to "the `FEATURED` list in
 `src/constants.js`" opens a two-line file.
 
-**Status: in flight — this pass.** Landed against the tree as it stood once Steps 1–6 and 8 had
-already shipped (Step 7 still mid-flight concurrently), so the numbers corrected below are the
-current ones, not the 87/712 baseline this plan was drafted against.
+**Status: landed originally in `22ff5c2`; re-reconciled on 2026-09-19.** The first pass accurately
+mapped the shared-domain move as it stood, but later feature work made its live counts and boundary
+description stale again. This pass derives current facts from the tree and fresh local gates:
+**260 linted files**, **24 typechecked files**, **100 test files / 809 tests**, all six bundle budgets
+passing with `tasks` still largest at **677.1 KiB**, **15** flat `shared/domain` files, and ordered SQL
+through `10_38`.
 
-**Files** (grew by one beyond the original list — this file needed the same reconciliation)
-- `CLAUDE.md` — added a `shared/` block (`shared/domain/` plus the three root facades) to *Project
-  structure*; marked every shimmed helper with a `†` back to its `shared/domain/` implementation;
-  corrected ESLint scope to **237 files**, typecheck to **19 files** (DOM lib recorded as shipped),
-  and the vitest count (written as 726 during the pass, while Step 7's concurrent file swap was
-  still in flight; corrected to 731 when that landed, and again to **90 files / 747 tests** after
-  Step 10 added its own test file — the hazard of writing a live number into a document).
-- `docs/developer-readiness.md` — corrected the entry budget to **465,000 B warn / 495,000 B fail**
-  raw and **137,000 B warn / 146,000 B fail** gzip (`scripts/check-bundle-budget.mjs:23`; the other
-  four budget rows were verified correct and left alone); recorded the `"dom"`-lib decision as made,
-  not pending, at 19/237 files; replaced the `tasks`-chunk narrative with the Step 5 result (779.3 →
-  677.1 KiB, 6.1% → 18.4% headroom) and the rejected icebreaker/labyrinth sub-step; corrected the
-  231-file lint-scope mention to 237.
-- `docs/shared-domain-boundary.md` — made the module table name the `shared/domain/` implementation
-  paths the code actually imports, alongside the `shared/` facade paths, and listed the twelve other
-  `shared/domain/` modules backing the `src/`-level shims.
-- `HANDOFF-optimization-plan.md` (this file) — added the status block above and a **Status** line to
-  each shipped/in-flight step, recording where the shipped commit differed from the plan.
+**Files**
+- `CLAUDE.md` — refreshed the gate counts, stylesheet/migration/domain counts, and the helper, hook,
+  component, shared-domain, and map-builder inventory against files that exist now.
+- `docs/architecture-ownership.md` — corrected the old claim that the companion imports the sync
+  engine through `src/`; it now names the `shared/companionSyncEngine.js` facade, the web
+  compatibility shim, and the direct `shared/domain/wipeAlignment.js` policy used by both hosts.
+- `docs/developer-readiness.md` — refreshed the 24-of-260 typecheck scope, 260-file lint scope, and
+  the 2026-09-19 bundle recheck while preserving the historical decisions and budget section.
+- `docs/shared-domain-boundary.md` — records four root facades, 15 flat domain files, 13 compatibility
+  shims, `taskCatalogData.js` behind its facade, and `wipeAlignment.js` as the current direct import
+  where no facade exists.
+- `HANDOFF-outstanding-work.md` — refreshed live gate counts and made the deployed `CENTRE ON ME`
+  click explicitly **human-owed** behind Google OAuth; it remains in place and is not automated.
+- `HANDOFF-optimization-plan.md` (this file) — records the pre-change audit and current outcomes.
 
 **Success criteria**
 - Every path named in CLAUDE.md's structure section exists and holds what the description claims.
@@ -436,7 +443,8 @@ current ones, not the 87/712 baseline this plan was drafted against.
 
 ### Step 10 — Extract MapLeaflet's presentation builders · **Sonnet**
 
-**Status: shipped in `0122fdd`.** Sixteen builders moved verbatim into
+**Status against the 2026-09-19 brief: partial.** The extraction shipped in `0122fdd`: sixteen
+builders moved into
 `src/components/mapMarkerHtml.js`; `MapLeaflet.jsx` went 2,577 → **2,267** lines. The plan's
 "~2,100" target was arithmetic that did not hold: the 470-line estimate spanned lines 89–505, but
 that range contains `bindTacticalTooltip` and `LayerToggleRow`, which the plan's own DO-NOT-MOVE
@@ -445,7 +453,9 @@ list excludes — about 96 lines that were never going to leave.
 Two deviations worth knowing. `thumb` and `MAP_LABELS` stayed module-private rather than exported,
 because only the moved builders read them. And eleven raw colour interpolations were wrapped in
 `safeColor` — the one deliberate break from a verbatim move, described in the commit and in the
-section at the top of this file.
+section at the top of this file. The extraction and sanitizer tests remain present on the current
+tree, but `0122fdd` did not touch `src/whatsNew.js`; this wave must complete the stricter release
+invariant in the same commit as its remaining presentation-builder extraction.
 
 `MapLeaflet.jsx` is 2,573 lines: 40 props, 26 `useState`, 12 refs, 23 `useEffect` — four of them
 over 100 lines. Lines 34–505 are pure DOM-string builders that touch no React and no map instance:

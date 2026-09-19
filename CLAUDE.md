@@ -9,11 +9,11 @@ Escape from Tarkov raid-coordination tool. Live at **dudgy.net**.
 - **Hosting:** Vercel (SPA rewrite + CSP in `vercel.json`)
 - **Maps:** Leaflet (`react-leaflet` not used; raw Leaflet in `MapLeaflet.jsx`)
 
-ESLint runs clean (`eslint.config.js`, zero warnings across 237 files) and is a CI gate. There is no
+ESLint runs clean (`eslint.config.js`, zero warnings across 260 files) and is a CI gate. There is no
 TypeScript in the source, but `npm run typecheck` runs `tsc --strict --checkJs` over an opt-in list
 of 24 files in `tsconfig.typecheck.json` — widen that list rather than adding `.ts` files. The config
 declares `lib: ["ES2022", "DOM", "DOM.Iterable"]`, so `window`/`document` globals resolve for any
-file added to the list. Vitest suite: 99 files, 799 tests, ~19s. Companion: 14 files, 76 tests. Vite
+file added to the list. Vitest suite: 100 files, 809 tests. Companion: 14 files, 76 tests. Vite
 build warnings about chunk size are acceptable; the bundle budget is the real gate.
 
 ## Commands
@@ -69,7 +69,7 @@ src/
   EftLogSyncContext.jsx# provider for folder-check sync state
   supabase.js          # Supabase client (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)
   constants.js†        # API URL, FEATURED map list, map images, PMC spawns, terrain SVG
-  index.css            # all styles (single file, ~2900 lines, section-commented)
+  index.css            # all styles (single file, ~3300 lines, section-commented)
 ```
 
 † = 2-line re-export shim; the real implementation is the same-named file under `shared/domain/` (see
@@ -78,31 +78,36 @@ the `shared/domain/` file, not the shim.
 
 **Pure helpers** (bare `*.js`, no React):
 
-- *Party / raid:* `partyMembers.js`† `raidPlan.js` `raidObjectives.js` `raidLive.js` `raidSession.js`
-  `raidEnd.js` `raidDebrief.js` `operationalTasks.js` `settings.js`†
+- *Party / raid:* `partyMembers.js`† `partyPingPolicy.js` `raidPlan.js` `raidObjectives.js`
+  `raidLive.js` `raidSession.js` `raidEnd.js` `raidDebrief.js` `roomRaidBrief.js` `roomViewModel.js`
+  `strokeBounds.js` `operationalTasks.js` `settings.js`†
 - *Map / pings:* `tarkovPings.js`† `tarkovSpawns.js` `tarkovZones.js` `tarkovIntel.js`
-  `tarkovObjectives.js`† `mapBanners.js` `mapHtml.js` `objectivePinLayout.js` `squadFocus.js`
-  `cameraMode.js` `memberColors.js`
+  `tarkovObjectives.js`† `mapBanners.js` `mapHtml.js` `mapIntelViewModel.js` `mapPingPolicy.js`
+  `objectivePinLayout.js` `squadFocus.js` `cameraMode.js` `memberColors.js`
 - *Quests:* `questShare.js` `questColors.js` `questVisibility.js` `questWipe.js`† `questGraph.js`
   `questDiagnostic.js` `questImportRoutes.js` `questLogImportJob.js` `questLogState.js`†
-- *EFT logs:* `eftLogs.js`† `eftLogWorker.js` `eftLogDirectory.js`† `eftLogHandleStore.js`
-  `eftLocations.js` `eftScreenshots.js`† `eftNotifications.js` `companionSyncEngine.js`†
-  `syncStatus.js` `tarkovCharacters.js`
+- *EFT logs:* `eftLogs.js`† `eftLogWorker.js` `eftLogDirectory.js`† `eftLogCheckpoint.js`
+  `eftLogHandleStore.js` `eftLogImportSelection.js` `eftLogPreview.js` `eftLocations.js`
+  `eftScreenshots.js`† `eftNotifications.js` `companionSyncEngine.js`† `syncStatus.js`
+  `tarkovCharacters.js`; cross-host wipe alignment lives in `shared/domain/wipeAlignment.js`
 - *Data / misc:* `tarkovRest.js` `gameMode.js` `supabaseHealth.js` `chunkLoadRecovery.js`
-  `welcome.js` `whatsNew.js`
+  `taskIndex.js` `welcome.js` `whatsNew.js`
 
 **Hooks** (all custom, no external state library):
 
 `useAuth` `useParty` `useSettings` `useUserQuests` `useFriends` `useTarkov` `useAppRoute`
-`useEphemeralSweep` `useEftLogImport` `useEftScreenshotSync` `useRaidSession` `useRaidDebrief`
+`useCompanionSyncStatus` `useEphemeralSweep` `useEftLogImport` `useEftScreenshotSync`
+`useRaidSession` `useRaidDebrief`
 `useMapKeys` `useMapLoot` `useMapPings` `useMapLayer` `useMapZones` `usePmcSpawns`
 `usePositionPingCadence` `useIntel` `useIntelChecklist` `useQuestShareOverrides`
 `useQuestShareReports` `useDialogFocus` `useIsMobile`
 
 **Components** (`src/components/`):
 
-- *Shell:* `AppNav` `AuthScreen` `Lobby` `Room` `ErrorBoundary` `Icon` `WelcomeModal`
-- *Map page:* `RaidView` `MapLeaflet` `MyTasksPanel` `RaidRail` `RaidSettings` `StartRaidModal`
+- *Shell:* `AppFooter` `AppNav` `AuthScreen` `Changelog` `Lobby` `Room` `ErrorBoundary` `Icon`
+  `WelcomeModal`
+- *Map page:* `RaidView` `MapLeaflet` `mapMarkerHtml` `MyTasksPanel` `RaidRail` `RaidSettings`
+  `StartRaidModal`
 - *Quests:* `MyQuests` `MyQuestPanel` `QuestSearch` `QuestImportHub` `EftLogImport` `TodoList`
   `ShareVote` `SquadBadge`
 - *Reference:* `FindItems` `RequiredItems` `BossPanel` `BossCard` `TarkovClocks`
@@ -115,12 +120,12 @@ src/data/
   prebaked/            # build-time tarkov.dev payloads, dynamically imported per chunk
 companion/             # Tauri desktop companion (own package.json, excluded from vitest)
 shared/                # web/companion seam — no React, Tauri, Supabase, window or document
-  domain/              # framework-free implementations behind every † shim above (14 files, flat)
+  domain/              # framework-free implementations/data used by shims and both hosts (15 files, flat)
   authProviders.js        # facade: the OAuth providers both sign-in screens offer
   companionSyncEngine.js  # facade: the sync API the companion and web both import
   pingCadence.js          # facade: tap window and max tap count
   taskCatalog.js          # facade: sanitized task IDs and display names, injectable loader
-supabase/              # ordered cutover SQL, 10_01 … 10_30
+supabase/              # ordered cutover SQL, 10_01 … 10_38
 scripts/               # prebake.mjs, sync-coop.mjs, update-battlepass-intel.mjs, …
 ```
 

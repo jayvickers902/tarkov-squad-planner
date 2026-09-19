@@ -13,20 +13,23 @@ code behind host adapters.
 | `shared/taskCatalog.js` | `shared/domain/taskCatalogData.js` (data asset) | Sanitized 24-character task IDs and display names | companion task catalog/report shims |
 
 `shared/authProviders.js`, `shared/companionSyncEngine.js`, `shared/pingCadence.js` and
-`shared/taskCatalog.js` are the four facades at the `shared/` root — the paths both companion and
-web code import. The companion sync engine's implementation and its pure parser dependency graph
-live under `shared/domain/`, alongside twelve more framework-free modules (`constants.js`,
+`shared/taskCatalog.js` are the four facades at the `shared/` root. Use one when the shared contract
+has a facade; `companion/src/service.js`, for example, imports the sync engine there rather than
+through the web tree. The companion sync engine's implementation and its pure parser dependency
+graph live under `shared/domain/`, alongside fourteen more framework-free modules (`constants.js`,
 `partyMembers.js`, `settings.js`, `tarkovPings.js`, `tarkovObjectives.js`, `questWipe.js`,
-`questLogState.js`, `eftLogDirectory.js`, `eftScreenshots.js`, `eftLogs.js`, plus map data in
-`mapFloors.js` / `tarkovMapConfigs.js`) that back 2-line re-export
-shims under `src/` and `src/data/` for existing web imports and tests, so they do not need a
-flag-day rewrite. Edit the `shared/domain/` file, not the shim — `src/sharedDomainBoundary.test.js`
-enumerates the authoritative shim list and fails if a shim's re-export target drifts. New companion
-code should import a `shared/` facade only; it must not reach through a facade for web UI modules or
-import a `shared/domain/` implementation file directly. The compact `taskCatalogData.js` asset
-contains only trusted IDs and display names; regenerate it from the prebaked catalog when task data
-changes. Task catalog loaders remain injectable so tests and future packaged catalogs can supply a
-different asset without changing the companion.
+`questLogState.js`, `eftLogDirectory.js`, `eftScreenshots.js`, `eftLogs.js`, `taskCatalogData.js`,
+`wipeAlignment.js`, plus map data in `mapFloors.js` / `tarkovMapConfigs.js`). The current tree
+contains 15 flat domain files in total. Thirteen of them back 2-line compatibility shims under
+`src/` and `src/data/`; `taskCatalogData.js` is reached through its root facade, while
+`wipeAlignment.js` is the current direct-import example where no facade exists. This lets existing
+web imports and tests move without a flag-day rewrite.
+Edit the `shared/domain/` file, not a compatibility shim — `src/sharedDomainBoundary.test.js`
+enumerates the authoritative shim list and fails if a shim's re-export target drifts. Shared code
+must never reach into web UI modules. The compact `taskCatalogData.js` asset contains only trusted
+IDs and display names; regenerate it from the prebaked catalog when task data changes. Task catalog
+loaders remain injectable so tests and future packaged catalogs can supply a different asset
+without changing the companion.
 
 When changing a shared contract, run both `npm test -- --run` from the root and
 `npm test -- --run` from `/companion`, followed by both builds. Do not add React,

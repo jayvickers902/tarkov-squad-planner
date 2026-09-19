@@ -1,6 +1,6 @@
 # Handoff — outstanding work
 
-**Updated:** 2026-09-11 · **Branch:** `main`
+**Updated:** 2026-09-19 · **Branch:** `main`
 
 Read [CLAUDE.md](CLAUDE.md) first, then the deep reference that matches the task —
 [docs/map-and-raid.md](docs/map-and-raid.md), [docs/eft-log-import.md](docs/eft-log-import.md),
@@ -33,8 +33,9 @@ RPC, immediate browser/companion publishing, companion 0.3.1, and release 2026.1
 | `2bd705c` | Raid view's quest column condenses; wiki link per quest |
 | `10bcfdc` | `CENTRE ON ME`, and OVERVIEW no longer retires FOLLOW for good |
 
-Root suite **98 files / 790 tests** (~17s), companion **14 / 76**, lint and typecheck clean,
-Playwright 3/3, web and companion builds clean. Verified 2026-09-07 with the full 13-check gate.
+Root suite **100 files / 809 tests** and lint scope **260 files**, rechecked 2026-09-19. The
+24-file opt-in typecheck is clean. Companion **14 / 76**, Playwright 9/9, and the web and companion
+builds were clean at the last full 13-check gate.
 
 ---
 
@@ -103,7 +104,7 @@ older sessions. The regression fixture builds a 288 MiB newest session plus a 10
 and proves the scan contains eight files / 256 MiB, all from the newest session. The independent 32
 MiB per-file ceiling is unchanged.
 
-### 3.4 `CENTRE ON ME` has no test on the map half — completed
+### 3.4 `CENTRE ON ME` has no test on the map half — completed; live click human-owed
 
 The map half is covered now, split the way the code is. The resolution rule came out of
 `MapLeaflet` into `ownPingCard` in [src/mapPingPolicy.js](src/mapPingPolicy.js), beside the
@@ -131,8 +132,9 @@ had no cancellation, so a response landing after the reader switched maps or clo
 teardown, and the last two cases in the same file hold that — the image is added when it lands while
 the map is up, and dropped when it lands after.
 
-Still worth one live click after the deploy — none of this proves the tile server or the real
-container size.
+**Still owed to a human:** make one live click of `CENTRE ON ME` on the deployed map behind Google
+OAuth. None of this proves the tile server or the real container size. This is deliberately not an
+automation task; leave it for a signed-in human after deploy.
 
 ### 3.5 The RLS probes — every hole they found is now closed in production
 
@@ -268,8 +270,8 @@ Cost: about an hour. Root suite stayed 86 files / 708 tests.
   throughout. Cost: about 20 minutes per batch including the full matrix, well under the hour
   budgeted.
 
-  **Scope boundary.** 24 of 237 files is a beachhead rather than whole-repository coverage. The DOM decision
-  is closed: `cameraMode` and `chunkLoadRecovery` were added after `lib` gained `DOM` and
+  **Scope boundary.** 24 of 260 linted files is a beachhead rather than whole-repository coverage.
+  The DOM decision is closed: `cameraMode` and `chunkLoadRecovery` were added after `lib` gained `DOM` and
   `DOM.Iterable`. Further widening remains an optional ratchet with no finite acceptance criterion;
   it is not open release work. Components and other browser-heavy files remain deliberately out of scope.
 - **ESLint ratchet — completed.** `no-unused-vars`, `no-empty`, `no-control-regex`,

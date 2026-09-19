@@ -29,10 +29,12 @@ Desktop companion (Vite + Tauri)
 ```
 
 The browser and companion are separate applications with separate package
-manifests and builds. They share selected native-agnostic modules through a
-relative import from `companion/src/service.js` into
-`src/companionSyncEngine.js`; this is a deliberate seam, but it is not yet a
-package boundary.
+manifests and builds. They share selected native-agnostic modules through the
+`shared/` tree: `companion/src/service.js` imports the stable
+`shared/companionSyncEngine.js` facade, while wipe-boundary policy currently
+lives directly in `shared/domain/wipeAlignment.js`. The web-facing
+`src/companionSyncEngine.js` path remains as a compatibility re-export. This is
+a deliberate seam, but it is not yet a package boundary.
 
 ## Web application composition
 
@@ -138,10 +140,12 @@ the user-facing import and permission flow. `src/components/MyQuestPanel.jsx`
 and `src/components/TodoList.jsx` render quest/progress state; they must not
 invent a second completion write path.
 
-The native-agnostic `src/companionSyncEngine.js` is the shared pipeline for
-enumerating metadata, reading file offsets, parsing logs/screenshots,
-checkpointing, sanitizing, and submitting events. It deliberately imports no
-React, Supabase client, or Tauri API. Hosts provide filesystem, checkpoint,
+The native-agnostic implementation in `shared/domain/companionSyncEngine.js`
+is the shared pipeline for enumerating metadata, reading file offsets, parsing
+logs/screenshots, checkpointing, sanitizing, and submitting events. Companion
+code reaches it through `shared/companionSyncEngine.js`; web code may retain
+the `src/companionSyncEngine.js` compatibility shim. It deliberately imports
+no React, Supabase client, or Tauri API. Hosts provide filesystem, checkpoint,
 scheduler, and network adapters.
 
 ## Map and external data flow
@@ -232,8 +236,10 @@ These are the rules future refactors should preserve:
 4. RPC names, payload bounds, and returned row shapes are contracts shared by
    web hooks and `companion/src/network.js`; change SQL, web, companion, and
    contract tests together.
-5. `src/companionSyncEngine.js` may import only native-agnostic parsing/domain
-   code. It must not import the Supabase client, React, or Tauri.
+5. Modules under `shared/` may import only native-agnostic parsing/domain code.
+   They must not import the Supabase client, React, or Tauri. Prefer a stable
+   `shared/` facade where one exists; direct `shared/domain/` imports are used
+   for cross-host policies such as `wipeAlignment.js` that have no facade.
 6. The companion UI may depend on service/adapter contracts, never on Rust
    implementation details. Rust commands should remain small, typed, confined,
    and testable without the WebView.
@@ -253,11 +259,11 @@ These are the rules future refactors should preserve:
 | App route, deep links, browser Back | `src/useAppRoute.js`, `src/App.jsx` | `src/appRoute.test.js`, relevant `src/appWelcome.test.jsx` |
 | Auth/OAuth/profile/callsign | `src/useAuth.js`, `src/components/AuthScreen.jsx`, `companion/src/auth.js` | auth tests, `companion/src/auth.test.js`, web auth smoke flow |
 | Party join/leave/presence/heartbeat | `src/useParty.js`, party RPCs in `supabase/10_04_rpcs.sql` and `10_10_security_hardening.sql` | `src/useParty.test.js`, SQL contracts, two-client RLS probe |
-| Party drawing/marker/progress/ping | `src/useParty.js`, `src/tarkovPings.js`, `src/companionSyncEngine.js` | party tests, ping tests, `src/pingAmendSqlContract.test.js`, realtime/manual burst test |
+| Party drawing/marker/progress/ping | `src/useParty.js`, `src/tarkovPings.js`, `shared/companionSyncEngine.js` | party tests, ping tests, `src/pingAmendSqlContract.test.js`, realtime/manual burst test |
 | Raid planning/readiness/start/end | `src/useRaidSession.js`, `src/raidSession.js`, `src/raidPlan.js` | `src/raidSession.test.js`, `src/raidPlan.test.js`, `src/components/RaidView.test.jsx`, SQL contracts |
 | Personal quests or game-mode scope | `src/useUserQuests.js`, `src/questLogState.js`, `src/gameMode.js` | `src/useUserQuests.test.js`, game-mode/quest-state tests, migration contracts |
-| EFT log parser/import/checkpoints | `src/eftLogs.js`, `src/useEftLogImport.js`, `src/questLogImportJob.js` | `src/eftLogs.test.js`, import/job/worker tests, `src/companionSyncEngine.test.js` |
-| Screenshot-to-ping sync | `src/useEftScreenshotSync.js`, `src/eftScreenshots.js`, `src/companionSyncEngine.js` | screenshot/position/ping cadence tests, companion service tests |
+| EFT log parser/import/checkpoints | `src/eftLogs.js`, `src/useEftLogImport.js`, `src/questLogImportJob.js`, `shared/domain/wipeAlignment.js` | `src/eftLogs.test.js`, import/job/worker/wipe-alignment tests, `src/companionSyncEngine.test.js` |
+| Screenshot-to-ping sync | `src/useEftScreenshotSync.js`, `src/eftScreenshots.js`, `shared/companionSyncEngine.js` | screenshot/position/ping cadence tests, companion service tests |
 | Map Leaflet/layers/coordinates | `src/components/MapLeaflet.jsx`, map hooks, `src/mapHtml.js` | map HTML, objective layout, map-zone tests, manual touch/keyboard smoke test |
 | Task/item/map datasets | `src/useTarkov.js`, `src/tarkovRest.js`, `scripts/prebake.mjs` | `useTarkov`/domain tests, prebake validation, bundle-size check |
 | Companion status/network payload | `companion/src/network.js`, `companion/src/runtime.js`, matching RPC SQL | network/runtime/service tests, SQL contracts, local companion smoke test |
@@ -270,9 +276,10 @@ These are the rules future refactors should preserve:
 - `src/App.jsx`, `src/useParty.js`, `src/components/Room.jsx`,
   `src/components/MapLeaflet.jsx`, and `src/useEftLogImport.js` are responsibility
   centers. Changes there deserve focused review and characterization tests.
-- The companion reaches into the web tree for the shared engine. A future
-  workspace/package extraction should move only native-agnostic code first and
-  keep the adapter contracts stable.
+- The companion no longer reaches into the web tree for the shared engine; the
+  seam is now the repository-level `shared/` tree. It is still a relative-import
+  boundary rather than a workspace/package, so a future package extraction
+  should keep the adapter contracts and existing web compatibility shims stable.
 - Realtime repair currently refetches broad party state. Any scaling work must
   measure event volume, payload sizes, lock contention, and reconnect storms
   before changing semantics.
