@@ -368,9 +368,12 @@ the real boundary.
 
 ### Step 7 — a11y contract from source-text to render test · **Sonnet**
 
-**Status: in flight.** A concurrent agent is replacing `src/mapControlsA11y.test.js` with
-`src/components/MapLeaflet.a11y.test.jsx` while Step 9 (this reconciliation) runs. Not yet committed
-as of this pass — do not assume either file's final state from this document.
+**Status: landed in `ccc5345`; re-audited on 2026-09-19.** The source-text test is absent and
+`src/components/MapLeaflet.a11y.test.jsx` mounts the real component. Its eight upstream hook stubs
+match `MapLeaflet.centreOnMe.test.jsx` module-for-module and return-shape-for-return-shape. The
+render assertions cover dynamic `aria-pressed`, the layer trigger's rendered dialog relationship,
+and Enter/Space activation for ping cards. This is the render-level verification for Step 2: it
+also queries the controls by the glyph-free accessible names that Step 2 promised to preserve.
 
 [src/mapControlsA11y.test.js](src/mapControlsA11y.test.js) asserts accessibility by slicing
 `MapLeaflet.jsx` as a string with a magic `source.indexOf(label) - 500` window. It proves an

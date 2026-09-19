@@ -14,6 +14,9 @@ import { cadenceOf } from '../tarkovPings'
 // Mounting the component instead (as MapLeaflet.centreOnMe.test.jsx already
 // does — ~320ms for its thirteen cases once the same eight upstream data
 // hooks are stubbed) lets these assert against the actual DOM.
+// This is also the render-level verification for optimization-plan Step 2:
+// the decorative glyphs stay out of each control's accessible name while the
+// control itself continues to expose its pressed state.
 vi.mock('../useMapKeys', () => ({ useMapKeys: () => ({ mapKeys: [] }) }))
 vi.mock('../useIntel', () => ({ useIntel: () => ({ intelPoints: [] }) }))
 vi.mock('../useMapLoot', () => ({ useMapLoot: () => ({ lootRows: [] }) }))
