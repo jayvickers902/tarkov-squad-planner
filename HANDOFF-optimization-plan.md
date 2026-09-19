@@ -16,6 +16,30 @@ stale. Step 9 fixes them.
 **Status as of 2026-09-04: all ten steps are done and committed** — `7187d99` `5d12a8b` `765222b`
 `78872f9` `211cd7d` `6adb889` `37353ce` `ccc5345` `22ff5c2` `0122fdd`. Nothing is pushed.
 
+**Wave 1 re-audit on 2026-09-19 (`codex/opt-wave-1`): all four steps are already landed.**
+
+- **Step 1 — already-landed (`7187d99`).** The current tree keeps
+  `.room-banner-identity` shrinkable, and `playwright/app-shell.e2e.mjs` asserts that
+  `/changelog` has no horizontal overflow at 375×812. The same commit bumped
+  `RELEASE_VERSION` to `2026.17` and prepended its release entry; that historical entry remains in
+  `src/whatsNew.js` after later releases advanced the current version.
+- **Step 3 — already-landed (`5d12a8b`).** `src/taskIndex.js` provides the import-free,
+  first-write-wins `Map` index; all seven planned components memoize and use it. There are no
+  executable `tasks.find(...)` lookups outside tests, and the documented missing-task branches in
+  `MyQuestPanel` and `TodoList` remain intact.
+- **Step 4 — already-landed (`765222b`).** The repair read selects the same explicit 18 `parties`
+  and 7 `party_members` columns recorded in the commit that verified them against the live catalog.
+  The current consumer audit still accounts for `spawn`, `pings`, `game_mode`,
+  `active_session_id`, and the normalized member fields. This re-audit was offline and therefore
+  did not re-query or change the live-schema-derived lists.
+- **Step 6 — already-landed (`78872f9`).** The DOM libs, `cameraMode.js`, and
+  `chunkLoadRecovery.js` are present in the typecheck config. Later work widened the include list
+  further, from the step's 19-file result to 24 files. Git history shows the DOM-lib change and the
+  two JSDoc additions landed together in `78872f9`, not as two separate commits.
+
+Current verification after the re-audit: `npm run typecheck` pass · `npm run lint` pass ·
+`npm test` pass at **100 files / 809 tests**.
+
 Gates on the finished tree: `npm run validate:migrations` pass · `npm run lint` clean across 237
 files · `npm run typecheck` clean at 19 files · `npm test` at **90 files / 747 tests** (from 87/712)
 · `npm run test:e2e` 3/3 · all six bundle budgets PASS · largest async raw `tasks-*.js` at **677.1
@@ -206,11 +230,12 @@ model in `docs/developer-readiness.md` is still the real fix.
 
 ### Step 6 — Add the DOM lib and widen the type check · **Haiku**
 
-**Status: shipped in `78872f9`.** Matched the plan exactly: the `lib` array landed alone first, then
-`cameraMode.js` and `chunkLoadRecovery.js` were added in JSDoc only, taking the include list to 19
-files with zero emitted-code changes. `cameraMode.js` also picked up a `CameraMode` typedef and a
-real `isCameraMode` type guard as part of the annotation, which is more precise than "comments only"
-but still emits no runtime code.
+**Status: shipped in `78872f9`.** The `lib` array, `cameraMode.js`, and
+`chunkLoadRecovery.js` landed together in one commit, taking the include list to 19 files with zero
+emitted-code changes. `cameraMode.js` also picked up a `CameraMode` typedef and a real
+`isCameraMode` type guard as part of the annotation, which is more precise than "comments only" but
+still emits no runtime code. This differs from the two-commit sequence specified below; the tree and
+history are authoritative.
 
 `docs/developer-readiness.md` records this as blocked on an unmade decision: the config declares
 `"types": ["node"]` with no `"dom"` lib, so any file touching `window` or `document` cannot be
