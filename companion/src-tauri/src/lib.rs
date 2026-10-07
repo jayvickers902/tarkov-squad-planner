@@ -342,8 +342,13 @@ pub fn run() {
             let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
             let menu = MenuBuilder::new(app).items(&[&show, &quit]).build()?;
 
-            TrayIconBuilder::new()
-                .menu(&menu)
+            // The only tray icon: tauri.conf.json must not also declare `trayIcon`,
+            // or Windows shows a second, blank entry for this app.
+            let mut tray = TrayIconBuilder::new();
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            tray.menu(&menu)
                 .tooltip("Tarkov Squad Planner Companion")
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "show" => show_main_window(app),

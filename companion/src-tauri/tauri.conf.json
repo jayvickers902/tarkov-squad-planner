@@ -26,8 +26,7 @@
     ],
     "security": {
       "csp": "default-src 'self' asset:; connect-src 'self' ipc: http://ipc.localhost https://*.supabase.co wss://*.supabase.co; script-src 'self'; style-src 'self'; img-src 'self' asset: data:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-    },
-    "trayIcon": { "iconPath": "icons/icon.png", "tooltip": "Tarkov Squad Planner Companion" }
+    }
   },
   "bundle": {
     "active": true,
