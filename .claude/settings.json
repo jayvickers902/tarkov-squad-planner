@@ -1,15 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ items\\(types: [keys], limit: 5\\) { id name avg24hPrice properties { __typename ... on ItemPropertiesKey { uses } } } }\"}')",
-      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ maps\\(lang: en\\) { id normalizedName name } }\"}')",
-      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ maps\\(lang: en\\) { id normalizedName name lootContainers } }\"}')",
-      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ items\\(types: [keys]\\) { id name containerProperties { map } } }\"}')",
-      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ items\\(types: [keys], limit: 10\\) { id name } }\"}')",
-      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ __type\\(name: \\\\\"LootContainerPosition\\\\\"\\) { fields { name type { name kind } } } }\"}')",
-      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ __type\\(name: \\\\\"ItemPropertiesKey\\\\\"\\) { fields { name type { name kind } } } }\"}')",
-      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ __type\\(name: \\\\\"LootContainer\\\\\"\\) { fields { name type { name kind } } } }\"}')",
-      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ items\\(types: [keys], limit: 1\\) { id name tarkovDataId description } }\"}')",
       "Skill(update-config)",
       "Skill(update-config:*)",
       "Bash(npx --version)",
@@ -17,15 +8,10 @@
       "Bash(node -e ':*)",
       "WebSearch",
       "WebFetch(domain:github.com)",
-      "Bash(curl -s -X POST https://api.tarkov.dev/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ maps { id normalizedName name svgPath } }\"}')",
       "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\); const j=JSON.parse\\(d\\); j.data.maps.forEach\\(m=>console.log\\(m.normalizedName, m.svgPath\\)\\)\")",
       "WebFetch(domain:tarkov.dev)",
-      "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(curl -s \"https://api.github.com/repos/Zibbp/Escape-From-Tarkov-Interactive-Online-Map/git/trees/HEAD?recursive=1\")",
-      "Bash(curl -s \"https://api.github.com/repos/the-hideout/tarkov-dev/contents/public/maps\")"
+      "WebFetch(domain:raw.githubusercontent.com)"
     ],
-    "additionalDirectories": [
-      "C:\\Users\\jayvi\\.claude"
-    ]
+    "additionalDirectories": []
   }
 }
