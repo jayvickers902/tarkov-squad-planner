@@ -54,7 +54,14 @@ impl Storage {
         let path = self.path(name);
         let temporary = path.with_extension("json.tmp");
         let encoded = serde_json::to_vec_pretty(value)?;
-        fs::write(&temporary, encoded)?;
+        // Flush the data before the rename: without sync_all a crash or power
+        // loss can publish a zero-filled file under the final name.
+        {
+            use std::io::Write;
+            let mut file = fs::File::create(&temporary)?;
+            file.write_all(&encoded)?;
+            file.sync_all()?;
+        }
         replace_file(&temporary, &path)?;
         Ok(())
     }
@@ -93,8 +100,19 @@ impl Storage {
             }
             Err(error) => return Err(error.into()),
         }
-        match fs::read_to_string(path) {
-            Ok(value) => Ok(serde_json::from_str(&value)?),
+        match fs::read_to_string(&path) {
+            Ok(value) => match serde_json::from_str(&value) {
+                Ok(parsed) => Ok(parsed),
+                Err(_) => {
+                    // Checkpoints are only scan offsets; a torn write must not
+                    // wedge sync forever. Keep the bad file for inspection and
+                    // start fresh (reconcile is idempotent, so a re-scan is safe).
+                    let quarantine = path.with_extension("json.corrupt");
+                    let _ = fs::remove_file(&quarantine);
+                    fs::rename(&path, &quarantine)?;
+                    Ok(serde_json::json!({}))
+                }
+            },
             Err(error) => Err(error.into()),
         }
     }
@@ -213,5 +231,15 @@ mod tests {
         storage.save_checkpoints(first).unwrap();
         storage.save_checkpoints(second.clone()).unwrap();
         assert_eq!(storage.load_checkpoints().unwrap(), second);
+    }
+
+    #[test]
+    fn corrupt_checkpoints_are_quarantined_not_fatal() {
+        let directory = tempfile::tempdir().unwrap();
+        let storage = Storage::new(directory.path().join("state")).unwrap();
+        fs::write(storage.path("checkpoints-v1.json"), vec![0u8; 4096]).unwrap();
+        assert_eq!(storage.load_checkpoints().unwrap(), serde_json::json!({}));
+        assert!(storage.path("checkpoints-v1.json.corrupt").exists());
+        assert!(!storage.path("checkpoints-v1.json").exists());
     }
 }
