@@ -1,1 +1,5 @@
 *.sh text eol=lf
+
+# LF in the repo and in WSL checkouts; Windows-only scripts keep CRLF.
+* text=auto eol=lf
+*.ps1 *.cmd *.bat eol=crlf
